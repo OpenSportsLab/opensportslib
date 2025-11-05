@@ -18,10 +18,10 @@ class ActionDataset(Dataset):
     def __init__(self, config, split="train"):
         self.split = split
         self.config = config
-        self.data_root = config["data_root"]
-        self.annotation_file = config["annotations"][split]
-        self.num_frames = config["num_frames"]
-        self.input_fps = config["input_fps"]
+        self.data_root = config.get("data_root")
+        self.annotation_file = config.get("annotations")[split]
+        self.num_frames = config.get("num_frames", 16)
+        self.input_fps = config.get("input_fps")
         self.target_fps = config.get("target_fps", self.input_fps)
         self.transform = self._default_transform()
 
@@ -44,9 +44,9 @@ class ActionDataset(Dataset):
 
     # transform
     def _default_transform(self):
-        mean = self.config["normalize"]["mean"]
-        std = self.config["normalize"]["std"]
-        size = self.config["frame_size"]
+        mean = self.config.get("normalize").get("mean")
+        std = self.config.get("normalize").get("std")
+        size = self.config.get("frame_size")
     
         return T.Compose([
             T.ConvertImageDtype(torch.float32),
@@ -168,15 +168,23 @@ if __name__ == "__main__":
     config = load_config(config_path)
     #print(config)
     
-    # Step 2: Create dataset instance
+    # Check train dataset 
     dataset = ActionDataset(config["DATA"], split="train")
-
-    # Step 3: Check dataset length
     print(f"Dataset length: {len(dataset)}")
-
-    print(dataset)
-    # Step 4: Fetch one sample
     frames, label = dataset[0]
+    print(f"Frames shape: {frames.shape}")  # 
+    print(f"Label: {label}")
 
+    # Check valid dataset
+    dataset = ActionDataset(config["DATA"], split="valid") 
+    print(f"Dataset length: {len(dataset)}")
+    frames, label = dataset[0]
+    print(f"Frames shape: {frames.shape}")  # 
+    print(f"Label: {label}")
+
+    # Check test dataset
+    dataset = ActionDataset(config["DATA"], split="test") 
+    print(f"Dataset length: {len(dataset)}")
+    frames, label = dataset[0]
     print(f"Frames shape: {frames.shape}")  # 
     print(f"Label: {label}")
