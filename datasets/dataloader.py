@@ -27,7 +27,7 @@ class ActionClassification(Dataset):
 
         # --- Load annotations once ---
         self.samples = self._load_annotations()
-        print(f"✅ Loaded {len(self.samples)} {split} samples")
+        print(f"Loaded {len(self.samples)} {split} samples")
 
     
     def resample_video_idx(self, num_frames, original_fps, new_fps):
@@ -135,7 +135,7 @@ class ActionClassification(Dataset):
         for video_rel in sample["videos"]:
             video_path = os.path.join(self.data_root, video_rel)
             if not os.path.exists(video_path):
-                print(f"⚠️ Missing: {video_path}")
+                print(f"Missing: {video_path}")
                 continue
 
             frames = self._read_video(video_path)
