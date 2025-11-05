@@ -9,7 +9,7 @@ import decord
 from decord import cpu
 
 
-class ActionClassification(Dataset):
+class ActionDataset(Dataset):
     """
     A modular video dataset loader supporting annotation-based metadata,
     FPS-based resampling, uniform frame sampling, and padding.
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     #print(config)
     
     # Step 2: Create dataset instance
-    dataset = ActionClassification(config["DATA"], split="train")
+    dataset = ActionDataset(config["DATA"], split="train")
 
     # Step 3: Check dataset length
     print(f"Dataset length: {len(dataset)}")

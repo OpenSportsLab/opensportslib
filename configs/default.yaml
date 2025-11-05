@@ -7,7 +7,7 @@ DATA:
     test: mvfouls/test/annotations.json
   num_frames: 16              # 8 before + 8 after the foul
   input_fps: 30               # Original FPS of video
-  target_fps: 8               # Temporal downsampling to 1s clip (approx)
+  target_fps: 16               # Temporal downsampling to 1s clip (approx)
   frame_size: [224, 398]      # Spatial resolution (HxW)
   normalize:
     mean: [0.45, 0.45, 0.45]
@@ -19,8 +19,9 @@ MODEL:
   name: mvit_v2_s                
   weights: MViT_V2_S_Weights
   pretrained: true
-  num_classes: 10
-  dropout: 0.3
+  num_classes: 8
+  feature_dim: 400
+  agr_type: "max"
 
 TRAIN:
   enabled: true
