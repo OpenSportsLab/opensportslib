@@ -17,6 +17,7 @@ class ActionDataset(Dataset):
 
     def __init__(self, config, split="train"):
         self.split = split
+        print(type(self.split))
         self.config = config
         self.data_root = config.get("data_root")
         self.annotation_file = config.get("annotations")[split]
@@ -59,27 +60,49 @@ class ActionDataset(Dataset):
         """Load annotation JSON file."""
         with open(self.annotation_file, "r") as f:
             data = json.load(f)
-
-        if "Actions" in data:  # SoccerNet multiview structure
-            class_names = sorted(list({v["Action class"] for v in data["Actions"].values()}))
+    
+        # SoccerNet multiview style
+        if "Actions" in data:
+            # collect valid action classes
+            class_names = sorted(list({
+                v["Action class"] for v in data["Actions"].values()
+                if v["Action class"] not in ["", "Challenge"]
+            }))
             class_to_idx = {name: i for i, name in enumerate(class_names)}
-
+    
             samples = []
             for _, action in data["Actions"].items():
-                label = class_to_idx[action["Action class"]]
-                clips = []
-                for c in action["Clips"]:
-                    clip_path = c["Url"]
-                    clip_path = clip_path.replace("Dataset/Train", "train") \
-                                         .replace("Dataset/Test", "test") \
-                                         .replace("Dataset/Valid", "valid")
-                    clips.append(clip_path + ".mp4")
-                samples.append({"videos": clips, "label": label})
-            return samples
-        else:
-            # Flat single-view structure
-            data_list = list(data.values()) if isinstance(data, dict) else data
-            return [{"videos": [d["video"]], "label": d["label"]} for d in data_list]
+                action_class = action["Action class"]
+                if action_class in ["", "Challenge"]:
+                    continue  # skip invalid actions
+    
+                label = class_to_idx[action_class]
+    
+                # get only first clip if available
+                first_clip_key = next(iter(action["Clips"]), None)
+                if first_clip_key is None:
+                    continue
+    
+                clip_info = action["Clips"][0]
+                if isinstance(clip_info, dict) and "Url" in clip_info:
+                    clip_path = clip_info["Url"]
+                elif isinstance(clip_info, str):
+                    clip_path = clip_info
+                else:
+                    continue
+    
+                # replace Dataset paths to match your local folder
+                clip_path = (
+                    clip_path.replace("Dataset/Train", "train")
+                             .replace("Dataset/Test", "test")
+                             .replace("Dataset/Valid", "valid")
+                )
+    
+                samples.append({"videos": [clip_path + ".mp4"], "label": label})
+    
+            #print(f"Loaded {len(samples)} valid samples from {self.annotation_file}")
+        return samples
+
 
 
     # Read frames
@@ -157,7 +180,7 @@ class ActionDataset(Dataset):
         else:
             frames = view_tensors[0].unsqueeze(0)  # (1, C, N, H, W)
 
-        return frames, label
+        return frames, label, str(idx)
 
 
 
@@ -171,20 +194,23 @@ if __name__ == "__main__":
     # Check train dataset 
     dataset = ActionDataset(config["DATA"], split="train")
     print(f"Dataset length: {len(dataset)}")
-    frames, label = dataset[0]
+    frames, label, idx = dataset[0]
     print(f"Frames shape: {frames.shape}")  # 
     print(f"Label: {label}")
+    print(f"idx: {idx}")
 
     # Check valid dataset
     dataset = ActionDataset(config["DATA"], split="valid") 
     print(f"Dataset length: {len(dataset)}")
-    frames, label = dataset[0]
+    frames, label, idx = dataset[0]
     print(f"Frames shape: {frames.shape}")  # 
     print(f"Label: {label}")
+    print(f"idx: {idx}")
 
     # Check test dataset
     dataset = ActionDataset(config["DATA"], split="test") 
     print(f"Dataset length: {len(dataset)}")
-    frames, label = dataset[0]
+    frames, label, idx = dataset[0]
     print(f"Frames shape: {frames.shape}")  # 
     print(f"Label: {label}")
+    print(f"idx: {idx}")

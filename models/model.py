@@ -1,5 +1,5 @@
 import torch
-from mvaggregate import MVAggregate
+from models.mvaggregate import MVAggregate
 from torchvision.models.video import mvit_v2_s, MViT_V2_S_Weights
 
 
@@ -32,7 +32,7 @@ class ClassificationModel(torch.nn.Module):
 
     def forward(self, mvimages):
         """
-        mvimages: tensor of shape (B, V, C, D, H, W)
+        mvimages: tensor of shape (B, V, C, T, H, W)
         returns: pred_action, attention
         """
         return self.mvnetwork(mvimages)
@@ -45,14 +45,13 @@ if __name__ == "__main__":
     # Load config
     config = load_config("configs/default.yaml")
     
-    # Instantiate model
     model = ClassificationModel(config)
     model.eval()
     
     # Simulate multi-view input: (batch, views, channels, frames, H, W)
-    #x = torch.randn(2, 3, 3, 16, 224, 224)  # 2 samples, 3 views, 8 frames
-    x = torch.randn(8, 3, 3, 16, 224, 224)  # single sample, single view
-
+    x = torch.randn(2, 2, 3, 16, 224, 224)  # 2 samples, 3 views, 8 frames
+    #x = torch.randn(8, 3, 3, 16, 224, 224)  # single sample, single view
+    #x = torch.rand(2, 2, 3, 16, 224, 398)
     
     with torch.no_grad():
         pred_action, attention = model(x)
