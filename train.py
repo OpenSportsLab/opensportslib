@@ -152,6 +152,8 @@ def train_epoch(dataloader, model, criterion, optimizer, epoch, train=True, set_
         with torch.set_grad_enabled(train):
             #print(mvclips.shape)
             outputs, _ = model(mvclips)
+            if outputs.ndim == 1:
+                outputs = outputs.unsqueeze(0)
             loss = criterion(outputs, labels)
 
             if train:
@@ -160,7 +162,7 @@ def train_epoch(dataloader, model, criterion, optimizer, epoch, train=True, set_
                 optimizer.step()
 
         loss_total += loss.item() * mvclips.size(0)
-        _, predicted = torch.max(outputs, 1)
+        predicted = torch.argmax(outputs, 1)
         total += labels.size(0)
         correct += predicted.eq(labels).sum().item()
 
