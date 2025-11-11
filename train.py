@@ -7,8 +7,7 @@ from tqdm import tqdm
 #import wandb
 
 
-def trainer(train_loader, val_loader, test_loader, model, optimizer, scheduler, criterion, best_model_path, epoch_start, model_name,
-    max_epochs=100, device="cuda", project_name="classification", run_name=None, config_dict=None):
+def trainer(train_loader, val_loader, test_loader, model, optimizer, scheduler, criterion, best_model_path, epoch_start, model_name, max_epochs=100, device="cuda", project_name="classification", run_name=None, config_dict=None):
     """
     Trainer for Multi-view Action Classification.
     Logs metrics and checkpoints to Weights & Biases.
