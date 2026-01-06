@@ -21,7 +21,9 @@ dependencies = [
     "transformers==4.57.3",
     "tokenizers==0.22.1",
     "accelerate",
-    "wandb"
+    "wandb",
+    "opencv-python",
+    "omegaconf"
 ]
 
 [tool.setuptools]
