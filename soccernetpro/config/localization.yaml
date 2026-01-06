@@ -1,0 +1,133 @@
+TASK: localization
+
+dali: True
+
+DATA:
+  dataset_name: SoccerNet
+  data_dir: /home/vorajv/SoccerNet/spotting-OSL/224p/
+  classes:
+    - Ball out of play
+    - Clearance
+    - Corner
+    - Direct free-kick
+    - Foul
+    - Goal
+    - Indirect free-kick
+    - Kick-off
+    - Offside
+    - Penalty
+    - Red card
+    - Shots off target
+    - Shots on target
+    - Substitution
+    - Throw-in
+    - Yellow card
+    - Yellow->red card
+
+  epoch_num_frames: 500000
+  mixup: true
+  modality: rgb
+  crop_dim: -1
+  dilate_len: 0        # Dilate ground truth labels
+  clip_len: 100
+  input_fps: 25
+  extract_fps: 2
+  IMAGENET_MEAN: [0.485, 0.456, 0.406]
+  IMAGENET_STD: [0.229, 0.224, 0.225]
+  TARGET_HEIGHT: 224
+  TARGET_WIDTH: 398
+
+  train:
+    type: VideoGameWithDali
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/valid/
+    path: ${DATA.train.video_path}/annotations.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+
+  valid:
+    type: VideoGameWithDali
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/valid/
+    path: ${DATA.valid.video_path}/annotations.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+
+  valid_data_frames:
+    type: VideoGameWithDaliVideo
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/valid/
+    path: ${DATA.valid.video_path}/annotations.json
+    overlap_len: 0
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+  test:
+    type: VideoGameWithDaliVideo
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/test/
+    path: ${DATA.test.video_path}/annotations.json
+    results: results_spotting_test
+    nms_window: 2
+    metric: loose
+    overlap_len: 50
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+  challenge:
+    type: VideoGameWithDaliVideo
+    overlap_len: 50
+    output_map: [data, label]
+    path: ${DATA.data_dir}/challenge/annotations.json
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+MODEL:
+    type: E2E
+    runner:
+      type: runner_e2e
+    backbone:
+      type: rny008_gsm
+    head:
+      type: gru
+    multi_gpu: false
+    load_weights: null
+    save_dir: ./checkpoints"
+    work_dir: ${MODEL.save_dir}/localization/e2e/rny008_gsm/"
+
+TRAIN:
+  type: trainer_e2e
+  num_epochs: 100
+  acc_grad_iter: 1
+  base_num_valid_epochs: 20
+  start_valid_epoch: null
+  criterion_valid: map
+  inference_batch_size: 4
+  GPU: 0
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamWithScaler
+    learning_rate: 0.001
+
+  scheduler:
+    type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: 100
+    warm_up_epochs: 3
+
+SYSTEM:
+  log_dir: ./logs
+  seed: 42
+

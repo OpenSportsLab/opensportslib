@@ -1,0 +1,58 @@
+TASK: classification
+
+DATA:
+  dataset_name: mvfouls
+  data_dir: mvfouls
+  view_type: single
+  annotations:
+    train: annotations_train.json
+    valid: annotations_valid.json
+    test: annotations_test.json
+  num_frames: 16               # 8 before + 8 after the foul
+  input_fps: 25                # Original FPS of video
+  target_fps: 17               # Temporal downsampling to 1s clip (approx)
+  start_frame: 63            # Start frame of clip relative to foul frame
+  end_frame: 87              # End frame of clip relative to foul frame
+  frame_size: [224, 224]       # Spatial resolution (HxW)
+  augmentations:
+    random_affine: true
+    translate: [0.1, 0.1]        
+    affine_scale: [0.9, 1.0]     
+    random_perspective: true
+    distortion_scale: 0.3        
+    perspective_prob: 0.5
+    random_rotation: true
+    rotation_degrees: 5          
+    color_jitter: true
+    jitter_params: [0.2, 0.2, 0.2, 0.1]   # brightness, contrast, saturation, hue
+    random_horizontal_flip: true
+    flip_prob: 0.5
+    random_crop: false
+  num_workers: 1
+  train_batch_size: 8
+  valid_batch_size: 4
+
+MODEL:
+  type: huggingface
+  backbone: video_mae
+  pretrained_model: MCG-NJU/videomae-base
+  num_classes: 9
+  unfreeze_head: true
+  unfreeze_last_n_layers: 3
+    
+
+TRAIN:
+  enabled: true
+  use_weighted_sampler: true
+  epochs: 20 #20
+  head_lr: 0.001
+  backbone_lr: 0.00005
+  weight_decay: 0.01
+  save_dir: ./checkpoints
+  log_interval: 10
+  save_every: 5
+
+SYSTEM:
+  log_dir: ./logs
+  seed: 42
+
