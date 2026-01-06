@@ -1,6 +1,25 @@
 # SoccerNetPro
 SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
 
+## Development
+```bash
+### Requirements and installation ###
+conda create -n SoccerNet python=3.12 pip
+conda activate SoccerNet
+pip install -e .
+
+### git branch and merge rules ###
+1. Clone the github repo - git clone https://github.com/OpenSportsLab/soccernetpro.git 
+
+2. Check and verify current branch is "dev" - git status
+
+3. Create new branch from source "dev" - 
+git pull
+git checkout -b <new_feature/fix/bug>
+
+4. Raise PR request to merge your branch <new_feature/fix/bug> to "dev" branch 
+```
+
 ## Installation
 
 ```bash
