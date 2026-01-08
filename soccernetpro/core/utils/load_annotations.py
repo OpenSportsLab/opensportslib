@@ -99,56 +99,72 @@ def load_annotations_(annotations_path, exclude_labels=None):
     print(label_map)
     return samples
 
+def annotationstoe2eformat(
+    label_files,
+    video_dirs,
+    input_fps,
+    extract_fps,
+    dali
+):
+    """
+    Adapt SoccerNet Ball Action Spotting annotations to E2E format.
 
-def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali):
-    """Adapt annotations jsons to e2e format.
+    Supports JSON with:
+      - top-level "data"
+      - video path in inputs[0]["path"]
+      - events with "label" and "position_ms"
 
     Args:
-        label_files (string,list[string]): Json files of annotations.
-        label_dirs (string,list[string]): Data root folder of videos. Must match number of label files.
-        input_fps (int): Fps of input videos.
-        extract_fps (int): Fps at which we extract frames.
-        dali (bool): WHether processing with dali or opencv.
+        label_files (str | list[str]): Annotation JSON files
+        video_dirs (str | list[str]): Root video directories
+        input_fps (int): FPS expected by the model
+        extract_fps (int): FPS for frame extraction
+        dali (bool): Whether using DALI or OpenCV
     """
 
     if not isinstance(label_files, list):
         label_files = [label_files]
     if not isinstance(video_dirs, list):
         video_dirs = [video_dirs]
+
     assert len(label_files) == len(video_dirs)
 
-    labels_e2e = list()
+    labels_e2e = []
     classes_by_label_dir = []
-    for label_dir, video_dir in zip(label_files, video_dirs):
-        logging.info("Processing " + label_dir + " to e2e format.")
-        videos = []
-        annotations = load_json(label_dir)
-        labels = annotations["labels"]
+
+    for label_path, video_dir in zip(label_files, video_dirs):
+        logging.info(f"Processing {label_path} to e2e format")
+
+        annotations = load_json(label_path)
+
+        # ---- Extract class list (ball_action) ----
+        labels = annotations["labels"]["action"]["labels"]
         classes_by_label_dir.append(labels)
-        videos = annotations["videos"]
+
+        # ---- Iterate videos ----
+        videos = annotations["data"]
+
         for video in tqdm.tqdm(videos):
-            if "annotations" in video.keys():
-                video_annotations = video["annotations"]
-            else:
-                video_annotations = []
+            # ---- Video path & metadata ----
+            video_path = video["inputs"][0]["path"]
+            full_video_path = os.path.join(video_dir, video_path)
 
-            num_events = 0
-
-            vc = cv2.VideoCapture(os.path.join(video_dir, video["path"]))
+            vc = cv2.VideoCapture(full_video_path)
             width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = vc.get(cv2.CAP_PROP_FPS)
             num_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
 
-            sample_fps = read_fps(fps, extract_fps if extract_fps < fps else fps)
+            # ---- FPS handling ----
+            target_fps = extract_fps if extract_fps < fps else fps
+            sample_fps = read_fps(fps, target_fps)
+
             num_frames_after = get_num_frames(
-                num_frames, fps, extract_fps if extract_fps < fps else fps
+                num_frames, fps, target_fps
             )
 
             if dali:
-                if get_stride(
-                    fps, extract_fps if extract_fps < fps else fps
-                ) != get_stride(input_fps, extract_fps):
+                if get_stride(fps, target_fps) != get_stride(input_fps, extract_fps):
                     sample_fps = fps / get_stride(input_fps, extract_fps)
                     num_frames_dali = math.ceil(
                         num_frames / get_stride(input_fps, extract_fps)
@@ -156,57 +172,161 @@ def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali
                 else:
                     num_frames_dali = num_frames_after
 
-            # video_id = os.path.splitext(video["path"])[0]
-            video_id = os.path.join(video_dir, video["path"])
-
+            # ---- Events ----
             events = []
-            for annotation in video_annotations:
+            for ann in video.get("events", []):
+                position_ms = float(ann["position_ms"])
+
                 if dali:
-                    if get_stride(
-                        fps, extract_fps if extract_fps < fps else fps
-                    ) != get_stride(input_fps, extract_fps):
+                    if get_stride(fps, target_fps) != get_stride(input_fps, extract_fps):
                         adj_frame = (
-                            float(annotation["position"])
-                            / 1000
+                            position_ms / 1000
                             * (fps / get_stride(input_fps, extract_fps))
                         )
                     else:
-                        adj_frame = float(annotation["position"]) / 1000 * sample_fps
-                    if int(adj_frame) == 0:
-                        adj_frame = 1
+                        adj_frame = position_ms / 1000 * sample_fps
                 else:
-                    adj_frame = float(annotation["position"]) / 1000 * sample_fps
-                events.append(
-                    {
-                        "frame": int(adj_frame),
-                        "label": annotation["label"],
-                        "team": annotation["team"],
-                        "visibility": annotation["visibility"],
-                    }
-                )
+                    adj_frame = position_ms / 1000 * sample_fps
 
-            num_events += len(events)
+                if int(adj_frame) == 0:
+                    adj_frame = 1
+
+                events.append({
+                    "frame": int(adj_frame),
+                    "label": ann["label"],
+
+                })
+
             events.sort(key=lambda x: x["frame"])
 
-            labels_e2e.append(
-                {
-                    "events": events,
-                    "fps": sample_fps,
-                    "num_frames": num_frames_dali if dali else num_frames_after,
-                    "num_frames_base": num_frames,
-                    "num_events": len(events),
-                    "width": width,
-                    "height": height,
-                    "video": video_id,
-                    "path": video["path"],
-                }
-            )
-        assert len(video_annotations) == num_events
-    classes = classes_by_label_dir[0]
-    for classes_tmp in classes_by_label_dir:
-        assert classes == classes_tmp
+            labels_e2e.append({
+                "events": events,
+                "fps": sample_fps,
+                "num_frames": num_frames_dali if dali else num_frames_after,
+                "num_frames_base": num_frames,
+                "num_events": len(events),
+                "width": width,
+                "height": height,
+                "video": full_video_path,
+                "path": video_path,
+            })
+
+    # ---- Sanity checks ----
+    base_classes = classes_by_label_dir[0]
+    for c in classes_by_label_dir:
+        assert c == base_classes
+
     labels_e2e.sort(key=lambda x: x["video"])
+
     return labels_e2e
+
+# def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali):
+#     """Adapt annotations jsons to e2e format.
+
+#     Args:
+#         label_files (string,list[string]): Json files of annotations.
+#         label_dirs (string,list[string]): Data root folder of videos. Must match number of label files.
+#         input_fps (int): Fps of input videos.
+#         extract_fps (int): Fps at which we extract frames.
+#         dali (bool): WHether processing with dali or opencv.
+#     """
+
+#     if not isinstance(label_files, list):
+#         label_files = [label_files]
+#     if not isinstance(video_dirs, list):
+#         video_dirs = [video_dirs]
+#     assert len(label_files) == len(video_dirs)
+
+#     labels_e2e = list()
+#     classes_by_label_dir = []
+#     for label_dir, video_dir in zip(label_files, video_dirs):
+#         logging.info("Processing " + label_dir + " to e2e format.")
+#         videos = []
+#         annotations = load_json(label_dir)
+#         labels = annotations["labels"]
+#         classes_by_label_dir.append(labels)
+#         videos = annotations["videos"]
+#         for video in tqdm.tqdm(videos):
+#             if "annotations" in video.keys():
+#                 video_annotations = video["annotations"]
+#             else:
+#                 video_annotations = []
+
+#             num_events = 0
+
+#             vc = cv2.VideoCapture(os.path.join(video_dir, video["path"]))
+#             width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
+#             height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
+#             fps = vc.get(cv2.CAP_PROP_FPS)
+#             num_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
+
+#             sample_fps = read_fps(fps, extract_fps if extract_fps < fps else fps)
+#             num_frames_after = get_num_frames(
+#                 num_frames, fps, extract_fps if extract_fps < fps else fps
+#             )
+
+#             if dali:
+#                 if get_stride(
+#                     fps, extract_fps if extract_fps < fps else fps
+#                 ) != get_stride(input_fps, extract_fps):
+#                     sample_fps = fps / get_stride(input_fps, extract_fps)
+#                     num_frames_dali = math.ceil(
+#                         num_frames / get_stride(input_fps, extract_fps)
+#                     )
+#                 else:
+#                     num_frames_dali = num_frames_after
+
+#             # video_id = os.path.splitext(video["path"])[0]
+#             video_id = os.path.join(video_dir, video["path"])
+
+#             events = []
+#             for annotation in video_annotations:
+#                 if dali:
+#                     if get_stride(
+#                         fps, extract_fps if extract_fps < fps else fps
+#                     ) != get_stride(input_fps, extract_fps):
+#                         adj_frame = (
+#                             float(annotation["position"])
+#                             / 1000
+#                             * (fps / get_stride(input_fps, extract_fps))
+#                         )
+#                     else:
+#                         adj_frame = float(annotation["position"]) / 1000 * sample_fps
+#                     if int(adj_frame) == 0:
+#                         adj_frame = 1
+#                 else:
+#                     adj_frame = float(annotation["position"]) / 1000 * sample_fps
+#                 events.append(
+#                     {
+#                         "frame": int(adj_frame),
+#                         "label": annotation["label"],
+#                         "team": annotation["team"],
+#                         "visibility": annotation["visibility"],
+#                     }
+#                 )
+
+#             num_events += len(events)
+#             events.sort(key=lambda x: x["frame"])
+
+#             labels_e2e.append(
+#                 {
+#                     "events": events,
+#                     "fps": sample_fps,
+#                     "num_frames": num_frames_dali if dali else num_frames_after,
+#                     "num_frames_base": num_frames,
+#                     "num_events": len(events),
+#                     "width": width,
+#                     "height": height,
+#                     "video": video_id,
+#                     "path": video["path"],
+#                 }
+#             )
+#         assert len(video_annotations) == num_events
+#     classes = classes_by_label_dir[0]
+#     for classes_tmp in classes_by_label_dir:
+#         assert classes == classes_tmp
+#     labels_e2e.sort(key=lambda x: x["video"])
+#     return labels_e2e
 
 def construct_labels(path, extract_fps):
     """This method is used when the input of the dataset is a video file instead of a json file.
@@ -305,8 +425,10 @@ def check_config(cfg):
             and cfg.DATA.test.path.endswith(".json")
             and "labels" in load_json(cfg.DATA.test.path).keys()
         ):
-            classes = load_json(cfg.DATA.test.path)["labels"]
+            classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:
             assert isinstance(cfg.DATA.classes, (list, ListConfig))
             classes = cfg.DATA.classes
+        
+        print(classes)
         cfg.DATA.classes = load_classes(classes)

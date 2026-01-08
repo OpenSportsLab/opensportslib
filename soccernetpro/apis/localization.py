@@ -13,6 +13,7 @@ class LocalizationAPI:
             raise ValueError("config path is required")
 
         # Load config
+        ### load data_dor first then do load config with omega to resolve $paths
         config_path = expand(config)
         self.config = load_config_omega(config_path)
         check_config(self.config)

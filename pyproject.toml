@@ -31,4 +31,4 @@ packages = { find = {} }
 
 [tool.setuptools.package-data]
 # include YAML configs and JSON files inside the package
-soccernetpro = ["config/*.yaml"]
+soccernetpro = ["soccernetpro/config/*.yaml"]

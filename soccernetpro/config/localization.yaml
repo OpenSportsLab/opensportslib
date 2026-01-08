@@ -4,25 +4,20 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/SoccerNet/spotting-OSL/224p/
+  data_dir: /home/vorajv/SoccerNet/spotting-OSL/annotations/
   classes:
-    - Ball out of play
-    - Clearance
-    - Corner
-    - Direct free-kick
-    - Foul
-    - Goal
-    - Indirect free-kick
-    - Kick-off
-    - Offside
-    - Penalty
-    - Red card
-    - Shots off target
-    - Shots on target
-    - Substitution
-    - Throw-in
-    - Yellow card
-    - Yellow->red card
+    - PASS
+    - DRIVE
+    - HEADER
+    - HIGH PASS
+    - OUT
+    - CROSS
+    - THROW IN
+    - SHOT
+    - BALL PLAYER BLOCK
+    - PLAYER SUCCESSFUL TACKLE
+    - FREE KICK
+    - GOAL
 
   epoch_num_frames: 500000
   mixup: true
@@ -41,8 +36,8 @@ DATA:
     type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.train.video_path}/annotations.json
+    video_path: ${DATA.data_dir}/train/
+    path: ${DATA.train.video_path}/annotations-train.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -52,7 +47,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations.json
+    path: ${DATA.valid.video_path}/annotations-valid.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -62,7 +57,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations.json
+    path: ${DATA.valid.video_path}/annotations-valid.json
     overlap_len: 0
     dataloader:
       batch_size: 4
@@ -73,7 +68,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations.json
+    path: ${DATA.test.video_path}/annotations-test.json
     results: results_spotting_test
     nms_window: 2
     metric: loose
