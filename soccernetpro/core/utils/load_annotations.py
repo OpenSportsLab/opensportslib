@@ -138,7 +138,9 @@ def annotationstoe2eformat(
         annotations = load_json(label_path)
 
         # ---- Extract class list (ball_action) ----
-        labels = annotations["labels"]["action"]["labels"]
+        for task_name, task_data in annotations["labels"].items():
+            labels = task_data.get("labels", {})
+
         classes_by_label_dir.append(labels)
 
         # ---- Iterate videos ----
@@ -146,9 +148,11 @@ def annotationstoe2eformat(
 
         for video in tqdm.tqdm(videos):
             # ---- Video path & metadata ----
-            video_path = video["inputs"][0]["path"]
+            video_path = video["inputs"][0]["path"].replace(" ", "_")
+            #game_dir  = os.path.dirname(video_path)
+            #game_name = os.path.basename(video_path)
             full_video_path = os.path.join(video_dir, video_path)
-
+            assert os.path.isfile(full_video_path), full_video_path
             vc = cv2.VideoCapture(full_video_path)
             width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))

@@ -303,7 +303,7 @@ class DaliDataSet(DALIGenericIterator):
         file_list_txt = ""
         for index, video in enumerate(self._labels):
             video_path = video["video"]
-            print(video_path)
+            print("video_path :", video_path)
             # video_path = os.path.join(video_dir, video["video"] + extension)
             for _ in range(nb_clips_per_video):
                 #print(video["num_frames"], (clip_len + 1))
