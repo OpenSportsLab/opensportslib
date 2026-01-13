@@ -429,7 +429,9 @@ def check_config(cfg):
             and cfg.DATA.test.path.endswith(".json")
             and "labels" in load_json(cfg.DATA.test.path).keys()
         ):
-            classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
+            for task_name, task_data in load_json(cfg.DATA.test.path)["labels"].items():
+                classes = task_data.get("labels", {})
+            #classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:
             assert isinstance(cfg.DATA.classes, (list, ListConfig))
             classes = cfg.DATA.classes

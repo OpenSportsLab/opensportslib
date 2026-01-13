@@ -4,7 +4,7 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/SoccerNet/spotting-OSL/annotations/
+  data_dir: /home/vorajv/soccernetpro/SoccerNet/annotations/
   classes:
     - PASS
     - DRIVE
@@ -39,7 +39,7 @@ DATA:
     video_path: ${DATA.data_dir}/train/
     path: ${DATA.train.video_path}/annotations-train.json
     dataloader:
-      batch_size: 8
+      batch_size: 4
       shuffle: true
 
   valid:
@@ -49,7 +49,7 @@ DATA:
     video_path: ${DATA.data_dir}/valid/
     path: ${DATA.valid.video_path}/annotations-valid.json
     dataloader:
-      batch_size: 8
+      batch_size: 4
       shuffle: true
 
   valid_data_frames:
@@ -60,7 +60,7 @@ DATA:
     path: ${DATA.valid.video_path}/annotations-valid.json
     overlap_len: 0
     dataloader:
-      batch_size: 4
+      batch_size: 2
       shuffle: false
 
   test:
@@ -74,7 +74,7 @@ DATA:
     metric: loose
     overlap_len: 50
     dataloader:
-      batch_size: 4
+      batch_size: 2
       shuffle: false
 
   challenge:
@@ -83,7 +83,7 @@ DATA:
     output_map: [data, label]
     path: ${DATA.data_dir}/challenge/annotations.json
     dataloader:
-      batch_size: 4
+      batch_size: 2
       shuffle: false
 
 MODEL:
@@ -96,8 +96,8 @@ MODEL:
       type: gru
     multi_gpu: false
     load_weights: null
-    save_dir: ./checkpoints"
-    work_dir: ${MODEL.save_dir}/localization/e2e/rny008_gsm/"
+    save_dir: ./checkpoints
+    work_dir: ${MODEL.save_dir}/localization/e2e/rny008_gsm/
 
 TRAIN:
   type: trainer_e2e
@@ -107,7 +107,7 @@ TRAIN:
   start_valid_epoch: null
   criterion_valid: map
   inference_batch_size: 4
-  GPU: 0
+  GPU: 2
 
   criterion:
     type: CrossEntropyLoss

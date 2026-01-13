@@ -23,7 +23,21 @@ class LocalizationAPI:
         # User controls model saving location (never use BASE_DIR)
         #self.save_dir = expand(save_dir or self.config.TRAIN.save_dir or "./checkpoints")
         #os.makedirs(self.save_dir, exist_ok=True)
+        log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
+        os.makedirs(log_dir, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)s | %(message)s",
+            handlers=[
+                logging.FileHandler(os.path.join(log_dir, "train.log")),
+                logging.StreamHandler(),  # still prints to console
+            ],
+        )
 
+        logger = logging.getLogger(__name__)
+        logger.info("Configuration:")
+        logger.info(self.config)
+        print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("Classes :", self.config.DATA.classes)
         #print("MODEL SAVEDIR:", self.save_dir)

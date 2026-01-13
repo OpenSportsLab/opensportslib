@@ -274,6 +274,9 @@ class Trainer_e2e(Trainer):
             print(
                 f"[Epoch {epoch+1}/{self.num_epochs}] Train loss: {train_loss:.5f} Valid loss: {valid_loss:.5f}"
             )
+            logger.info(
+                f"[Epoch {epoch+1}/{self.num_epochs}] Train loss: {train_loss:.5f} Valid loss: {valid_loss:.5f}"
+            )
 
             valid_mAP = 0
             is_best = False
