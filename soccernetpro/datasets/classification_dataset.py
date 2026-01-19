@@ -9,7 +9,7 @@ class ClassificationDataset(Dataset):
     def __init__(self, config, annotations_path, processor, split="train"):
         self.config = config
         self.split = split
-        self.samples = load_annotations(annotations_path)
+        self.samples = load_annotations(annotations_path, exclude_labels=["Unknown", "Dont know"])
         # print(self.samples)
         #self.HOME_DIR = os.path.dirname(annotations_path)
         self.processor = processor

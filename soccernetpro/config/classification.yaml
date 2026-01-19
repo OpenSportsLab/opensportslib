@@ -36,7 +36,7 @@ MODEL:
   type: huggingface
   backbone: video_mae
   pretrained_model: MCG-NJU/videomae-base
-  num_classes: 9
+  num_classes: 8
   unfreeze_head: true
   unfreeze_last_n_layers: 3
     

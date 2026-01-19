@@ -8,13 +8,14 @@ import torch
 from soccernetpro.core.utils.video_processing import get_stride, read_fps, get_num_frames
 from soccernetpro.core.utils.config import load_json
 
-def load_annotations(annotations_path,task_key="action", exclude_labels=["", "Challenge"]):
+def load_annotations(annotations_path, task_key="action", exclude_labels=[""]):
     
     with open(annotations_path, "r") as f:
         data = json.load(f)
 
     # Excluding some labels
-    exclude_labels = set(exclude_labels or ["", "Challenge"])
+    exclude_labels = set(exclude_labels or [""])
+    print(exclude_labels)
 
     # label list for the selected task
     label_list = [
