@@ -7,38 +7,46 @@ import math
 import torch
 from soccernetpro.core.utils.video_processing import get_stride, read_fps, get_num_frames
 from soccernetpro.core.utils.config import load_json
+from collections import defaultdict
 
-def load_annotations(annotations_path, task_key="action", exclude_labels=[""]):
-    
+def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=True):
+
     with open(annotations_path, "r") as f:
         data = json.load(f)
 
-    # Excluding some labels
     exclude_labels = set(exclude_labels or [""])
-    print(exclude_labels)
 
-    # label list for the selected task
+    # Label list for the selected task
     label_list = [
         lbl for lbl in data["labels"][task_key]["labels"]
         if lbl not in exclude_labels
     ]
     label_map = {name: idx for idx, name in enumerate(label_list)}
-    print(label_list, label_map)
-    samples = []
+
+    # Group by action id (without view suffix)
+    grouped = defaultdict(lambda: {
+        "video_paths": [],
+        "label": None
+    })
 
     for item in data["data"]:
-        # read the action label
         action_label = item["labels"][task_key]["label"]
 
         if action_label in exclude_labels:
             continue
-        
         if action_label not in label_map:
             continue
 
         label_idx = label_map[action_label]
 
-        # Collect all clip paths
+        # Extract group key
+        item_id = item["id"]
+        if multiview and "_view" in item_id:
+            group_id = item_id.rsplit("_view", 1)[0]
+        else:
+            group_id = item_id
+
+        # Collect clips
         clips = [
             inp["path"]
             for inp in item.get("inputs", [])
@@ -47,12 +55,10 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""]):
         if not clips:
             continue
 
-        samples.append({
-            "video_paths": clips,   # supports multi-view automatically
-            "label": label_idx,
-        })
+        grouped[group_id]["video_paths"].extend(clips)
+        grouped[group_id]["label"] = label_idx
 
-    return samples
+    return list(grouped.values())
 
 
 def load_annotations_(annotations_path, exclude_labels=None):

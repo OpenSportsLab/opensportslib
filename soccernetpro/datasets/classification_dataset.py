@@ -10,7 +10,7 @@ class ClassificationDataset(Dataset):
         self.config = config
         self.split = split
         self.samples = load_annotations(annotations_path, exclude_labels=["Unknown", "Dont know"])
-        # print(self.samples)
+        #print(self.samples)
         #self.HOME_DIR = os.path.dirname(annotations_path)
         self.processor = processor
         #print(processor.do_normalize)  # should be True
