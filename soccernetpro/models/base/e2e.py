@@ -201,7 +201,7 @@ class E2EModel(BaseRGBModel):
 
                     for i in range(pred.shape[0]):
                         loss += self.criterion(
-                            label, pred[i].reshape(-1, self._num_classes), **ce_kwargs
+                            pred[i].reshape(-1, self._num_classes), label, **ce_kwargs
                         )
                         # loss += F.cross_entropy(
                         #     pred[i].reshape(-1, self._num_classes), label,

@@ -24,4 +24,4 @@ class MVNetwork(torch.nn.Module):
 
     def forward(self, mvimages):
         features, attention = self.mvaggregate(mvimages)
-        return self.head(features)
+        return self.head(features), attention

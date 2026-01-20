@@ -30,7 +30,7 @@ DATA:
     random_crop: false
   num_workers: 1
   train_batch_size: 8
-  valid_batch_size: 4
+  valid_batch_size: 1
 
 MODEL:
   type: custom # huggingface, custom 
@@ -49,7 +49,8 @@ MODEL:
 
 TRAIN:
   enabled: true
-  use_weighted_sampler: true
+  use_weighted_sampler: false
+  use_weighted_loss: true
   epochs: 20 #20
   head_lr: 0.001
   backbone_lr: 0.00005
@@ -57,6 +58,22 @@ TRAIN:
   save_dir: ./checkpoints
   log_interval: 10
   save_every: 5
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamW
+    lr: 0.0001  #0.001
+    betas: [0.9, 0.999]
+    eps: 0.0000001
+    weight_decay: 0.001
+    amsgrad: false
+  
+  scheduler:
+    type: StepLR
+    step_size: 3
+    gamma: 0.1
 
 SYSTEM:
   log_dir: ./logs

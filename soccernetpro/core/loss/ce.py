@@ -8,7 +8,7 @@ class CELoss(torch.nn.Module):
     def __init__(self):
         super(CELoss, self).__init__()
 
-    def forward(self, labels, output, **ce_kwargs):
+    def forward(self, output, labels, **ce_kwargs):
         """Forward function.
 
         Args:

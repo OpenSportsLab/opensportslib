@@ -320,6 +320,7 @@ def get_transforms_model(pre_model):
     from torchvision.models.video import R2Plus1D_18_Weights, S3D_Weights
     from torchvision.models.video import MViT_V2_S_Weights, MViT_V1_B_Weights
     from torchvision.models.video import mvit_v2_s, MViT_V2_S_Weights, mvit_v1_b, MViT_V1_B_Weights
+    
     if pre_model == "r3d_18":
         transforms_model = R3D_18_Weights.KINETICS400_V1.transforms()        
     elif pre_model == "s3d":

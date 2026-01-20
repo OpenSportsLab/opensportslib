@@ -16,14 +16,23 @@ def build_optimizer(parameters, cfg, default_args=None):
         optimizer = torch.optim.Adam(
             parameters,
             lr=cfg.lr,
-            betas=cfg.betas,
+            betas=tuple(cfg.betas),
             eps=cfg.eps,
             weight_decay=cfg.weight_decay,
             amsgrad=cfg.amsgrad,
         )
-    if cfg.type == "AdamWithScaler":
+    elif cfg.type == "AdamWithScaler":
         optimizer = (
             torch.optim.AdamW(parameters, lr=cfg.learning_rate),
             torch.cuda.amp.GradScaler(),
+        )
+    elif cfg.type == "AdamW":
+        optimizer = torch.optim.AdamW(
+            parameters,
+            lr=cfg.lr,
+            betas=tuple(cfg.betas),
+            eps=cfg.eps,
+            weight_decay=cfg.weight_decay,
+            amsgrad=cfg.amsgrad,
         )
     return optimizer

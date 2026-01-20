@@ -68,6 +68,8 @@ def build_scheduler(optimizer, cfg, default_args=None):
                 cfg.warm_up_epochs, cosine_epochs
             )
         )
+    elif cfg.type == "StepLR":
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=cfg.step_size, gamma=cfg.gamma)
     else:
         scheduler = None
     return scheduler

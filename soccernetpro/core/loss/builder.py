@@ -35,6 +35,6 @@ def build_criterion(cfg, default_args=None):
 
     elif cfg.type == "CrossEntropyLoss":
         criterion = CELoss()
-    # else:
-    #     criterion = None
+    else:
+        criterion = None
     return criterion

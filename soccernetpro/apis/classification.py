@@ -26,7 +26,7 @@ class ClassificationAPI:
         self.trainer = Trainer_Classification(self.config)
 
 
-    def train(self, train_set=None, valid_set=None, pretrained=None):
+    def train(self, train_set=None, valid_set=None, test_set=None, pretrained=None):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
 
@@ -40,27 +40,35 @@ class ClassificationAPI:
         # Expand annotation paths (user or config)
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
+        test_set = expand(test_set or self.config.DATA.annotations.test)
 
         # Datasets
         train_data = build_dataset(self.config, train_set, self.processor, split="train")
         print(f"Train Dataset length: {len(train_data)}")
         frames= train_data[0]
-        print(f"Frames shape: {frames['videos'].shape}")  # 
+        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
         print(f"Label: {frames['labels']}")
 
         valid_data = build_dataset(self.config, valid_set, self.processor, split="valid")
         print(f"Valid Dataset length: {len(valid_data)}")
         frames = valid_data[0]
-        print(f"Frames shape: {frames['videos'].shape}")  # 
+        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
         print(f"Label: {frames['labels']}")
 
+        test_data = build_dataset(self.config, test_set, self.processor, split="test")
+        print(f"Test Dataset length: {len(test_data)}")
+        frames = test_data[0]
+        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
+        print(f"Label: {frames['labels']}")
+
+        
         # Train
-        self.trainer.train(self.model, train_data, valid_data)
+        self.trainer.train(self.model, train_data, valid_data, test_data)
 
         # Save in user-controlled location
-        save_path = os.path.join(self.save_dir, "final_model")
-        self.trainer.save(self.model, save_path, self.processor)
-        print("Model saved at:", save_path)
+        #save_path = os.path.join(self.save_dir, "final_model")
+        #self.trainer.save(self.model, save_path, self.processor)
+        #print("Model saved at:", save_path)
 
 
     def infer(self, test_set=None, pretrained=None):
@@ -71,7 +79,7 @@ class ClassificationAPI:
         if pretrained:
             self.model, self.processor, _ = self.trainer.load(expand(pretrained))
 
-        test_set = expand(test_set or self.config.DATA.annotations.valid)
+        test_set = expand(test_set or self.config.DATA.annotations.test)
         test_data = build_dataset(self.config, test_set, self.processor, split="test")
 
         preds, metrics = self.trainer.infer(test_data)

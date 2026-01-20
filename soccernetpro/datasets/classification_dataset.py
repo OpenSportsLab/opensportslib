@@ -1,6 +1,7 @@
 import os
 import torch
 import random
+import numpy as np
 from torch.utils.data import Dataset
 from soccernetpro.core.utils.video_processing import *
 from soccernetpro.core.utils.load_annotations import load_annotations
@@ -28,6 +29,30 @@ class ClassificationDataset(Dataset):
         class_weights = 1.0 / class_counts.float()
         sample_weights = torch.tensor([class_weights[label] for label in labels], dtype=torch.float)
         return sample_weights
+
+    def get_class_weights(self, num_classes=None, normalize=True, sqrt=False):
+    
+        labels = torch.tensor([item["label"] for item in self.samples])
+
+        if num_classes is None:
+            num_classes = int(labels.max().item() + 1)
+
+        # Count samples per class
+        counts = torch.bincount(labels, minlength=num_classes).float()
+
+        # Avoid division by zero
+        counts[counts == 0] = 1.0
+
+        if sqrt:
+            weights = 1.0 / torch.sqrt(counts)
+        else:
+            weights = 1.0 / counts
+
+        if normalize:
+            weights = weights / weights.sum() * num_classes
+
+        return weights
+
         
     def _select_views(self, video_paths):
         if self.view_type == "single":
@@ -88,20 +113,19 @@ class ClassificationDataset(Dataset):
             view_tensors=[]
             for path in selected_paths:
                 v = self._load_and_sample_clip(path)
-
+                
                 # (T, H, W, C) → (T, C, H, W)
                 v = torch.from_numpy(v).permute(0, 3, 1, 2)
 
-                v = get_transforms_model(self.config.MODEL.pretrained_model)(v)
                 # (T, C, H, W) → (C, T, H, W)
-                v = v.permute(1, 0, 2, 3)
+                v_t = get_transforms_model(self.config.MODEL.pretrained_model)(v)
 
-                view_tensors.append(v)
+                view_tensors.append(v_t)
 
             # Stack → (V, C, T, H, W)
             videos = torch.stack(view_tensors, dim=0)
-            print("VIDEOS:", videos.shape)
-            return {"videos": videos, "labels": label}
+            #print("VIDEOS:", videos.shape)
+            return {"pixel_values": videos, "labels": label}
 
 
 
