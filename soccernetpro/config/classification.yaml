@@ -33,15 +33,15 @@ DATA:
   valid_batch_size: 4
 
 MODEL:
-  type: custom # huggingface or custom 
+  type: custom # huggingface, custom 
   backbone: 
-    type: mvit_v2_s
+    type: mvit_v2_s # video_mae, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
   neck:
     type: MV_Aggregate
     agr_type: max   # max, mean, avg
   head: 
     type: MV_LinearLayer
-  pretrained_model: mvit_v2_s
+  pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
   num_classes: 8
   unfreeze_head: true
   unfreeze_last_n_layers: 3
