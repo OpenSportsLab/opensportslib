@@ -36,6 +36,7 @@ class ClassificationAPI:
         else:
             self.model, self.processor = build_model(self.config, self.trainer.device)
 
+
         # Expand annotation paths (user or config)
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
@@ -44,13 +45,13 @@ class ClassificationAPI:
         train_data = build_dataset(self.config, train_set, self.processor, split="train")
         print(f"Train Dataset length: {len(train_data)}")
         frames= train_data[0]
-        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
+        print(f"Frames shape: {frames['videos'].shape}")  # 
         print(f"Label: {frames['labels']}")
 
         valid_data = build_dataset(self.config, valid_set, self.processor, split="valid")
         print(f"Valid Dataset length: {len(valid_data)}")
         frames = valid_data[0]
-        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
+        print(f"Frames shape: {frames['videos'].shape}")  # 
         print(f"Label: {frames['labels']}")
 
         # Train

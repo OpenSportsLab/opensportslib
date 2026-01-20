@@ -3,7 +3,7 @@ TASK: classification
 DATA:
   dataset_name: mvfouls
   data_dir: mvfouls
-  view_type: single
+  view_type: multi  # multi or single
   annotations:
     train: annotations_train.json
     valid: annotations_valid.json
@@ -33,9 +33,15 @@ DATA:
   valid_batch_size: 4
 
 MODEL:
-  type: huggingface
-  backbone: video_mae
-  pretrained_model: MCG-NJU/videomae-base
+  type: custom # huggingface or custom 
+  backbone: 
+    type: mvit_v2_s
+  neck:
+    type: MV_Aggregate
+    agr_type: max   # max, mean, avg
+  head: 
+    type: MV_LinearLayer
+  pretrained_model: mvit_v2_s
   num_classes: 8
   unfreeze_head: true
   unfreeze_last_n_layers: 3

@@ -72,6 +72,8 @@ def build_backbone(cfg, default_args=None):
         backbone = ConvNextTinyExtractFeatures(
             cfg.type, cfg.clip_len, cfg.is_rgb, cfg.in_channels
         )
+    elif cfg.type in ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]:
+        backbone = TorchvisionVideoExtractFeatures(cfg.type)
     else:
         backbone = None
 
@@ -272,3 +274,47 @@ class PreExtactedFeatures(torch.nn.Module):
                 inputs = self.feature_extractor(inputs)
                 inputs = inputs.reshape(BS, FR, -1)
         return inputs
+
+
+class TorchvisionVideoExtractFeatures(nn.Module):
+
+    def __init__(self, name):
+        super().__init__()
+        from torchvision.models.video import r3d_18, R3D_18_Weights, MC3_18_Weights, mc3_18
+        from torchvision.models.video import r2plus1d_18, R2Plus1D_18_Weights, s3d, S3D_Weights
+        from torchvision.models.video import mvit_v2_s, MViT_V2_S_Weights, mvit_v1_b, MViT_V1_B_Weights
+
+        self.name = name
+        print("Building Torchvision Video Backbone:", name)
+        if name == "r3d_18":
+            weights = R3D_18_Weights.DEFAULT
+            model = r3d_18(weights=weights)
+            self.feat_dim = 512
+        elif name == "mc3_18":
+            weights = MC3_18_Weights.DEFAULT
+            model = mc3_18(weights=weights)
+            self.feat_dim = 512
+        elif name == "r2plus1d_18":
+            weights = R2Plus1D_18_Weights.DEFAULT
+            model = r2plus1d_18(weights=weights)
+            self.feat_dim = 512
+        elif name == "s3d":
+            weights = S3D_Weights.DEFAULT
+            model = s3d(weights=weights)
+            self.feat_dim = 400
+        elif name == "mvit_v2_s":
+            weights = MViT_V2_S_Weights.DEFAULT
+            model = mvit_v2_s(weights=weights)
+            self.feat_dim = 400
+        else:
+            raise ValueError(f"Unknown backbone {name}")
+
+        # Remove classification head → feature extractor
+        model.fc = nn.Sequential()
+        self.model = model
+
+    def forward(self, x):
+        # x: (B, C, T, H, W) or (C, T, H, W)
+        if x.dim() == 4:
+            x = x.unsqueeze(0)
+        return self.model(x)

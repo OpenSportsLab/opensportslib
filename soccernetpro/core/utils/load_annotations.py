@@ -9,7 +9,7 @@ from soccernetpro.core.utils.video_processing import get_stride, read_fps, get_n
 from soccernetpro.core.utils.config import load_json
 from collections import defaultdict
 
-def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=True):
+def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False):
 
     with open(annotations_path, "r") as f:
         data = json.load(f)

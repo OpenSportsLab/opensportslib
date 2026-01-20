@@ -97,6 +97,8 @@ class Trainer_Classification:
             #############
         # wandb.finish()
 
+
+
     def infer(self, test_dataset):
         if self.config.MODEL.type == "huggingface":
 

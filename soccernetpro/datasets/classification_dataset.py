@@ -9,7 +9,9 @@ class ClassificationDataset(Dataset):
     def __init__(self, config, annotations_path, processor, split="train"):
         self.config = config
         self.split = split
-        self.samples = load_annotations(annotations_path, exclude_labels=["Unknown", "Dont know"])
+        self.samples = load_annotations(annotations_path, 
+                                        exclude_labels=["Unknown", "Dont know"], 
+                                        multiview=config.DATA.view_type == "multi")
         #print(self.samples)
         #self.HOME_DIR = os.path.dirname(annotations_path)
         self.processor = processor
@@ -19,60 +21,6 @@ class ClassificationDataset(Dataset):
         self.num_frames = config.DATA.num_frames
         self.input_fps = config.DATA.input_fps
         self.transform = build_transform(config, mode=self.split)
-        
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        item = self.samples[idx]
-        clip_tensors = []
-        video_paths = item["video_paths"]
-        # --- Choose which clips to load ---
-        if len(video_paths) == 0:
-            raise ValueError(f"No video paths found for item {idx}")
-    
-        elif self.view_type=="single":
-            # Single-camera: use as is
-            selected_paths = [video_paths[0]]
-    
-        else:
-            if self.view_type=="multiple":
-                # Multi-camera: always include main (first), randomly pick 1 extra
-                selected_paths = [video_paths[0]]
-                remaining = video_paths[1:]
-                if len(remaining) > 0:
-                    extra = random.choice(remaining)
-                    selected_paths.append(extra)
-        
-        
-        # --- Load and process frames for selected clips ---
-        for path in selected_paths:
-            v = read_video(os.path.join(self.config.DATA.data_dir, path))  # -> list or tensor of frames
-            v = process_frames(v, self.num_frames, self.input_fps, self.config.DATA.target_fps, start_frame=self.config.DATA.start_frame, end_frame=self.config.DATA.end_frame)
-            
-            #print(v.shape)
-
-            # ensure numpy clip
-            if isinstance(v, list):
-                v = np.stack(v)  # (T, H, W, C), uint8
-
-            # clip-level augmentation (optional)
-            if self.transform is not None:
-                v = self.transform(v) # (T, H, W, C), uint8
-
-            # convert clip -> list of frames
-            v = list(v)   # each element is (H, W, C)
-            
-            if self.config.MODEL.type == "huggingface":
-                #print(type(v), v)
-                v = self.processor(v, return_tensors="pt")#, do_rescale=False) 
-                pixel_values = v["pixel_values"].float()
-                pixel_values = pixel_values.squeeze(0)
-                label = torch.tensor(item["label"], dtype=torch.long)
-                output = {"pixel_values": pixel_values, "labels": label}
-
-        return output
 
     def get_sample_weights(self):
         labels = [item["label"] for item in self.samples]
@@ -80,6 +28,83 @@ class ClassificationDataset(Dataset):
         class_weights = 1.0 / class_counts.float()
         sample_weights = torch.tensor([class_weights[label] for label in labels], dtype=torch.float)
         return sample_weights
+        
+    def _select_views(self, video_paths):
+        if self.view_type == "single":
+            return [video_paths[0]]
+
+        if self.split.lower() == "train" and self.view_type == "multi":
+            return random.sample(video_paths, min(2, len(video_paths)))
+
+        return video_paths
+
+    def _load_and_sample_clip(self, path):
+        v = read_video(os.path.join(self.config.DATA.data_dir, path))
+
+        v = process_frames(
+            v,
+            self.num_frames,
+            self.input_fps,
+            self.config.DATA.target_fps,
+            start_frame=self.config.DATA.start_frame,
+            end_frame=self.config.DATA.end_frame
+        )
+
+        if isinstance(v, list):
+            v = np.stack(v)  # (T, H, W, C)
+
+        if self.transform is not None:
+            v = self.transform(v)
+
+        return v  # (T, H, W, C)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        label = torch.tensor(item["label"], dtype=torch.long)
+        video_paths = item["video_paths"]
+        # --- Choose which clips to load ---
+        if not video_paths:
+            raise ValueError(f"No video paths found for item {idx}")
+    
+        selected_paths = self._select_views(video_paths)
+        
+        # --- Load and process frames for selected clips ---
+        if self.config.MODEL.type == "huggingface":
+            path = selected_paths[0]
+            v = self._load_and_sample_clip(path)
+            # convert clip -> list of frames
+            v = list(v)   # each element is (H, W, C)
+        
+            #print(type(v), v)
+            v = self.processor(v, return_tensors="pt")#, do_rescale=False) 
+            pixel_values = v["pixel_values"].float()
+            pixel_values = pixel_values.squeeze(0)
+            return {"pixel_values": pixel_values, "labels": label}
+        
+        else:
+            view_tensors=[]
+            for path in selected_paths:
+                v = self._load_and_sample_clip(path)
+
+                # (T, H, W, C) → (T, C, H, W)
+                v = torch.from_numpy(v).permute(0, 3, 1, 2)
+
+                v = get_transforms_model(self.config.MODEL.pretrained_model)(v)
+                # (T, C, H, W) → (C, T, H, W)
+                v = v.permute(1, 0, 2, 3)
+
+                view_tensors.append(v)
+
+            # Stack → (V, C, T, H, W)
+            videos = torch.stack(view_tensors, dim=0)
+            print("VIDEOS:", videos.shape)
+            return {"videos": videos, "labels": label}
+
+
+
 
         # # --- Load and process frames for selected clips ---
         # for path in selected_paths:

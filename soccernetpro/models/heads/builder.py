@@ -56,12 +56,28 @@ def build_head(cfg, default_args=None):
         )
     elif cfg.type in ["", "gru", "deeper_gru", "mstcn", "asformer"]:
         head = TemporalE2EHead(cfg.type, cfg.feat_dim, cfg.num_classes)
+    elif cfg.type == "MV_LinearLayer":
+        head = MVHead(input_dim=cfg.feat_dim, output_dim=cfg.num_classes)
     else:
         head = None
 
     return head
 
 
+class MVHead(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        print("Inside MVHead")
+        self.fc = nn.Sequential(
+            nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, input_dim),
+            nn.Linear(input_dim, output_dim)
+        )
+
+    def forward(self, x):
+        pred = self.fc(x)
+        return pred
+    
 class TemporalE2EHead(nn.Module):
     def __init__(self, temporal_arch, feat_dim, num_classes):
         super().__init__()
