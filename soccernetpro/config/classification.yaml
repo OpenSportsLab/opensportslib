@@ -77,6 +77,6 @@ TRAIN:
 SYSTEM:
   log_dir: ./logs
   seed: 42
-  device: auto   # auto | cuda | cpu
+  device: cuda   # auto | cuda | cpu
   gpu_id: 1
 
