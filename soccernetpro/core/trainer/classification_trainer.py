@@ -7,6 +7,7 @@ import json
 import gc
 import logging
 import tqdm
+import time
 from torch.utils.data import DataLoader
 from transformers import Trainer as HFTrainer, TrainingArguments
 from soccernetpro.metrics.classification_metric import compute_classification_metrics, process_preds_labels
@@ -47,14 +48,11 @@ class MVTrainerClassification:
         self.class_weights = class_weights
         self.class_names = class_names
 
-        self.save_dir = os.path.join(save_dir, model_name)
         self.model_name = model_name
         self.max_epochs = max_epochs
         self.device = device
         self.top_k = top_k
         self.log_attention = log_attention
-
-        os.makedirs(self.save_dir, exist_ok=True)
 
         # ---------------- W&B INIT ----------------
         self.wandb_run = wandb.init(
@@ -63,6 +61,10 @@ class MVTrainerClassification:
             config=wandb_config,
             reinit=True
         )
+
+        run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
+        self.save_dir = os.path.join(save_dir, model_name, run_id)
+        os.makedirs(self.save_dir, exist_ok=True)
 
         try:
             wandb.watch(self.model, log="gradients", log_freq=100)
