@@ -54,7 +54,7 @@ TRAIN:
   epochs: 20 #20
   save_dir: ./checkpoints
   log_interval: 10
-  save_every: 5
+  save_every: 2 #5
 
   criterion:
     type: CrossEntropyLoss

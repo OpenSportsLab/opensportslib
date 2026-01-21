@@ -90,12 +90,15 @@ class MVTrainerClassification:
             pbar.close()
 
             # ---------------- VALID ----------------
+            pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True)
             _, val_loss, val_metrics = self._run_epoch(
                 self.val_loader,
                 epoch + 1,
                 train=False,
-                set_name="valid"
+                set_name="valid",
+                pbar=pbar
             )
+            pbar.close()
 
             # ---------------- SCHEDULER ----------------
             self.scheduler.step()
@@ -136,13 +139,15 @@ class MVTrainerClassification:
         If epoch is provided, logs under that epoch number.
         """
         print("\nRunning TEST evaluation")
-
+        pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True)
         _, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
             epoch if epoch is not None else "final",
             train=False,
-            set_name="test"
+            set_name="test",
+            pbar=pbar
         )
+        pbar.close()
 
         wandb.log({
             "test/loss": test_loss,
@@ -236,8 +241,8 @@ class MVTrainerClassification:
             #     logged_samples = True
 
             # -------- Attention Log --------
-            if attention is not None and set_name in ["valid", "test"]:
-                log_attention_wandb(attention, set_name)
+            # if attention is not None and set_name in ["valid", "test"]:
+            #     log_attention_wandb(attention, set_name)
 
         # -------- METRICS --------
         all_logits = torch.cat(all_logits, dim=0).numpy()
@@ -440,7 +445,7 @@ class Trainer_Classification:
                     },
                     log_attention=True
                 )
-            self.hf_trainer.train(epoch_start=self.epoch)
+            self.hf_trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
 
 
 
@@ -534,6 +539,9 @@ class Trainer_Classification:
             print(f"Model loaded from {path}")
             return self.model, processor, scheduler, epoch
         else:
+            from soccernetpro.models.builder import build_model
+            if self.model is None:
+                self.model, _ = build_model(self.config, self.device)
             self.model, optimizer, scheduler, epoch = load_checkpoint(
                 self.model, path, optimizer, scheduler, device=self.device
             )

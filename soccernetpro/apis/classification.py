@@ -66,11 +66,10 @@ class ClassificationAPI:
 
     def infer(self, test_set=None, pretrained=None):
         from soccernetpro.datasets.builder import build_dataset
-        from soccernetpro.models.builder import build_model
 
         # Load model
         if pretrained:
-            self.model, self.processor, _ = self.trainer.load(expand(pretrained))
+            self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
         test_data = build_dataset(self.config, test_set, self.processor, split="test")
