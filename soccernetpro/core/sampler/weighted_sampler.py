@@ -43,12 +43,12 @@ class WeightedTrainer(HFTrainer):
         model = self.model
 
         optimizer_grouped_parameters = []
-        print("Weighted trainer ", self.config.TRAIN.head_lr, self.config.TRAIN.backbone_lr)
+        print("Weighted trainer ", self.config.TRAIN.optimizer.head_lr, self.config.TRAIN.optimizer.backbone_lr)
         # ---- Classifier head ----
         if self.config.MODEL.unfreeze_head:
             optimizer_grouped_parameters.append({
                 "params": model.classifier.parameters(),
-                "lr": self.config.TRAIN.head_lr,
+                "lr": self.config.TRAIN.optimizer.head_lr,
             })
 
         # ---- Backbone (last N layers) ----
@@ -56,12 +56,12 @@ class WeightedTrainer(HFTrainer):
         if n > 0:
             optimizer_grouped_parameters.append({
                 "params": model.videomae.encoder.layer[-n:].parameters(),
-                "lr": self.config.TRAIN.backbone_lr,
+                "lr": self.config.TRAIN.optimizer.backbone_lr,
             })
 
         self.optimizer = torch.optim.AdamW(
             optimizer_grouped_parameters,
-            weight_decay=self.config.TRAIN.weight_decay,
+            weight_decay=self.config.TRAIN.optimizer.weight_decay,
         )
 
         return self.optimizer
@@ -79,12 +79,12 @@ class VideoMAETrainer(HFTrainer):
         model = self.model
 
         optimizer_grouped_parameters = []
-        print(type(self.config.TRAIN.head_lr), type(self.config.TRAIN.backbone_lr))
+        print(type(self.config.TRAIN.optimizer.head_lr), type(self.config.TRAIN.optimizer.backbone_lr))
         # ---- Classifier head ----
         if self.config.MODEL.unfreeze_head:
             optimizer_grouped_parameters.append({
                 "params": model.classifier.parameters(),
-                "lr": self.config.TRAIN.head_lr,
+                "lr": self.config.TRAIN.optimizer.head_lr,
             })
 
         # ---- Backbone (last N layers) ----
@@ -92,12 +92,12 @@ class VideoMAETrainer(HFTrainer):
         if n > 0:
             optimizer_grouped_parameters.append({
                 "params": model.videomae.encoder.layer[-n:].parameters(),
-                "lr": self.config.TRAIN.backbone_lr,
+                "lr": self.config.TRAIN.optimizer.backbone_lr,
             })
 
         self.optimizer = torch.optim.AdamW(
             optimizer_grouped_parameters,
-            weight_decay=self.config.TRAIN.weight_decay,
+            weight_decay=self.config.TRAIN.optimizer.weight_decay,
         )
 
         return self.optimizer

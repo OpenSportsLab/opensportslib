@@ -32,7 +32,7 @@ class ClassificationAPI:
 
         # Load model
         if pretrained:
-            self.model, self.processor, _ = self.trainer.load(expand(pretrained))
+            self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
         else:
             self.model, self.processor = build_model(self.config, self.trainer.device)
 
@@ -40,7 +40,6 @@ class ClassificationAPI:
         # Expand annotation paths (user or config)
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
-        test_set = expand(test_set or self.config.DATA.annotations.test)
 
         # Datasets
         train_data = build_dataset(self.config, train_set, self.processor, split="train")
@@ -55,15 +54,9 @@ class ClassificationAPI:
         print(f"Frames shape: {frames['pixel_values'].shape}")  # 
         print(f"Label: {frames['labels']}")
 
-        test_data = build_dataset(self.config, test_set, self.processor, split="test")
-        print(f"Test Dataset length: {len(test_data)}")
-        frames = test_data[0]
-        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
-        print(f"Label: {frames['labels']}")
-
         
         # Train
-        self.trainer.train(self.model, train_data, valid_data, test_data)
+        self.trainer.train(self.model, train_data, valid_data)
 
         # Save in user-controlled location
         #save_path = os.path.join(self.save_dir, "final_model")
@@ -82,6 +75,6 @@ class ClassificationAPI:
         test_set = expand(test_set or self.config.DATA.annotations.test)
         test_data = build_dataset(self.config, test_set, self.processor, split="test")
 
-        preds, metrics = self.trainer.infer(test_data)
+        metrics = self.trainer.infer(test_data)
         print(metrics)
         return metrics

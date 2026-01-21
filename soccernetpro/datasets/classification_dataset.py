@@ -10,7 +10,7 @@ class ClassificationDataset(Dataset):
     def __init__(self, config, annotations_path, processor, split="train"):
         self.config = config
         self.split = split
-        self.samples = load_annotations(annotations_path, 
+        self.samples, self.label_map = load_annotations(annotations_path, 
                                         exclude_labels=["Unknown", "Dont know"], 
                                         multiview=config.DATA.view_type == "multi")
         #print(self.samples)

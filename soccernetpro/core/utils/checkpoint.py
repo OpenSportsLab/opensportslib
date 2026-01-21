@@ -65,48 +65,74 @@ def save_checkpoint(model, path, processor=None, tokenizer=None, optimizer=None,
         print(f"[Checkpoint] Torch checkpoint saved at: {path}")
 
 
-def load_checkpoint(model, path, optimizer=None, device=None):
+def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None):
     """
-    Load model checkpoint (.pt or .pt.tar) safely.
+    Load model checkpoint (.pt / .pth / .tar) safely.
+
     Supports:
       - checkpoint["model_state_dict"]
       - checkpoint["state_dict"]
       - raw state_dict
+      - optimizer under:
+            "optimizer", "optimizer_state_dict"
+      - scheduler under:
+            "scheduler", "scheduler_state_dict"
       - DDP "module." prefixes
+
+    Returns:
+        model, optimizer, scheduler, epoch
     """
+    import torch
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint = torch.load(path, map_location=device)
 
-    # Detect model state dict format
-    if "model_state_dict" in checkpoint:
-        state_dict = checkpoint["model_state_dict"]
-    elif "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
+    # ---------------- MODEL STATE ----------------
+    if isinstance(checkpoint, dict):
+        if "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        elif "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+        else:
+            # fallback: maybe it's already a state_dict
+            state_dict = {
+                k: v for k, v in checkpoint.items()
+                if isinstance(v, torch.Tensor)
+            }
     else:
-        # Fallback: assume checkpoint IS a state_dict
-        state_dict = checkpoint
+        raise ValueError("Checkpoint format not recognized")
 
-    # Remove "module." prefix if the model was trained with DDP
+    # Remove DDP prefix
     clean_state_dict = {
-        k.replace("module.", ""): v for k, v in state_dict.items()
+        k.replace("module.", ""): v
+        for k, v in state_dict.items()
     }
 
-    # Load weights
     model.load_state_dict(clean_state_dict, strict=False)
     model.to(device)
 
-    # Extract epoch
-    epoch = checkpoint.get("epoch", None)
+    # ---------------- EPOCH ----------------
+    epoch = None
+    if isinstance(checkpoint, dict):
+        epoch = checkpoint.get("epoch", None)
 
-    # Load optimizer if requested
-    if optimizer is not None and "optimizer_state_dict" in checkpoint:
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    # ---------------- OPTIMIZER ----------------
+    if optimizer is not None and isinstance(checkpoint, dict):
+        opt_state = checkpoint.get("optimizer") or checkpoint.get("optimizer_state_dict")
+        if opt_state is not None:
+            optimizer.load_state_dict(opt_state)
+
+    # ---------------- SCHEDULER ----------------
+    if scheduler is not None and isinstance(checkpoint, dict):
+        sch_state = checkpoint.get("scheduler") or checkpoint.get("scheduler_state_dict")
+        if sch_state is not None:
+            scheduler.load_state_dict(sch_state)
 
     print(f"[Checkpoint] Loaded from {path} | epoch: {epoch}")
-    return model, optimizer, epoch
+
+    return model, optimizer, scheduler, epoch
 
 
 def load_huggingface_checkpoint(config, path, device):

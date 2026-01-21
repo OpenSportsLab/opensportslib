@@ -58,7 +58,8 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
         grouped[group_id]["video_paths"].extend(clips)
         grouped[group_id]["label"] = label_idx
 
-    return list(grouped.values())
+    print(label_map)
+    return list(grouped.values()), label_map
 
 
 def load_annotations_(annotations_path, exclude_labels=None):
@@ -104,7 +105,7 @@ def load_annotations_(annotations_path, exclude_labels=None):
             "label": label_idx
         })
     print(label_map)
-    return samples
+    return samples, label_map
 
 def annotationstoe2eformat(
     label_files,

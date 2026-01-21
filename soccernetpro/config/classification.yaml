@@ -52,9 +52,6 @@ TRAIN:
   use_weighted_sampler: false
   use_weighted_loss: true
   epochs: 20 #20
-  head_lr: 0.001
-  backbone_lr: 0.00005
-  weight_decay: 0.01
   save_dir: ./checkpoints
   log_interval: 10
   save_every: 5
@@ -65,9 +62,11 @@ TRAIN:
   optimizer:
     type: AdamW
     lr: 0.0001  #0.001
+    backbone_lr: 0.00005
+    head_lr: 0.001
     betas: [0.9, 0.999]
     eps: 0.0000001
-    weight_decay: 0.001
+    weight_decay: 0.001 #0.01
     amsgrad: false
   
   scheduler:

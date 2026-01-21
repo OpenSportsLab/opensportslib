@@ -24,6 +24,7 @@ class MVTrainerClassification:
         scheduler,
         criterion,
         class_weights,
+        class_names,
         save_dir,
         model_name,
         max_epochs=1000,
@@ -33,7 +34,6 @@ class MVTrainerClassification:
         wandb_run_name=None,
         wandb_config=None,
         log_attention=False,
-        class_names=None
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -44,6 +44,7 @@ class MVTrainerClassification:
         self.scheduler = scheduler
         self.criterion = criterion
         self.class_weights = class_weights
+        self.class_names = class_names
 
         self.save_dir = os.path.join(save_dir, model_name)
         self.model_name = model_name
@@ -51,7 +52,6 @@ class MVTrainerClassification:
         self.device = device
         self.top_k = top_k
         self.log_attention = log_attention
-        self.class_names = class_names
 
         os.makedirs(self.save_dir, exist_ok=True)
 
@@ -255,7 +255,8 @@ class MVTrainerClassification:
         )
 
         if set_name in ["valid", "test"]:
-            class_names = self.class_names or [str(i) for i in range(all_logits.shape[1])]
+            class_names = [self.class_names[i] for i in sorted(self.class_names.keys())] or [str(i) for i in range(all_logits.shape[1])]
+
             log_confusion_matrix_wandb(
                 y_true=labels_all.tolist(),
                 y_pred=preds_all.tolist(),
@@ -310,12 +311,15 @@ class Trainer_Classification:
             self.device = torch.device("cpu")
             print("CUDA not available, using CPU")
         self.model = None
+        self.optimizer = None
+        self.scheduler = None
+        self.epoch = 0
         self.hf_trainer = None
 
     def compute_metrics(self, pred):
         return compute_classification_metrics(pred, top_k=2)
 
-    def train(self, model, train_dataset, val_dataset=None, test_dataset=None):
+    def train(self, model, train_dataset, val_dataset=None):
         """
         Use HuggingFace Trainer for VideoMAE training
         """
@@ -395,12 +399,9 @@ class Trainer_Classification:
             val_loader = DataLoader(val_dataset, batch_size=self.config.DATA.valid_batch_size, 
                                     shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True
                             )
-            
-            test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.valid_batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True
-                            )
-            optimizer = build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
-            scheduler = build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
+
+            optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
+            scheduler = self.scheduler if self.scheduler is not None else build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
             criterion = build_criterion(self.config.TRAIN.criterion)
 
             if self.config.TRAIN.use_weighted_loss:
@@ -414,12 +415,13 @@ class Trainer_Classification:
             self.hf_trainer = MVTrainerClassification(
                     train_loader=train_loader,
                     val_loader=val_loader,
-                    test_loader=test_loader,
+                    test_loader=None,
                     model=self.model,
                     optimizer=optimizer,
                     scheduler=scheduler,
                     criterion=criterion,
                     class_weights=self.class_weights,
+                    class_names=train_dataset.label_map,
                     save_dir=self.config.TRAIN.save_dir,
                     model_name=self.config.MODEL.backbone.type,
                     max_epochs=self.config.TRAIN.epochs,
@@ -438,7 +440,7 @@ class Trainer_Classification:
                     },
                     log_attention=True
                 )
-            self.hf_trainer.train()
+            self.hf_trainer.train(epoch_start=self.epoch)
 
 
 
@@ -464,8 +466,52 @@ class Trainer_Classification:
             # predictions = np.argmax(logits, axis=-1)
             labels = preds_output.label_ids
             metrics = self.compute_metrics((logits, labels))
+        
+        else:
+            print("Using Custom Trainer class for evaluation of non-HuggingFace model")
+            from soccernetpro.core.loss.builder import build_criterion
+            from soccernetpro.core.optimizer.builder import build_optimizer
+            from soccernetpro.core.scheduler.builder import build_scheduler
 
-        return logits, metrics
+            test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.valid_batch_size, 
+                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True
+                            )
+
+            optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
+            scheduler = self.scheduler if self.scheduler is not None else build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
+            criterion = build_criterion(self.config.TRAIN.criterion)
+
+            self.hf_trainer = MVTrainerClassification(
+                    train_loader=None,
+                    val_loader=None,
+                    test_loader=test_loader,
+                    model=self.model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    criterion=criterion,
+                    class_weights=None,
+                    class_names=test_dataset.label_map,
+                    save_dir=self.config.TRAIN.save_dir,
+                    model_name=self.config.MODEL.backbone.type,
+                    max_epochs=self.config.TRAIN.epochs,
+                    device=self.device,
+                    top_k=2,
+
+                    # W&B
+                    wandb_project=self.config.TASK,
+                    wandb_run_name=f"{self.config.MODEL.backbone.type}_{self.config.MODEL.neck.type}_{self.config.MODEL.neck.agr_type}_{self.config.MODEL.head.type}_cls",
+                    wandb_config={
+                        "backbone": self.config.MODEL.backbone.type,
+                        "aggregation": self.config.MODEL.neck.agr_type,
+                        "lr": self.config.TRAIN.optimizer.lr,
+                        "batch_size": self.config.DATA.train_batch_size,
+                        "num_classes": self.config.MODEL.num_classes
+                    },
+                    log_attention=True
+                )
+            loss, metrics = self.hf_trainer.test()
+            
+        return metrics
 
 
     def demo(self, model, video_paths):
@@ -478,7 +524,7 @@ class Trainer_Classification:
         save_checkpoint(model, path, processor, tokenizer, optimizer, epoch)
         print(f"Model saved at {path}")
 
-    def load(self, path, optimizer=None):
+    def load(self, path, optimizer=None, scheduler=None):
         """
         Load model checkpoint. Returns loaded model, optimizer, epoch
         """
@@ -486,14 +532,16 @@ class Trainer_Classification:
             epoch = None
             self.model, processor = load_huggingface_checkpoint(self.config, path=path, device=self.device)
             print(f"Model loaded from {path}")
-            return self.model, processor, epoch
+            return self.model, processor, scheduler, epoch
         else:
-            self.model, optimizer, epoch = load_checkpoint(
-                self.model, path, optimizer, device=self.device
+            self.model, optimizer, scheduler, epoch = load_checkpoint(
+                self.model, path, optimizer, scheduler, device=self.device
             )
             self.optimizer = optimizer
+            self.scheduler = scheduler
+            self.epoch = epoch
             print(f"Model loaded from {path}, epoch: {epoch}")
-            return self.model, self.optimizer, epoch
+            return self.model, self.optimizer, self.scheduler, self.epoch
 
 
 
