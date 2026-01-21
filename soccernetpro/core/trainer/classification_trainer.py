@@ -12,6 +12,7 @@ from transformers import Trainer as HFTrainer, TrainingArguments
 from soccernetpro.metrics.classification_metric import compute_classification_metrics, process_preds_labels
 from soccernetpro.core.utils.wandb import log_attention_wandb, log_confusion_matrix_wandb, log_sample_videos_wandb 
 from soccernetpro.core.utils.checkpoint import *
+from soccernetpro.core.utils.config import select_device
 
 class MVTrainerClassification:
     def __init__(
@@ -309,12 +310,7 @@ class Trainer_Classification:
     """
     def __init__(self, config):
         self.config = config
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-            print(f"Using GPU: {torch.cuda.get_device_name(self.device)}")
-        else:
-            self.device = torch.device("cpu")
-            print("CUDA not available, using CPU")
+        self.device = select_device(self.config.SYSTEM)
         self.model = None
         self.optimizer = None
         self.scheduler = None

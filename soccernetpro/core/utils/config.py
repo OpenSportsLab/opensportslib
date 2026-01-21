@@ -124,4 +124,27 @@ def _print_info_helper(src_file, labels):
         )
     )
 
+def select_device(config):
+    import torch
+    mode = config.device.lower()
 
+    if mode == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    elif mode == "cuda":
+        assert torch.cuda.is_available(), "CUDA requested but not available"
+        gpu_id = getattr(config, "gpu_id", 0)
+        torch.cuda.set_device(gpu_id)
+        device = torch.device(f"cuda:{gpu_id}")
+
+    elif mode == "cpu":
+        device = torch.device("cpu")
+
+    else:
+        raise ValueError(f"Unknown device mode: {mode}")
+
+    print(f"Using device: {device}")
+    if device.type == "cuda":
+        print("GPU:", torch.cuda.get_device_name(device))
+
+    return device
