@@ -144,7 +144,7 @@ def select_device(config):
         raise ValueError(f"Unknown device mode: {mode}")
 
     print(f"Using device: {device}")
-    if device.type == "cuda":
-        print("GPU:", torch.cuda.get_device_name(device))
+    if device.type == "cuda" or device.type == "auto":
+        print(f"GPU: {torch.cuda.get_device_name(device)}")
 
     return device
