@@ -41,6 +41,8 @@ DATA:
     dataloader:
       batch_size: 4
       shuffle: true
+      num_workers: 2
+      pin_memory: true
 
   valid:
     type: VideoGameWithDali
@@ -107,14 +109,13 @@ TRAIN:
   start_valid_epoch: null
   criterion_valid: map
   inference_batch_size: 4
-  GPU: 2
 
   criterion:
     type: CrossEntropyLoss
 
   optimizer:
     type: AdamWithScaler
-    learning_rate: 0.001
+    lr: 0.001
 
   scheduler:
     type: ChainedSchedulerE2E
@@ -125,4 +126,7 @@ TRAIN:
 SYSTEM:
   log_dir: ./logs
   seed: 42
+  GPU: 2         # number of gpus to use
+  device: cuda   # auto | cuda | cpu
+  gpu_id: 0      # device id for single gpu training
 

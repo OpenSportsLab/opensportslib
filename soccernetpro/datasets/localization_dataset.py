@@ -19,7 +19,7 @@ class LocalizationDataset(Dataset):
     def __init__(self, config, annotations_path=None, processor=None, split="train"):
         self.config = config
         self.split = split
-        self.config.TRAIN.repartitions = get_repartition_gpu()
+        self.config.TRAIN.repartitions = get_repartition_gpu(self.config.SYSTEM.GPU)
         if split == "train":
             self.cfg = self.config.DATA.train
             self.default_args = get_default_args_dataset("train", self.config)

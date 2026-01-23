@@ -209,7 +209,8 @@ class MVTrainerClassification:
                     logits = logits.unsqueeze(0)
 
                 if self.class_weights is not None:
-                    loss = self.criterion(output=logits, labels=targets, weight=self.class_weights)
+                    print("Using class weights for loss computation")
+                    loss = self.criterion(output=logits, labels=targets, weight=self.class_weights.to(self.device))
                 else:
                     loss = self.criterion(output=logits, labels=targets)
 

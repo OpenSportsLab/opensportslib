@@ -50,6 +50,7 @@ class LocalizationAPI:
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_trainer
         from soccernetpro.core.utils.default_args import get_default_args_trainer, get_default_args_train
+        from soccernetpro.core.utils.config import select_device
         import random
         import numpy as np
         import torch
@@ -76,7 +77,7 @@ class LocalizationAPI:
         # Start Timing
         start = time.time()
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = select_device(self.config.SYSTEM)
         self.model = build_model(self.config, device=device)
         print(self.model)
 
@@ -86,20 +87,20 @@ class LocalizationAPI:
         data_obj_train = build_dataset(self.config, split="train")
         dataset_Train = data_obj_train.building_dataset(
             cfg=data_obj_train.cfg,
-            gpu= self.config.TRAIN.GPU,
+            gpu=self.config.SYSTEM.GPU,
             default_args=data_obj_train.default_args,
         )
         print(dataset_Train)
-        train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.TRAIN.GPU, dali=True)
+        train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
         print(len(train_loader))
         # Valid
         data_obj_valid = build_dataset(self.config,split="valid")
         dataset_Valid = data_obj_valid.building_dataset(
             cfg=data_obj_valid.cfg,
-            gpu= self.config.TRAIN.GPU,
+            gpu= self.config.SYSTEM.GPU,
             default_args=data_obj_valid.default_args,
         )
-        valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.TRAIN.GPU, dali=True)
+        valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
         print(get_default_args_trainer(self.config, len(train_loader)))
         trainer = build_trainer(
             cfg=self.config,

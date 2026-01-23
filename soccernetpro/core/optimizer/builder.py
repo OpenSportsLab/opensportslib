@@ -23,7 +23,7 @@ def build_optimizer(parameters, cfg, default_args=None):
         )
     elif cfg.type == "AdamWithScaler":
         optimizer = (
-            torch.optim.AdamW(parameters, lr=cfg.learning_rate),
+            torch.optim.AdamW(parameters, lr=cfg.lr),
             torch.cuda.amp.GradScaler(),
         )
     elif cfg.type == "AdamW":

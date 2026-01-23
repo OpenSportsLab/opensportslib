@@ -38,13 +38,13 @@ MODEL:
     type: mvit_v2_s # video_mae, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
   neck:
     type: MV_Aggregate
-    agr_type: max   # max, mean, avg
+    agr_type: attention   # max, mean, attention
   head: 
     type: MV_LinearLayer
-  pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
+  pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, OpenGVLab/VideoMAEv2-Base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
   num_classes: 8
-  unfreeze_head: true
-  unfreeze_last_n_layers: 3
+  unfreeze_head: true  # for videomae backbone
+  unfreeze_last_n_layers: 3 # for videomae backbone
     
 
 TRAIN:
@@ -66,7 +66,7 @@ TRAIN:
     head_lr: 0.001
     betas: [0.9, 0.999]
     eps: 0.0000001
-    weight_decay: 0.001 #0.01
+    weight_decay: 0.01 #0.01 - videomae, 0.001 - others
     amsgrad: false
   
   scheduler:
@@ -78,5 +78,5 @@ SYSTEM:
   log_dir: ./logs
   seed: 42
   device: cuda   # auto | cuda | cpu
-  gpu_id: 1
+  gpu_id: 0
 

@@ -27,7 +27,6 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-import logging
 from soccernetpro.metrics.localization_metric import infer_and_process_predictions_e2e
 from soccernetpro.core.optimizer.builder import build_optimizer
 from soccernetpro.core.optimizer.builder import build_optimizer
@@ -37,7 +36,8 @@ from soccernetpro.datasets.builder import build_dataset
 import os
 import torch
 from abc import ABC, abstractmethod
-
+import logging
+logger = logging.getLogger(__name__)
 
 def build_trainer(cfg, model=None, default_args=None, resume_from=None):
     """Build a trainer from config dict.
@@ -274,7 +274,7 @@ class Trainer_e2e(Trainer):
             print(
                 f"[Epoch {epoch+1}/{self.num_epochs}] Train loss: {train_loss:.5f} Valid loss: {valid_loss:.5f}"
             )
-            logger.info(
+            logging.info(
                 f"[Epoch {epoch+1}/{self.num_epochs}] Train loss: {train_loss:.5f} Valid loss: {valid_loss:.5f}"
             )
 

@@ -363,18 +363,29 @@ def construct_labels(path, extract_fps):
     )
 
 
-def get_repartition_gpu():
-    """Returns the distribution of gpus that will be used by pipelines for dali."""
-    x = torch.cuda.device_count() - 1
-    print("Number of gpus:", x)
-    if x == 1:
-        return [0], [0]
-    if x == 2:
-        return [0, 1], [0, 1]
-    elif x == 3:
-        return [0, 1], [1, 2]
-    elif x > 3:
-        return [0, 1, 2, 3], [0, 2, 1, 3]
+# def get_repartition_gpu():
+#     """Returns the distribution of gpus that will be used by pipelines for dali."""
+#     x = torch.cuda.device_count() - 1
+#     print("Number of gpus:", x)
+#     if x == 1:
+#         return [0], [0]
+#     if x == 2:
+#         return [0, 1], [0, 1]
+#     elif x == 3:
+#         return [0, 1], [1, 2]
+#     elif x > 3:
+#         return [0, 1, 2, 3], [0, 2, 1, 3]
+
+def get_repartition_gpu(max_train_gpus=2):
+    n = torch.cuda.device_count()
+
+    if n == 0:
+        return [], []
+
+    train_gpus = list(range(min(n, max_train_gpus)))
+    dali_gpus = train_gpus.copy()
+
+    return train_gpus, dali_gpus
     
 
 def check_config(cfg):
@@ -387,17 +398,9 @@ def check_config(cfg):
     """
     from soccernetpro.core.utils.config import load_json, load_classes
     from omegaconf import ListConfig
-    # check if cuda available
-    has_gpu = torch.cuda.is_available()
-    if cfg.TRAIN.GPU:
-        if cfg.TRAIN.GPU >= 0:
-            if not has_gpu:
-                cfg.TRAIN.GPU = -1
-    else:
-        cfg.TRAIN.GPU = 1
     if cfg.MODEL.runner.type == "runner_e2e":
         if cfg.dali == True:
-            cfg.TRAIN.repartitions = get_repartition_gpu()
+            cfg.TRAIN.repartitions = get_repartition_gpu(cfg.SYSTEM.GPU)
         assert cfg.DATA.modality in ["rgb"]
         assert cfg.MODEL.backbone.type in [
             # From torchvision
