@@ -38,7 +38,7 @@ MODEL:
     type: mvit_v2_s # video_mae, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
   neck:
     type: MV_Aggregate
-    agr_type: attention   # max, mean, attention
+    agr_type: max   # max, mean, attention
   head: 
     type: MV_LinearLayer
   pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, OpenGVLab/VideoMAEv2-Base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
