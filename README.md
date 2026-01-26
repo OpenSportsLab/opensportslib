@@ -4,12 +4,17 @@ SoccerNetPro is the professional extension of the popular SoccerNet library, des
 ## Development
 ```bash
 ### Requirements and installation ###
+#I believe it should be cloned first, otherwise can't install with pip
+1. Clone the github repo - git clone https://github.com/OpenSportsLab/soccernetpro.git
+
+cd soccernetpro
 conda create -n SoccerNet python=3.12 pip
 conda activate SoccerNet
 pip install -e .
 
 ### git branch and merge rules ###
-1. Clone the github repo - git clone https://github.com/OpenSportsLab/soccernetpro.git 
+
+
 
 2. Check and verify current branch is "dev" - git status
 
