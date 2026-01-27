@@ -23,9 +23,20 @@ dependencies = [
     "accelerate",
     "wandb",
     "opencv-python",
-    "omegaconf",
-    "timm",
-    "tabulate"
+    "omegaconf"
+]
+
+[project.optional-dependencies]
+classification = [
+    "scikit-learn",
+    "evaluate"
+]
+
+localization = [
+    "nvidia-dali-cuda120",
+    "cupy-cuda12x",
+    "tabulate",
+    "timm"
 ]
 
 [tool.setuptools]
