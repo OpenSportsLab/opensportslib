@@ -23,7 +23,9 @@ dependencies = [
     "accelerate",
     "wandb",
     "opencv-python",
-    "omegaconf"
+    "omegaconf",
+    "timm",
+    "tabulate"
 ]
 
 [tool.setuptools]

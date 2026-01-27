@@ -33,7 +33,6 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 
-import timm
 
 from soccernetpro.models.utils.shift import make_temporal_shift
 
@@ -147,9 +146,9 @@ class ConvNextTinyExtractFeatures(BaseExtractFeatures):
         is_rgb (bool): Whether images are rgb or not.
         in_channels (int): Number of channels of images.
     """
-
     def __init__(self, feature_arch, clip_len, is_rgb, in_channels):
         super().__init__()
+        import timm
         features = timm.create_model("convnext_tiny", pretrained=is_rgb)
         feat_dim = features.head.fc.in_features
         features.head.fc = nn.Identity()
@@ -179,6 +178,7 @@ class RegnetyExtractFeatures(BaseExtractFeatures):
 
     def __init__(self, feature_arch, clip_len, is_rgb, in_channels):
         super().__init__()
+        import timm
         features = timm.create_model(
             {
                 "rny002": "regnety_002",
