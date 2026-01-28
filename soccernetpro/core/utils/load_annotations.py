@@ -447,5 +447,5 @@ def check_config(cfg):
             assert isinstance(cfg.DATA.classes, (list, ListConfig))
             classes = cfg.DATA.classes
         
-        print(classes)
+        #print(classes)
         cfg.DATA.classes = load_classes(classes)

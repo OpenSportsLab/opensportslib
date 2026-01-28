@@ -5,15 +5,44 @@ import json
 import gzip
 import yaml
 
-def dict_to_namespace(d):
+def dict_to_namespace(d, skip_keys=("classes",)):
     """
-    Recursively convert dict to namespace for easy access
+    Recursively convert dict to namespace for easy access,
+    but keep certain keys (like 'classes') as raw dict/list.
     """
     from types import SimpleNamespace
 
     if isinstance(d, dict):
-        return SimpleNamespace(**{k: dict_to_namespace(v) for k, v in d.items()})
-    return d
+        out = {}
+        for k, v in d.items():
+            if k in skip_keys:
+                out[k] = v  # leave as-is
+            else:
+                out[k] = dict_to_namespace(v, skip_keys)
+        return SimpleNamespace(**out)
+    elif isinstance(d, list):
+        return [dict_to_namespace(v, skip_keys) for v in d]
+    else:
+        return d
+
+def namespace_to_omegaconf(ns):
+    """
+    Recursively convert SimpleNamespace (or dict/list) back to OmegaConf
+    """
+    from omegaconf import OmegaConf
+    from types import SimpleNamespace
+
+    def to_dict(obj):
+        if isinstance(obj, SimpleNamespace):
+            return {k: to_dict(v) for k, v in vars(obj).items()}
+        elif isinstance(obj, dict):
+            return {k: to_dict(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [to_dict(v) for v in obj]
+        else:
+            return obj
+
+    return OmegaConf.create(to_dict(ns))
     
 def load_config(config_path):
     """
@@ -36,10 +65,17 @@ def load_config_omega(path):
     
     from omegaconf import OmegaConf
     cfg = OmegaConf.load(path)
-    OmegaConf.resolve(cfg)
-    cfg = OmegaConf.to_container(cfg, resolve=True)
-    #cfg.DATA.classes = OmegaConf.to_container(cfg.DATA.classes, resolve=True)
+    # OmegaConf.resolve(cfg)
+    # cfg = OmegaConf.to_container(cfg, resolve=True)
     return dict_to_namespace(cfg)
+
+def resolve_config_omega(cfg):
+    from omegaconf import OmegaConf
+    #cfg = namespace_to_omegaconf(cfg)
+    cfg = OmegaConf.create(cfg)
+    OmegaConf.resolve(cfg)
+    cfg = dict_to_namespace(OmegaConf.to_container(cfg, resolve=True))
+    return cfg
 
 
 def expand(path):

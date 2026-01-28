@@ -16,10 +16,10 @@ class LocalizationAPI:
         ### load data_dor first then do load config with omega to resolve $paths
         config_path = expand(config)
         self.config = load_config_omega(config_path)
-        check_config(self.config)
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
 
+        check_config(self.config)
         # User controls model saving location (never use BASE_DIR)
         #self.save_dir = expand(save_dir or self.config.TRAIN.save_dir or "./checkpoints")
         #os.makedirs(self.save_dir, exist_ok=True)
@@ -35,8 +35,6 @@ class LocalizationAPI:
         )
 
         logger = logging.getLogger(__name__)
-        logger.info("Configuration:")
-        logger.info(self.config)
         print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("Classes :", self.config.DATA.classes)
@@ -50,7 +48,7 @@ class LocalizationAPI:
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_trainer
         from soccernetpro.core.utils.default_args import get_default_args_trainer, get_default_args_train
-        from soccernetpro.core.utils.config import select_device
+        from soccernetpro.core.utils.config import select_device, resolve_config_omega
         import random
         import numpy as np
         import torch
@@ -59,6 +57,15 @@ class LocalizationAPI:
         #     self.model, self.processor, _ = self.trainer.load(expand(pretrained))
         # else:
         #     self.model, self.processor = build_model(self.config, self.trainer.device)
+        # Expand annotation paths (user or config)
+        self.config.DATA.train.path = expand(train_set or self.config.DATA.train.path)
+        self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
+
+        self.config = resolve_config_omega(self.config)
+        logging.info("Configuration:")
+        logging.info(self.config)
+        #print(self.config)
+
         def set_seed(seed):
             random.seed(seed)  # Python random module
             np.random.seed(seed)  # NumPy
