@@ -42,26 +42,27 @@ class LocalizationDataset(Dataset):
             loader_batch_size = cfg.dataloader.batch_size // default_args["acc_grad_iter"]
             dataset_len = self.config.DATA.epoch_num_frames // self.config.DATA.clip_len
             dataset = DaliDataSet(
-                default_args["num_epochs"],
-                loader_batch_size,
-                cfg.output_map,
-                (
+                epochs=default_args["num_epochs"],
+                batch_size=loader_batch_size,
+                output_map=cfg.output_map,
+                devices=(
                     default_args["repartitions"][0]
                     if default_args["train"]
                     else default_args["repartitions"][1]
                 ),
-                default_args["classes"],
-                cfg.path,
-                self.config.DATA.modality,
-                self.config.DATA.clip_len,
-                dataset_len if default_args["train"] else dataset_len // 4,
-                cfg.video_path,
-                self.config.DATA.input_fps,
-                self.config.DATA.extract_fps,
-                self.config.DATA.IMAGENET_MEAN,
-                self.config.DATA.IMAGENET_STD,
-                self.config.DATA.TARGET_HEIGHT,
-                self.config.DATA.TARGET_WIDTH,
+                #devices=list(range(gpu)),
+                classes=default_args["classes"],
+                label_file=cfg.path,
+                modality=self.config.DATA.modality,
+                clip_len=self.config.DATA.clip_len,
+                dataset_len=dataset_len if default_args["train"] else dataset_len // 4,
+                video_dir=cfg.video_path,
+                input_fps=self.config.DATA.input_fps,
+                extract_fps=self.config.DATA.extract_fps,
+                IMAGENET_MEAN=self.config.DATA.IMAGENET_MEAN,
+                IMAGENET_STD=self.config.DATA.IMAGENET_STD,
+                TARGET_HEIGHT=self.config.DATA.TARGET_HEIGHT,
+                TARGET_WIDTH=self.config.DATA.TARGET_WIDTH,
                 is_eval=False if default_args["train"] else True,
                 crop_dim=self.config.DATA.crop_dim,
                 dilate_len=self.config.DATA.dilate_len,
@@ -69,23 +70,23 @@ class LocalizationDataset(Dataset):
             )
         elif cfg.type == "VideoGameWithDaliVideo":
             dataset = DaliDataSetVideo(
-                cfg.dataloader.batch_size,
-                cfg.output_map,
-                default_args["repartitions"][1],
-                default_args["classes"],
-                cfg.path,
-                self.config.DATA.modality,
-                self.config.DATA.clip_len,
-                cfg.video_path,
-                self.config.DATA.input_fps,
-                self.config.DATA.extract_fps,
-                self.config.DATA.IMAGENET_MEAN,
-                self.config.DATA.IMAGENET_STD,
-                self.config.DATA.TARGET_HEIGHT,
-                self.config.DATA.TARGET_WIDTH,
-                crop_dim=self.config.DATA.crop_dim,
+                batch_size=cfg.dataloader.batch_size,
+                output_map=cfg.output_map,
+                #devices=list(range(gpu)),
+                devices=default_args["repartitions"][1],
+                classes=default_args["classes"],
+                label_file=cfg.path,
+                modality=self.config.DATA.modality,
+                clip_len=self.config.DATA.clip_len,
+                video_dir=cfg.video_path,
+                input_fps=self.config.DATA.input_fps,
+                extract_fps=self.config.DATA.extract_fps,
+                IMAGENET_MEAN=self.config.DATA.IMAGENET_MEAN,
+                IMAGENET_STD=self.config.DATA.IMAGENET_STD,
+                TARGET_HEIGHT=self.config.DATA.TARGET_HEIGHT,
+                TARGET_WIDTH=self.config.DATA.TARGET_WIDTH,
                 overlap_len=cfg.overlap_len,
-
+                crop_dim=self.config.DATA.crop_dim,
             )
         else:
             dataset = None
@@ -303,7 +304,7 @@ class DaliDataSet(DALIGenericIterator):
         file_list_txt = ""
         for index, video in enumerate(self._labels):
             video_path = video["video"]
-            print("video_path :", video_path)
+            #print("video_path :", video_path)
             # video_path = os.path.join(video_dir, video["video"] + extension)
             for _ in range(nb_clips_per_video):
                 #print(video["num_frames"], (clip_len + 1))
@@ -317,7 +318,7 @@ class DaliDataSet(DALIGenericIterator):
         self.pipes = [
             self.video_pipe(
                 batch_size=self.batch_size_per_pipe[index],
-                sequence_length=clip_len,
+                sequence_length=self.clip_len,
                 stride_dali=self._stride,
                 step=-1,
                 num_threads=8,
@@ -710,7 +711,7 @@ class DaliDataSetVideo(DALIGenericIterator, DatasetVideoSharedMethods):
         self.pipes = [
             self.video_pipe(
                 batch_size=self.batch_size,
-                sequence_length=clip_len,
+                sequence_length=self._clip_len,
                 stride_dali=stride_dali,
                 step=-1,
                 num_threads=8,

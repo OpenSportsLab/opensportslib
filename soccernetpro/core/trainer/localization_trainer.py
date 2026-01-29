@@ -35,6 +35,8 @@ from soccernetpro.core.utils.config import store_json
 from soccernetpro.datasets.builder import build_dataset
 import os
 import torch
+import wandb
+import time
 from abc import ABC, abstractmethod
 import logging
 logger = logging.getLogger(__name__)
@@ -196,13 +198,39 @@ class Trainer_e2e(Trainer):
 
         self.start_valid_epoch = args.TRAIN.start_valid_epoch
         self.criterion_valid = args.TRAIN.criterion_valid
-        self.save_dir = work_dir
+        self.valid_map_every = args.TRAIN.valid_map_every
+        #self.save_dir = work_dir
         self.dali = dali
 
         self.repartitions = repartitions
         self.cfg_test = cfg_test
         #self.cfg_challenge = cfg_challenge
         self.cfg_valid_data_frames = cfg_valid_data_frames
+
+        run_name = f"{args.TASK}_{args.MODEL.type}_{args.MODEL.backbone.type}_{args.MODEL.head.type}"
+
+        self.wandb_run = wandb.init(
+            project=args.TASK,
+            name=run_name,
+            config={
+                "backbone": args.MODEL.backbone.type,
+                "head": args.MODEL.head.type,
+                "lr": args.TRAIN.optimizer.lr,
+                "batch_size": args.DATA.train.dataloader.batch_size,
+                "num_classes": len(args.DATA.classes) if hasattr(args.DATA, "classes") else None,
+                "epochs": args.TRAIN.num_epochs,
+                "resume": start_epoch > 0,
+            },
+            reinit=True
+        )
+
+        run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
+        self.save_dir = os.path.join(work_dir, run_name, run_id)
+        os.makedirs(self.save_dir, exist_ok=True)
+        try:
+            wandb.watch(self.model, log="gradients", log_freq=100)
+        except Exception:
+            pass
 
     def save_checkpoint(self, epoch, is_best=False):
         """Save checkpoint with training state."""
@@ -288,7 +316,7 @@ class Trainer_e2e(Trainer):
                     is_best = True
                     print("New best epoch!")
             elif self.criterion_valid == "map":
-                if epoch >= self.start_valid_epoch:
+                if epoch >= self.start_valid_epoch and epoch % self.valid_map_every == 0:
                     pred_file = None
                     if self.save_dir is not None:
                         pred_file = os.path.join(
@@ -320,6 +348,17 @@ class Trainer_e2e(Trainer):
                     "valid_mAP": valid_mAP,
                 }
             )
+
+            # ---------------- W&B LOG ----------------
+            wandb.log({
+                "epoch": epoch + 1,
+                "train/loss": train_loss,
+                "valid/loss": valid_loss,
+                "valid/mAP": valid_mAP,
+                "lr": self.optimizer.param_groups[0]["lr"],
+                "best/mAP": self.best_criterion_valid if self.criterion_valid == "map" else None,
+                "best/loss": self.best_criterion_valid if self.criterion_valid == "loss" else None,
+            })
 
             if self.save_dir is not None:
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -397,3 +436,132 @@ class Trainer_e2e(Trainer):
                 split_data.delete()
 
         logging.info(f"Final evaluation completed. Best epoch: {self.best_epoch}")
+
+
+def build_inferer(cfg, model, default_args=None):
+    """Build a inferer from config dict.
+
+    Args:
+        cfg (dict): Config dict. It should at least contain the key "type".
+        model: The model that will be used to infer.
+        default_args (dict | None, optional): Default initialization arguments.
+            Default: None.
+
+    Returns:
+        inferer: The constructed inferer.
+    """
+
+    if cfg.runner.type == "runner_JSON":
+        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_JSON")
+    elif cfg.runner.type == "runner_pooling":
+        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
+    elif cfg.runner.type == "runner_CALF":
+        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
+    elif cfg.runner.type == "runner_e2e":
+        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_E2E")
+
+    return inferer
+
+class Inferer:
+    def __init__(self, cfg, model, infer_Spotting):
+        """Initialize the Inferer class.
+
+        Args:
+            cfg (dict): Config dict. It should at least contain the key "type".
+            model: The model that will be used to infer.
+            infer_Spotting: The method that is used to infer.
+        """
+        self.cfg_model = cfg
+        self.model = model
+        self.infer_Spotting=infer_Spotting
+
+    def infer(self, cfg, data):
+        """Infer actions from data.
+
+        Args:
+            data : The data from which we will infer.
+
+        Returns:
+            Dict containing predictions
+        """
+        if self.infer_Spotting=="infer_JSON":
+            return self.infer_JSON(cfg, self.model, data)
+        elif self.infer_Spotting=="infer_SN":    
+            return self.infer_SN(cfg, self.model, data)
+        elif self.infer_Spotting=="infer_E2E":
+            return self.infer_E2E(cfg, self.model, data)
+
+
+    def infer_common(self, cfg, model, data):
+        """Infer actions from data using a given model.
+
+        Args:
+            cfg (dict): Config dict. It should at least contain the key "type".
+            model: The model that will be used to infer.
+            data : The data from which we will infer.
+
+        Returns:
+            Dict containing predictions
+        """
+        # Run Inference on Dataset
+        pass
+
+
+    def infer_JSON(self, cfg, model, data):
+        """Infer actions from data using a given model for NetVlad/CALF methods
+
+        Args:
+            cfg (dict): Config dict. It should at least contain the key "type".
+            model: The model that will be used to infer.
+            data : The data from which we will infer.
+
+        Returns:
+            Dict containing predictions
+        """
+        return self.infer_common(cfg, model, data)
+
+
+    def infer_SN(self, cfg, model, data):
+        """Infer actions from data using a given model for the SoccerNetV2 data
+
+        Args:
+            cfg (dict): Config dict. It should at least contain the key "type".
+            model: The model that will be used to infer.
+            data : The data from which we will infer.
+
+        Returns:
+            Dict containing predictions
+        """
+        return self.infer_common(cfg, model, data)
+
+
+    def infer_E2E(self, cfg, model, data):
+        """Infer actions from data using a given model for the e2espot method.
+
+        Args:
+            cfg (dict): Config dict. It should at least contain the key "type".
+            model: The model that will be used to infer.
+            data : The data from which we will infer.
+
+        Returns:
+            Dict containing predictions
+        """
+        pred_file = None
+        if self.cfg_model.work_dir is not None:
+            pred_file = os.path.join(self.cfg_model.work_dir, cfg.DATA.test.results)
+            mAP = infer_and_process_predictions_e2e(
+                model,
+                getattr(cfg, "dali", False),
+                data,
+                "infer",
+                cfg.DATA.classes,
+                pred_file,
+                False,
+                cfg.DATA.test.dataloader,
+                return_pred=False,
+            )
+            logging.info("Predictions saved")
+            logging.info(os.path.join(pred_file + ".json"))
+            logging.info("High recall predictions saved")
+            logging.info(os.path.join(pred_file + ".recall.json.gz"))
+            return mAP

@@ -39,7 +39,7 @@ DATA:
     video_path: ${DATA.data_dir}/train/
     path: ${DATA.train.video_path}/annotations-train.json
     dataloader:
-      batch_size: 4
+      batch_size: 8
       shuffle: true
       num_workers: 2
       pin_memory: true
@@ -51,7 +51,7 @@ DATA:
     video_path: ${DATA.data_dir}/valid/
     path: ${DATA.valid.video_path}/annotations-valid.json
     dataloader:
-      batch_size: 4
+      batch_size: 8
       shuffle: true
 
   valid_data_frames:
@@ -62,7 +62,7 @@ DATA:
     path: ${DATA.valid.video_path}/annotations-valid.json
     overlap_len: 0
     dataloader:
-      batch_size: 2
+      batch_size: 4
       shuffle: false
 
   test:
@@ -72,11 +72,11 @@ DATA:
     video_path: ${DATA.data_dir}/test/
     path: ${DATA.test.video_path}/annotations-test.json
     results: results_spotting_test
-    nms_window: 2
+    nms_window: 25 # for ball action spotting - 25
     metric: loose
     overlap_len: 50
     dataloader:
-      batch_size: 2
+      batch_size: 4
       shuffle: false
 
   challenge:
@@ -85,7 +85,7 @@ DATA:
     output_map: [data, label]
     path: ${DATA.data_dir}/challenge/annotations.json
     dataloader:
-      batch_size: 2
+      batch_size: 4
       shuffle: false
 
 MODEL:
@@ -96,37 +96,37 @@ MODEL:
       type: rny008_gsm
     head:
       type: gru
-    multi_gpu: false
+    multi_gpu: true
     load_weights: null
     save_dir: ./checkpoints
-    work_dir: ${MODEL.save_dir}/localization/e2e/rny008_gsm/
+    work_dir: ${MODEL.save_dir}
 
 TRAIN:
   type: trainer_e2e
   num_epochs: 100
   acc_grad_iter: 1
-  base_num_valid_epochs: 20
-  start_valid_epoch: null
+  base_num_valid_epochs: 30
+  start_valid_epoch: 5
+  valid_map_every: 5
   criterion_valid: map
-  inference_batch_size: 4
 
   criterion:
     type: CrossEntropyLoss
 
   optimizer:
     type: AdamWithScaler
-    lr: 0.001
+    lr: 0.0001
 
   scheduler:
     type: ChainedSchedulerE2E
     acc_grad_iter: 1
-    num_epochs: 100
+    num_epochs: ${TRAIN.num_epochs}
     warm_up_epochs: 3
 
 SYSTEM:
   log_dir: ./logs
   seed: 42
-  GPU: 2         # number of gpus to use
+  GPU: 4         # number of gpus to use
   device: cuda   # auto | cuda | cpu
   gpu_id: 0      # device id for single gpu training
 

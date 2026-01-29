@@ -156,7 +156,7 @@ def compute_average_precision(
     return sum(interp_pc) / total
 
 
-def compute_mAPs_E2E(truth, pred, tolerances=[0, 1, 2, 4], plot_pr=False):
+def compute_mAPs_E2E(truth, pred, tolerances=[0, 1, 2, 3, 4], plot_pr=False):
     """Compute mAPs metric for the training module for the E2E method.
 
     Args:
@@ -514,6 +514,8 @@ def infer_and_process_predictions_e2e(
         #     store_gz_json(save_pred + '.score.json.gz', pred_scores)
     if return_pred:
         return pred_events_high_recall
+
+    print("avg_mAP:", avg_mAP)
     return avg_mAP
 
 

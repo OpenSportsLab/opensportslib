@@ -3,6 +3,12 @@
 import torch
 import os
 
+def localization_remap(key):
+    if key.startswith("_features"):
+        return "backbone." + key
+    elif key.startswith("_pred_fine"):
+        return "head." + key
+    return key
 
 
 def save_checkpoint(model, path, processor=None, tokenizer=None, optimizer=None, epoch=None):
@@ -65,7 +71,7 @@ def save_checkpoint(model, path, processor=None, tokenizer=None, optimizer=None,
         print(f"[Checkpoint] Torch checkpoint saved at: {path}")
 
 
-def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None):
+def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None, key_remap_fn=None):
     """
     Load model checkpoint (.pt / .pth / .tar) safely.
 
@@ -87,7 +93,7 @@ def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
 
     # ---------------- MODEL STATE ----------------
     if isinstance(checkpoint, dict):
@@ -105,12 +111,18 @@ def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None):
         raise ValueError("Checkpoint format not recognized")
 
     # Remove DDP prefix
-    clean_state_dict = {
-        k.replace("module.", ""): v
-        for k, v in state_dict.items()
-    }
+    clean_state_dict = {}
+    for k, v in state_dict.items():
+        # Remove DDP prefix
+        k = k.replace("module.", "")
 
-    model.load_state_dict(clean_state_dict, strict=False)
+        # Optional remapping
+        if key_remap_fn is not None:
+            k = key_remap_fn(k)
+
+        clean_state_dict[k] = v
+
+    missing, unexpected = model.load_state_dict(clean_state_dict, strict=False)
     model.to(device)
 
     # ---------------- EPOCH ----------------
@@ -131,6 +143,9 @@ def load_checkpoint(model, path, optimizer=None, scheduler=None, device=None):
             scheduler.load_state_dict(sch_state)
 
     print(f"[Checkpoint] Loaded from {path} | epoch: {epoch}")
+    print(f"Epoch: {epoch}")
+    print(f"Missing keys: {len(missing)}")
+    print(f"Unexpected keys: {len(unexpected)}")
 
     return model, optimizer, scheduler, epoch
 

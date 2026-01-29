@@ -97,7 +97,6 @@ class LocalizationAPI:
             gpu=self.config.SYSTEM.GPU,
             default_args=data_obj_train.default_args,
         )
-        print(dataset_Train)
         train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
         print(len(train_loader))
         # Valid
@@ -108,7 +107,9 @@ class LocalizationAPI:
             default_args=data_obj_valid.default_args,
         )
         valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
-        print(get_default_args_trainer(self.config, len(train_loader)))
+        print(len(valid_loader))
+
+        # Trainer
         trainer = build_trainer(
             cfg=self.config,
             model=self.model,
@@ -129,32 +130,49 @@ class LocalizationAPI:
         )
 
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
-    # return
-        # valid_data = build_dataset(self.config, valid_set, self.processor, split="valid")
-        # print(f"Valid Dataset length: {len(valid_data)}")
-        # frames = valid_data[0]
-        # print(f"Frames shape: {frames['pixel_values'].shape}")  # 
-        # print(f"Label: {frames['labels']}")
-
-        # # Train
-        # self.trainer.train_model(self.model, train_data, valid_data)
-
-        # # Save in user-controlled location
-        # save_path = os.path.join(self.save_dir, "final_model")
-        # self.trainer.save(self.model, save_path, self.processor)
-        # print("Model saved at:", save_path)
-
+  
 
     def infer(self, test_set=None, pretrained=None):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
+        from soccernetpro.core.trainer.localization_trainer import build_inferer
+        from soccernetpro.core.utils.config import select_device, resolve_config_omega
+        from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
+        import time
 
+        self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
+        self.config = resolve_config_omega(self.config)
+        logging.info("Configuration:")
+        logging.info(self.config)
+        # Start Timing
+        start = time.time()
+
+        device = select_device(self.config.SYSTEM)
+        self.model = build_model(self.config, device=device)
+        print("Model type:", type(self.model))
+        print("Torch model type:", type(self.model._model))
         # Load model
         if pretrained:
-            self.model, self.processor, _ = self.trainer.load(expand(pretrained))
+            self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
+                                        path=expand(pretrained),
+                                        device=device,
+                                        key_remap_fn=localization_remap)
+        
+        # Datasets
+        # Test
+        data_obj_test = build_dataset(self.config, split="test")
+        dataset_Test = data_obj_test.building_dataset(
+            cfg=data_obj_test.cfg,
+            gpu=self.config.SYSTEM.GPU,
+            default_args=data_obj_test.default_args,
+        )
+        test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
+        print(len(test_loader))
 
-        test_set = expand(test_set or self.config.DATA.annotations.valid)
-        test_data = build_dataset(self.config, test_set, self.processor, split="test")
-
-        preds, metrics = self.trainer.infer(test_data)
+        # Inference
+        inferer = build_inferer(cfg=self.config.MODEL,
+                                model=self.model)
+        metrics = inferer.infer(cfg=self.config, data=test_loader)
+        #print(f"Inference Metrics: {metrics}")
+        logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics
