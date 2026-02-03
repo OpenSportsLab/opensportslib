@@ -1,0 +1,43 @@
+TASK: classification
+
+DATA:
+  dataset_name: sngar
+  data_modality: tracking_parquet
+  data_dir: /home/karkid/temporal-localization/data/tracking_dataset
+  preload_data: false
+  annotations:
+    train: /home/karkid/temporal-localization/data/tracking_dataset/train/train.json
+    valid: /home/karkid/temporal-localization/data/tracking_dataset/valid/valid.json
+    test: /home/karkid/temporal-localization/data/tracking_dataset/test/test.json
+  num_frames: 16
+  frame_interval: 9
+  augmentations:
+    vertical_flip: true
+    horizontal_flip: true
+    team_flip: true
+  normalize: true
+  num_workers: 20
+  train_batch_size: 32
+  valid_batch_size: 32
+
+MODEL:
+  backbone: gin           # conv_type
+  neck: attention         # temporal_model
+  edge: positional
+  k: 8
+  hidden_dim: 64
+  num_layers: 20
+  dropout: 0.1
+  num_classes: 10
+
+TRAIN:
+  enabled: true
+  use_weighted_sampler: true
+  samples_per_class: 4000
+  epochs: 100
+  patience: 10
+  learning_rate: 0.001
+  save_dir: ./checkpoints_gar_tracking
+
+SYSTEM:
+  seed: 42

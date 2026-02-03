@@ -33,6 +33,9 @@ localization = [
     "cupy-cuda12x",
     "tabulate"
 ]
+tracking = [
+    "torch-geometric"
+]
 
 [tool.setuptools]
 packages = { find = {} }

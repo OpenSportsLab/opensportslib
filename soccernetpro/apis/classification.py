@@ -23,7 +23,7 @@ class ClassificationAPI:
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("MODEL SAVEDIR:", self.save_dir)
 
-        self.trainer = Trainer_Classification(self.config)
+        # self.trainer = Trainer_Classification(self.config)
 
 
     def train(self, train_set=None, valid_set=None, test_set=None, pretrained=None):
@@ -31,10 +31,10 @@ class ClassificationAPI:
         from soccernetpro.models.builder import build_model
 
         # Load model
-        if pretrained:
-            self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
-        else:
-            self.model, self.processor = build_model(self.config, self.trainer.device)
+        # if pretrained:
+        #     self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
+        # else:
+        #     self.model, self.processor = build_model(self.config, self.trainer.device)
 
 
         # Expand annotation paths (user or config)
@@ -42,6 +42,7 @@ class ClassificationAPI:
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
         # Datasets
+        self.processor = None # TODO: remove this line later
         train_data = build_dataset(self.config, train_set, self.processor, split="train")
         print(f"Train Dataset length: {len(train_data)}")
         frames= train_data[0]
@@ -56,7 +57,7 @@ class ClassificationAPI:
 
         
         # Train
-        self.trainer.train(self.model, train_data, valid_data)
+        # self.trainer.train(self.model, train_data, valid_data)
 
         # Save in user-controlled location
         #save_path = os.path.join(self.save_dir, "final_model")

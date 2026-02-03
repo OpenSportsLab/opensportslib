@@ -44,3 +44,18 @@ def unbatch_tensor(tensor, batch_size, dim=1, unsqueeze=False):
         return torch.cat(torch.chunk(tensor.unsqueeze_(dim), nb_chunks, dim=0), dim=dim).contiguous()
     else:
         return torch.cat(torch.chunk(tensor, nb_chunks, dim=0), dim=dim).contiguous()
+
+
+def init_process_worker(seed):
+    """
+    initializes random seeds for worker processes during parallel data loading.
+    ensures reproducibility across multiprocessing workers.
+    """
+    import multiprocessing as mp
+    import random
+    import numpy as np
+
+    worker_id = mp.current_process()._identity[0] if mp.current_process()._identity else 0
+    worker_seed = seed + worker_id
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
