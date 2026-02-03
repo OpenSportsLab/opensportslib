@@ -308,7 +308,7 @@ class DaliDataSet(DALIGenericIterator):
             # video_path = os.path.join(video_dir, video["video"] + extension)
             for _ in range(nb_clips_per_video):
                 #print(video["num_frames"], (clip_len + 1))
-                random_start = random.randint(1, abs(video["num_frames"] - (clip_len + 1)))
+                random_start = random.randint(1, video["num_frames"] - (clip_len + 1))
                 file_list_txt += f"{video_path} {index} {random_start * self._stride} {(random_start+clip_len) * self._stride}\n"
 
         tf = tempfile.NamedTemporaryFile()

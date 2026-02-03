@@ -381,13 +381,15 @@ class Trainer_e2e(Trainer):
             self._run_final_evaluation(classes)
 
     def _run_final_evaluation(self, classes):
+        from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
         """Run final evaluation using best model."""
         # Load best model for evaluation
         best_checkpoint_path = os.path.join(
             self.save_dir, f"best_checkpoint.pt"
         )
-        checkpoint = torch.load(best_checkpoint_path)
-        self.model.load(checkpoint['model_state_dict'])
+        self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
+                                        path=best_checkpoint_path,
+                                        key_remap_fn=localization_remap)
         logging.info(f"Loaded best model from epoch {self.best_epoch}")
 
         # Evaluate on valid if not already done
