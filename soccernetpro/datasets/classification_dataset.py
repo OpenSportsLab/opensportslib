@@ -8,6 +8,19 @@ from soccernetpro.core.utils.load_annotations import load_annotations
 from tqdm import tqdm
 import json
 
+from soccernetpro.datasets.utils.tracking import (
+            build_edge_index,
+            HorizontalFlip,
+            VerticalFlip,
+            TeamFlip,
+            NUM_OBJECTS,
+            FEATURE_DIM,
+            PITCH_HALF_LENGTH,
+            PITCH_HALF_WIDTH,
+            MAX_DISPLACEMENT,
+            MAX_BALL_HEIGHT,
+        )
+
 import pandas as pd
 
 def build(config, annotations_path, processor=None, split="train"):
@@ -162,18 +175,7 @@ class TrackingDataset(ClassificationDataset):
     
     def __init__(self, config, annotations_path, split="train"):
         super().__init__(config, annotations_path, split)
-        from soccernetpro.datasets.utils.tracking import (
-            build_edge_index,
-            HorizontalFlip,
-            VerticalFlip,
-            TeamFlip,
-            NUM_OBJECTS,
-            FEATURE_DIM,
-            PITCH_HALF_LENGTH,
-            PITCH_HALF_WIDTH,
-            MAX_DISPLACEMENT,
-            MAX_BALL_HEIGHT,
-        )
+        
         # tracking-specific config
         self.num_frames = config.DATA.num_frames
         self.normalize = config.DATA.normalize

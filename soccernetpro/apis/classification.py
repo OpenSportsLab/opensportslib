@@ -45,15 +45,30 @@ class ClassificationAPI:
         self.processor = None # TODO: remove this line later
         train_data = build_dataset(self.config, train_set, self.processor, split="train")
         print(f"Train Dataset length: {len(train_data)}")
-        frames= train_data[0]
-        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
-        print(f"Label: {frames['labels']}")
+
+        sample = train_data[0]
+        modality = self.config.DATA.data_modality
+
+        if modality == "tracking_parquet":
+            print(f"Node features shape: {sample['node_features'].shape}")
+            print(f"Edge indices: {len(sample['edge_indices'])} frames")
+            print(f"Label: {sample['labels']}")
+        else:
+            print(f"Frames shape: {sample['pixel_values'].shape}")
+            print(f"Label: {sample['labels']}")
 
         valid_data = build_dataset(self.config, valid_set, self.processor, split="valid")
         print(f"Valid Dataset length: {len(valid_data)}")
-        frames = valid_data[0]
-        print(f"Frames shape: {frames['pixel_values'].shape}")  # 
-        print(f"Label: {frames['labels']}")
+        
+        sample = valid_data[0]
+        
+        if modality == "tracking_parquet":
+            print(f"Node features shape: {sample['node_features'].shape}")
+            print(f"Edge indices: {len(sample['edge_indices'])} frames")
+            print(f"Label: {sample['labels']}")
+        else:
+            print(f"Frames shape: {sample['pixel_values'].shape}")
+            print(f"Label: {sample['labels']}")
 
         
         # Train
