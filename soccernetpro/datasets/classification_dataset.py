@@ -9,19 +9,17 @@ from tqdm import tqdm
 import json
 
 import pandas as pd
-from soccernetpro.datasets.utils.tracking import (
-    build_edge_index,
-    HorizontalFlip,
-    VerticalFlip,
-    TeamFlip,
-    NUM_OBJECTS,
-    FEATURE_DIM,
-    PITCH_HALF_LENGTH,
-    PITCH_HALF_WIDTH,
-    MAX_DISPLACEMENT,
-    MAX_BALL_HEIGHT,
-)
 
+def build(config, annotations_path, processor=None, split="train"):
+    modality = config.DATA.data_modality.lower()
+
+    if modality == "tracking_parquet":
+        return TrackingDataset(config, annotations_path, split)
+    elif modality == "video":
+        return VideoDataset(config, annotations_path, processor, split)
+    else:
+        raise ValueError(f"Unknown data_modality: {modality}")
+    
 
 class ClassificationDataset(Dataset):
     """Base class for classification datasets."""
@@ -36,13 +34,6 @@ class ClassificationDataset(Dataset):
                                         multiview=getattr(config.DATA, "view_type", None) == "multi",
                                         input_type=config.DATA.data_modality)
         #print(self.samples)
-
-        if self.config.DATA.data_modality == "tracking_parquet":
-            return TrackingDataset(config, annotations_path, split)
-        elif self.config.DATA.data_modality == "video":
-            return VideoDataset(config, annotations_path, processor, split)
-        else:
-            raise ValueError(f"Unknown data_modality: {self.config.DATA.data_modality}")
 
     def get_sample_weights(self):
         labels = [item["label"] for item in self.samples]
@@ -171,7 +162,18 @@ class TrackingDataset(ClassificationDataset):
     
     def __init__(self, config, annotations_path, split="train"):
         super().__init__(config, annotations_path, split)
-        
+        from soccernetpro.datasets.utils.tracking import (
+            build_edge_index,
+            HorizontalFlip,
+            VerticalFlip,
+            TeamFlip,
+            NUM_OBJECTS,
+            FEATURE_DIM,
+            PITCH_HALF_LENGTH,
+            PITCH_HALF_WIDTH,
+            MAX_DISPLACEMENT,
+            MAX_BALL_HEIGHT,
+        )
         # tracking-specific config
         self.num_frames = config.DATA.num_frames
         self.normalize = config.DATA.normalize

@@ -6,8 +6,8 @@ def build_dataset(config, annotation_file=None, processor=None, split="train"):
     task = config.TASK.lower()
 
     if "classification" in task:
-        from soccernetpro.datasets.classification_dataset import ClassificationDataset
-        return ClassificationDataset(config, annotation_file, processor, split=split)
+        from soccernetpro.datasets import classification_dataset
+        return classification_dataset.build(config, annotation_file, processor, split)
     
     elif "localization" in task:
         from soccernetpro.datasets.localization_dataset import LocalizationDataset
