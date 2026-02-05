@@ -69,7 +69,7 @@ class ClassificationAPI:
 
         # Load model
         if pretrained:
-            self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
+            self.model, self.processor, self.scheduler, epoch = self.trainer.load(pretrained)
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
         test_data = build_dataset(self.config, test_set, self.processor, split="test")
