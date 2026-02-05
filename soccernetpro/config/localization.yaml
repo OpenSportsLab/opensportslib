@@ -48,8 +48,8 @@ DATA:
     type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    video_path: ${DATA.valid.video_path}
+    path: ${DATA.valid.path}
     overlap_len: 0
     dataloader:
       batch_size: 4
