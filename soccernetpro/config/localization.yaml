@@ -8,17 +8,7 @@ DATA:
   classes:
     - PASS
     - DRIVE
-    - HEADER
-    - HIGH PASS
-    - OUT
-    - CROSS
-    - THROW IN
-    - SHOT
-    - BALL PLAYER BLOCK
-    - PLAYER SUCCESSFUL TACKLE
-    - FREE KICK
-    - GOAL
-
+    
   epoch_num_frames: 500000
   mixup: true
   modality: rgb
@@ -103,11 +93,11 @@ MODEL:
 
 TRAIN:
   type: trainer_e2e
-  num_epochs: 50
+  num_epochs: 10
   acc_grad_iter: 1
   base_num_valid_epochs: 30
-  start_valid_epoch: 5
-  valid_map_every: 2
+  start_valid_epoch: 1
+  valid_map_every: 1
   criterion_valid: map
 
   criterion:

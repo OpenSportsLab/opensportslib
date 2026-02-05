@@ -6,7 +6,6 @@ import time
 class LocalizationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
         from soccernetpro.core.utils.config import load_config_omega
-        from soccernetpro.core.utils.load_annotations import check_config
         #from ..core.trainer import Trainer
 
         if config is None:
@@ -18,8 +17,7 @@ class LocalizationAPI:
         self.config = load_config_omega(config_path)
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
-
-        check_config(self.config)
+        print(self.config.DATA.classes)
         # User controls model saving location (never use BASE_DIR)
         #self.save_dir = expand(save_dir or self.config.TRAIN.save_dir or "./checkpoints")
         #os.makedirs(self.save_dir, exist_ok=True)
@@ -49,6 +47,7 @@ class LocalizationAPI:
         from soccernetpro.core.trainer.localization_trainer import build_trainer
         from soccernetpro.core.utils.default_args import get_default_args_trainer, get_default_args_train
         from soccernetpro.core.utils.config import select_device, resolve_config_omega
+        from soccernetpro.core.utils.load_annotations import check_config
         import random
         import numpy as np
         import torch
@@ -62,6 +61,7 @@ class LocalizationAPI:
         self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
 
         self.config = resolve_config_omega(self.config)
+        check_config(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
         #print(self.config)
@@ -138,10 +138,12 @@ class LocalizationAPI:
         from soccernetpro.core.trainer.localization_trainer import build_inferer
         from soccernetpro.core.utils.config import select_device, resolve_config_omega
         from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
+        from soccernetpro.core.utils.load_annotations import check_config
         import time
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
         self.config = resolve_config_omega(self.config)
+        check_config(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
         # Start Timing

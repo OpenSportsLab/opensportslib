@@ -440,7 +440,7 @@ def check_config(cfg):
             and cfg.DATA.test.path.endswith(".json")
             and "labels" in load_json(cfg.DATA.test.path).keys()
         ):
-            for task_name, task_data in load_json(cfg.DATA.test.path)["labels"].items():
+            for task_name, task_data in load_json(cfg.DATA.train.path)["labels"].items():
                 classes = task_data.get("labels", {})
             #classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:
