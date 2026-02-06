@@ -61,7 +61,7 @@ class LocalizationAPI:
         self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
 
         self.config = resolve_config_omega(self.config)
-        check_config(self.config)
+        check_config(self.config, split="train")
         logging.info("Configuration:")
         logging.info(self.config)
         #print(self.config)
@@ -142,8 +142,10 @@ class LocalizationAPI:
         import time
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
+        self.config.MODEL.work_dir= os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
+        self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config)
-        check_config(self.config)
+        check_config(self.config, split="test")
         logging.info("Configuration:")
         logging.info(self.config)
         # Start Timing

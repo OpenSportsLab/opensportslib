@@ -388,7 +388,7 @@ def get_repartition_gpu(max_train_gpus=2):
     return train_gpus, dali_gpus
     
 
-def check_config(cfg):
+def check_config(cfg, split="train"):
     """Check for incoherences, missing elements in dict config.
     The checks are different regarding the methods.
 
@@ -428,6 +428,16 @@ def check_config(cfg):
         assert cfg.TRAIN.criterion_valid in ["map", "loss"]
         assert cfg.TRAIN.num_epochs == cfg.TRAIN.scheduler.num_epochs
         assert cfg.TRAIN.acc_grad_iter == cfg.TRAIN.scheduler.acc_grad_iter
+
+        if split=="train":
+            data_path = cfg.DATA.train.path
+        elif split=="valid":
+            data_path = cfg.DATA.valid.path
+        elif split=="test":
+            data_path = cfg.DATA.test.path
+        else:
+            raise ValueError(f"Unknown split {split}")
+        
         if cfg.TRAIN.start_valid_epoch is None:
             cfg.TRAIN.start_valid_epoch = (
                 cfg.TRAIN.num_epochs - cfg.TRAIN.base_num_valid_epochs
@@ -435,12 +445,12 @@ def check_config(cfg):
         if cfg.DATA.crop_dim <= 0:
             cfg.DATA.crop_dim = None
         if (
-            cfg.DATA.test.path != None
-            and os.path.isfile(cfg.DATA.test.path)
-            and cfg.DATA.test.path.endswith(".json")
-            and "labels" in load_json(cfg.DATA.test.path).keys()
+            data_path != None
+            and os.path.isfile(data_path)
+            and data_path.endswith(".json")
+            and "labels" in load_json(data_path).keys()
         ):
-            for task_name, task_data in load_json(cfg.DATA.train.path)["labels"].items():
+            for task_name, task_data in load_json(data_path)["labels"].items():
                 classes = task_data.get("labels", {})
             #classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:

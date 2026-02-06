@@ -170,6 +170,13 @@ def load_checkpoint(
         clean_state_dict[k] = v
 
     missing, unexpected = model.load_state_dict(clean_state_dict, strict=False)
+    print("\n--- MISSING KEYS ---")
+    for k in missing[:20]:
+        print(k)
+
+    print("\n--- UNEXPECTED KEYS ---")
+    for k in unexpected[:20]:
+        print(k)
     model.to(device)
 
     # ---------------- EPOCH ----------------

@@ -378,9 +378,9 @@ class Trainer_e2e(Trainer):
                 dataset_Valid_Frames.delete()
 
         if self.save_dir is not None:
-            self._run_final_evaluation(classes)
+            self._run_final_evaluation(classes, eval_splits=["valid"])
 
-    def _run_final_evaluation(self, classes):
+    def _run_final_evaluation(self, classes, eval_splits=["valid", "test"]):
         from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
         """Run final evaluation using best model."""
         # Load best model for evaluation
@@ -392,11 +392,6 @@ class Trainer_e2e(Trainer):
                                         key_remap_fn=localization_remap)
         logging.info(f"Loaded best model from epoch {self.best_epoch}")
 
-        # Evaluate on valid if not already done
-        eval_splits = ["valid"] if self.criterion_valid != "map" else []
-
-        # Evaluate on hold out splits
-        eval_splits += ["test", "challenge"]
         for split in eval_splits:
             if split == "valid":
                 cfg_tmp = self.cfg_valid_data_frames
@@ -558,7 +553,7 @@ class Inferer:
                 "infer",
                 cfg.DATA.classes,
                 pred_file,
-                False,
+                True,
                 cfg.DATA.test.dataloader,
                 return_pred=False,
             )
