@@ -370,7 +370,7 @@ class Trainer_Classification:
         # run_name = (
         #     f"_freeze={self.config.MODEL.freeze_backbone}"
         #     f"_lr={self.config.TRAIN.learning_rate}"
-        #     f"_bs={self.config.DATA.train_batch_size}"
+        #     f"_bs={self.config.DATA.train.dataloader.batch_size}"
         # )
 
         # wandb.init(
@@ -384,8 +384,8 @@ class Trainer_Classification:
             args = TrainingArguments(
                 label_names=["labels"],
                 output_dir=self.config.TRAIN.save_dir,
-                per_device_train_batch_size=self.config.DATA.train_batch_size,
-                per_device_eval_batch_size=self.config.DATA.valid_batch_size,
+                per_device_train_batch_size=self.config.DATA.train.dataloader.batch_size,
+                per_device_eval_batch_size=self.config.DATA.valid.dataloader.batch_size,
                 num_train_epochs=self.config.TRAIN.epochs,
                 #learning_rate=self.config.TRAIN.learning_rate,
                 eval_strategy="epoch" if val_dataset else "no",
@@ -396,7 +396,7 @@ class Trainer_Classification:
                 load_best_model_at_end=True,
                 fp16=True,
                 warmup_ratio=0.1,
-                #max_steps=(len(train_dataset) // self.config.DATA.train_batch_size) * self.config.TRAIN.epochs
+                #max_steps=(len(train_dataset) // self.config.DATA.train.dataloader.batch_size) * self.config.TRAIN.epochs
             )
 
             if self.config.TRAIN.use_weighted_sampler:
@@ -455,12 +455,12 @@ class Trainer_Classification:
                 train_sampler = None
                 val_sampler = None
 
-            train_loader = DataLoader(train_dataset, batch_size=self.config.DATA.train_batch_size, 
-                                      shuffle=(train_sampler is None), num_workers=self.config.DATA.num_workers, pin_memory=True,
+            train_loader = DataLoader(train_dataset, batch_size=self.config.DATA.train.dataloader.batch_size, 
+                                      shuffle=(train_sampler is None), num_workers=self.config.DATA.train.dataloader.num_workers, pin_memory=True,
                                       sampler=train_sampler
                             )
-            val_loader = DataLoader(val_dataset, batch_size=self.config.DATA.valid_batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True,
+            val_loader = DataLoader(val_dataset, batch_size=self.config.DATA.valid.dataloader.batch_size, 
+                                    shuffle=False, num_workers=self.config.DATA.valid.dataloader.num_workers, pin_memory=True,
                                     sampler=val_sampler
                             )
 
@@ -499,7 +499,7 @@ class Trainer_Classification:
                         "backbone": self.config.MODEL.backbone.type,
                         "aggregation": self.config.MODEL.neck.agr_type,
                         "lr": self.config.TRAIN.optimizer.lr,
-                        "batch_size": self.config.DATA.train_batch_size,
+                        "batch_size": self.config.DATA.train.dataloader.batch_size,
                         "num_classes": self.config.MODEL.num_classes
                     },
                     log_attention=True
@@ -513,7 +513,7 @@ class Trainer_Classification:
 
             args = TrainingArguments(
             output_dir=self.config.TRAIN.save_dir,  # any directory, not used here
-            per_device_eval_batch_size=1#self.config.DATA.valid_batch_size,  # or whatever batch size you want
+            per_device_eval_batch_size=1#self.config.DATA.valid.dataloader.batch_size,  # or whatever batch size you want
             )
 
             self.hf_trainer = HFTrainer(
@@ -556,8 +556,8 @@ class Trainer_Classification:
             else:
                 test_sampler = None
 
-            test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.valid_batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True, 
+            test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.test.dataloader.batch_size, 
+                                    shuffle=False, num_workers=self.config.DATA.test.dataloader.num_workers, pin_memory=True, 
                                     sampler=test_sampler
                             )
 
@@ -588,8 +588,8 @@ class Trainer_Classification:
                         "backbone": self.config.MODEL.backbone.type,
                         "aggregation": self.config.MODEL.neck.agr_type,
                         "lr": self.config.TRAIN.optimizer.lr,
-                        "batch_size": self.config.DATA.train_batch_size,
-                        "num_classes": self.config.MODEL.num_classes
+                        "batch_size": self.config.DATA.train.dataloader.batch_size,
+                        "num_classes": self.config.DATA.num_classes
                     },
                     log_attention=True
                 )

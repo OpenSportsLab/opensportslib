@@ -13,6 +13,10 @@ class ClassificationDataset(Dataset):
         self.samples, self.label_map = load_annotations(annotations_path, 
                                         exclude_labels=["Unknown", "Dont know"], 
                                         multiview=config.DATA.view_type == "multi")
+
+        self.config.DATA.classes = list(self.label_map.keys())
+        self.config.DATA.num_classes = len(self.label_map)
+        print(self.config.DATA.num_classes, "classes:", self.config.DATA.classes)
         #print(self.samples)
         #self.HOME_DIR = os.path.dirname(annotations_path)
         self.processor = processor

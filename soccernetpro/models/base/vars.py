@@ -18,7 +18,7 @@ class MVNetwork(torch.nn.Module):
                 lifting_net=self.lifting_net
             )
         )
-        head.num_classes = config.MODEL.num_classes
+        head.num_classes = config.DATA.num_classes
         head.feat_dim = self.backbone.feat_dim
         self.head = build_head(head)
 

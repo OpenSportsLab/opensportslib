@@ -3,7 +3,7 @@ import os
  
 class ClassificationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
-        from soccernetpro.core.utils.config import load_config
+        from soccernetpro.core.utils.config import load_config_omega
         from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
 
         if config is None:
@@ -11,7 +11,7 @@ class ClassificationAPI:
 
         # Load config
         config_path = expand(config)
-        self.config = load_config(config_path)
+        self.config = load_config_omega(config_path)
 
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
@@ -44,7 +44,7 @@ class ClassificationAPI:
 
         # model
         if pretrained:
-            model, processor, _, _ = trainer.load(expand(pretrained))
+            model, processor, _, _ = trainer.load(pretrained)
         else:
             model, processor = build_model(self.config, device)
 
@@ -75,10 +75,14 @@ class ClassificationAPI:
     def train(self, train_set=None, valid_set=None, test_set=None, pretrained=None, use_ddp=False):
         import torch
         import torch.multiprocessing as mp
+        from soccernetpro.core.utils.config import resolve_config_omega
 
         # Expand annotation paths (user or config)
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
+
+        self.config = resolve_config_omega(self.config)
+        print("CONFIG:", self.config)
 
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
@@ -132,12 +136,14 @@ class ClassificationAPI:
 
 
     def infer(self, test_set=None, pretrained=None, use_ddp=False):
-        from soccernetpro.datasets.builder import build_dataset
-
         import torch
         import torch.multiprocessing as mp
+        from soccernetpro.core.utils.config import resolve_config_omega
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
+        self.config = resolve_config_omega(self.config)
+        print("CONFIG:", self.config)
+
         world_size = torch.cuda.device_count()
         use_ddp = use_ddp and world_size > 1
         ctx = mp.get_context("spawn")

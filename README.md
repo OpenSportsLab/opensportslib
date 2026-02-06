@@ -34,17 +34,40 @@ pip install --pre soccernetpro
 ```
 
 ## Configuration Sample (.yaml) file
+1. Classification 
 ```bash
 TASK: classification
 
 DATA:
   dataset_name: mvfouls
-  data_dir: mvfouls
+  data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
   view_type: multi  # multi or single
-  annotations:
-    train: /path/to/train_annotations.json
-    valid: /path/to/test_annotations.json
-    test: /path/to/valid_annotations.json
+  num_classes: 8 # mvfoul
+  train: 
+    type: annotations_train.json
+    video_path: ${DATA.data_dir}/train
+    path: ${DATA.train.video_path}/annotations-train.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+  valid:
+    type: annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.valid.video_path}/annotations-valid.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
+  test:
+    type: annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.test.video_path}/annotations-test.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
   num_frames: 16               # 8 before + 8 after the foul
   input_fps: 25                # Original FPS of video
   target_fps: 17               # Temporal downsampling to 1s clip (approx)
@@ -65,9 +88,6 @@ DATA:
     random_horizontal_flip: true
     flip_prob: 0.5
     random_crop: false
-  num_workers: 1
-  train_batch_size: 8
-  valid_batch_size: 1
 
 MODEL:
   type: custom # huggingface, custom 
@@ -79,7 +99,6 @@ MODEL:
   head: 
     type: MV_LinearLayer
   pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, OpenGVLab/VideoMAEv2-Base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
-  num_classes: 8
   unfreeze_head: true  # for videomae backbone
   unfreeze_last_n_layers: 3 # for videomae backbone
     
@@ -114,108 +133,147 @@ TRAIN:
 SYSTEM:
   log_dir: ./logs
   seed: 42
+  GPU: 4
   device: cuda   # auto | cuda | cpu
   gpu_id: 0
 ```
 
-## Annotations (train/valid/test) (.json) format
+2. Localization
 ```bash
-{
-  "version": "1.0",
-  "date": "2025-11-11",
-  "task": "action_classification",
-  "dataset_name": "mvfouls",
-  "metadata": {
-    "source": "Professional Soccer Dataset",
-    "license": "CC-BY-NC-4.0",
-    "created_by": "AI Sports Lab",
-    "notes": "Converted automatically from SoccerNet-like foul annotation structure."
-  },
-  "labels": {
-    "foul_type": {
-      "type": "single_label",
-      "labels": [
-        "Challenge",
-        "Dive",
-        "Elbowing",
-        "High Leg",
-        "Holding",
-        "Pushing",
-        "Standing Tackling",
-        "Tackling"
-      ]
-    },
-    "severity": {
-      "type": "single_label",
-      "labels": [
-        "No Offence",
-        "Offence + No Card",
-        "Offence + Yellow Card",
-        "Offence + Red Card"
-      ]
-    },
-    "attributes": {
-      "type": "multi_label",
-      "labels": [
-        "Intentional",
-        "Reckless",
-        "Dangerous Play",
-        "VAR Checked",
-        "InBox",
-        "CounterAttack"
-      ]
-    }
-  },
-  "data": [
-    {
-      "id": "action_0",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "Dataset/Train/action_0/clip_0",
-          "metadata": {
-            "camera_type": "Main camera center",
-            "timestamp": 1730826,
-            "replay_speed": 1.0
-          }
-        },
-        {
-          "type": "video",
-          "path": "Dataset/Train/action_0/clip_1",
-          "metadata": {
-            "camera_type": "Close-up player or field referee",
-            "timestamp": 1744173,
-            "replay_speed": 1.8
-          }
-        }
-      ],
-      "labels": {
-        "foul_type": {
-          "label": "Challenge"
-        },
-        "severity": {
-          "label": "Offence + No Card"
-        },
-        "attributes": {
-          "labels": [
-            "Reckless"
-          ]
-        }
-      },
-      "metadata": {
-        "UrlLocal": "england_epl\\2014-2015\\2015-02-21 - 18-00 Chelsea 1 - 1 Burnley",
-        "Contact": "With contact",
-        "Bodypart": "Upper body",
-        "Upper body part": "Use of shoulder",
-        "Handball": "No handball"
-      }
-    }
-    ]
-}
+TASK: localization
 
+dali: True
+
+DATA:
+  dataset_name: SoccerNet
+  data_dir: /home/vorajv/soccernetpro/SoccerNet/annotations/
+  classes:
+    - PASS
+    - DRIVE
+    
+  epoch_num_frames: 500000
+  mixup: true
+  modality: rgb
+  crop_dim: -1
+  dilate_len: 0        # Dilate ground truth labels
+  clip_len: 100
+  input_fps: 25
+  extract_fps: 2
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+  target_height: 224
+  target_width: 398
+
+  train:
+    type: VideoGameWithDali
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/train/
+    path: ${DATA.train.video_path}/annotations-train.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+
+  valid:
+    type: VideoGameWithDali
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/valid/
+    path: ${DATA.valid.video_path}/annotations-valid.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+
+  valid_data_frames:
+    type: VideoGameWithDaliVideo
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.valid.video_path}
+    path: ${DATA.valid.path}
+    overlap_len: 0
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+  test:
+    type: VideoGameWithDaliVideo
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}/test/
+    path: ${DATA.test.video_path}/annotations-test.json
+    results: results_spotting_test
+    nms_window: 2 
+    metric: loose
+    overlap_len: 50
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+  challenge:
+    type: VideoGameWithDaliVideo
+    overlap_len: 50
+    output_map: [data, label]
+    path: ${DATA.data_dir}/challenge/annotations.json
+    dataloader:
+      batch_size: 4
+      shuffle: false
+
+MODEL:
+    type: E2E
+    runner:
+      type: runner_e2e
+    backbone:
+      type: rny008_gsm
+    head:
+      type: gru
+    multi_gpu: true
+    load_weights: null
+    save_dir: ./checkpoints
+    work_dir: ${MODEL.save_dir}
+
+TRAIN:
+  type: trainer_e2e
+  num_epochs: 10
+  acc_grad_iter: 1
+  base_num_valid_epochs: 30
+  start_valid_epoch: 1
+  valid_map_every: 1
+  criterion_valid: map
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.001
+
+  scheduler:
+    type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: ${TRAIN.num_epochs}
+    warm_up_epochs: 3
+
+SYSTEM:
+  log_dir: ./logs
+  seed: 42
+  GPU: 4         # number of gpus to use
+  device: cuda   # auto | cuda | cpu
+  gpu_id: 0      # device id for single gpu training
 ```
 
-## Train
+## Annotations (train/valid/test) (.json) format
+Download annotations file from below links
+1. Classification
+mvfouls = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/mvfouls
+svfouls = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/svfouls
+
+2. Localization
+ball-action-spotting = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-localization-snbas/tree/main
+
+
+## Train on SINGLE GPU
 ```bash
 from soccernetpro import model
 import wandb
@@ -233,7 +291,29 @@ myModel.train(
 )
 ```
 
-## Test / Inference
+## Train on Multiple GPU (DDP)
+```bash
+from soccernetpro import model
+
+def main():
+    myModel = model.classification(
+        config="/path/to/classification.yaml",
+        data_dir="/path/to/dataset_root"
+    )
+
+    myModel.train(
+        train_set="/path/to/train_annotations.json",
+        valid_set="/path/to/valid_annotations.json",
+        pretrained="/path/to/pretrained.pt",  # optional
+        use_ddp=True,  # IMPORTANT
+    )
+
+if __name__ == "__main__":
+    main()
+```
+
+
+## Test / Inference on SINGLE GPU
 ```bash
 from soccernetpro import model
 
@@ -243,9 +323,30 @@ myModel = model.classification(
 )
 
 # Run inference on test set
-preds, metrics = myModel.infer(
+metrics = myModel.infer(
     test_set="/path/to/test_annotations.json",
     pretrained="/path/to/checkpoints/final_model",
 )
 ```
 
+## Test / Inference on Multiple GPU (DDP)
+```bash
+from soccernetpro import model
+
+def main():
+    myModel = model.classification(
+        config="/path/to/classification.yaml",
+        data_dir="/path/to/dataset_root"
+    )
+
+    metrics = myModel.infer(
+        test_set="/path/to/test_annotations.json",
+        pretrained="/path/to/checkpoints/best.pt",
+        use_ddp=True,   # optional (usually not needed)
+    )
+
+    print(metrics)
+
+if __name__ == "__main__":
+    main()
+```
