@@ -14,6 +14,7 @@ from soccernetpro.metrics.classification_metric import compute_classification_me
 from soccernetpro.core.utils.wandb import log_attention_wandb, log_confusion_matrix_wandb, log_sample_videos_wandb 
 from soccernetpro.core.utils.checkpoint import *
 from soccernetpro.core.utils.config import select_device
+import torch.distributed as dist
 
 class MVTrainerClassification:
     def __init__(
@@ -41,7 +42,8 @@ class MVTrainerClassification:
         self.val_loader = val_loader
         self.test_loader = test_loader
 
-        self.model = model.to(device)
+        self.model = model#.to(device)
+        #self.model = DDP(self.model, device_ids=[device])
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
@@ -53,21 +55,27 @@ class MVTrainerClassification:
         self.device = device
         self.top_k = top_k
         self.log_attention = log_attention
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
+        if self.rank == 0:
+            # ---------------- W&B INIT ----------------
+            self.wandb_run = wandb.init(
+                project=wandb_project,
+                name=wandb_run_name,
+                config=wandb_config,
+                reinit=True
+            )
+            run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
+        else:
+            self.wandb_run = None
+            run_id = time.strftime("%Y%m%d-%H%M%S")
 
-        # ---------------- W&B INIT ----------------
-        self.wandb_run = wandb.init(
-            project=wandb_project,
-            name=wandb_run_name,
-            config=wandb_config,
-            reinit=True
-        )
-
-        run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
+        #run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
         self.save_dir = os.path.join(save_dir, model_name, run_id)
         os.makedirs(self.save_dir, exist_ok=True)
 
         try:
-            wandb.watch(self.model, log="gradients", log_freq=100)
+            if self.rank == 0:
+                wandb.watch(self.model, log="gradients", log_freq=100)
         except Exception:
             pass
 
@@ -77,12 +85,16 @@ class MVTrainerClassification:
     def train(self, epoch_start=0, save_every=3):
         logging.info("start training")
         counter = 0
-
+        best_metric = -float("inf")  # if maximizing (accuracy/F1)
+        best_path = None
         for epoch in range(epoch_start, self.max_epochs):
             print(f"\nEpoch {epoch+1}/{self.max_epochs}")
 
             # ---------------- TRAIN ----------------
-            pbar = tqdm.tqdm(total=len(self.train_loader), desc="Training", position=0, leave=True)
+            if hasattr(self.train_loader.sampler, "set_epoch"):
+                self.train_loader.sampler.set_epoch(epoch)
+            disable = self.rank != 0
+            pbar = tqdm.tqdm(total=len(self.train_loader), desc="Training", position=0, leave=True, disable=disable)
             _, train_loss, train_metrics = self._run_epoch(
                 self.train_loader,
                 epoch + 1,
@@ -93,7 +105,7 @@ class MVTrainerClassification:
             pbar.close()
 
             # ---------------- VALID ----------------
-            pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True)
+            pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True, disable=disable)
             _, val_loss, val_metrics = self._run_epoch(
                 self.val_loader,
                 epoch + 1,
@@ -107,26 +119,31 @@ class MVTrainerClassification:
             self.scheduler.step()
             lr = self.optimizer.param_groups[0]["lr"]
 
-            # ---------------- W&B LOG ----------------
-            wandb.log({
-                "epoch": epoch + 1,
-                "lr": lr,
-                "train/loss": train_loss,
-                "valid/loss": val_loss,
-                **{f"train/{k}": v for k, v in train_metrics.items()},
-                **{f"valid/{k}": v for k, v in val_metrics.items()},
-            })
+            if self.rank == 0:
+                # ---------------- W&B LOG ----------------
+                wandb.log({
+                    "epoch": epoch + 1,
+                    "lr": lr,
+                    "train/loss": train_loss,
+                    "valid/loss": val_loss,
+                    **{f"train/{k}": v for k, v in train_metrics.items()},
+                    **{f"valid/{k}": v for k, v in val_metrics.items()},
+                })
 
-            print("TRAIN METRICS:", train_metrics)
-            print("VAL METRICS:", val_metrics)
+                print("TRAIN METRICS:", train_metrics)
+                print("VAL METRICS:", val_metrics)
 
             # ---------------- CHECKPOINT ----------------
-            counter += 1
-            if counter >= save_every:
-                path = self._save_checkpoint(epoch + 1)
+            current = val_metrics["balanced_accuracy"]   # or val_metrics["balanced_accuracy"], etc.
+
+            is_better = current > best_metric   # change sign if maximizing
+
+            if is_better and self.rank == 0:
+                best_metric = current
+                best_path = self._save_checkpoint(epoch + 1, tag="best")
 
                 artifact = wandb.Artifact("model-checkpoint", type="model")
-                artifact.add_file(path)
+                artifact.add_file(best_path)
                 wandb.log_artifact(artifact)
 
                 counter = 0
@@ -142,7 +159,7 @@ class MVTrainerClassification:
         If epoch is provided, logs under that epoch number.
         """
         print("\nRunning TEST evaluation")
-        pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True)
+        pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True, disable = self.rank != 0)
         _, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
             epoch if epoch is not None else "final",
@@ -152,12 +169,13 @@ class MVTrainerClassification:
         )
         pbar.close()
 
-        wandb.log({
-            "test/loss": test_loss,
-            **{f"test/{k}": v for k, v in test_metrics.items()},
-        })
+        if self.rank==0:
+            wandb.log({
+                "test/loss": test_loss,
+                **{f"test/{k}": v for k, v in test_metrics.items()},
+            })
 
-        print("TEST METRICS:", test_metrics)
+            print("TEST METRICS:", test_metrics)
         return test_loss, test_metrics
 
     # =========================================================
@@ -249,8 +267,23 @@ class MVTrainerClassification:
             #     log_attention_wandb(attention, set_name)
 
         # -------- METRICS --------
-        all_logits = torch.cat(all_logits, dim=0).numpy()
-        all_labels = torch.cat(all_labels, dim=0).numpy()
+        if dist.is_initialized():
+            all_logits_tensor = torch.cat(all_logits).to(self.device)
+            all_labels_tensor = torch.cat(all_labels).to(self.device)
+
+            gathered_logits = [torch.zeros_like(all_logits_tensor) for _ in range(dist.get_world_size())]
+            gathered_labels = [torch.zeros_like(all_labels_tensor) for _ in range(dist.get_world_size())]
+
+            dist.all_gather(gathered_logits, all_logits_tensor)
+            dist.all_gather(gathered_labels, all_labels_tensor)
+
+            all_logits = torch.cat(gathered_logits).cpu().numpy()
+            all_labels = torch.cat(gathered_labels).cpu().numpy()
+        else:
+            all_logits = torch.cat(all_logits).numpy()
+            all_labels = torch.cat(all_labels).numpy()
+        # all_logits = torch.cat(all_logits, dim=0).numpy()
+        # all_labels = torch.cat(all_labels, dim=0).numpy()
 
         metrics = compute_classification_metrics(
             (all_logits, all_labels),
@@ -263,7 +296,7 @@ class MVTrainerClassification:
             top_k=None
         )
 
-        if set_name in ["valid", "test"]:
+        if self.rank==0 and set_name in ["valid", "test"]:
             class_names = [self.class_names[i] for i in sorted(self.class_names.keys())] or [str(i) for i in range(all_logits.shape[1])]
 
             log_confusion_matrix_wandb(
@@ -290,18 +323,22 @@ class MVTrainerClassification:
     # =========================================================
     # CHECKPOINT
     # =========================================================
-    def _save_checkpoint(self, epoch):
+    def _save_checkpoint(self, epoch, tag=None):
+
         epoch_dir = os.path.join(self.save_dir, str(epoch))
         os.makedirs(epoch_dir, exist_ok=True)
 
         state = {
             "epoch": epoch,
-            "state_dict": self.model.state_dict(),
+            "state_dict": self.model.module.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict()
         }
+        name = f"epoch_{epoch}.pt"
+        if tag:
+            name = f"{tag}_epoch_{epoch}.pt"
 
-        path_aux = os.path.join(epoch_dir, f"{epoch}_model.pth.tar")
+        path_aux = os.path.join(epoch_dir, name)
         torch.save(state, path_aux)
         print(f"Saved checkpoint: {path_aux}")
         return path_aux
@@ -323,7 +360,7 @@ class Trainer_Classification:
     def compute_metrics(self, pred):
         return compute_classification_metrics(pred, top_k=2)
 
-    def train(self, model, train_dataset, val_dataset=None):
+    def train(self, model, train_dataset, val_dataset=None, rank=0, world_size=1):
         """
         Use HuggingFace Trainer for VideoMAE training
         """
@@ -396,12 +433,35 @@ class Trainer_Classification:
             from soccernetpro.core.loss.builder import build_criterion
             from soccernetpro.core.optimizer.builder import build_optimizer
             from soccernetpro.core.scheduler.builder import build_scheduler
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            from torch.utils.data.distributed import DistributedSampler
+
+            is_ddp = world_size > 1
+
+            if is_ddp:
+                torch.cuda.set_device(rank)
+                self.device = torch.device(f"cuda:{rank}")
+            else:
+                self.device = select_device(self.config.SYSTEM)
+
+            # model
             self.model = model.to(self.device)
+
+            if is_ddp:
+                self.model = DDP(self.model, device_ids=[rank])     
+                train_sampler = DistributedSampler(train_dataset, rank=rank, num_replicas=world_size)
+                val_sampler = DistributedSampler(val_dataset, rank=rank, num_replicas=world_size, shuffle=False)
+            else:
+                train_sampler = None
+                val_sampler = None
+
             train_loader = DataLoader(train_dataset, batch_size=self.config.DATA.train_batch_size, 
-                                      shuffle=True, num_workers=self.config.DATA.num_workers, pin_memory=True
+                                      shuffle=(train_sampler is None), num_workers=self.config.DATA.num_workers, pin_memory=True,
+                                      sampler=train_sampler
                             )
             val_loader = DataLoader(val_dataset, batch_size=self.config.DATA.valid_batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True
+                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True,
+                                    sampler=val_sampler
                             )
 
             optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
@@ -448,7 +508,7 @@ class Trainer_Classification:
 
 
 
-    def infer(self, test_dataset):
+    def infer(self, test_dataset, rank=0, world_size=1):
         if self.config.MODEL.type == "huggingface":
 
             args = TrainingArguments(
@@ -476,9 +536,29 @@ class Trainer_Classification:
             from soccernetpro.core.loss.builder import build_criterion
             from soccernetpro.core.optimizer.builder import build_optimizer
             from soccernetpro.core.scheduler.builder import build_scheduler
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            from torch.utils.data.distributed import DistributedSampler
+
+            is_ddp = world_size > 1
+
+            if is_ddp:
+                torch.cuda.set_device(rank)
+                self.device = torch.device(f"cuda:{rank}")
+            else:
+                self.device = select_device(self.config.SYSTEM)
+
+            # model
+            self.model = self.model.to(self.device)
+
+            if is_ddp:
+                self.model = DDP(self.model, device_ids=[rank])   
+                test_sampler = DistributedSampler(test_dataset, rank=rank, num_replicas=world_size)
+            else:
+                test_sampler = None
 
             test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.valid_batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True
+                                    shuffle=False, num_workers=self.config.DATA.num_workers, pin_memory=True, 
+                                    sampler=test_sampler
                             )
 
             optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)

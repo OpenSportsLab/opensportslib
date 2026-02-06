@@ -62,7 +62,7 @@ DATA:
     video_path: ${DATA.data_dir}/test/
     path: ${DATA.test.video_path}/annotations-test.json
     results: results_spotting_test
-    nms_window: 2 # for ball action spotting - 25
+    nms_window: 2 
     metric: loose
     overlap_len: 50
     dataloader:
