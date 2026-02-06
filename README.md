@@ -272,6 +272,18 @@ svfouls = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classificat
 2. Localization
 ball-action-spotting = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-localization-snbas/tree/main
 
+# Download weights from HF
+1. classification (mvit)
+https://huggingface.co/jeetv/snpro-classification-mvit/tree/main
+
+Usage:
+```bash
+### Load weights from HF ###
+myModel.infer(
+    test_set="/path/to/annotations.json",
+    pretrained="jeetv/snpro-classification-mvit", # Important
+)
+```
 
 ## Train on SINGLE GPU
 ```bash
