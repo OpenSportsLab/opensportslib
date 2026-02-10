@@ -614,81 +614,241 @@ class Evaluator:
             cfg_testset (dict): Config dict that contains informations for the predictions.
         """
         if self.evaluate_Spotting == "evaluate_pred_JSON":
-            return self.evaluate_pred_JSON(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file)
+            return self.evaluate_pred_JSON(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_SN":
-            return self.evaluate_pred_SN(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file)
+            return self.evaluate_pred_SN(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_E2E":
-            return self.evaluate_pred_E2E(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file)
+            return self.evaluate_pred_E2E(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
 
 
+    # def evaluate_common_JSON(self, cfg, results, metric):
+    #     if cfg.path == None:
+    #         return
+    #     with open(cfg.path) as f:
+    #         GT_data = json.load(f)
+
+    #     print(results)
+    #     pred_path_is_json = False
+    #     if results.endswith(".json"):
+    #         pred_path_is_json = True
+    #         with open(results) as f:
+    #             pred_data = json.load(f)
+
+    #     targets_numpy = list()
+    #     detections_numpy = list()
+    #     closests_numpy = list()
+
+    #     if "labels" in GT_data.keys():
+    #         classes = GT_data["labels"]
+    #     else:
+    #         assert isinstance(cfg.classes, list) or os.path.isfile(cfg.classes)
+    #         if isinstance(cfg.classes, list):
+    #             classes = cfg.classes
+
+    #     classes = sorted(classes)
+    #     EVENT_DICTIONARY = {x: i for i, x in enumerate(classes)}
+    #     INVERSE_EVENT_DICTIONARY = {i: x for i, x in enumerate(classes)}
+
+    #     if "videos" in GT_data.keys():
+    #         videos = GT_data["videos"]
+    #     else:
+    #         videos = [GT_data]
+
+    #     for game in tqdm.tqdm(videos):
+    #         print(game.keys())
+    #         # fetch labels
+    #         labels = game["annotations"]
+    #         if not pred_path_is_json:
+    #             try:
+    #                 pred_file = os.path.join(results, os.path.splitext(game["path"])[0], "results_spotting.json")
+    #                 print(pred_file)
+    #                 with open(pred_file) as f:
+    #                     pred_data = json.load(f)
+    #             except FileNotFoundError:
+    #                 continue
+    #         predictions = pred_data["predictions"]
+    #         # convert labels to dense vector
+    #         dense_labels = label2vector(
+    #             labels,
+    #             num_classes=len(classes),
+    #             EVENT_DICTIONARY=EVENT_DICTIONARY,
+    #             framerate=(
+    #                 pred_data["fps"] if "fps" in pred_data.keys() else self.extract_fps
+    #             ),
+    #         )
+    #         print(dense_labels.shape)
+    #         # convert predictions to vector
+    #         dense_predictions = predictions2vector(
+    #             predictions,
+    #             vector_size=game["num_frames"] if "num_frames" in game.keys() else None,
+    #             framerate=(
+    #                 pred_data["fps"] if "fps" in pred_data.keys() else self.extract_fps
+    #             ),
+    #             num_classes=len(classes),
+    #             EVENT_DICTIONARY=EVENT_DICTIONARY,
+    #         )
+    #         print(dense_predictions.shape)
+
+    #         targets_numpy.append(dense_labels)
+    #         detections_numpy.append(dense_predictions)
+
+    #         closest_numpy = np.zeros(dense_labels.shape) - 1
+    #         # Get the closest action index
+    #         closests_numpy.append(get_closest_action_index(dense_labels, closest_numpy))
+
+    #     if targets_numpy:
+    #         return compute_performances_mAP(
+    #             metric,
+    #             targets_numpy,
+    #             detections_numpy,
+    #             closests_numpy,
+    #             INVERSE_EVENT_DICTIONARY,
+    #         )
+    #     else:
+    #         logging.warning("No predictions found for evaluation. Returning None.")
+    #         return None
+
+    
+      
     def evaluate_common_JSON(self, cfg, results, metric):
-        if cfg.path == None:
+
+        if cfg.path is None:
             return
-        cfg.path = "/home/vorajv/soccernetpro/SoccerNet/annotations/train/annotations-2025-224p.json"
+
+        # --------------------------------------------------
+        # LOAD GT
+        # --------------------------------------------------
         with open(cfg.path) as f:
             GT_data = json.load(f)
 
-        pred_path_is_json = False
-        if results.endswith(".json"):
-            pred_path_is_json = True
-            with open(results) as f:
-                pred_data = json.load(f)
+        # --------------------------------------------------
+        # LOAD PRED FILE (json / json.gz / folder)
+        # --------------------------------------------------
+        pred_data = None
+        pred_path_is_file = results.endswith(".json") or results.endswith(".json.gz")
 
-        targets_numpy = list()
-        detections_numpy = list()
-        closests_numpy = list()
+        if pred_path_is_file:
+            pred_data = load_gz_json(results) if results.endswith(".gz") else load_json(results)
 
-        if "labels" in GT_data.keys():
+        # detect v2 prediction
+        pred_is_v2 = isinstance(pred_data, dict) and pred_data is not None and "data" in pred_data
+        print(pred_is_v2)
+        # --------------------------------------------------
+        # CLASSES
+        # --------------------------------------------------
+        if isinstance(GT_data.get("labels"), dict):
+            classes = list(GT_data["labels"].values())[0]["labels"]
+        elif "labels" in GT_data:
             classes = GT_data["labels"]
         else:
-            assert isinstance(cfg.classes, list) or os.path.isfile(cfg.classes)
-            if isinstance(cfg.classes, list):
-                classes = cfg.classes
+            classes = cfg.classes
 
         classes = sorted(classes)
         EVENT_DICTIONARY = {x: i for i, x in enumerate(classes)}
         INVERSE_EVENT_DICTIONARY = {i: x for i, x in enumerate(classes)}
 
-        if "videos" in GT_data.keys():
+        # --------------------------------------------------
+        # GT VIDEOS
+        # --------------------------------------------------
+        if "videos" in GT_data:
             videos = GT_data["videos"]
+            gt_is_v2 = False
         else:
-            videos = [GT_data]
+            videos = GT_data["data"]
+            gt_is_v2 = True
 
+        # --------------------------------------------------
+        # BUILD PRED LOOKUP IF V2
+        # --------------------------------------------------
+        pred_lookup = {}
+        if pred_is_v2:
+            for item in pred_data["data"]:
+                video_path = item["inputs"][0]["path"]
+                pred_lookup[video_path] = item
+
+        targets_numpy = []
+        detections_numpy = []
+        closests_numpy = []
+
+        # ==================================================
+        # LOOP
+        # ==================================================
         for game in tqdm.tqdm(videos):
 
-            # fetch labels
-            labels = game["annotations"]
-            if not pred_path_is_json:
-                try:
-                    with open(
-                        os.path.join(
-                            results,
-                            os.path.splitext(game["path"])[0],
-                            "results_spotting.json",
-                        )
-                    ) as f:
-                        pred_data = json.load(f)
-                except FileNotFoundError:
+            # ---------------- GT ----------------
+            if gt_is_v2:
+                video_path = game["inputs"][0]["path"]
+                labels = [{"label": e["label"], 
+                           "position": int(e["position_ms"]), 
+                           "gameTime": e["gameTime"]} for e in game.get("events", [])]
+            else:
+                video_path = game["path"]
+                labels = game["annotations"]
+
+            # ---------------- PRED ----------------
+            if pred_path_is_file:
+
+                # ===== V2 PRED =====
+                if pred_is_v2:
+                    if video_path not in pred_lookup:
+                        continue
+
+                    item = pred_lookup[video_path]
+                    fps = item["inputs"][0].get("fps", self.extract_fps)
+
+                    predictions = [
+                        {
+                            "label": e["label"],
+                            "position": int(e["position_ms"]),
+                            "frame": e["frame"],
+                            "confidence": e.get("confidence", 1.0),
+                        }
+                        for e in item.get("events", [])
+                    ]
+
+                # ===== OLD PRED =====
+                else:
+                    if "predictions" not in pred_data:
+                        continue
+
+                    predictions = pred_data["predictions"]
+                    fps = pred_data.get("fps", self.extract_fps)
+
+            else:
+                # ===== FOLDER MODE =====
+                pred_file = os.path.join(results, os.path.splitext(video_path)[0], "results_spotting.json")
+                
+                if not os.path.exists(pred_file):
                     continue
-            predictions = pred_data["predictions"]
+                
+                with open(pred_file) as f:
+                    pred_data_local = json.load(f)
 
-            # convert labels to dense vector
-            dense_labels = label2vector(
-                labels,
-                num_classes=len(classes),
-                EVENT_DICTIONARY=EVENT_DICTIONARY,
-                framerate=(
-                    pred_data["fps"] if "fps" in pred_data.keys() else self.extract_fps
-                ),
-            )
+                if "data" in pred_data_local:
+                    # v2 file inside folder
+                    item = pred_data_local["data"][0]
+                    fps = item["inputs"][0].get("fps", self.extract_fps)
 
-            # convert predictions to vector
+                    predictions = [
+                        {
+                            "label": e["label"],
+                            "position": int(e["position_ms"]),
+                            "frame": e["frame"],
+                            "confidence": e.get("confidence", 1.0),
+                        }
+                        for e in item.get("events", [])
+                    ]
+                else:
+                    predictions = pred_data_local["predictions"]
+                    fps = pred_data_local.get("fps", self.extract_fps)
+
+            # ---------------- VECTORS ----------------
+            dense_labels = label2vector(labels, num_classes=len(classes), EVENT_DICTIONARY=EVENT_DICTIONARY, framerate=fps)
+
             dense_predictions = predictions2vector(
                 predictions,
-                vector_size=game["num_frames"] if "num_frames" in game.keys() else None,
-                framerate=(
-                    pred_data["fps"] if "fps" in pred_data.keys() else cfg.extract_fps
-                ),
+                vector_size=None,
+                framerate=fps,
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,
             )
@@ -697,9 +857,11 @@ class Evaluator:
             detections_numpy.append(dense_predictions)
 
             closest_numpy = np.zeros(dense_labels.shape) - 1
-            # Get the closest action index
             closests_numpy.append(get_closest_action_index(dense_labels, closest_numpy))
 
+        # --------------------------------------------------
+        # METRICS
+        # --------------------------------------------------
         if targets_numpy:
             return compute_performances_mAP(
                 metric,
@@ -709,9 +871,8 @@ class Evaluator:
                 INVERSE_EVENT_DICTIONARY,
             )
         else:
-            logging.warning("No predictions found for evaluation. Returning None.")
+            logging.warning("No predictions found.")
             return None
-
 
     def evaluate_pred_E2E(self, cfg, work_dir, pred_path, metric="loose"):
         """Evaluate predictions infered with E2E method and display performances.

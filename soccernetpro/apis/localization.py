@@ -175,13 +175,14 @@ class LocalizationAPI:
         test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
         print(len(test_loader))
 
-        # Inference
+        # # Inference
         inferer = build_inferer(cfg=self.config.MODEL,
                                 model=self.model)
         json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
         #print(f"Inference Metrics: {metrics}")
-
+        #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
         evaluator = build_evaluator(cfg=self.config)
         metrics = evaluator.evaluate(cfg_testset=self.config.DATA.test, json_gz_file=json_gz_file)
+        print("Metrics :", metrics)
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics
