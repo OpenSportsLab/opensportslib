@@ -135,14 +135,13 @@ class LocalizationAPI:
     def infer(self, test_set=None, pretrained=None):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
-        from soccernetpro.core.trainer.localization_trainer import build_inferer
+        from soccernetpro.core.trainer.localization_trainer import build_inferer, build_evaluator
         from soccernetpro.core.utils.config import select_device, resolve_config_omega
         from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
         from soccernetpro.core.utils.load_annotations import check_config
         import time
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
-        self.config.MODEL.work_dir= os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
         self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
@@ -157,10 +156,13 @@ class LocalizationAPI:
         print("Torch model type:", type(self.model._model))
         # Load model
         if pretrained:
+            pretrained = expand(pretrained)
             self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
-                                        path=expand(pretrained),
+                                        path=pretrained,
                                         device=device,
                                         key_remap_fn=localization_remap)
+
+        self.config.MODEL.work_dir= os.path.dirname(pretrained) if pretrained else os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
         
         # Datasets
         # Test
@@ -176,7 +178,10 @@ class LocalizationAPI:
         # Inference
         inferer = build_inferer(cfg=self.config.MODEL,
                                 model=self.model)
-        metrics = inferer.infer(cfg=self.config, data=test_loader)
+        json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
         #print(f"Inference Metrics: {metrics}")
+
+        evaluator = build_evaluator(cfg=self.config)
+        metrics = evaluator.evaluate(cfg_testset=self.config.DATA.test, json_gz_file=json_gz_file)
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics

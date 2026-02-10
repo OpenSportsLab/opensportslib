@@ -139,6 +139,7 @@ def annotationstoe2eformat(
 
     labels_e2e = []
     classes_by_label_dir = []
+    task_name_list = []
 
     for label_path, video_dir in zip(label_files, video_dirs):
         logging.info(f"Processing {label_path} to e2e format")
@@ -148,6 +149,7 @@ def annotationstoe2eformat(
         # ---- Extract class list (ball_action) ----
         for task_name, task_data in annotations["labels"].items():
             labels = task_data.get("labels", {})
+            task_name_list.append(task_name)
 
         classes_by_label_dir.append(labels)
 
@@ -230,7 +232,7 @@ def annotationstoe2eformat(
 
     labels_e2e.sort(key=lambda x: x["video"])
 
-    return labels_e2e
+    return labels_e2e, task_name_list[0]
 
 # def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali):
 #     """Adapt annotations jsons to e2e format.

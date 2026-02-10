@@ -264,7 +264,7 @@ class DaliDataSet(DALIGenericIterator):
 
         self._src_file = label_file
         # self._labels = load_json(label_file)
-        self._labels = annotationstoe2eformat(
+        self._labels, self.task_name = annotationstoe2eformat(
             label_file, video_dir, input_fps, extract_fps, True
         )
         self._class_dict = classes
@@ -638,7 +638,7 @@ class DaliDataSetVideo(DALIGenericIterator, DatasetVideoSharedMethods):
         self._src_file = label_file
         # self.infer = False
         if label_file.endswith(".json"):
-            self._labels = annotationstoe2eformat(
+            self._labels, self.task_name = annotationstoe2eformat(
                 label_file, video_dir, input_fps, extract_fps, True
             )
             stride_dali = get_stride(input_fps, extract_fps)

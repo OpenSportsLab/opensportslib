@@ -162,14 +162,25 @@ def load_checkpoint(
         raise ValueError("Checkpoint format not recognized")
 
     # Clean + remap keys
-    clean_state_dict = {}
-    for k, v in state_dict.items():
-        k = k.replace("module.", "")
-        if key_remap_fn:
-            k = key_remap_fn(k)
-        clean_state_dict[k] = v
+    model_keys = list(model.state_dict().keys())
+    ckpt_keys  = list(state_dict.keys())
 
-    missing, unexpected = model.load_state_dict(clean_state_dict, strict=False)
+    ckpt_has_module  = ckpt_keys[0].startswith("module.")
+    model_has_module = model_keys[0].startswith("module.")
+
+    # Case 1: checkpoint has module., model doesn't
+    if ckpt_has_module and not model_has_module:
+        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+
+    # Case 2: checkpoint doesn't have module., model does
+    elif not ckpt_has_module and model_has_module:
+        state_dict = {f"module.{k}": v for k, v in state_dict.items()}
+
+    # Optional custom remap
+    if key_remap_fn:
+        state_dict = {key_remap_fn(k): v for k, v in state_dict.items()}
+
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
     print("\n--- MISSING KEYS ---")
     for k in missing[:20]:
         print(k)
