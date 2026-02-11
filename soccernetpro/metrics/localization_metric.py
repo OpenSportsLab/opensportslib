@@ -309,6 +309,7 @@ def build_snpro_prediction_json(pred_events, head_name="action", split=None, cre
             events.append({
                 "head": head_name,
                 "label": ev["label"],
+                "gameTime": ev["gameTime"],
                 "frame": ev["frame"],
                 "position_ms": ev["position"],
                 "confidence": ev["confidence"],
@@ -559,6 +560,7 @@ def infer_and_process_predictions_e2e(
     pred_events_high_recall = build_snpro_prediction_json(pred_events_high_recall, head_name=dataset.task_name, split=split, created_by="model")
     if save_pred is not None:
         store_json(save_pred + ".json", pred_events, pretty=True)
+        store_json(save_pred + ".high_recall.json", pred_events_high_recall, pretty=True)
         store_gz_json(save_pred + ".recall.json.gz", pred_events_high_recall)
         # if save_scores:
         #     store_gz_json(save_pred + '.score.json.gz', pred_scores)
@@ -769,10 +771,11 @@ def store_eval_files_json(raw_pred, eval_dir, save_v2=True):
             for ev in obj["events"]:
                 events.append({
                     "head": "action",
-                    "label": ev["label"],
-                    "frame": ev["frame"],
-                    "position_ms": int(ev["position"]),
-                    "confidence": float(ev.get("confidence", 1.0)),
+                    "label": ev.get("label"),
+                    "frame": ev.get("frame"),
+                    "position_ms": int(ev.get("position")),
+                    "confidence": float(ev.get("confidence")),
+                    "gameTime": ev.get("gameTime")
                 })
 
             out = {
@@ -868,6 +871,7 @@ def label2vector(
 
     for annotation in labels:
 
+        #print(annotation)
         event = annotation["label"]
         if "frame" in annotation:
             frame = int(annotation["frame"])
@@ -1464,10 +1468,11 @@ def compute_performances_mAP(
         )
     )
 
+    result = tabulate(rows, headers=["", "Any", "Visible", "Unseen"])
     logging.info("Best Performance at end of training ")
     logging.info("Metric: " + metric)
-    logging.info("\n" + tabulate(rows, headers=["", "Any", "Visible", "Unseen"]))
+    logging.info("\n" + result)
     # print(tabulate(rows, headers=['', 'Any', 'Visible', 'Unseen']))
-    return results
+    return result
 
 np.seterr(divide="ignore", invalid="ignore")

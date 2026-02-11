@@ -132,7 +132,7 @@ class LocalizationAPI:
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
   
 
-    def infer(self, test_set=None, pretrained=None):
+    def infer(self, test_set=None, pretrained=None, predictions=None):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_inferer, build_evaluator
@@ -149,40 +149,42 @@ class LocalizationAPI:
         logging.info(self.config)
         # Start Timing
         start = time.time()
+        if not predictions:
+            logging.info("No predictions provided, running inference.")
+            device = select_device(self.config.SYSTEM)
+            self.model = build_model(self.config, device=device)
+            print("Model type:", type(self.model))
+            print("Torch model type:", type(self.model._model))
+            # Load model
+            if pretrained:
+                pretrained = expand(pretrained)
+                self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
+                                            path=pretrained,
+                                            device=device,
+                                            key_remap_fn=localization_remap)
 
-        device = select_device(self.config.SYSTEM)
-        self.model = build_model(self.config, device=device)
-        print("Model type:", type(self.model))
-        print("Torch model type:", type(self.model._model))
-        # Load model
-        if pretrained:
-            pretrained = expand(pretrained)
-            self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
-                                        path=pretrained,
-                                        device=device,
-                                        key_remap_fn=localization_remap)
+            self.config.MODEL.work_dir= os.path.dirname(pretrained) if pretrained else os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
+            
+            # Datasets
+            # Test
+            data_obj_test = build_dataset(self.config, split="test")
+            dataset_Test = data_obj_test.building_dataset(
+                cfg=data_obj_test.cfg,
+                gpu=self.config.SYSTEM.GPU,
+                default_args=data_obj_test.default_args,
+            )
+            test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
+            print(len(test_loader))
 
-        self.config.MODEL.work_dir= os.path.dirname(pretrained) if pretrained else os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
-        
-        # Datasets
-        # Test
-        data_obj_test = build_dataset(self.config, split="test")
-        dataset_Test = data_obj_test.building_dataset(
-            cfg=data_obj_test.cfg,
-            gpu=self.config.SYSTEM.GPU,
-            default_args=data_obj_test.default_args,
-        )
-        test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
-        print(len(test_loader))
+            # # Inference
+            inferer = build_inferer(cfg=self.config.MODEL,
+                                    model=self.model)
+            json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
 
-        # # Inference
-        inferer = build_inferer(cfg=self.config.MODEL,
-                                model=self.model)
-        json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
-        #print(f"Inference Metrics: {metrics}")
         #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
+        json_gz_file = predictions if predictions else json_gz_file
         evaluator = build_evaluator(cfg=self.config)
         metrics = evaluator.evaluate(cfg_testset=self.config.DATA.test, json_gz_file=json_gz_file)
-        print("Metrics :", metrics)
+
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics

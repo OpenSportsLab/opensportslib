@@ -562,12 +562,14 @@ class Inferer:
                 cfg.DATA.test.dataloader,
                 return_pred=False,
             )
+            pred_json_file = os.path.join(pred_file + ".json")
+            pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
             logging.info("Predictions saved")
-            logging.info(os.path.join(pred_file + ".json"))
+            logging.info(pred_json_file)
             logging.info("High recall predictions saved")
-            logging.info(os.path.join(pred_file + ".recall.json.gz"))
-            json_gz_file = cfg.DATA.test.results + ".recall.json.gz"
-            return json_gz_file
+            logging.info(pred_recall_file)
+            #json_gz_file = cfg.DATA.test.results + ".recall.json.gz"
+            return pred_recall_file
 
 
 def build_evaluator(cfg, default_args=None):
@@ -732,7 +734,6 @@ class Evaluator:
 
         # detect v2 prediction
         pred_is_v2 = isinstance(pred_data, dict) and pred_data is not None and "data" in pred_data
-        print(pred_is_v2)
         # --------------------------------------------------
         # CLASSES
         # --------------------------------------------------
@@ -778,9 +779,10 @@ class Evaluator:
             # ---------------- GT ----------------
             if gt_is_v2:
                 video_path = game["inputs"][0]["path"]
-                labels = [{"label": e["label"], 
-                           "position": int(e["position_ms"]), 
-                           "gameTime": e["gameTime"]} for e in game.get("events", [])]
+                labels = [{"label": e.get("label"),  
+                           "gameTime": e.get("gameTime"),
+                           "position": int(e.get("position_ms")),
+                          } for e in game.get("events", [])]
             else:
                 video_path = game["path"]
                 labels = game["annotations"]
@@ -798,10 +800,11 @@ class Evaluator:
 
                     predictions = [
                         {
-                            "label": e["label"],
-                            "position": int(e["position_ms"]),
-                            "frame": e["frame"],
-                            "confidence": e.get("confidence", 1.0),
+                           "label": e.get("label"),  
+                           "gameTime": e.get("gameTime"),
+                           "confidence": e.get("confidence"),
+                           "position": int(e.get("position_ms")),
+                           "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
                     ]
@@ -831,10 +834,11 @@ class Evaluator:
 
                     predictions = [
                         {
-                            "label": e["label"],
-                            "position": int(e["position_ms"]),
-                            "frame": e["frame"],
-                            "confidence": e.get("confidence", 1.0),
+                           "label": e.get("label"),  
+                           "gameTime": e.get("gameTime"),
+                           "confidence": e.get("confidence"),
+                           "position": int(e.get("position_ms")),
+                           "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
                     ]
@@ -891,7 +895,7 @@ class Evaluator:
             The different mAPs computed.
         """
 
-        results = os.path.join(work_dir, pred_path)
+        results = pred_path
 
         if os.path.isfile(results) and (
             results.endswith(".gz") or results.endswith(".json")
@@ -910,11 +914,11 @@ class Evaluator:
                     events = []
                     for ev in item.get("events", []):
                         events.append({
-                            "frame": int((int(ev["position_ms"]) / 1000) * fps),
-                            "label": ev["label"],
-                            "confidence": ev.get("confidence", 1.0),
-                            "position": int(ev["position_ms"]),
-                            "gameTime": "",  # unused for eval
+                            "frame": ev.get("frame"),
+                            "label": ev.get("label"),
+                            "confidence": ev.get("confidence"),
+                            "position": int(ev.get("position_ms")),
+                            "gameTime": ev.get("gameTime"),
                         })
 
                     internal.append({
