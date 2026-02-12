@@ -48,6 +48,7 @@ import matplotlib.pyplot as plt
 import zipfile
 import logging
 import copy
+from datetime import datetime
 
 
 def parse_ground_truth(truth):
@@ -290,7 +291,6 @@ class ForegroundF1:
             denom = 1
         return self._tp[k] / denom
 
-from datetime import datetime
 
 def build_snpro_prediction_json(pred_events, head_name="action", split=None, created_by="model"):
     """

@@ -58,7 +58,6 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
         grouped[group_id]["video_paths"].extend(clips)
         grouped[group_id]["label"] = label_idx
 
-    print(label_map)
     return list(grouped.values()), label_map
 
 

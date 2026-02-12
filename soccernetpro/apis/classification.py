@@ -135,35 +135,40 @@ class ClassificationAPI:
         # #print("Model saved at:", save_path)
 
 
-    def infer(self, test_set=None, pretrained=None, use_ddp=False):
+    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False):
         import torch
         import torch.multiprocessing as mp
         from soccernetpro.core.utils.config import resolve_config_omega
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
-        self.config = resolve_config_omega(self.config)
-        print("CONFIG:", self.config)
+        if not predictions:
+            self.config = resolve_config_omega(self.config)
+            print("CONFIG:", self.config)
 
-        world_size = torch.cuda.device_count()
-        use_ddp = use_ddp and world_size > 1
-        ctx = mp.get_context("spawn")
-        queue = ctx.Queue()
-        if use_ddp:
-            mp.spawn(
-                self._worker_ddp,
-                args=(world_size, "infer", queue, None, None, test_set, pretrained),
-                nprocs=world_size,
-            )
+            world_size = torch.cuda.device_count()
+            use_ddp = use_ddp and world_size > 1
+            ctx = mp.get_context("spawn")
+            queue = ctx.Queue()
+            if use_ddp:
+                mp.spawn(
+                    self._worker_ddp,
+                    args=(world_size, "infer", queue, None, None, test_set, pretrained),
+                    nprocs=world_size,
+                )
+            else:
+                self._worker_ddp(
+                    rank=0,
+                    world_size=1,
+                    mode="infer",
+                    return_queue=queue,
+                    test_set=test_set,
+                    pretrained=pretrained,
+                )
+            
+            # get result from rank0
+            metrics = queue.get()
         else:
-            self._worker_ddp(
-                rank=0,
-                world_size=1,
-                mode="infer",
-                return_queue=queue,
-                test_set=test_set,
-                pretrained=pretrained,
-            )
-        
-        # get result from rank0
-        metrics = queue.get()
+            from soccernetpro.datasets.builder import build_dataset
+            test_data = build_dataset(self.config, test_set, None, split="test")
+            metrics = self.trainer.evaluate(pred_path=predictions, gt_path=test_set, class_names=test_data.label_map, exclude_labels=test_data.exclude_labels)
         return metrics

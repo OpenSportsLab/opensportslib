@@ -15,6 +15,7 @@ from soccernetpro.core.utils.wandb import log_attention_wandb, log_confusion_mat
 from soccernetpro.core.utils.checkpoint import *
 from soccernetpro.core.utils.config import select_device
 import torch.distributed as dist
+from datetime import datetime
 
 class MVTrainerClassification:
     def __init__(
@@ -182,6 +183,7 @@ class MVTrainerClassification:
     # CORE LOOP
     # =========================================================
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
+        #print(f"RANK {self.rank} | batches:", len(dataloader))
         if train:
             self.model.train()
         else:
@@ -203,7 +205,7 @@ class MVTrainerClassification:
         save_path = os.path.join(epoch_dir, prediction_file)
 
         data = {"Set": set_name}
-        actions = {}
+        results = []
 
         for batch_idx, batch in enumerate(dataloader):
             mvclips, targets = batch["pixel_values"], batch["labels"]
@@ -244,12 +246,25 @@ class MVTrainerClassification:
             all_labels.append(targets.detach().cpu())
 
             # -------- JSON LOG --------
-            preds = torch.argmax(logits.detach().cpu(), dim=1)
+            probs = torch.softmax(logits.detach().cpu(), dim=1)
+            preds = torch.argmax(probs, dim=1)
+            confs = probs.max(dim=1).values
+
+            ids = batch["id"]
+
             for i in range(len(preds)):
-                key = f"{batch_idx}_{i}"
-                actions[key] = {
-                    "Action class": int(preds[i].item())
-                }
+                sample_id = ids[i]
+
+                pred_idx = preds[i].item()
+                pred_label = self.class_names[pred_idx]
+                confidence = float(confs[i].item())
+
+                results.append({
+                    "id": sample_id,
+                    "pred_label": pred_label,
+                    "confidence": confidence,
+                    "pred_class_idx": pred_idx
+                })
 
             # -------- Sample Video Log (once/epoch) --------
             # if not logged_samples and set_name in ["train", "valid"]:
@@ -309,10 +324,40 @@ class MVTrainerClassification:
         gc.collect()
         torch.cuda.empty_cache()
 
+        # -------- GATHER PREDICTIONS ACROSS GPUS --------
+        if dist.is_initialized():
+            gathered_results = [None for _ in range(dist.get_world_size())]
+            dist.all_gather_object(gathered_results, results)
+
+            if self.rank == 0:
+                results = [r for sublist in gathered_results for r in sublist]
+        else:
+            gathered_results = results
+
         # -------- SAVE JSON --------
-        data["Actions"] = actions
-        with open(save_path, "w") as f:
-            json.dump(data, f)
+        if self.rank == 0:
+            submission = {
+                    "version": "2.0",
+                    "task": "action_classification",
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "metadata": {"type": "predictions"},
+                    "data": []
+                }
+
+            for r in results:
+                submission["data"].append({
+                    "id": r["id"],
+                    "labels": {
+                        "action": {
+                            "label": r["pred_label"],
+                            "confidence": r["confidence"]
+                        }
+                    }
+                })
+            print("RESULTS Length : ", len(results))
+            with open(save_path, "w") as f:
+                json.dump(submission, f, indent=2)
+            
 
         return (
             save_path,
@@ -357,8 +402,8 @@ class Trainer_Classification:
         self.epoch = 0
         self.hf_trainer = None
 
-    def compute_metrics(self, pred):
-        return compute_classification_metrics(pred, top_k=2)
+    def compute_metrics(self, pred, mode="logits"):
+        return compute_classification_metrics(pred, top_k=2, mode=mode)
 
     def train(self, model, train_dataset, val_dataset=None, rank=0, world_size=1):
         """
@@ -595,6 +640,44 @@ class Trainer_Classification:
                 )
             loss, metrics = self.hf_trainer.test()
             
+        return metrics
+
+    def evaluate(self, pred_path, gt_path, class_names, exclude_labels=[]):
+
+        label_to_idx = {v: k for k, v in class_names.items()}
+
+        with open(pred_path) as f:
+            pred_data = json.load(f)
+
+        with open(gt_path) as f:
+            gt_data = json.load(f)
+
+        gt_dict = {}
+        for item in gt_data["data"]:
+            sid = item["id"]
+            gt_label = item["labels"]["action"]["label"]
+            if gt_label not in exclude_labels:
+                gt_dict[sid] = label_to_idx[gt_label]
+
+        preds = []
+        labels = []
+
+        for item in pred_data["data"]:
+            sid = item["id"]
+            if sid not in gt_dict:
+                continue
+
+            pred_label = item["labels"]["action"]["label"]
+
+            preds.append(label_to_idx[pred_label])
+            labels.append(gt_dict[sid])
+
+        metrics = self.compute_metrics(
+            (preds, labels),
+            mode="labels"
+        )
+
+        print(metrics)
         return metrics
 
 
