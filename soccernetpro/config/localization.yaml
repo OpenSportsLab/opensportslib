@@ -8,6 +8,16 @@ DATA:
   classes:
     - PASS
     - DRIVE
+    - HEADER
+    - HIGH PASS
+    - OUT
+    - CROSS
+    - THROW IN
+    - SHOT
+    - BALL PLAYER BLOCK
+    - PLAYER SUCCESSFUL TACKLE
+    - FREE KICK
+    - GOAL
     
   epoch_num_frames: 500000
   mixup: true
@@ -27,7 +37,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/train/
-    path: ${DATA.train.video_path}/annotations-train.json
+    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -39,7 +49,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -60,10 +70,10 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations-test.json
+    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
     results: results_spotting_test
     nms_window: 2 
-    metric: loose
+    metric: tight
     overlap_len: 50
     dataloader:
       batch_size: 4
@@ -96,7 +106,7 @@ TRAIN:
   num_epochs: 10
   acc_grad_iter: 1
   base_num_valid_epochs: 30
-  start_valid_epoch: 1
+  start_valid_epoch: 4
   valid_map_every: 1
   criterion_valid: map
 
@@ -105,7 +115,7 @@ TRAIN:
 
   optimizer:
     type: AdamWithScaler
-    lr: 0.001
+    lr: 0.01
 
   scheduler:
     type: ChainedSchedulerE2E
