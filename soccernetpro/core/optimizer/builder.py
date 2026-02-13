@@ -16,10 +16,10 @@ def build_optimizer(parameters, cfg, default_args=None):
         optimizer = torch.optim.Adam(
             parameters,
             lr=cfg.lr,
-            betas=tuple(cfg.betas),
-            eps=cfg.eps,
-            weight_decay=cfg.weight_decay,
-            amsgrad=cfg.amsgrad,
+            betas=tuple(getattr(cfg, 'betas', (0.9, 0.999))),
+            eps=getattr(cfg, 'eps', 1e-8),
+            weight_decay=getattr(cfg, 'weight_decay', 1e-4),
+            amsgrad=getattr(cfg, 'amsgrad', False),
         )
     elif cfg.type == "AdamWithScaler":
         optimizer = (

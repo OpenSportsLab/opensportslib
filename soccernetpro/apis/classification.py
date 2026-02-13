@@ -23,7 +23,7 @@ class ClassificationAPI:
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("MODEL SAVEDIR:", self.save_dir)
 
-        # self.trainer = Trainer_Classification(self.config)
+        self.trainer = Trainer_Classification(self.config)
 
 
     def train(self, train_set=None, valid_set=None, test_set=None, pretrained=None):
@@ -31,11 +31,13 @@ class ClassificationAPI:
         from soccernetpro.models.builder import build_model
 
         # Load model
-        # if pretrained:
-        #     self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
-        # else:
-        #     self.model, self.processor = build_model(self.config, self.trainer.device)
+        if pretrained:
+            self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
+        else:
+            self.model, self.processor = build_model(self.config, self.trainer.device)
 
+        print("Model built successfully")
+        print(self.model)
 
         # Expand annotation paths (user or config)
         train_set = expand(train_set or self.config.DATA.annotations.train)
@@ -50,9 +52,10 @@ class ClassificationAPI:
         modality = self.config.DATA.data_modality
 
         if modality == "tracking_parquet":
-            print(f"Node features shape: {sample['node_features'].shape}")
-            print(f"Edge indices: {len(sample['edge_indices'])} frames")
-            print(f"Label: {sample['labels']}")
+            print(f"Graphs: {len(sample['graphs'])} frames")
+            print(f"First graph nodes: {sample['graphs'][0].x.shape}")
+            print(f"First graph edges: {sample['graphs'][0].edge_index.shape}")
+            print(f"Label: {sample['label']}")
         else:
             print(f"Frames shape: {sample['pixel_values'].shape}")
             print(f"Label: {sample['labels']}")
@@ -63,21 +66,22 @@ class ClassificationAPI:
         sample = valid_data[0]
         
         if modality == "tracking_parquet":
-            print(f"Node features shape: {sample['node_features'].shape}")
-            print(f"Edge indices: {len(sample['edge_indices'])} frames")
-            print(f"Label: {sample['labels']}")
+            print(f"Graphs: {len(sample['graphs'])} frames")
+            print(f"First graph nodes: {sample['graphs'][0].x.shape}")
+            print(f"First graph edges: {sample['graphs'][0].edge_index.shape}")
+            print(f"Label: {sample['label']}")
         else:
             print(f"Frames shape: {sample['pixel_values'].shape}")
             print(f"Label: {sample['labels']}")
 
         
         # Train
-        # self.trainer.train(self.model, train_data, valid_data)
+        self.trainer.train(self.model, train_data, valid_data)
 
         # Save in user-controlled location
-        #save_path = os.path.join(self.save_dir, "final_model")
-        #self.trainer.save(self.model, save_path, self.processor)
-        #print("Model saved at:", save_path)
+        save_path = os.path.join(self.save_dir, "final_model.pt")
+        print(f"DEBUG: save_path = {save_path}")
+        self.trainer.save(self.model, save_path, self.processor)
 
 
     def infer(self, test_set=None, pretrained=None):
@@ -87,6 +91,7 @@ class ClassificationAPI:
         if pretrained:
             self.model, self.processor, self.scheduler, epoch = self.trainer.load(expand(pretrained))
 
+        self.processor = None # TODO: remove this line later
         test_set = expand(test_set or self.config.DATA.annotations.test)
         test_data = build_dataset(self.config, test_set, self.processor, split="test")
 

@@ -59,3 +59,31 @@ def init_process_worker(seed):
     worker_seed = seed + worker_id
     random.seed(worker_seed)
     np.random.seed(worker_seed)
+
+from torch_geometric.data import Batch
+
+def tracking_collate_fn(batch):
+    """
+    Custom collate function for tracking data.
+    Uses PyG Batch.from_data_list for efficient C++ batching.
+    """
+    batch_size = len(batch)
+    seq_len = batch[0]['seq_len']
+    
+    # flatten all graphs from all samples
+    all_graphs = []
+    for sample_idx, item in enumerate(batch):
+        for time_idx, graph in enumerate(item['graphs']):
+            all_graphs.append(graph)
+    
+    # PyG handles node offsets for edge_index automatically
+    batched_graphs = Batch.from_data_list(all_graphs)
+    
+    return {
+        'x': batched_graphs.x,
+        'edge_index': batched_graphs.edge_index,
+        'batch': batched_graphs.batch,
+        'batch_size': batch_size,
+        'seq_len': seq_len,
+        'labels': torch.tensor([item['label'] for item in batch], dtype=torch.long),
+    }

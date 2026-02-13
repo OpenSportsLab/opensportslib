@@ -45,7 +45,14 @@ def build_head(cfg, default_args=None):
     Returns:
         head: The constructed head.
     """
-    if cfg.type == "LinearLayer":
+    if cfg.type == "TrackingClassifier":
+        head = TrackingClassifierHead(
+            input_dim=default_args["input_dim"],
+            hidden_dim=cfg.hidden_dim,
+            num_classes=cfg.num_classes,
+            dropout=cfg.dropout
+        )
+    elif cfg.type == "LinearLayer":
         head = LinearLayerHead(input_dim=cfg.input_dim, output_dim=cfg.num_classes + 1)
     elif cfg.type == "SpottingCALF":
         head = SpottingCALFHead(
@@ -77,6 +84,23 @@ class MVHead(nn.Module):
     def forward(self, x):
         pred = self.fc(x)
         return pred
+
+class TrackingClassifierHead(nn.Module):
+    """Classification head for tracking data."""
+    
+    def __init__(self, input_dim, hidden_dim, num_classes, dropout=0.1):
+        super().__init__()
+        
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout * 0.5),
+            nn.Linear(hidden_dim, num_classes)
+        )
+    
+    def forward(self, x):
+        return self.classifier(x)
     
 class TemporalE2EHead(nn.Module):
     def __init__(self, temporal_arch, feat_dim, num_classes):

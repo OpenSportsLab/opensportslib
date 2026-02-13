@@ -9,7 +9,6 @@ from tqdm import tqdm
 import json
 
 from soccernetpro.datasets.utils.tracking import (
-            build_edge_index,
             HorizontalFlip,
             VerticalFlip,
             TeamFlip,
@@ -77,14 +76,12 @@ class ClassificationDataset(Dataset):
 
         return weights
 
-
     def __len__(self):
         return len(self.samples)
 
 
     def num_classes(self):
         return len(self.label_map)
-
 
 
 class VideoDataset(ClassificationDataset):
@@ -172,10 +169,12 @@ class VideoDataset(ClassificationDataset):
 
 class TrackingDataset(ClassificationDataset):
     """Tracking-based classification dataset for player position data."""
-    
+        
     def __init__(self, config, annotations_path, split="train"):
         super().__init__(config, annotations_path, split)
-        
+
+        from soccernetpro.datasets.utils.tracking import build_edge_index
+        self.build_edge_index = build_edge_index
         # tracking-specific config
         self.num_frames = config.DATA.num_frames
         self.normalize = config.DATA.normalize
@@ -189,7 +188,6 @@ class TrackingDataset(ClassificationDataset):
         self.processed_samples = None
         if self.preload_data:
             self._preload_all_data()
-
 
     def _build_transforms(self, config, split):
         if split != "train":
@@ -208,7 +206,6 @@ class TrackingDataset(ClassificationDataset):
             transforms.append(TeamFlip(probability=0.5))
         
         return transforms
-
 
     def _preload_all_data(self):
         """
@@ -244,7 +241,7 @@ class TrackingDataset(ClassificationDataset):
             # build edge indices for all frames
             edge_indices = []
             for t in range(num_frames):
-                edge_index = build_edge_index(
+                edge_index = self.build_edge_index(
                     all_features[t],
                     all_positions[t],
                     self.edge_type,
@@ -372,6 +369,8 @@ class TrackingDataset(ClassificationDataset):
     
     def _getitem_preloaded(self, idx):
         """get item from preloaded data."""
+        from torch_geometric.data import Data
+        
         sample = self.processed_samples[idx]
         
         # copy features to avoid modifying cached data
@@ -385,24 +384,27 @@ class TrackingDataset(ClassificationDataset):
         if self.normalize:
             features = self._normalize_features(features)
         
-        # convert to tensors
-        node_features = torch.tensor(features, dtype=torch.float32)
-        edge_indices = [
-            torch.tensor(ei, dtype=torch.long) 
-            for ei in sample["edge_indices"]
-        ]
-        label = torch.tensor(sample["label"], dtype=torch.long)
+        # create PyG Data objects for each frame
+        graphs = []
+        for t in range(features.shape[0]):
+            data = Data(
+                x=torch.tensor(features[t], dtype=torch.float),
+                edge_index=torch.tensor(sample["edge_indices"][t], dtype=torch.long),
+            )
+            graphs.append(data)
         
         return {
-            "node_features": node_features,
-            "edge_indices": edge_indices,
-            "labels": label
+            "graphs": graphs,
+            "label": sample["label"],
+            "seq_len": len(graphs),
         }
-    
+
     def _getitem_on_the_fly(self, idx):
         """load and process item on-the-fly."""
+        from torch_geometric.data import Data
+        
         item = self.samples[idx]
-        label = torch.tensor(item["label"], dtype=torch.long)
+        label = item["label"]
         
         # get parquet path
         clip_paths = item["video_paths"]
@@ -435,22 +437,23 @@ class TrackingDataset(ClassificationDataset):
         if self.normalize:
             all_features = self._normalize_features(all_features)
         
-        # build edge indices for each frame
-        edge_indices = []
+        # create PyG Data objects for each frame
+        graphs = []
         for t in range(num_frames):
-            edge_index = build_edge_index(
+            edge_index = self.build_edge_index(
                 all_features[t],
                 all_positions[t],
                 self.edge_type,
                 self.k
             )
-            edge_indices.append(torch.tensor(edge_index, dtype=torch.long))
-        
-        # convert features to tensor
-        node_features = torch.tensor(all_features, dtype=torch.float32)
+            data = Data(
+                x=torch.tensor(all_features[t], dtype=torch.float),
+                edge_index=torch.tensor(edge_index, dtype=torch.long),
+            )
+            graphs.append(data)
         
         return {
-            "node_features": node_features,
-            "edge_indices": edge_indices,
-            "labels": label
+            "graphs": graphs,
+            "label": label,
+            "seq_len": len(graphs),
         }
