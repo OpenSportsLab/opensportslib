@@ -1,3 +1,5 @@
+# soccernetpro/datasets/classification_dataset.py
+
 import os
 import torch
 import random
@@ -429,6 +431,17 @@ class TrackingDataset(ClassificationDataset):
         # compute velocity deltas
         all_features = self._compute_deltas(all_features)
         
+        # build edge indices on raw features (before transforms/normalization)
+        edge_indices = []
+        for t in range(num_frames):
+            edge_index = self.build_edge_index(
+                all_features[t],
+                all_positions[t],
+                self.edge_type,
+                self.k
+            )
+            edge_indices.append(edge_index)
+        
         # apply augmentations (training only)
         for transform in self.transforms:
             all_features = transform(all_features)
@@ -440,15 +453,9 @@ class TrackingDataset(ClassificationDataset):
         # create PyG Data objects for each frame
         graphs = []
         for t in range(num_frames):
-            edge_index = self.build_edge_index(
-                all_features[t],
-                all_positions[t],
-                self.edge_type,
-                self.k
-            )
             data = Data(
                 x=torch.tensor(all_features[t], dtype=torch.float),
-                edge_index=torch.tensor(edge_index, dtype=torch.long),
+                edge_index=torch.tensor(edge_indices[t], dtype=torch.long),
             )
             graphs.append(data)
         

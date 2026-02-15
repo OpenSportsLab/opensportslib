@@ -1,4 +1,4 @@
-# soccernetpro/core/trainer.py
+# soccernetpro/core/trainer/classification_trainer.py
 
 import os
 import gc
@@ -17,7 +17,7 @@ from soccernetpro.metrics.classification_metric import compute_classification_me
 from soccernetpro.core.utils.wandb import log_confusion_matrix_wandb
 from soccernetpro.core.utils.checkpoint import *
 from soccernetpro.core.utils.config import select_device
-
+from soccernetpro.core.utils.seed import set_reproducibility, seed_worker
 
 # ============================================================
 # Base Trainer
@@ -105,7 +105,7 @@ class BaseTrainerClassification:
 
             # Train
             pbar = tqdm.tqdm(total=len(self.train_loader), desc="Training", position=0, leave=True)
-            _, train_loss, train_metrics = self._run_epoch(
+            _, _, train_loss, train_metrics = self._run_epoch(
                 self.train_loader, 
                 epoch + 1, 
                 train=True, 
@@ -116,7 +116,7 @@ class BaseTrainerClassification:
 
             # Validation
             pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True)
-            _, val_loss, val_metrics = self._run_epoch(
+            _, _, val_loss, val_metrics = self._run_epoch(
                 self.val_loader, 
                 epoch + 1, 
                 train=False, 
@@ -177,6 +177,21 @@ class BaseTrainerClassification:
                 print("Early stopping: learning rate too low")
                 break
 
+        # Save validation metrics report using best model
+        if self.best_model_state is not None:
+            print(f"\nGenerating validation report from best model (epoch {self.best_epoch})")
+            self.model.load_state_dict(self.best_model_state)
+            pbar = tqdm.tqdm(total=len(self.val_loader), desc="Best model validation", position=0, leave=True)
+            all_logits, all_labels, val_loss, val_metrics = self._run_epoch(
+                self.val_loader,
+                self.best_epoch,
+                train=False,
+                set_name="valid",
+                pbar=pbar
+            )
+            pbar.close()
+            self._save_metrics_report(all_logits, all_labels, val_loss, val_metrics, "validation", self.best_epoch)
+
         print(f"Training finished. Best epoch: {self.best_epoch}")
 
     def test(self, epoch=None):
@@ -186,7 +201,7 @@ class BaseTrainerClassification:
         """
         print("\nRunning TEST evaluation")
         pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True)
-        _, test_loss, test_metrics = self._run_epoch(
+        all_logits, all_labels, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
             epoch if epoch is not None else "final",
             train=False,
@@ -199,6 +214,9 @@ class BaseTrainerClassification:
             "test/loss": test_loss,
             **{f"test/{k}": v for k, v in test_metrics.items()},
         })
+
+        # Save test metrics report
+        self._save_metrics_report(all_logits, all_labels, test_loss, test_metrics, "test", epoch)
 
         print("TEST METRICS:", test_metrics)
         return test_loss, test_metrics
@@ -260,7 +278,98 @@ class BaseTrainerClassification:
         gc.collect()
         torch.cuda.empty_cache()
 
-        return None, total_loss / max(1, total_batches), metrics
+        return all_logits, all_labels, total_loss / max(1, total_batches), metrics
+
+    def _save_metrics_report(self, all_logits, all_labels, loss, metrics, set_name, epoch=None):
+        """
+        Save detailed metrics report as txt file and confusion matrix as png.
+        """
+        from sklearn.metrics import confusion_matrix, classification_report, balanced_accuracy_score
+        
+        preds = np.argmax(all_logits, axis=-1)
+        
+        # sort classes alphabetically for consistent reporting
+        class_names_sorted = sorted(self.class_names.keys(), key=lambda k: self.class_names[k])
+        sorted_class_names = sorted(class_names_sorted)
+        class_to_sorted_idx = {self.class_names[name]: i for i, name in enumerate(sorted_class_names)}
+        
+        sorted_labels = np.array([class_to_sorted_idx[l] for l in all_labels])
+        sorted_preds = np.array([class_to_sorted_idx[p] for p in preds])
+        
+        cm = confusion_matrix(sorted_labels, sorted_preds)
+        per_class_accuracy = np.diag(cm) / np.maximum(cm.sum(axis=1), 1) * 100
+        balanced_acc = balanced_accuracy_score(sorted_labels, sorted_preds) * 100
+        
+        # save confusion matrix plot
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            
+            plt.figure(figsize=(12, 10))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                        xticklabels=sorted_class_names, yticklabels=sorted_class_names)
+            plt.title(f'Confusion Matrix ({set_name})')
+            plt.ylabel('True Label')
+            plt.xlabel('Predicted Label')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            
+            plots_dir = os.path.join(self.save_dir, 'plots')
+            os.makedirs(plots_dir, exist_ok=True)
+            plt.savefig(os.path.join(plots_dir, f'confusion_matrix_{set_name}.png'), dpi=300, bbox_inches='tight')
+            plt.close()
+        except Exception as e:
+            print(f"Warning: could not save confusion matrix plot: {e}")
+        
+        # save text report
+        results_dir = os.path.join(self.save_dir, 'results')
+        os.makedirs(results_dir, exist_ok=True)
+        
+        report_path = os.path.join(results_dir, f'{set_name}_metrics.txt')
+        with open(report_path, 'w') as f:
+            f.write(f"{'='*60}\n")
+            f.write(f"{set_name.upper()} METRICS REPORT\n")
+            if epoch is not None:
+                f.write(f"Epoch: {epoch}\n")
+            f.write(f"{'='*60}\n\n")
+            
+            f.write(f"Loss: {loss:.4f}\n")
+            f.write(f"Balanced Accuracy: {balanced_acc:.2f}%\n\n")
+            
+            # overall metrics
+            f.write(f"{'Metric':<30} {'Value':>10}\n")
+            f.write(f"{'-'*40}\n")
+            for k, v in sorted(metrics.items()):
+                if isinstance(v, float):
+                    f.write(f"{k:<30} {v:>10.4f}\n")
+                else:
+                    f.write(f"{k:<30} {str(v):>10}\n")
+            f.write(f"{'-'*40}\n\n")
+            
+            # per-class accuracy
+            f.write(f"{'Class':<30} {'Accuracy':>10} {'Samples':>10}\n")
+            f.write(f"{'-'*60}\n")
+            for i, class_name in enumerate(sorted_class_names):
+                num_samples = int(cm[i].sum())
+                f.write(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {num_samples:>10}\n")
+            f.write(f"{'-'*60}\n\n")
+            
+            # sklearn classification report
+            f.write("Classification Report:\n\n")
+            f.write(classification_report(
+                sorted_labels, sorted_preds,
+                target_names=sorted_class_names,
+                zero_division=0
+            ))
+            f.write(f"\n{'-'*60}\n\n")
+            
+            # confusion matrix as text
+            f.write("Confusion Matrix:\n\n")
+            f.write(f"{cm}\n")
+        
+        print(f"Saved {set_name} metrics report to {report_path}")
 
     def _save_checkpoint(self, epoch, is_best=False):
         os.makedirs(os.path.join(self.save_dir, "models"), exist_ok=True)
@@ -356,6 +465,9 @@ class Trainer_Classification:
         from soccernetpro.core.utils.data import tracking_collate_fn
 
         modality = getattr(self.config.DATA, 'data_modality', 'video')
+        seed = getattr(self.config.SYSTEM, 'seed', 42)
+        g = torch.Generator()
+        g.manual_seed(seed)
 
         # HuggingFace models (VideoMAE)
         if self.config.MODEL.type == "huggingface":
@@ -396,7 +508,8 @@ class Trainer_Classification:
             sampler = WeightedRandomSampler(
                 weights=sample_weights,
                 num_samples=num_samples,
-                replacement=True
+                replacement=True,
+                generator=g
             )
             shuffle = False
         else:
@@ -411,7 +524,9 @@ class Trainer_Classification:
             sampler=sampler,
             num_workers=self.config.DATA.num_workers,
             pin_memory=True,
-            collate_fn=collate_fn
+            collate_fn=collate_fn,
+            worker_init_fn=seed_worker,
+            generator=g
         )
 
         val_loader = DataLoader(
@@ -420,7 +535,9 @@ class Trainer_Classification:
             shuffle=False,
             num_workers=self.config.DATA.num_workers,
             pin_memory=True,
-            collate_fn=collate_fn
+            collate_fn=collate_fn,
+            worker_init_fn=seed_worker,
+            generator=g
         )
 
         # Select trainer class
@@ -610,6 +727,4 @@ class Trainer_Classification:
             self.epoch = epoch
             print(f"Model loaded from {path}, epoch: {epoch}")
             return self.model, self.optimizer, self.scheduler, self.epoch
-
-
 

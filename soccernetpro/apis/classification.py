@@ -1,3 +1,5 @@
+# soccernetpro/apis/classification.py
+
 from soccernetpro.core.utils.config import expand 
 import os
  
@@ -29,6 +31,10 @@ class ClassificationAPI:
     def train(self, train_set=None, valid_set=None, test_set=None, pretrained=None):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
+        from soccernetpro.core.utils.seed import set_reproducibility
+
+        seed = getattr(self.config.SYSTEM, 'seed', 42)
+        set_reproducibility(seed)
 
         # Load model
         if pretrained:
