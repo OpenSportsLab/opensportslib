@@ -134,7 +134,7 @@ def load_classes(input):
     """
     from omegaconf import ListConfig
     if isinstance(input, (list, ListConfig)):
-        return {x: i + 1 for i, x in enumerate(sorted(input))}
+        return {x: i + 1 for i, x in enumerate(input)}
     return {x: i + 1 for i, x in enumerate(load_text(input))}
 
 def clear_files(dir_name, re_str, exclude=[]):

@@ -59,10 +59,10 @@ class LocalizationDataset(Dataset):
                 video_dir=cfg.video_path,
                 input_fps=self.config.DATA.input_fps,
                 extract_fps=self.config.DATA.extract_fps,
-                IMAGENET_MEAN=self.config.DATA.IMAGENET_MEAN,
-                IMAGENET_STD=self.config.DATA.IMAGENET_STD,
-                TARGET_HEIGHT=self.config.DATA.TARGET_HEIGHT,
-                TARGET_WIDTH=self.config.DATA.TARGET_WIDTH,
+                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
+                IMAGENET_STD=self.config.DATA.imagenet_std,
+                TARGET_HEIGHT=self.config.DATA.target_height,
+                TARGET_WIDTH=self.config.DATA.target_width,
                 is_eval=False if default_args["train"] else True,
                 crop_dim=self.config.DATA.crop_dim,
                 dilate_len=self.config.DATA.dilate_len,
@@ -81,10 +81,10 @@ class LocalizationDataset(Dataset):
                 video_dir=cfg.video_path,
                 input_fps=self.config.DATA.input_fps,
                 extract_fps=self.config.DATA.extract_fps,
-                IMAGENET_MEAN=self.config.DATA.IMAGENET_MEAN,
-                IMAGENET_STD=self.config.DATA.IMAGENET_STD,
-                TARGET_HEIGHT=self.config.DATA.TARGET_HEIGHT,
-                TARGET_WIDTH=self.config.DATA.TARGET_WIDTH,
+                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
+                IMAGENET_STD=self.config.DATA.imagenet_std,
+                TARGET_HEIGHT=self.config.DATA.target_height,
+                TARGET_WIDTH=self.config.DATA.target_width,
                 overlap_len=cfg.overlap_len,
                 crop_dim=self.config.DATA.crop_dim,
             )
@@ -264,7 +264,7 @@ class DaliDataSet(DALIGenericIterator):
 
         self._src_file = label_file
         # self._labels = load_json(label_file)
-        self._labels = annotationstoe2eformat(
+        self._labels, self.task_name = annotationstoe2eformat(
             label_file, video_dir, input_fps, extract_fps, True
         )
         self._class_dict = classes
@@ -308,7 +308,7 @@ class DaliDataSet(DALIGenericIterator):
             # video_path = os.path.join(video_dir, video["video"] + extension)
             for _ in range(nb_clips_per_video):
                 #print(video["num_frames"], (clip_len + 1))
-                random_start = random.randint(1, abs(video["num_frames"] - (clip_len + 1)))
+                random_start = random.randint(1, video["num_frames"] - (clip_len + 1))
                 file_list_txt += f"{video_path} {index} {random_start * self._stride} {(random_start+clip_len) * self._stride}\n"
 
         tf = tempfile.NamedTemporaryFile()
@@ -638,7 +638,7 @@ class DaliDataSetVideo(DALIGenericIterator, DatasetVideoSharedMethods):
         self._src_file = label_file
         # self.infer = False
         if label_file.endswith(".json"):
-            self._labels = annotationstoe2eformat(
+            self._labels, self.task_name = annotationstoe2eformat(
                 label_file, video_dir, input_fps, extract_fps, True
             )
             stride_dali = get_stride(input_fps, extract_fps)

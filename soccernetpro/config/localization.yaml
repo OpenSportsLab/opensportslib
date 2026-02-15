@@ -18,7 +18,7 @@ DATA:
     - PLAYER SUCCESSFUL TACKLE
     - FREE KICK
     - GOAL
-
+    
   epoch_num_frames: 500000
   mixup: true
   modality: rgb
@@ -27,21 +27,21 @@ DATA:
   clip_len: 100
   input_fps: 25
   extract_fps: 2
-  IMAGENET_MEAN: [0.485, 0.456, 0.406]
-  IMAGENET_STD: [0.229, 0.224, 0.225]
-  TARGET_HEIGHT: 224
-  TARGET_WIDTH: 398
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+  target_height: 224
+  target_width: 398
 
   train:
     type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/train/
-    path: ${DATA.train.video_path}/annotations-train.json
+    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
     dataloader:
       batch_size: 8
       shuffle: true
-      num_workers: 2
+      num_workers: 4
       pin_memory: true
 
   valid:
@@ -49,7 +49,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -58,8 +58,8 @@ DATA:
     type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    video_path: ${DATA.valid.video_path}
+    path: ${DATA.valid.path}
     overlap_len: 0
     dataloader:
       batch_size: 4
@@ -70,10 +70,10 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations-test.json
+    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
     results: results_spotting_test
-    nms_window: 25 # for ball action spotting - 25
-    metric: loose
+    nms_window: 2 
+    metric: tight
     overlap_len: 50
     dataloader:
       batch_size: 4
@@ -103,11 +103,11 @@ MODEL:
 
 TRAIN:
   type: trainer_e2e
-  num_epochs: 100
+  num_epochs: 10
   acc_grad_iter: 1
   base_num_valid_epochs: 30
-  start_valid_epoch: 5
-  valid_map_every: 5
+  start_valid_epoch: 4
+  valid_map_every: 1
   criterion_valid: map
 
   criterion:
@@ -115,7 +115,7 @@ TRAIN:
 
   optimizer:
     type: AdamWithScaler
-    lr: 0.0001
+    lr: 0.01
 
   scheduler:
     type: ChainedSchedulerE2E

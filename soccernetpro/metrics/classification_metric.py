@@ -40,14 +40,24 @@ def process_preds_labels(eval_pred, top_k=None):
 
     return preds, labels, topk_preds
 
-def compute_classification_metrics(eval_pred, top_k=None):
+def compute_classification_metrics(eval_pred, top_k=None, mode="logits"):
     """
     Compute accuracy, F1, precision, recall, and optionally top-k accuracy.
     Returns a dictionary for HF Trainer.
     """
-    preds, labels, topk_preds = process_preds_labels(eval_pred, top_k)
 
     metrics = {}
+    if mode=="labels":
+        preds, labels = eval_pred
+        preds = np.array(preds)
+        labels = np.array(labels)
+    else:
+        preds, labels, topk_preds = process_preds_labels(eval_pred, top_k)
+
+        # Top-k accuracy
+        if top_k is not None and topk_preds is not None:
+            topk_correct = sum([labels[i] in topk_preds[i] for i in range(len(labels))])
+            metrics[f"top_{top_k}_accuracy"] = topk_correct / len(labels)
 
     # Accuracy
     metrics["accuracy"] = accuracy_metric.compute(predictions=preds, references=labels)["accuracy"]
@@ -64,9 +74,5 @@ def compute_classification_metrics(eval_pred, top_k=None):
     # Recall
     metrics["recall"] = recall_metric.compute(predictions=preds, references=labels, average="macro")["recall"]
 
-    # Top-k accuracy
-    if top_k is not None and topk_preds is not None:
-        topk_correct = sum([labels[i] in topk_preds[i] for i in range(len(labels))])
-        metrics[f"top_{top_k}_accuracy"] = topk_correct / len(labels)
 
     return metrics

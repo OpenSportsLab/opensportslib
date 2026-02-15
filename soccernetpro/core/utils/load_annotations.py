@@ -58,7 +58,6 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
         grouped[group_id]["video_paths"].extend(clips)
         grouped[group_id]["label"] = label_idx
 
-    print(label_map)
     return list(grouped.values()), label_map
 
 
@@ -139,6 +138,7 @@ def annotationstoe2eformat(
 
     labels_e2e = []
     classes_by_label_dir = []
+    task_name_list = []
 
     for label_path, video_dir in zip(label_files, video_dirs):
         logging.info(f"Processing {label_path} to e2e format")
@@ -148,6 +148,7 @@ def annotationstoe2eformat(
         # ---- Extract class list (ball_action) ----
         for task_name, task_data in annotations["labels"].items():
             labels = task_data.get("labels", {})
+            task_name_list.append(task_name)
 
         classes_by_label_dir.append(labels)
 
@@ -230,7 +231,7 @@ def annotationstoe2eformat(
 
     labels_e2e.sort(key=lambda x: x["video"])
 
-    return labels_e2e
+    return labels_e2e, task_name_list[0]
 
 # def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali):
 #     """Adapt annotations jsons to e2e format.
@@ -388,7 +389,7 @@ def get_repartition_gpu(max_train_gpus=2):
     return train_gpus, dali_gpus
     
 
-def check_config(cfg):
+def check_config(cfg, split="train"):
     """Check for incoherences, missing elements in dict config.
     The checks are different regarding the methods.
 
@@ -428,6 +429,16 @@ def check_config(cfg):
         assert cfg.TRAIN.criterion_valid in ["map", "loss"]
         assert cfg.TRAIN.num_epochs == cfg.TRAIN.scheduler.num_epochs
         assert cfg.TRAIN.acc_grad_iter == cfg.TRAIN.scheduler.acc_grad_iter
+
+        if split=="train":
+            data_path = cfg.DATA.train.path
+        elif split=="valid":
+            data_path = cfg.DATA.valid.path
+        elif split=="test":
+            data_path = cfg.DATA.test.path
+        else:
+            raise ValueError(f"Unknown split {split}")
+        
         if cfg.TRAIN.start_valid_epoch is None:
             cfg.TRAIN.start_valid_epoch = (
                 cfg.TRAIN.num_epochs - cfg.TRAIN.base_num_valid_epochs
@@ -435,12 +446,12 @@ def check_config(cfg):
         if cfg.DATA.crop_dim <= 0:
             cfg.DATA.crop_dim = None
         if (
-            cfg.DATA.test.path != None
-            and os.path.isfile(cfg.DATA.test.path)
-            and cfg.DATA.test.path.endswith(".json")
-            and "labels" in load_json(cfg.DATA.test.path).keys()
+            data_path != None
+            and os.path.isfile(data_path)
+            and data_path.endswith(".json")
+            and "labels" in load_json(data_path).keys()
         ):
-            for task_name, task_data in load_json(cfg.DATA.test.path)["labels"].items():
+            for task_name, task_data in load_json(data_path)["labels"].items():
                 classes = task_data.get("labels", {})
             #classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:

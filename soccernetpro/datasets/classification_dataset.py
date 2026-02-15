@@ -10,9 +10,16 @@ class ClassificationDataset(Dataset):
     def __init__(self, config, annotations_path, processor, split="train"):
         self.config = config
         self.split = split
+        self.exclude_labels = ["Unknown", "Dont know"]
         self.samples, self.label_map = load_annotations(annotations_path, 
-                                        exclude_labels=["Unknown", "Dont know"], 
+                                        exclude_labels=self.exclude_labels, 
                                         multiview=config.DATA.view_type == "multi")
+
+        self.label_map = {v: k for k, v in self.label_map.items()}
+        self.config.DATA.classes = list(self.label_map.values())
+        self.config.DATA.num_classes = len(self.label_map)
+        print(self.config.DATA.num_classes, "classes:", self.config.DATA.classes)
+        print("Label Map : ", self.label_map)
         #print(self.samples)
         #self.HOME_DIR = os.path.dirname(annotations_path)
         self.processor = processor
@@ -90,6 +97,12 @@ class ClassificationDataset(Dataset):
         item = self.samples[idx]
         label = torch.tensor(item["label"], dtype=torch.long)
         video_paths = item["video_paths"]
+        # take parent folder name
+        first_path = video_paths[0]["path"] if isinstance(video_paths[0], dict) else video_paths[0]
+        sample_id = first_path.split("/")[-2]   # action_0
+        split = first_path.split("/")[0]        # test
+
+        sample_id = f"{split}_{sample_id}"
         # --- Choose which clips to load ---
         if not video_paths:
             raise ValueError(f"No video paths found for item {idx}")
@@ -107,7 +120,7 @@ class ClassificationDataset(Dataset):
             v = self.processor(v, return_tensors="pt")#, do_rescale=False) 
             pixel_values = v["pixel_values"].float()
             pixel_values = pixel_values.squeeze(0)
-            return {"pixel_values": pixel_values, "labels": label}
+            return {"pixel_values": pixel_values, "labels": label, "id": sample_id}
         
         else:
             view_tensors=[]
@@ -125,7 +138,7 @@ class ClassificationDataset(Dataset):
             # Stack → (V, C, T, H, W)
             videos = torch.stack(view_tensors, dim=0)
             #print("VIDEOS:", videos.shape)
-            return {"pixel_values": videos, "labels": label}
+            return {"pixel_values": videos, "labels": label, "id": sample_id}
 
 
 

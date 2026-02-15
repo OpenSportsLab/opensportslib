@@ -2,12 +2,34 @@ TASK: classification
 
 DATA:
   dataset_name: mvfouls
-  data_dir: mvfouls
+  data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
   view_type: multi  # multi or single
-  annotations:
-    train: annotations_train.json
-    valid: annotations_valid.json
-    test: annotations_test.json
+  num_classes: 8 # mvfoul
+  train: 
+    type: annotations_train.json
+    video_path: ${DATA.data_dir}/train
+    path: ${DATA.train.video_path}/annotations-train.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+  valid:
+    type: annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.valid.video_path}/annotations-valid.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
+  test:
+    type: annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.test.video_path}/annotations-test.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
   num_frames: 16               # 8 before + 8 after the foul
   input_fps: 25                # Original FPS of video
   target_fps: 17               # Temporal downsampling to 1s clip (approx)
@@ -28,9 +50,6 @@ DATA:
     random_horizontal_flip: true
     flip_prob: 0.5
     random_crop: false
-  num_workers: 1
-  train_batch_size: 8
-  valid_batch_size: 1
 
 MODEL:
   type: custom # huggingface, custom 
@@ -42,7 +61,6 @@ MODEL:
   head: 
     type: MV_LinearLayer
   pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, OpenGVLab/VideoMAEv2-Base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
-  num_classes: 8
   unfreeze_head: true  # for videomae backbone
   unfreeze_last_n_layers: 3 # for videomae backbone
     
@@ -77,6 +95,7 @@ TRAIN:
 SYSTEM:
   log_dir: ./logs
   seed: 42
+  GPU: 4
   device: cuda   # auto | cuda | cpu
   gpu_id: 0
 
