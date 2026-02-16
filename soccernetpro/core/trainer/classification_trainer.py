@@ -515,7 +515,7 @@ class Trainer_Classification:
 
             if self.config.TRAIN.use_weighted_loss:
                 self.class_weights = train_dataset.get_class_weights(
-                    num_classes=self.config.MODEL.num_classes,
+                    num_classes=self.config.DATA.num_classes,
                     sqrt=True
                 ).to(self.device)
             else:
@@ -545,7 +545,7 @@ class Trainer_Classification:
                         "aggregation": self.config.MODEL.neck.agr_type,
                         "lr": self.config.TRAIN.optimizer.lr,
                         "batch_size": self.config.DATA.train.dataloader.batch_size,
-                        "num_classes": self.config.MODEL.num_classes
+                        "num_classes": self.config.DATA.num_classes
                     },
                     log_attention=True
                 )
