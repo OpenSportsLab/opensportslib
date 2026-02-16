@@ -29,7 +29,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 import torch
 import torch
-from torch_geometric.nn import global_mean_pool
 import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
@@ -335,7 +334,7 @@ class GraphEncoder(nn.Module):
         super().__init__()
 
         from torch_geometric.nn import DeepGCNLayer
-        
+        from torch_geometric.nn import global_mean_pool
         self.conv_type = conv_type
         self.feat_dim = hidden_dim
 

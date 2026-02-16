@@ -6,7 +6,6 @@ import os
 class ClassificationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
         from soccernetpro.core.utils.config import load_config_omega
-        from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
 
         if config is None:
             raise ValueError("config path is required")
@@ -22,10 +21,14 @@ class ClassificationAPI:
         self.save_dir = expand(save_dir or self.config.TRAIN.save_dir or "./checkpoints")
         os.makedirs(self.save_dir, exist_ok=True)
 
-        print("DATA DIR     :", self.config.DATA.data_dir)
-        print("MODEL SAVEDIR:", self.save_dir)
+        rank = int(os.environ.get("RANK", 0))
 
-        self.trainer = Trainer_Classification(self.config)
+        if rank == 0:
+            print("DATA DIR     :", self.config.DATA.data_dir)
+            print("MODEL SAVEDIR:", self.save_dir)
+
+        #self.trainer = Trainer_Classification(self.config)
+        self.trainer=None
 
     def _worker_ddp(self, rank, world_size, mode, return_queue=None, train_set=None, valid_set=None, test_set=None, pretrained=None):
         import torch
@@ -45,7 +48,10 @@ class ClassificationAPI:
             device = self.trainer.device
         
         # fresh trainer per process
-        trainer = type(self.trainer)(self.config)
+        from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
+
+        trainer = Trainer_Classification(self.config)
+        #trainer = type(self.trainer)(self.config)
         trainer.device = device
 
         # model

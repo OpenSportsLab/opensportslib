@@ -513,6 +513,9 @@ class Trainer_Classification:
         collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
 
         # Sampler
+                # -------------------------
+        # TRAIN SAMPLER
+        # -------------------------
         if self.config.TRAIN.use_weighted_sampler:
             sample_weights = train_dataset.get_sample_weights()
 
@@ -524,7 +527,7 @@ class Trainer_Classification:
                 num_samples = len(sample_weights)
 
             if is_ddp:
-                sampler = DistributedWeightedSampler(
+                train_sampler = DistributedWeightedSampler(
                     weights=sample_weights,
                     num_replicas=world_size,
                     rank=rank,
@@ -533,7 +536,7 @@ class Trainer_Classification:
                     seed=self.config.TRAIN.seed
                 )
             else:
-                sampler = WeightedRandomSampler(
+                train_sampler = WeightedRandomSampler(
                     weights=sample_weights,
                     num_samples=num_samples,
                     replacement=True,
@@ -541,33 +544,56 @@ class Trainer_Classification:
                 )
 
             shuffle = False
+
         else:
-            sampler = DistributedSampler(train_dataset, rank=rank, num_replicas=world_size) if is_ddp else None
+            if is_ddp:
+                train_sampler = DistributedSampler(
+                    train_dataset,
+                    num_replicas=world_size,
+                    rank=rank,
+                    shuffle=True,
+                    drop_last=True
+                )
+            else:
+                train_sampler = None
+
             shuffle = not is_ddp
 
-        # DataLoaders
+
+        # -------------------------
+        # VAL SAMPLER (SEPARATE!)
+        # -------------------------
+        if is_ddp:
+            val_sampler = DistributedSampler(
+                val_dataset,
+                num_replicas=world_size,
+                rank=rank,
+                shuffle=False,
+                drop_last=False
+            )
+        else:
+            val_sampler = None
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.DATA.train.dataloader.batch_size,
-            shuffle=shuffle,
-            sampler=sampler,
+            shuffle=(train_sampler is None and shuffle),
+            sampler=train_sampler,
             num_workers=self.config.DATA.train.dataloader.num_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
-            #generator=g
         )
 
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config.DATA.valid.dataloader.batch_size,
             shuffle=False,
-            sampler=sampler,
+            sampler=val_sampler,   # ← IMPORTANT
             num_workers=self.config.DATA.valid.dataloader.num_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
-            #generator=g
         )
 
         # Select trainer class
@@ -602,7 +628,7 @@ class Trainer_Classification:
                 "batch_size": self.config.DATA.train.dataloader.batch_size,
                 #"num_classes": self.config.DATA.num_classes
             },
-            patience=self.config.TRAIN.patience,
+            patience=getattr(self.config.TRAIN, "patience", 0),
         )
 
         self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
