@@ -163,8 +163,8 @@ class BaseTrainerClassification:
                     **{f"valid/{k}": v for k, v in val_metrics.items()},
                 })
 
-            print(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
-            print(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
+                print(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
+                print(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
 
             # ---------------- CHECKPOINT ----------------
             current = val_metrics["balanced_accuracy"]   # or val_metrics["balanced_accuracy"], etc.
