@@ -30,13 +30,13 @@ MODEL:
   type: custom
   backbone:
     type: graph_conv
-    encoder: graph_conv
+    encoder: gin
     hidden_dim: 64
     num_layers: 20
     dropout: 0.1
   neck:
     type: TemporalAggregation
-    agr_type: maxpool
+    agr_type: avgpool
     hidden_dim: 64
     dropout: 0.1
   head:

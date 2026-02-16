@@ -30,7 +30,7 @@ MODEL:
   type: custom
   backbone:
     type: graph_conv
-    encoder: graph_conv
+    encoder: gin
     hidden_dim: 64
     num_layers: 20
     dropout: 0.1
