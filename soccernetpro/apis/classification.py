@@ -5,7 +5,7 @@ import os
  
 class ClassificationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
-        from soccernetpro.core.utils.config import load_config_omega
+        from soccernetpro.core.utils.config import load_config_omega, resolve_config_omega
 
         if config is None:
             raise ValueError("config path is required")
@@ -13,6 +13,7 @@ class ClassificationAPI:
         # Load config
         config_path = expand(config)
         self.config = load_config_omega(config_path)
+        self.config = resolve_config_omega(self.config)
 
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
@@ -45,7 +46,8 @@ class ClassificationAPI:
             ddp_setup(rank, world_size)
             device = torch.device(f"cuda:{rank}")
         else:
-            device = self.trainer.device
+            from soccernetpro.core.utils.config import select_device
+            device = select_device(self.config.SYSTEM)
         
         # fresh trainer per process
         from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
@@ -59,6 +61,8 @@ class ClassificationAPI:
             model, processor, scheduler, epoch = trainer.load(pretrained)
         else:
             model, processor = build_model(self.config, device)
+
+        trainer.model = model
 
         # =====================================================
         # TRAIN MODE
@@ -93,8 +97,8 @@ class ClassificationAPI:
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
-        self.config = resolve_config_omega(self.config)
-        print("CONFIG:", self.config)
+        # self.config = resolve_config_omega(self.config)
+        # print("CONFIG:", self.config)
 
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
@@ -154,8 +158,8 @@ class ClassificationAPI:
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
         if not predictions:
-            self.config = resolve_config_omega(self.config)
-            print("CONFIG:", self.config)
+            # self.config = resolve_config_omega(self.config)
+            # print("CONFIG:", self.config)
 
             world_size = torch.cuda.device_count()
             use_ddp = use_ddp and world_size > 1

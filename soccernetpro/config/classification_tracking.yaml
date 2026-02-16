@@ -14,22 +14,22 @@ DATA:
       shuffle: true
       num_workers: 20
       pin_memory: true
-    valid:
-      type: annotations_valid.json
-      video_path: ${DATA.data_dir}/valid
-      path: ${DATA.valid.video_path}/valid.json
-      dataloader:
-        batch_size: 32
-        num_workers: 20
-        shuffle: false
-    test:
-      type: annotations_test.json
-      video_path: ${DATA.data_dir}/test
-      path: ${DATA.test.video_path}/test.json
-      dataloader:
-        batch_size: 32
-        num_workers: 20
-        shuffle: false
+  valid:
+    type: annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.valid.video_path}/valid.json
+    dataloader:
+      batch_size: 32
+      num_workers: 20
+      shuffle: false
+  test:
+    type: annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.test.video_path}/test.json
+    dataloader:
+      batch_size: 32
+      num_workers: 20
+      shuffle: false
   num_frames: 16
   frame_interval: 9
   augmentations:
@@ -48,7 +48,7 @@ MODEL:
   type: custom
   backbone:
     type: graph_conv
-    encoder: graph_conv
+    encoder: graphconv
     hidden_dim: 64
     num_layers: 20
     dropout: 0.1
@@ -70,7 +70,7 @@ TRAIN:
   use_weighted_sampler: true
   use_weighted_loss: false
   samples_per_class: 4000
-  epochs: 100
+  epochs: 1
   patience: 10
   save_every: 20
 

@@ -383,7 +383,7 @@ class BaseTrainerClassification:
 
         state = {
             "epoch": epoch,
-            "state_dict": self.model.module.state_dict(),
+            "state_dict": self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
             "best_val_metric": self.best_val_metric,

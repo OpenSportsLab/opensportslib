@@ -72,4 +72,5 @@ def tracking_collate_fn(batch):
         'batch_size': batch_size,
         'seq_len': seq_len,
         'labels': torch.tensor([item['label'] for item in batch], dtype=torch.long),
+        'id': [item['id'] for item in batch],
     }
