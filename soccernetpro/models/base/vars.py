@@ -1,3 +1,5 @@
+# soccernetpro/models/base/vars.py
+
 import __future__
 import torch
 from soccernetpro.models.backbones.builder import build_backbone

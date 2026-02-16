@@ -348,6 +348,7 @@ class TrackingDataset(ClassificationDataset):
         features_norm = features.copy()
         valid_mask = features_norm[:, :, 0] != -200.0
         
+        #NOTE: put these values in the config file
         features_norm[valid_mask, 0] /= PITCH_HALF_LENGTH
         features_norm[valid_mask, 1] /= PITCH_HALF_WIDTH
         features_norm[valid_mask, 5] /= MAX_DISPLACEMENT

@@ -17,7 +17,7 @@ from soccernetpro.metrics.classification_metric import compute_classification_me
 from soccernetpro.core.utils.wandb import log_confusion_matrix_wandb
 from soccernetpro.core.utils.checkpoint import *
 from soccernetpro.core.utils.config import select_device
-from soccernetpro.core.utils.seed import set_reproducibility, seed_worker
+from soccernetpro.core.utils.seed import seed_worker
 
 # ============================================================
 # Base Trainer

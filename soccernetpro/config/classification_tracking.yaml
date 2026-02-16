@@ -19,6 +19,12 @@ DATA:
   num_workers: 20
   train_batch_size: 32
   valid_batch_size: 32
+  num_objects: 23
+  feature_dim: 8
+  pitch_half_length: 85.0
+  pitch_half_width: 50.0
+  max_displacement: 110.0
+  max_ball_height: 30.0
 
 MODEL:
   type: custom
@@ -46,7 +52,7 @@ TRAIN:
   use_weighted_sampler: true
   use_weighted_loss: false
   samples_per_class: 4000
-  epochs: 2
+  epochs: 100
   patience: 10
   save_every: 20
 
