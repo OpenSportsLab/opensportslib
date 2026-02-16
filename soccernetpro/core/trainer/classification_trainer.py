@@ -212,7 +212,8 @@ class BaseTrainerClassification:
         return test_loss, test_metrics
 
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
-        #print(f"RANK {self.rank} | batches:", len(dataloader))
+        import torch.distributed as dist
+
         if train:
             self.model.train()
         else:
@@ -223,17 +224,16 @@ class BaseTrainerClassification:
 
         all_logits = []
         all_labels = []
+        results = []
 
         # -------- Create epoch folder --------
         epoch_dir = os.path.join(self.save_dir, str(epoch))
         os.makedirs(epoch_dir, exist_ok=True)
+        save_path = os.path.join(epoch_dir, f"predictions_{set_name}_epoch_{epoch}.json")
 
-        prediction_file = f"predictions_{set_name}_epoch_{epoch}.json"
-        save_path = os.path.join(epoch_dir, prediction_file)
-
-
-        results = []
-
+        # =========================================================
+        # LOOP
+        # =========================================================
         for batch in dataloader:
             if pbar:
                 pbar.update()
@@ -249,113 +249,90 @@ class BaseTrainerClassification:
                 if train:
                     self.optimizer.zero_grad()
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
 
             total_loss += loss.item()
             total_batches += 1
 
-            all_logits.append(logits.detach().cpu())
-            all_labels.append(labels.detach().cpu())
+            logits_cpu = logits.detach().cpu()
+            labels_cpu = labels.detach().cpu()
 
-            # -------- JSON LOG --------
-            probs = torch.softmax(logits.detach().cpu(), dim=1)
+            all_logits.append(logits_cpu)
+            all_labels.append(labels_cpu)
+
+            # -------- JSON preds --------
+            probs = torch.softmax(logits_cpu, dim=1)
             preds = torch.argmax(probs, dim=1)
             confs = probs.max(dim=1).values
-
             ids = batch["id"]
 
             for i in range(len(preds)):
-                sample_id = ids[i]
-
-                pred_idx = preds[i].item()
-                pred_label = self.class_names[pred_idx]
-                confidence = float(confs[i].item())
-
                 results.append({
-                    "id": sample_id,
-                    "pred_label": pred_label,
-                    "confidence": confidence,
-                    "pred_class_idx": pred_idx
+                    "id": ids[i],
+                    "pred_label": self.class_names[preds[i].item()],
+                    "confidence": float(confs[i].item()),
+                    "pred_class_idx": preds[i].item(),
                 })
 
-            # -------- Sample Video Log (once/epoch) --------
-            # if not logged_samples and set_name in ["train", "valid"]:
-            #     log_sample_videos_wandb(
-            #         mvclips=mvclips,
-            #         preds=preds.numpy(),
-            #         labels=targets.detach().cpu().numpy(),
-            #         split_name=set_name,
-            #         max_samples=1
-            #     )
-            #     logged_samples = True
-
-            # -------- Attention Log --------
-            # if attention is not None and set_name in ["valid", "test"]:
-            #     log_attention_wandb(attention, set_name)
-
-        # -------- METRICS --------
-        if dist.is_initialized():
-            all_logits_tensor = torch.cat(all_logits).to(self.device)
-            all_labels_tensor = torch.cat(all_labels).to(self.device)
-
-            gathered_logits = [torch.zeros_like(all_logits_tensor) for _ in range(dist.get_world_size())]
-            gathered_labels = [torch.zeros_like(all_labels_tensor) for _ in range(dist.get_world_size())]
-
-            dist.all_gather(gathered_logits, all_logits_tensor)
-            dist.all_gather(gathered_labels, all_labels_tensor)
-
-            all_logits = torch.cat(gathered_logits).cpu().numpy()
-            all_labels = torch.cat(gathered_labels).cpu().numpy()
-        else:
+        # =========================================================
+        # CONCAT LOCAL
+        # =========================================================
+        if len(all_logits) > 0:
             all_logits = torch.cat(all_logits).numpy()
             all_labels = torch.cat(all_labels).numpy()
-        # all_logits = torch.cat(all_logits, dim=0).numpy()
-        # all_labels = torch.cat(all_labels, dim=0).numpy()
+        else:
+            all_logits = np.zeros((0, 1))
+            all_labels = np.zeros((0,))
 
+        # =========================================================
+        # DDP GATHER (SAFE — handles uneven sizes)
+        # =========================================================
+        if dist.is_initialized():
+            gathered = [None for _ in range(dist.get_world_size())]
+            dist.all_gather_object(gathered, (all_logits, all_labels, results))
+
+            if self.rank == 0:
+                all_logits = np.concatenate([g[0] for g in gathered])
+                all_labels = np.concatenate([g[1] for g in gathered])
+                results = [r for g in gathered for r in g[2]]
+            else:
+                # non-rank0 returns early
+                return None, None, 0.0, {}
+
+        # =========================================================
+        # METRICS (rank 0 only)
+        # =========================================================
         metrics = compute_classification_metrics(
             (all_logits, all_labels),
             top_k=self.top_k
         )
 
-        # -------- CONFUSION MATRIX --------
-        preds_all, labels_all, _ = process_preds_labels(
-            (all_logits, all_labels),
-            top_k=None
-        )
-
-        if self.rank==0 and set_name in ["valid", "test"]:
-            class_names = [self.class_names[i] for i in sorted(self.class_names.keys())] or [str(i) for i in range(all_logits.shape[1])]
+        # =========================================================
+        # CONFUSION MATRIX (rank 0 only)
+        # =========================================================
+        if self.rank == 0 and set_name in ["valid", "test"]:
+            preds_all, labels_all, _ = process_preds_labels((all_logits, all_labels))
+            class_names = [self.class_names[i] for i in sorted(self.class_names.keys())]
 
             log_confusion_matrix_wandb(
                 y_true=labels_all.tolist(),
                 y_pred=preds_all.tolist(),
                 class_names=class_names,
-                split_name=set_name
+                split_name=set_name,
             )
 
-        gc.collect()
-        torch.cuda.empty_cache()
-
-        # -------- GATHER PREDICTIONS ACROSS GPUS --------
-        if dist.is_initialized():
-            gathered_results = [None for _ in range(dist.get_world_size())]
-            dist.all_gather_object(gathered_results, results)
-
-            if self.rank == 0:
-                results = [r for sublist in gathered_results for r in sublist]
-        else:
-            gathered_results = results
-
-        # -------- SAVE JSON --------
+        # =========================================================
+        # SAVE JSON (rank 0 only)
+        # =========================================================
         if self.rank == 0:
             submission = {
-                    "version": "2.0",
-                    "task": "action_classification",
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "metadata": {"type": "predictions"},
-                    "data": []
-                }
+                "version": "2.0",
+                "task": "action_classification",
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "metadata": {"type": "predictions"},
+                "data": [],
+            }
 
             for r in results:
                 submission["data"].append({
@@ -363,15 +340,19 @@ class BaseTrainerClassification:
                     "labels": {
                         "action": {
                             "label": r["pred_label"],
-                            "confidence": r["confidence"]
+                            "confidence": r["confidence"],
                         }
-                    }
+                    },
                 })
-            print("RESULTS Length : ", len(results))
+
+            print("RESULTS Length:", len(results))
+
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
-            
+
+        # =========================================================
         return all_logits, all_labels, total_loss / max(1, total_batches), metrics
+
 
 
     # =========================================================
