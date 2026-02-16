@@ -1,3 +1,5 @@
+# soccernetpro/apis/classification.py
+
 from soccernetpro.core.utils.config import expand 
 import os
  
@@ -30,6 +32,10 @@ class ClassificationAPI:
         from soccernetpro.core.utils.ddp import ddp_setup, ddp_cleanup
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
+        from soccernetpro.core.utils.seed import set_reproducibility
+
+        seed = getattr(self.config.SYSTEM, 'seed', 42)
+        set_reproducibility(seed)
         is_ddp = world_size > 1
         if is_ddp:
             torch.cuda.set_device(rank)
@@ -44,7 +50,7 @@ class ClassificationAPI:
 
         # model
         if pretrained:
-            model, processor, _, _ = trainer.load(pretrained)
+            model, processor, scheduler, epoch = trainer.load(pretrained)
         else:
             model, processor = build_model(self.config, device)
 

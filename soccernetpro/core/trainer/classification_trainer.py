@@ -1,23 +1,36 @@
-# soccernetpro/core/trainer.py
+# soccernetpro/core/trainer/classification_trainer.py
+
+import os
+import gc
+import json
+import time
+import logging
 
 import torch
-import numpy as np
-import wandb
-import json
-import gc
-import logging
 import tqdm
-import time
-from torch.utils.data import DataLoader
+import wandb
+import numpy as np
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from transformers import Trainer as HFTrainer, TrainingArguments
+from soccernetpro.core.utils.ddp import DistributedWeightedSampler
 from soccernetpro.metrics.classification_metric import compute_classification_metrics, process_preds_labels
-from soccernetpro.core.utils.wandb import log_attention_wandb, log_confusion_matrix_wandb, log_sample_videos_wandb 
+from soccernetpro.core.utils.wandb import log_confusion_matrix_wandb
 from soccernetpro.core.utils.checkpoint import *
 from soccernetpro.core.utils.config import select_device
 import torch.distributed as dist
 from datetime import datetime
+from soccernetpro.core.utils.seed import seed_worker
 
-class MVTrainerClassification:
+# ============================================================
+# Base Trainer
+# ============================================================
+
+class BaseTrainerClassification:
+    """
+    Base trainer with common functionality for classification tasks.
+    Subclasses implement _forward_batch() for modality-specific logic.
+    """
+    
     def __init__(
         self,
         train_loader,
@@ -37,7 +50,7 @@ class MVTrainerClassification:
         wandb_project="classification",
         wandb_run_name=None,
         wandb_config=None,
-        log_attention=False,
+        patience=10,
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -55,10 +68,16 @@ class MVTrainerClassification:
         self.max_epochs = max_epochs
         self.device = device
         self.top_k = top_k
-        self.log_attention = log_attention
+        self.patience = patience
+
+        # best model tracking
+        self.best_val_loss = float('inf')
+        self.best_val_metric = 0.0
+        self.best_model_state = None
+        self.best_epoch = 0
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         if self.rank == 0:
-            # ---------------- W&B INIT ----------------
+            # W&B init
             self.wandb_run = wandb.init(
                 project=wandb_project,
                 name=wandb_run_name,
@@ -80,59 +99,72 @@ class MVTrainerClassification:
         except Exception:
             pass
 
-    # =========================================================
-    # TRAIN = Train + Validation ONLY
-    # =========================================================
+    def _forward_batch(self, batch):
+        """
+        Modality-specific forward pass. Override in subclass.
+        Returns: logits, labels
+        """
+        raise NotImplementedError
+
     def train(self, epoch_start=0, save_every=3):
-        logging.info("start training")
-        counter = 0
+        logging.info("Starting training")
         best_metric = -float("inf")  # if maximizing (accuracy/F1)
         best_path = None
         for epoch in range(epoch_start, self.max_epochs):
             print(f"\nEpoch {epoch+1}/{self.max_epochs}")
 
-            # ---------------- TRAIN ----------------
+            # Train
             if hasattr(self.train_loader.sampler, "set_epoch"):
                 self.train_loader.sampler.set_epoch(epoch)
             disable = self.rank != 0
             pbar = tqdm.tqdm(total=len(self.train_loader), desc="Training", position=0, leave=True, disable=disable)
-            _, train_loss, train_metrics = self._run_epoch(
-                self.train_loader,
-                epoch + 1,
-                train=True,
-                set_name="train",
+            _, _, train_loss, train_metrics = self._run_epoch(
+                self.train_loader, 
+                epoch + 1, 
+                train=True, 
+                set_name="train", 
                 pbar=pbar
             )
             pbar.close()
 
-            # ---------------- VALID ----------------
+            # Validation
             pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True, disable=disable)
-            _, val_loss, val_metrics = self._run_epoch(
-                self.val_loader,
-                epoch + 1,
-                train=False,
-                set_name="valid",
+            _, _, val_loss, val_metrics = self._run_epoch(
+                self.val_loader, 
+                epoch + 1, 
+                train=False, 
+                set_name="valid", 
                 pbar=pbar
             )
             pbar.close()
 
-            # ---------------- SCHEDULER ----------------
-            self.scheduler.step()
-            lr = self.optimizer.param_groups[0]["lr"]
+            # Get current LR before scheduler step
+            prev_lr = self.optimizer.param_groups[0]["lr"] # NOTE: this is for ReduceLROnPlateau scheduler we discussed with Silvio
+
+            # Scheduler step (ReduceLROnPlateau needs metric)
+            val_metric = val_metrics.get("balanced_accuracy", val_metrics.get("accuracy", 0))
+            train_metric = train_metrics.get("balanced_accuracy", train_metrics.get("accuracy", 0))
+
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                self.scheduler.step(val_loss)
+            else:
+                self.scheduler.step()
+
+            current_lr = self.optimizer.param_groups[0]["lr"]
 
             if self.rank == 0:
                 # ---------------- W&B LOG ----------------
                 wandb.log({
                     "epoch": epoch + 1,
-                    "lr": lr,
+                    "lr": current_lr,
                     "train/loss": train_loss,
                     "valid/loss": val_loss,
                     **{f"train/{k}": v for k, v in train_metrics.items()},
                     **{f"valid/{k}": v for k, v in val_metrics.items()},
                 })
 
-                print("TRAIN METRICS:", train_metrics)
-                print("VAL METRICS:", val_metrics)
+            print(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
+            print(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
 
             # ---------------- CHECKPOINT ----------------
             current = val_metrics["balanced_accuracy"]   # or val_metrics["balanced_accuracy"], etc.
@@ -161,7 +193,7 @@ class MVTrainerClassification:
         """
         print("\nRunning TEST evaluation")
         pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True, disable = self.rank != 0)
-        _, test_loss, test_metrics = self._run_epoch(
+        all_logits, all_labels, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
             epoch if epoch is not None else "final",
             train=False,
@@ -179,9 +211,6 @@ class MVTrainerClassification:
             print("TEST METRICS:", test_metrics)
         return test_loss, test_metrics
 
-    # =========================================================
-    # CORE LOOP
-    # =========================================================
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
         #print(f"RANK {self.rank} | batches:", len(dataloader))
         if train:
@@ -195,8 +224,6 @@ class MVTrainerClassification:
         all_logits = []
         all_labels = []
 
-        logged_samples = False
-
         # -------- Create epoch folder --------
         epoch_dir = os.path.join(self.save_dir, str(epoch))
         os.makedirs(epoch_dir, exist_ok=True)
@@ -204,46 +231,32 @@ class MVTrainerClassification:
         prediction_file = f"predictions_{set_name}_epoch_{epoch}.json"
         save_path = os.path.join(epoch_dir, prediction_file)
 
-        data = {"Set": set_name}
+
         results = []
 
-        for batch_idx, batch in enumerate(dataloader):
-            mvclips, targets = batch["pixel_values"], batch["labels"]
-            mvclips = mvclips.to(self.device).float()
-            targets = targets.to(self.device)
-
-            if pbar is not None:
+        for batch in dataloader:
+            if pbar:
                 pbar.update()
 
             with torch.set_grad_enabled(train):
-                outputs = self.model(mvclips)
-
-                if isinstance(outputs, tuple):
-                    logits = outputs[0]
-                    attention = outputs[1] if len(outputs) > 1 else None
-                else:
-                    logits = outputs
-                    attention = None
-
-                if logits.dim() == 1:
-                    logits = logits.unsqueeze(0)
+                logits, labels = self._forward_batch(batch)
 
                 if self.class_weights is not None:
-                    #print("Using class weights for loss computation")
-                    loss = self.criterion(output=logits, labels=targets, weight=self.class_weights.to(self.device))
+                    loss = self.criterion(output=logits, labels=labels, weight=self.class_weights.to(self.device))
                 else:
-                    loss = self.criterion(output=logits, labels=targets)
+                    loss = self.criterion(output=logits, labels=labels)
 
                 if train:
                     self.optimizer.zero_grad()
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     self.optimizer.step()
 
             total_loss += loss.item()
             total_batches += 1
 
             all_logits.append(logits.detach().cpu())
-            all_labels.append(targets.detach().cpu())
+            all_labels.append(labels.detach().cpu())
 
             # -------- JSON LOG --------
             probs = torch.softmax(logits.detach().cpu(), dim=1)
@@ -358,18 +371,13 @@ class MVTrainerClassification:
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
             
+        return all_logits, all_labels, total_loss / max(1, total_batches), metrics
 
-        return (
-            save_path,
-            total_loss / max(1, total_batches),
-            metrics
-        )
 
     # =========================================================
     # CHECKPOINT
     # =========================================================
     def _save_checkpoint(self, epoch, tag=None):
-
         epoch_dir = os.path.join(self.save_dir, str(epoch))
         os.makedirs(epoch_dir, exist_ok=True)
 
@@ -377,8 +385,11 @@ class MVTrainerClassification:
             "epoch": epoch,
             "state_dict": self.model.module.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "scheduler": self.scheduler.state_dict()
+            "scheduler": self.scheduler.state_dict(),
+            "best_val_metric": self.best_val_metric,
+            "best_val_loss": self.best_val_loss,
         }
+
         name = f"epoch_{epoch}.pt"
         if tag:
             name = f"{tag}_epoch_{epoch}.pt"
@@ -389,10 +400,58 @@ class MVTrainerClassification:
         return path_aux
 
 
+# ============================================================
+# MV Trainer (Video)
+# ============================================================
+
+class MVTrainerClassification(BaseTrainerClassification):
+    """Trainer for multi-view video classification."""
+
+    def _forward_batch(self, batch):
+        mvclips = batch["pixel_values"].to(self.device).float()
+        labels = batch["labels"].to(self.device)
+
+        outputs = self.model(mvclips)
+
+        if isinstance(outputs, tuple):
+            logits = outputs[0]
+        else:
+            logits = outputs
+
+        if logits.dim() == 1:
+            logits = logits.unsqueeze(0)
+
+        return logits, labels
+
+
+# ============================================================
+# Tracking Trainer
+# ============================================================
+
+class TrackingTrainerClassification(BaseTrainerClassification):
+    """Trainer for tracking-based classification."""
+
+    def _forward_batch(self, batch):
+        # Move all tensors to device at once
+        tracking_batch = {
+            "x": batch["x"].to(self.device),
+            "edge_index": batch["edge_index"].to(self.device),
+            "batch": batch["batch"].to(self.device),
+            "batch_size": batch["batch_size"],
+            "seq_len": batch["seq_len"],
+        }
+        labels = batch["labels"].to(self.device)
+        
+        logits = self.model(tracking_batch)
+        
+        return logits, labels
+
+
 class Trainer_Classification:
     """
-    Unified Trainer that can either use native PyTorch loop or HuggingFace Trainer.
+    Unified trainer that dispatches to appropriate trainer based on config.
     """
+    
     def __init__(self, config):
         self.config = config
         self.device = select_device(self.config.SYSTEM)
@@ -400,158 +459,200 @@ class Trainer_Classification:
         self.optimizer = None
         self.scheduler = None
         self.epoch = 0
-        self.hf_trainer = None
+        self.trainer = None
 
     def compute_metrics(self, pred, mode="logits"):
         return compute_classification_metrics(pred, top_k=2, mode=mode)
 
     def train(self, model, train_dataset, val_dataset=None, rank=0, world_size=1):
-        """
-        Use HuggingFace Trainer for VideoMAE training
-        """
-        from soccernetpro.core.sampler.weighted_sampler import WeightedTrainer, VideoMAETrainer
-        from soccernetpro.core.utils.data import balanced_subset
+        from soccernetpro.core.loss.builder import build_criterion
+        from soccernetpro.core.optimizer.builder import build_optimizer
+        from soccernetpro.core.scheduler.builder import build_scheduler
+        from soccernetpro.core.utils.data import tracking_collate_fn
+        from torch.nn.parallel import DistributedDataParallel as DDP
+        from torch.utils.data.distributed import DistributedSampler
 
-        # run_name = (
-        #     f"_freeze={self.config.MODEL.freeze_backbone}"
-        #     f"_lr={self.config.TRAIN.learning_rate}"
-        #     f"_bs={self.config.DATA.train.dataloader.batch_size}"
-        # )
+        is_ddp = world_size > 1
 
-        # wandb.init(
-        #     project="videomae-finetune",
-        #     name=run_name,
-        # )
+        modality = getattr(self.config.DATA, 'data_modality', 'video')
+        seed = getattr(self.config.SYSTEM, 'seed', 42)
+        g = torch.Generator()
+        g.manual_seed(seed)
 
+        # HuggingFace models (VideoMAE)
         if self.config.MODEL.type == "huggingface":
-            self.model = model
-    
-            args = TrainingArguments(
-                label_names=["labels"],
-                output_dir=self.config.TRAIN.save_dir,
-                per_device_train_batch_size=self.config.DATA.train.dataloader.batch_size,
-                per_device_eval_batch_size=self.config.DATA.valid.dataloader.batch_size,
-                num_train_epochs=self.config.TRAIN.epochs,
-                #learning_rate=self.config.TRAIN.learning_rate,
-                eval_strategy="epoch" if val_dataset else "no",
-                save_strategy="epoch",
-                logging_strategy="steps",
-                logging_steps=5,
-                save_total_limit=10,
-                load_best_model_at_end=True,
-                fp16=True,
-                warmup_ratio=0.1,
-                #max_steps=(len(train_dataset) // self.config.DATA.train.dataloader.batch_size) * self.config.TRAIN.epochs
-            )
+            self._train_huggingface(model, train_dataset, val_dataset)
+            return
 
-            if self.config.TRAIN.use_weighted_sampler:
-                print("Using Weighted Trainer with WeightedRandomSampler")
-                self.hf_trainer = WeightedTrainer(
-                    model=self.model,
-                    args=args,
-                    train_dataset=train_dataset,
-                    eval_dataset=val_dataset,
-                    compute_metrics=self.compute_metrics,
-                    config=self.config
-                )
-            else:
-                #########
-                #train_subset = balanced_subset(train_dataset, 10)
-                #########
-                self.hf_trainer = VideoMAETrainer(
-                    model=self.model,
-                    args=args,
-                    train_dataset=train_dataset,
-                    eval_dataset=val_dataset,
-                    compute_metrics=self.compute_metrics,
-                    config=self.config
-                )
-    
-            self.hf_trainer.train()
-            #############
-            train_metrics = self.hf_trainer.evaluate(train_dataset, metric_key_prefix="train")
-            print("TRAIN METRICS:", train_metrics)
-            #############
-        # wandb.finish()
-        else:
-            print("Using Custom Trainer for non-HuggingFace model")
-            from soccernetpro.core.loss.builder import build_criterion
-            from soccernetpro.core.optimizer.builder import build_optimizer
-            from soccernetpro.core.scheduler.builder import build_scheduler
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            from torch.utils.data.distributed import DistributedSampler
-
-            is_ddp = world_size > 1
-
-            if is_ddp:
+        if is_ddp:
                 torch.cuda.set_device(rank)
                 self.device = torch.device(f"cuda:{rank}")
-            else:
+        else:
                 self.device = select_device(self.config.SYSTEM)
+        # Custom models (MV or Tracking)
+        self.model = model.to(self.device)
 
-            # model
-            self.model = model.to(self.device)
+        if is_ddp:
+            self.model = DDP(self.model, device_ids=[rank])
+
+        # Build components
+        optimizer = build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
+        scheduler = build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
+        criterion = build_criterion(self.config.TRAIN.criterion)
+
+        # Class weights
+        if self.config.TRAIN.use_weighted_loss:
+            class_weights = train_dataset.get_class_weights(
+                num_classes=train_dataset.num_classes(),
+                sqrt=True
+            ).to(self.device)
+        else:
+            class_weights = None
+
+        # Collate function
+        collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+
+        # Sampler
+        if self.config.TRAIN.use_weighted_sampler:
+            sample_weights = train_dataset.get_sample_weights()
+
+            samples_per_class = getattr(self.config.TRAIN, 'samples_per_class', None)
+            if samples_per_class:
+                num_classes = train_dataset.num_classes()
+                num_samples = samples_per_class * num_classes
+            else:
+                num_samples = len(sample_weights)
 
             if is_ddp:
-                self.model = DDP(self.model, device_ids=[rank])     
-                train_sampler = DistributedSampler(train_dataset, rank=rank, num_replicas=world_size)
-                val_sampler = DistributedSampler(val_dataset, rank=rank, num_replicas=world_size, shuffle=False)
-            else:
-                train_sampler = None
-                val_sampler = None
-
-            train_loader = DataLoader(train_dataset, batch_size=self.config.DATA.train.dataloader.batch_size, 
-                                      shuffle=(train_sampler is None), num_workers=self.config.DATA.train.dataloader.num_workers, pin_memory=True,
-                                      sampler=train_sampler
-                            )
-            val_loader = DataLoader(val_dataset, batch_size=self.config.DATA.valid.dataloader.batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.valid.dataloader.num_workers, pin_memory=True,
-                                    sampler=val_sampler
-                            )
-
-            optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
-            scheduler = self.scheduler if self.scheduler is not None else build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
-            criterion = build_criterion(self.config.TRAIN.criterion)
-
-            if self.config.TRAIN.use_weighted_loss:
-                self.class_weights = train_dataset.get_class_weights(
-                    num_classes=self.config.MODEL.num_classes,
-                    sqrt=True
-                ).to(self.device)
-            else:
-                self.class_weights = None
-
-            self.hf_trainer = MVTrainerClassification(
-                    train_loader=train_loader,
-                    val_loader=val_loader,
-                    test_loader=None,
-                    model=self.model,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    criterion=criterion,
-                    class_weights=self.class_weights,
-                    class_names=train_dataset.label_map,
-                    save_dir=self.config.TRAIN.save_dir,
-                    model_name=self.config.MODEL.backbone.type,
-                    max_epochs=self.config.TRAIN.epochs,
-                    device=self.device,
-                    top_k=2,
-
-                    # W&B
-                    wandb_project=self.config.TASK,
-                    wandb_run_name=f"{self.config.MODEL.backbone.type}_{self.config.MODEL.neck.type}_{self.config.MODEL.neck.agr_type}_{self.config.MODEL.head.type}_cls",
-                    wandb_config={
-                        "backbone": self.config.MODEL.backbone.type,
-                        "aggregation": self.config.MODEL.neck.agr_type,
-                        "lr": self.config.TRAIN.optimizer.lr,
-                        "batch_size": self.config.DATA.train.dataloader.batch_size,
-                        "num_classes": self.config.MODEL.num_classes
-                    },
-                    log_attention=True
+                sampler = DistributedWeightedSampler(
+                    weights=sample_weights,
+                    num_replicas=world_size,
+                    rank=rank,
+                    replacement=True,
+                    num_samples=num_samples,
+                    seed=self.config.TRAIN.seed
                 )
-            self.hf_trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
+            else:
+                sampler = WeightedRandomSampler(
+                    weights=sample_weights,
+                    num_samples=num_samples,
+                    replacement=True,
+                    generator=g
+                )
 
+            shuffle = False
+        else:
+            sampler = DistributedSampler(train_dataset, rank=rank, num_replicas=world_size) if is_ddp else None
+            shuffle = not is_ddp
 
+        # DataLoaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.config.DATA.train.dataloader.batch_size,
+            shuffle=shuffle,
+            sampler=sampler,
+            num_workers=self.config.DATA.train.dataloader.num_workers,
+            pin_memory=True,
+            collate_fn=collate_fn,
+            worker_init_fn=seed_worker,
+            #generator=g
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.config.DATA.valid.dataloader.batch_size,
+            shuffle=False,
+            sampler=sampler,
+            num_workers=self.config.DATA.valid.dataloader.num_workers,
+            pin_memory=True,
+            collate_fn=collate_fn,
+            worker_init_fn=seed_worker,
+            #generator=g
+        )
+
+        # Select trainer class
+        if modality == "tracking_parquet":
+            TrainerClass = TrackingTrainerClassification
+        else:
+            TrainerClass = MVTrainerClassification
+
+        # Create trainer
+        self.trainer = TrainerClass(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=None,
+            model=self.model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            criterion=criterion,
+            class_weights=class_weights,
+            class_names=train_dataset.label_map,
+            save_dir=self.config.TRAIN.save_dir,
+            model_name=self.config.MODEL.backbone.type,
+            max_epochs=self.config.TRAIN.epochs,
+            device=self.device,
+            top_k=2,
+            wandb_project=self.config.TASK,
+            wandb_run_name=f"{self.config.MODEL.backbone.type}_{modality}",
+            wandb_config={
+                "modality": modality,
+                "backbone": self.config.MODEL.backbone.type,
+                "aggregation": self.config.MODEL.neck.agr_type,
+                "lr": self.config.TRAIN.optimizer.lr,
+                "batch_size": self.config.DATA.train.dataloader.batch_size,
+                #"num_classes": self.config.DATA.num_classes
+            },
+            patience=self.config.TRAIN.patience,
+        )
+
+        self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
+
+    def _train_huggingface(self, model, train_dataset, val_dataset):
+        """Handle HuggingFace Trainer for VideoMAE."""
+        from soccernetpro.core.sampler.weighted_sampler import WeightedTrainer, VideoMAETrainer
+
+        self.model = model
+
+        args = TrainingArguments(
+            label_names=["labels"],
+            output_dir=self.config.TRAIN.save_dir,
+            per_device_train_batch_size=self.config.DATA.train.dataloader.batch_size,
+            per_device_eval_batch_size=self.config.DATA.valid.dataloader.batch_size,
+            num_train_epochs=self.config.TRAIN.epochs,
+            eval_strategy="epoch" if val_dataset else "no",
+            save_strategy="epoch",
+            logging_strategy="steps",
+            logging_steps=5,
+            save_total_limit=10,
+            load_best_model_at_end=True,
+            fp16=True,
+            warmup_ratio=0.1,
+        )
+
+        if self.config.TRAIN.use_weighted_sampler:
+            self.trainer = WeightedTrainer(
+                model=self.model,
+                args=args,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                compute_metrics=self.compute_metrics,
+                config=self.config
+            )
+        else:
+            self.trainer = VideoMAETrainer(
+                model=self.model,
+                args=args,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                compute_metrics=self.compute_metrics,
+                config=self.config
+            )
+
+        self.trainer.train()
+        #############
+        train_metrics = self.hf_trainer.evaluate(train_dataset, metric_key_prefix="train")
+        print("TRAIN METRICS:", train_metrics)
+        #############
 
     def infer(self, test_dataset, rank=0, world_size=1):
         if self.config.MODEL.type == "huggingface":
@@ -581,9 +682,10 @@ class Trainer_Classification:
             from soccernetpro.core.loss.builder import build_criterion
             from soccernetpro.core.optimizer.builder import build_optimizer
             from soccernetpro.core.scheduler.builder import build_scheduler
+            from soccernetpro.core.utils.data import tracking_collate_fn
             from torch.nn.parallel import DistributedDataParallel as DDP
             from torch.utils.data.distributed import DistributedSampler
-
+            
             is_ddp = world_size > 1
 
             if is_ddp:
@@ -594,51 +696,62 @@ class Trainer_Classification:
 
             # model
             self.model = self.model.to(self.device)
-
             if is_ddp:
-                self.model = DDP(self.model, device_ids=[rank])   
+                self.model = DDP(self.model, device_ids=[rank]) 
                 test_sampler = DistributedSampler(test_dataset, rank=rank, num_replicas=world_size)
             else:
                 test_sampler = None
 
-            test_loader = DataLoader(test_dataset, batch_size=self.config.DATA.test.dataloader.batch_size, 
-                                    shuffle=False, num_workers=self.config.DATA.test.dataloader.num_workers, pin_memory=True, 
-                                    sampler=test_sampler
-                            )
+            modality = getattr(self.config.DATA, 'data_modality', 'video')
+            collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+
+            test_loader = DataLoader(
+                test_dataset, 
+                batch_size=self.config.DATA.test.dataloader.batch_size, 
+                shuffle=False, 
+                sampler=test_sampler,
+                num_workers=self.config.DATA.test.dataloader.num_workers, 
+                pin_memory=True,
+                collate_fn=collate_fn
+            )
 
             optimizer = self.optimizer if self.optimizer is not None else build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
             scheduler = self.scheduler if self.scheduler is not None else build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
             criterion = build_criterion(self.config.TRAIN.criterion)
 
-            self.hf_trainer = MVTrainerClassification(
-                    train_loader=None,
-                    val_loader=None,
-                    test_loader=test_loader,
-                    model=self.model,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    criterion=criterion,
-                    class_weights=None,
-                    class_names=test_dataset.label_map,
-                    save_dir=self.config.TRAIN.save_dir,
-                    model_name=self.config.MODEL.backbone.type,
-                    max_epochs=self.config.TRAIN.epochs,
-                    device=self.device,
-                    top_k=2,
+            # Select trainer class based on modality
+            if modality == "tracking_parquet":
+                TrainerClass = TrackingTrainerClassification
+            else:
+                TrainerClass = MVTrainerClassification
 
-                    # W&B
-                    wandb_project=self.config.TASK,
-                    wandb_run_name=f"{self.config.MODEL.backbone.type}_{self.config.MODEL.neck.type}_{self.config.MODEL.neck.agr_type}_{self.config.MODEL.head.type}_cls",
-                    wandb_config={
-                        "backbone": self.config.MODEL.backbone.type,
-                        "aggregation": self.config.MODEL.neck.agr_type,
-                        "lr": self.config.TRAIN.optimizer.lr,
-                        "batch_size": self.config.DATA.train.dataloader.batch_size,
-                        "num_classes": self.config.DATA.num_classes
-                    },
-                    log_attention=True
-                )
-            loss, metrics = self.hf_trainer.test()
+            self.test_trainer = TrainerClass(
+                train_loader=None,
+                val_loader=None,
+                test_loader=test_loader,
+                model=self.model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                criterion=criterion,
+                class_weights=None,
+                class_names=test_dataset.label_map,
+                save_dir=self.config.TRAIN.save_dir,
+                model_name=self.config.MODEL.backbone.type,
+                max_epochs=self.config.TRAIN.epochs,
+                device=self.device,
+                top_k=2,
+                wandb_project=self.config.TASK,
+                wandb_run_name=f"{self.config.MODEL.backbone.type}_{modality}_test",
+                wandb_config={
+                    "modality": modality,
+                    "backbone": self.config.MODEL.backbone.type,
+                    "aggregation": self.config.MODEL.neck.agr_type,
+                    "lr": self.config.TRAIN.optimizer.lr,
+                    "batch_size": self.config.DATA.train.dataloader.batch_size,
+                    #"num_classes": self.config.DATA.num_classes
+                },
+            )
+            loss, metrics = self.test_trainer.test()
             
         return metrics
 
@@ -712,6 +825,4 @@ class Trainer_Classification:
             self.epoch = epoch
             print(f"Model loaded from {path}, epoch: {epoch}")
             return self.model, self.optimizer, self.scheduler, self.epoch
-
-
 
