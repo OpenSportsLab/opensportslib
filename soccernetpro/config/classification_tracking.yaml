@@ -3,7 +3,7 @@ TASK: classification
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/karkid/temporal-localization/data/tracking_dataset
+  data_dir: /home/karkid/soccernetpro/sngar-tracking
   preload_data: false
   train: 
     type: annotations_train.json
@@ -12,7 +12,7 @@ DATA:
     dataloader:
       batch_size: 32
       shuffle: true
-      num_workers: 20
+      num_workers: 8
       pin_memory: true
   valid:
     type: annotations_valid.json
@@ -20,7 +20,7 @@ DATA:
     path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 32
-      num_workers: 20
+      num_workers: 8
       shuffle: false
   test:
     type: annotations_test.json
@@ -28,7 +28,7 @@ DATA:
     path: ${DATA.test.video_path}/test.json
     dataloader:
       batch_size: 32
-      num_workers: 20
+      num_workers: 8
       shuffle: false
   num_frames: 16
   frame_interval: 9
@@ -64,6 +64,7 @@ MODEL:
     num_classes: 10
   edge: positional
   k: 8
+  r: 15.0
 
 TRAIN:
   monitor: loss # balanced_accuracy, loss
