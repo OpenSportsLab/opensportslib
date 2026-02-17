@@ -190,6 +190,7 @@ class ClassificationAPI:
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
         self.config = resolve_config_omega(self.config)
+        print("Config : ", self.config)
 
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
@@ -249,6 +250,7 @@ class ClassificationAPI:
         test_set = expand(test_set or self.config.DATA.annotations.test)
 
         self.config = resolve_config_omega(self.config)
+        print("Config : ", self.config)
 
         if not predictions:
             # live inference: run the model on test data.

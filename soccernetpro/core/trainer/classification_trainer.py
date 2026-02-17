@@ -176,12 +176,12 @@ class BaseTrainerClassification:
             if is_better and self.rank == 0:
                 best_metric = current
                 self.best_metric = best_metric
-                best_path = self._save_checkpoint(epoch + 1, tag="best")
+                best_path = self._save_checkpoint("best", epoch + 1, tag="best")
 
                 artifact = wandb.Artifact("model-checkpoint", type="model")
                 artifact.add_file(best_path)
                 wandb.log_artifact(artifact)
-
+            
         print("Training finished.")
 
     # =========================================================
@@ -370,8 +370,8 @@ class BaseTrainerClassification:
     # =========================================================
     # CHECKPOINT
     # =========================================================
-    def _save_checkpoint(self, epoch, tag=None):
-        epoch_dir = os.path.join(self.save_dir, str(epoch))
+    def _save_checkpoint(self, filename, epoch, tag=None):
+        epoch_dir = os.path.join(self.save_dir, str(filename))
         os.makedirs(epoch_dir, exist_ok=True)
 
         state = {
