@@ -334,7 +334,6 @@ class GraphEncoder(nn.Module):
         super().__init__()
 
         from torch_geometric.nn import DeepGCNLayer
-        from torch_geometric.nn import global_mean_pool
         self.conv_type = conv_type
         self.feat_dim = hidden_dim
 
@@ -418,6 +417,8 @@ class GraphEncoder(nn.Module):
             raise ValueError(f"Unknown conv type: {conv_type}")
             
     def forward(self, x, edge_index, batch):
+        from torch_geometric.nn import global_mean_pool
+        
         x = self.node_encoder(x)
 
         for layer in self.gcn_layers:

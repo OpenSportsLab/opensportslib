@@ -138,12 +138,13 @@ class VideoDataset(ClassificationDataset):
         item = self.samples[idx]
         label = torch.tensor(item["label"], dtype=torch.long)
         video_paths = item["video_paths"]
-        # take parent folder name
-        first_path = video_paths[0]["path"] if isinstance(video_paths[0], dict) else video_paths[0]
-        sample_id = first_path.split("/")[-2]   # action_0
-        split = first_path.split("/")[0]        # test
+        # # take parent folder name
+        # first_path = video_paths[0]["path"] if isinstance(video_paths[0], dict) else video_paths[0]
+        # sample_id = first_path.split("/")[-2]   # action_0
+        # split = first_path.split("/")[0]        # test
+        # sample_id = f"{split}_{sample_id}"
+        sample_id = item["id"]
 
-        sample_id = f"{split}_{sample_id}"
         # --- Choose which clips to load ---
         if not video_paths:
             raise ValueError(f"No video paths found for item {idx}")
@@ -268,7 +269,8 @@ class TrackingDataset(ClassificationDataset):
                 "features": all_features,
                 "positions": all_positions,
                 "edge_indices": edge_indices,
-                "label": item["label"]
+                "label": item["label"],
+                "id": item["id"]
             })
         
         print(f"Loaded {len(self.processed_samples)} {self.split} samples")
@@ -413,6 +415,7 @@ class TrackingDataset(ClassificationDataset):
             "graphs": graphs,
             "label": sample["label"],
             "seq_len": len(graphs),
+            "id": sample["id"]
         }
 
     def _getitem_on_the_fly(self, idx):
@@ -477,4 +480,5 @@ class TrackingDataset(ClassificationDataset):
             "graphs": graphs,
             "label": label,
             "seq_len": len(graphs),
+            "id": item["id"]
         }

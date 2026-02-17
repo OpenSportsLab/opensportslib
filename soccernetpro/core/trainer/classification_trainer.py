@@ -186,7 +186,7 @@ class BaseTrainerClassification:
     # =========================================================
     # TEST = Separate Call
     # =========================================================
-    def test(self, epoch=None):
+    def test(self, epoch=None, detailed_results=False):
         """
         Run test set evaluation.
         If epoch is provided, logs under that epoch number.
@@ -209,6 +209,17 @@ class BaseTrainerClassification:
             })
 
             print("TEST METRICS:", test_metrics)
+
+            if detailed_results:
+                from soccernetpro.metrics.classification_metric import compute_detailed_classification_metrics
+                compute_detailed_classification_metrics(
+                    all_logits=all_logits,
+                    all_labels=all_labels,
+                    class_names=self.class_names,
+                    save_dir=self.save_dir,
+                    set_name="test",
+                )
+
         return test_loss, test_metrics
 
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
@@ -364,7 +375,7 @@ class BaseTrainerClassification:
 
         state = {
             "epoch": epoch,
-            "state_dict": self.model.module.state_dict(),
+            "state_dict": self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
             "best_val_metric": self.best_val_metric,
@@ -758,7 +769,9 @@ class Trainer_Classification:
                     #"num_classes": self.config.DATA.num_classes
                 },
             )
-            loss, metrics = self.test_trainer.test()
+            loss, metrics = self.test_trainer.test(
+                detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)
+            )
             
         return metrics
 
