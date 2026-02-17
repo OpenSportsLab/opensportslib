@@ -48,7 +48,16 @@ def build_backbone(cfg, default_args=None):
     Returns:
         backbone: The constructed backbone.
     """
-    if cfg.type == "PreExtactedFeatures":
+    
+    if cfg.type == "graph_conv":
+        backbone = GraphEncoder(
+            input_dim=default_args["input_dim"],
+            hidden_dim=cfg.hidden_dim,
+            num_layers=cfg.num_layers,
+            conv_type=cfg.encoder,
+            dropout=cfg.dropout,
+        )
+    elif cfg.type == "PreExtactedFeatures":
         backbone = PreExtactedFeatures(
             feature_dim=cfg.feature_dim, output_dim=cfg.output_dim
         )
@@ -318,3 +327,102 @@ class TorchvisionVideoExtractFeatures(nn.Module):
         if x.dim() == 4:
             x = x.unsqueeze(0)
         return self.model(x)
+
+
+class GraphEncoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
+        super().__init__()
+
+        from torch_geometric.nn import DeepGCNLayer
+        self.conv_type = conv_type
+        self.feat_dim = hidden_dim
+
+        # initial projection for node features
+        self.node_encoder = nn.Linear(input_dim, hidden_dim)
+
+        # build GCN layers based on conv_type
+        self.gcn_layers = nn.ModuleList()
+        for _ in range(num_layers):
+            conv = self._build_conv_layer(conv_type, hidden_dim, dropout)
+            layer = DeepGCNLayer(
+                conv=conv,
+                norm=nn.LayerNorm(hidden_dim),
+                act=nn.ReLU(inplace=True),
+                block='res+',
+                dropout=dropout
+            )
+            self.gcn_layers.append(layer)
+        
+    def _build_conv_layer(self, conv_type, hidden_dim, dropout):
+        from torch_geometric.nn import (
+            GATv2Conv, EdgeConv, SAGEConv, 
+            GINConv, GENConv, GraphConv, MultiAggregation
+        )
+
+        if conv_type == 'graphconv':
+            return GraphConv(
+                hidden_dim, hidden_dim,
+                aggr='add', bias=True,
+            )
+
+        elif conv_type == 'gat':
+            return GATv2Conv(
+                hidden_dim, hidden_dim // 4, heads=4,
+                concat=True, dropout=dropout,
+                add_self_loops=True, edge_dim=None,
+                fill_value='mean', bias=True, share_weights=False
+            )
+
+        elif conv_type == 'edgeconv':
+            return EdgeConv(
+                nn=nn.Sequential(
+                    nn.Linear(2 * hidden_dim, hidden_dim * 2),
+                    nn.ReLU(),
+                    nn.Linear(hidden_dim * 2, hidden_dim),
+                    nn.ReLU()
+                ),
+                aggr='max'
+            )
+            
+        elif conv_type == 'sageconv':
+            return SAGEConv(
+                hidden_dim, hidden_dim,
+                aggr=MultiAggregation(['mean', 'max', 'std']),
+                normalize=False, project=True, bias=True
+            )
+
+        elif conv_type == 'gin':
+            return GINConv(
+                nn=nn.Sequential(
+                    nn.Linear(hidden_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
+                    nn.ReLU(),
+                    nn.Linear(hidden_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
+                    nn.ReLU(),
+                ),
+                train_eps=True, eps=0.0
+            )
+
+        elif conv_type == 'gen':
+            return GENConv(
+                hidden_dim, hidden_dim,
+                aggr='softmax', t=1.0, learn_t=True,
+                p=1.0, learn_p=True, msg_norm=True,
+                learn_msg_scale=True, norm='layer',
+                num_layers=2, eps=1e-7
+            )
+
+        else:
+            raise ValueError(f"Unknown conv type: {conv_type}")
+            
+    def forward(self, x, edge_index, batch):
+        from torch_geometric.nn import global_mean_pool
+        
+        x = self.node_encoder(x)
+
+        for layer in self.gcn_layers:
+            x = layer(x, edge_index)
+
+        graph_embedding = global_mean_pool(x, batch)
+        return graph_embedding
