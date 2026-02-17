@@ -73,6 +73,7 @@ TRAIN:
   epochs: 1
   patience: 10
   save_every: 20
+  detailed_results: true
 
   optimizer:
     type: Adam
@@ -92,6 +93,7 @@ TRAIN:
 
 SYSTEM:
  log_dir: ./logs
+ use_seed: true
  seed: 42
  GPU: 4
  device: cuda   # auto | cuda | cpu

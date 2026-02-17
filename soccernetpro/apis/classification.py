@@ -38,8 +38,9 @@ class ClassificationAPI:
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.utils.seed import set_reproducibility
 
-        seed = getattr(self.config.SYSTEM, 'seed', 42)
-        set_reproducibility(seed)
+        if getattr(self.config.SYSTEM, 'use_seed', True):
+            seed = getattr(self.config.SYSTEM, 'seed', 42)
+            set_reproducibility(seed)
         is_ddp = world_size > 1
         if is_ddp:
             torch.cuda.set_device(rank)
