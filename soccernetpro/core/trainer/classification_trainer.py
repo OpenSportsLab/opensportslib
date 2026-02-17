@@ -51,6 +51,8 @@ class BaseTrainerClassification:
         wandb_run_name=None,
         wandb_config=None,
         patience=10,
+        monitor="balanced_accuracy",
+        mode="max"
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -70,11 +72,9 @@ class BaseTrainerClassification:
         self.top_k = top_k
         self.patience = patience
 
-        # best model tracking
-        self.best_val_loss = float('inf')
-        self.best_val_metric = 0.0
-        self.best_model_state = None
-        self.best_epoch = 0
+        self.monitor = monitor
+        self.mode = mode
+
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         if self.rank == 0:
             # W&B init
@@ -108,7 +108,9 @@ class BaseTrainerClassification:
 
     def train(self, epoch_start=0, save_every=3):
         logging.info("Starting training")
-        best_metric = -float("inf")  # if maximizing (accuracy/F1)
+        monitor = self.monitor
+        mode = self.mode
+        best_metric = -float("inf") if mode == "max" else float("inf")
         best_path = None
         for epoch in range(epoch_start, self.max_epochs):
             print(f"\nEpoch {epoch+1}/{self.max_epochs}")
@@ -167,19 +169,18 @@ class BaseTrainerClassification:
                 print(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
 
             # ---------------- CHECKPOINT ----------------
-            current = val_metrics["balanced_accuracy"]   # or val_metrics["balanced_accuracy"], etc.
+            current = val_loss if monitor == "loss" else val_metrics.get(monitor, 0)
 
-            is_better = current > best_metric   # change sign if maximizing
+            is_better = current > best_metric if mode == "max" else current < best_metric
 
             if is_better and self.rank == 0:
                 best_metric = current
+                self.best_metric = best_metric
                 best_path = self._save_checkpoint(epoch + 1, tag="best")
 
                 artifact = wandb.Artifact("model-checkpoint", type="model")
                 artifact.add_file(best_path)
                 wandb.log_artifact(artifact)
-
-                counter = 0
 
         print("Training finished.")
 
@@ -378,8 +379,9 @@ class BaseTrainerClassification:
             "state_dict": self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
-            "best_val_metric": self.best_val_metric,
-            "best_val_loss": self.best_val_loss,
+            "monitor": self.monitor,
+            "mode": self.mode,
+            "best_metric": self.best_metric
         }
 
         name = f"epoch_{epoch}.pt"
@@ -621,6 +623,8 @@ class Trainer_Classification:
                 #"num_classes": self.config.DATA.num_classes
             },
             patience=getattr(self.config.TRAIN, "patience", 0),
+            monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
+            mode=getattr(self.config.TRAIN, "mode", "max"),
         )
 
         self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
@@ -768,6 +772,8 @@ class Trainer_Classification:
                     "batch_size": self.config.DATA.train.dataloader.batch_size,
                     #"num_classes": self.config.DATA.num_classes
                 },
+                monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
+                mode=getattr(self.config.TRAIN, "mode", "max"),
             )
             loss, metrics = self.test_trainer.test(
                 detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)

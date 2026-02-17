@@ -33,8 +33,7 @@ class ClassificationAPI:
 
     def __init__(self, config=None, data_dir=None, save_dir=None):
         from soccernetpro.core.utils.config import (
-            load_config_omega, 
-            resolve_config_omega, 
+            load_config_omega
         )
 
         if config is None:
@@ -42,7 +41,6 @@ class ClassificationAPI:
 
         config_path = expand(config)
         self.config = load_config_omega(config_path)
-        self.config = resolve_config_omega(self.config)
 
         # let the caller override the dataset root directory.
         self.config.DATA.data_dir = expand(
@@ -107,7 +105,7 @@ class ClassificationAPI:
         # reproducibility: 
         # we default to reproducible training, but allow the user to
         # disable this via SYSTEM.use_seed=False in the config.
-        if self.config.SYSTEM.use_seed:
+        if getattr(self.config.SYSTEM, "use_seed", False):
             set_reproducibility(self.config.SYSTEM.seed)
 
         is_ddp = world_size > 1
@@ -184,9 +182,14 @@ class ClassificationAPI:
         """
         import torch
         import torch.multiprocessing as mp
+        from soccernetpro.core.utils.config import (
+            resolve_config_omega
+        )
 
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
+
+        self.config = resolve_config_omega(self.config)
 
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
@@ -239,8 +242,13 @@ class ClassificationAPI:
         """
         import torch
         import torch.multiprocessing as mp
+        from soccernetpro.core.utils.config import (
+            resolve_config_omega
+        )
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
+
+        self.config = resolve_config_omega(self.config)
 
         if not predictions:
             # live inference: run the model on test data.
@@ -274,7 +282,9 @@ class ClassificationAPI:
         else:
             # offline evaluation from a saved prediction file.
             from soccernetpro.datasets.builder import build_dataset
-            
+            from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
+
+            self.trainer = Trainer_Classification(self.config)
             test_data = build_dataset(
                 self.config, test_set, None, split="test"
             )

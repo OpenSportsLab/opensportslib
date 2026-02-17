@@ -66,6 +66,8 @@ MODEL:
   k: 8
 
 TRAIN:
+  monitor: loss # balanced_accuracy, loss
+  mode: min # max or min
   enabled: true
   use_weighted_sampler: true
   use_weighted_loss: false
@@ -81,7 +83,7 @@ TRAIN:
 
   scheduler:
     type: ReduceLROnPlateau
-    mode: min
+    mode: ${TRAIN.mode}
     patience: 10
     factor: 0.1
     min_lr: 1e-8

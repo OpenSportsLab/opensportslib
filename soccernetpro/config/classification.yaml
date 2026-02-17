@@ -67,6 +67,8 @@ MODEL:
     
 
 TRAIN:
+  monitor: balanced_accuracy # balanced_accuracy, loss
+  mode: max # max or min
   enabled: true
   use_weighted_sampler: false
   use_weighted_loss: true
@@ -95,6 +97,7 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  use_seed: false
   seed: 42
   GPU: 4
   device: cuda   # auto | cuda | cpu
