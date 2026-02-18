@@ -444,7 +444,7 @@ def check_config(cfg, split="train"):
             cfg.TRAIN.start_valid_epoch = (
                 cfg.TRAIN.num_epochs - cfg.TRAIN.base_num_valid_epochs
             )
-        if cfg.DATA.crop_dim <= 0:
+        if cfg.DATA.crop_dim is None or cfg.DATA.crop_dim <= 0:
             cfg.DATA.crop_dim = None
         if (
             data_path != None
