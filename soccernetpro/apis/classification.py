@@ -12,7 +12,7 @@ delegating heavy lifting to Trainer_Classification.
 """
 
 import os
-
+import logging
 from soccernetpro.core.utils.config import expand 
 
 
@@ -56,11 +56,24 @@ class ClassificationAPI:
 
         # DDP rank; used for logging and checkpointing.
         rank = int(os.environ.get("RANK", 0))
-        if rank == 0:
-            print("DATA DIR     :", self.config.DATA.data_dir)
-            print("MODEL SAVEDIR:", self.save_dir)
-
         self.trainer=None
+        self.best_checkpoint=None
+
+        log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
+        os.makedirs(log_dir, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)s | %(message)s",
+            handlers=[
+                logging.FileHandler(os.path.join(log_dir, "train.log")),
+                logging.StreamHandler(),
+            ],
+            force=True,
+        )
+
+        if rank == 0:
+            logging.info(f"DATA DIR     : {self.config.DATA.data_dir}")
+            logging.info(f"MODEL SAVEDIR: {self.save_dir}")
 
     # -----------------------------------------------------------------
     # internal DDP worker
@@ -101,6 +114,17 @@ class ClassificationAPI:
         from soccernetpro.core.utils.seed import set_reproducibility
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
+        import logging
+
+        # configure logging for each spawned process
+        logging.basicConfig(
+            level=logging.INFO,
+            format=f"[RANK {rank}] %(asctime)s | %(levelname)s | %(message)s",
+            force=True,
+        )
+        # silence non-rank0 processes
+        if rank != 0:
+            logging.getLogger().setLevel(logging.ERROR)
 
         # reproducibility: 
         # we default to reproducible training, but allow the user to
@@ -136,10 +160,14 @@ class ClassificationAPI:
             valid_data = build_dataset(
                 self.config, valid_set, processor, split="valid"
             )
-            trainer.train(
+            best_ckpt = trainer.train(
                 model, train_data, valid_data, 
                 rank=rank, world_size=world_size
             )
+            # SEND BACK CHECKPOINT FROM RANK 0
+            if rank == 0 and return_queue is not None:
+                best_ckpt = getattr(trainer.trainer, "best_checkpoint_path", None)
+                return_queue.put(best_ckpt)
 
         elif mode == "infer":
             test_data = build_dataset(
@@ -151,7 +179,6 @@ class ClassificationAPI:
             )
 
             if rank == 0 and return_queue is not None:
-                print(metrics)
                 return_queue.put(metrics)
 
         if is_ddp:
@@ -190,32 +217,40 @@ class ClassificationAPI:
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
         self.config = resolve_config_omega(self.config)
-        print("Config : ", self.config)
+        logging.info("Configuration:")
+        logging.info(self.config)
 
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
 
+        ctx = mp.get_context("spawn")
+        queue = ctx.Queue()
+
         if use_ddp:
-            print(f"Launching DDP on {world_size} GPUs")
+            logging.info(f"Launching DDP on {world_size} GPUs")
             mp.spawn(
                 self._worker_ddp,
                 args=(
-                    world_size, "train", None, 
+                    world_size, "train", queue, 
                     train_set, valid_set, None, pretrained
                 ),
                 nprocs=world_size,
             )
         else:
-            print("Single GPU training")
+            logging.info("Single GPU training")
             self._worker_ddp(
                 rank=0,
                 world_size=1,
                 mode="train",
-                return_queue=None,
+                return_queue=queue,
                 train_set=train_set,
                 valid_set=valid_set,
                 pretrained=pretrained,
             )
+        
+        self.best_checkpoint = queue.get()
+        return self.best_checkpoint
+
 
     def infer(
         self, 
@@ -250,7 +285,15 @@ class ClassificationAPI:
         test_set = expand(test_set or self.config.DATA.annotations.test)
 
         self.config = resolve_config_omega(self.config)
-        print("Config : ", self.config)
+        logging.info("Configuration:")
+        logging.info(self.config)
+
+        if pretrained is None and predictions is None:
+            if hasattr(self, "best_checkpoint"):
+                pretrained = self.best_checkpoint
+                logging.info(f"Using last trained checkpoint: {pretrained}")
+            else:
+                raise ValueError("No pretrained checkpoint provided and no training run found.")
 
         if not predictions:
             # live inference: run the model on test data.
@@ -296,5 +339,7 @@ class ClassificationAPI:
                 class_names=test_data.label_map, 
                 exclude_labels=test_data.exclude_labels
             )
+
+        logging.info(f"TEST METRICS : {metrics}")
             
         return metrics

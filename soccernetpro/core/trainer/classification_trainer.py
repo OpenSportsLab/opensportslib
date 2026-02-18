@@ -75,6 +75,8 @@ class BaseTrainerClassification:
         self.monitor = monitor
         self.mode = mode
 
+        self.best_checkpoint_path = None
+
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         if self.rank == 0:
             # W&B init
@@ -113,7 +115,7 @@ class BaseTrainerClassification:
         best_metric = -float("inf") if mode == "max" else float("inf")
         best_path = None
         for epoch in range(epoch_start, self.max_epochs):
-            print(f"\nEpoch {epoch+1}/{self.max_epochs}")
+            logging.info(f"\nEpoch {epoch+1}/{self.max_epochs}")
 
             # Train
             if hasattr(self.train_loader.sampler, "set_epoch"):
@@ -165,8 +167,8 @@ class BaseTrainerClassification:
                     **{f"valid/{k}": v for k, v in val_metrics.items()},
                 })
 
-                print(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
-                print(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
+                logging.info(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
+                logging.info(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
 
             # ---------------- CHECKPOINT ----------------
             current = val_loss if monitor == "loss" else val_metrics.get(monitor, 0)
@@ -177,12 +179,15 @@ class BaseTrainerClassification:
                 best_metric = current
                 self.best_metric = best_metric
                 best_path = self._save_checkpoint("best", epoch + 1, tag="best")
+                self.best_checkpoint_path = best_path
 
                 artifact = wandb.Artifact("model-checkpoint", type="model")
                 artifact.add_file(best_path)
                 wandb.log_artifact(artifact)
             
-        print("Training finished.")
+        if self.rank == 0:
+            logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
+            logging.info("Training finished.")
 
     # =========================================================
     # TEST = Separate Call
@@ -192,7 +197,7 @@ class BaseTrainerClassification:
         Run test set evaluation.
         If epoch is provided, logs under that epoch number.
         """
-        print("\nRunning TEST evaluation")
+        logging.info("\nRunning TEST evaluation")
         pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True, disable = self.rank != 0)
         all_logits, all_labels, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
@@ -209,8 +214,6 @@ class BaseTrainerClassification:
                 **{f"test/{k}": v for k, v in test_metrics.items()},
             })
 
-            print("TEST METRICS:", test_metrics)
-
             if detailed_results:
                 from soccernetpro.metrics.classification_metric import compute_detailed_classification_metrics
                 compute_detailed_classification_metrics(
@@ -221,6 +224,7 @@ class BaseTrainerClassification:
                     set_name="test",
                 )
 
+        logging.info(f"TEST METRICS : {test_metrics}")
         return test_loss, test_metrics
 
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
@@ -357,7 +361,7 @@ class BaseTrainerClassification:
                     },
                 })
 
-            print("RESULTS Length:", len(results))
+            logging.info(f"RESULTS Length: {len(results)}")
 
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
@@ -390,7 +394,7 @@ class BaseTrainerClassification:
 
         path_aux = os.path.join(epoch_dir, name)
         torch.save(state, path_aux)
-        print(f"Saved checkpoint: {path_aux}")
+        logging.info(f"Saved checkpoint: {path_aux}")
         return path_aux
 
 
@@ -628,6 +632,7 @@ class Trainer_Classification:
         )
 
         self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
+        return getattr(self.trainer, "best_checkpoint_path", None)
 
     def _train_huggingface(self, model, train_dataset, val_dataset):
         """Handle HuggingFace Trainer for VideoMAE."""
@@ -673,7 +678,7 @@ class Trainer_Classification:
         self.trainer.train()
         #############
         train_metrics = self.hf_trainer.evaluate(train_dataset, metric_key_prefix="train")
-        print("TRAIN METRICS:", train_metrics)
+        logging.info(f"TRAIN METRICS: {train_metrics}")
         #############
 
     def infer(self, test_dataset, rank=0, world_size=1):
@@ -700,7 +705,6 @@ class Trainer_Classification:
             metrics = self.compute_metrics((logits, labels))
         
         else:
-            print("Using Custom Trainer class for evaluation of non-HuggingFace model")
             from soccernetpro.core.loss.builder import build_criterion
             from soccernetpro.core.optimizer.builder import build_optimizer
             from soccernetpro.core.scheduler.builder import build_scheduler
@@ -815,8 +819,6 @@ class Trainer_Classification:
             (preds, labels),
             mode="labels"
         )
-
-        print(metrics)
         return metrics
 
 
@@ -828,7 +830,7 @@ class Trainer_Classification:
         Save model checkpoint
         """
         save_checkpoint(model, path, processor, tokenizer, optimizer, epoch)
-        print(f"Model saved at {path}")
+        logging.info(f"Model saved at {path}")
 
     def load(self, path, optimizer=None, scheduler=None):
         """
@@ -837,7 +839,7 @@ class Trainer_Classification:
         if self.config.MODEL.type == "huggingface":
             epoch = None
             self.model, processor = load_huggingface_checkpoint(self.config, path=path, device=self.device)
-            print(f"Model loaded from {path}")
+            logging.info(f"Model loaded from {path}")
             return self.model, processor, scheduler, epoch
         else:
             from soccernetpro.models.builder import build_model
@@ -849,6 +851,6 @@ class Trainer_Classification:
             self.optimizer = optimizer
             self.scheduler = scheduler
             self.epoch = epoch
-            print(f"Model loaded from {path}, epoch: {epoch}")
+            logging.info(f"Model loaded from {path}, epoch: {epoch}")
             return self.model, self.optimizer, self.scheduler, self.epoch
 

@@ -32,6 +32,8 @@ class LocalizationAPI:
             ],
         )
 
+        self.best_checkpoint=None
+
         logger = logging.getLogger(__name__)
         print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
@@ -128,8 +130,10 @@ class LocalizationAPI:
                 self.config.TRAIN.type,
             )
         )
+        self.best_checkpoint = trainer.best_checkpoint_path
 
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
+        return self.best_checkpoint
   
 
     def infer(self, test_set=None, pretrained=None, predictions=None):
@@ -149,6 +153,13 @@ class LocalizationAPI:
         logging.info(self.config)
         # Start Timing
         start = time.time()
+        if pretrained is None and predictions is None:
+            if hasattr(self, "best_checkpoint"):
+                pretrained = self.best_checkpoint
+                print(f"Using last trained checkpoint: {pretrained}")
+            else:
+                raise ValueError("No pretrained checkpoint provided and no training run found.")
+            
         if not predictions:
             logging.info("No predictions provided, running inference.")
             device = select_device(self.config.SYSTEM)
