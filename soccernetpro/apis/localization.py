@@ -43,7 +43,7 @@ class LocalizationAPI:
         #self.trainer = Trainer(self.config)
 
 
-    def train(self, train_set=None, valid_set=None, pretrained=None):
+    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_trainer
@@ -136,7 +136,7 @@ class LocalizationAPI:
         return self.best_checkpoint
   
 
-    def infer(self, test_set=None, pretrained=None, predictions=None):
+    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_inferer, build_evaluator
