@@ -14,6 +14,8 @@ pip install -e .
 or 
 
 pip install -e .[localization]
+or 
+pip install -e .[tracking]
 
 ### git branch and merge rules ###
 1. Check and verify current branch is "dev" - git status
