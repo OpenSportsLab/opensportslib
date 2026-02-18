@@ -91,7 +91,8 @@ class BaseTrainerClassification:
         wandb_config=None,
         patience=10,
         monitor="balanced_accuracy",
-        mode="max"
+        mode="max",
+        revert_on_lr_reduction=False,
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -113,7 +114,9 @@ class BaseTrainerClassification:
 
         self.monitor = monitor
         self.mode = mode
-
+        self.revert_on_lr_reduction = revert_on_lr_reduction
+        self._best_model_state = None
+        
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         
         if self.rank == 0:
@@ -201,6 +204,8 @@ class BaseTrainerClassification:
             )
             pbar.close()
 
+            prev_lr = self.optimizer.param_groups[0]["lr"]
+
             # capture LR before the scheduler step so we can detect
             # plateau-triggered reductions.
             val_metric = val_metrics.get(
@@ -217,6 +222,21 @@ class BaseTrainerClassification:
                 self.scheduler.step()
 
             current_lr = self.optimizer.param_groups[0]["lr"]
+
+            # When ReduceLROnPlateau drops the LR, revert weights to
+            # the best checkpoint so training continues from the
+            # strongest point rather than from a potentially overfit
+            # state. This mirrors the pixels_vs_positions recipe.
+            if (
+                self.revert_on_lr_reduction
+                and current_lr != prev_lr
+                and self._best_model_state is not None
+            ):
+                self.model.load_state_dict(self._best_model_state)
+                print(
+                    f"LR reduced from {prev_lr:.2e} to {current_lr:.2e} "
+                    f"-- reverted to best model"
+                )
 
             if self.rank == 0:
                 # ---------------- W&B LOG ----------------
@@ -240,6 +260,13 @@ class BaseTrainerClassification:
             if is_better and self.rank == 0:
                 best_metric = current
                 self.best_metric = best_metric
+
+                if self.revert_on_lr_reduction:
+                    self._best_model_state = {
+                        k: v.cpu().clone()
+                        for k, v in self.model.state_dict().items()
+                    }
+
                 best_path = self._save_checkpoint("best", epoch + 1, tag="best")
 
                 artifact = wandb.Artifact("model-checkpoint", type="model")
@@ -767,6 +794,7 @@ class Trainer_Classification:
             patience=getattr(self.config.TRAIN, "patience", 0),
             monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
             mode=getattr(self.config.TRAIN, "mode", "max"),
+            revert_on_lr_reduction=(modality == "tracking_parquet"),
         )
 
         self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
@@ -916,6 +944,7 @@ class Trainer_Classification:
                 },
                 monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
                 mode=getattr(self.config.TRAIN, "mode", "max"),
+                revert_on_lr_reduction=(modality == "tracking_parquet"),
             )
             loss, metrics = self.test_trainer.test(
                 detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)
