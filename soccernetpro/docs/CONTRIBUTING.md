@@ -57,16 +57,16 @@ Create a new branch from the `dev` source using descriptive naming conventions.
 git checkout -b feature-<feature_name>
 ```
 Naming Examples:
-*feature-model*
-*feature-new-dataset*
+- *feature-model*
+- *feature-new-dataset*
 
 ### 3. Work Locally
 Commit your work often using the following commit style guidelines:
 
-*feat:* New feature
-*fix:* Bug fix
-*refactor:* Code cleanup
-*docs:* Documentation update
+- *feat:* New feature
+- *fix:* Bug fix
+- *refactor:* Code cleanup
+- *docs:* Documentation update
 
 Example commit:
 ```bash
@@ -87,7 +87,7 @@ git push origin feature/your-feature-name
 Raise a Pull Request (PR) to merge your branch back into the `dev` branch.
 
 ✅ PR Checklist:
-[ ] Tests Pass: All existing logic remains functional.
-[ ] Runs on GPU: Code is compatible with CUDA environments.
-[ ] Config Works: YAML configurations resolve correctly.
-[ ] Docs Updated: Relevant documentation reflects your changes.
+- [ ] Tests Pass: All existing logic remains functional.
+- [ ] Runs on GPU: Code is compatible with CUDA environments.
+- [ ] Config Works: YAML configurations resolve correctly.
+- [ ] Docs Updated: Relevant documentation reflects your changes.
