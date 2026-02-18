@@ -14,6 +14,8 @@ pip install -e .
 or 
 
 pip install -e .[localization]
+or 
+pip install -e .[tracking]
 
 ### git branch and merge rules ###
 1. Check and verify current branch is "dev" - git status
@@ -32,6 +34,20 @@ conda create -n SoccerNet python=3.12 pip
 conda activate SoccerNet
 pip install --pre soccernetpro
 ```
+
+## 🤝 Contributing & Developer Guide
+
+We welcome contributions to SoccerNetPro.
+
+- 📘 **Contributor Guide:** [CONTRIBUTING.md](soccernetpro/docs/CONTRIBUTING.md)  
+- 🛠 **Developer Guide:** [DEVELOPERS.md](soccernetpro/docs/DEVELOPERS.md)
+
+These documents explain:
+- How to add models and datasets  
+- Coding standards  
+- Training pipeline structure  
+- How to run and test the framework  
+
 
 ## Configuration Sample (.yaml) file
 1. Classification 
@@ -338,6 +354,7 @@ myModel = model.classification(
 metrics = myModel.infer(
     test_set="/path/to/test_annotations.json",
     pretrained="/path/to/checkpoints/final_model",
+    predictions="/path/to/predictions.json"
 )
 ```
 
@@ -354,6 +371,7 @@ def main():
     metrics = myModel.infer(
         test_set="/path/to/test_annotations.json",
         pretrained="/path/to/checkpoints/best.pt",
+        predictions="/path/to/predictions.json",
         use_ddp=True,   # optional (usually not needed)
     )
 

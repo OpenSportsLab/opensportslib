@@ -24,7 +24,7 @@ def save_checkpoint(model, path, processor=None, tokenizer=None, optimizer=None,
         processor (optional): HF processor / feature extractor to save with model
         tokenizer (optional): HF tokenizer to save with model
     """
-    os.makedirs(path, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
     hf_saved = False
 

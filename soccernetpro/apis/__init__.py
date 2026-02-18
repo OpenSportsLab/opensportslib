@@ -3,6 +3,8 @@
 # Import task APIs
 from soccernetpro.apis.classification import ClassificationAPI
 from soccernetpro.apis.localization import LocalizationAPI
+import warnings
+warnings.filterwarnings("ignore")
 
 # Factory functions for user-facing calls
 def classification(config=None, data_dir=None, save_dir=None):#, pretrained_model=None):

@@ -25,6 +25,9 @@ def dict_to_namespace(d, skip_keys=("classes",)):
     else:
         return d
 
+def namespace_to_dict(ns):
+    return {k: vars(v) if hasattr(v, "__dict__") else v for k, v in vars(ns).items()}
+
 def namespace_to_omegaconf(ns):
     """
     Recursively convert SimpleNamespace (or dict/list) back to OmegaConf
@@ -70,9 +73,13 @@ def load_config_omega(path):
     return dict_to_namespace(cfg)
 
 def resolve_config_omega(cfg):
-    from omegaconf import OmegaConf
+    from omegaconf import OmegaConf, DictConfig
     #cfg = namespace_to_omegaconf(cfg)
-    cfg = OmegaConf.create(cfg)
+    #cfg = namespace_to_dict(cfg)
+    #print(type(cfg))
+    #cfg = OmegaConf.create(cfg)
+    if not isinstance(cfg, DictConfig):
+        return cfg 
     OmegaConf.resolve(cfg)
     cfg = dict_to_namespace(OmegaConf.to_container(cfg, resolve=True))
     return cfg

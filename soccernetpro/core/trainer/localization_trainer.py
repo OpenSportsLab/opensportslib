@@ -211,6 +211,8 @@ class Trainer_e2e(Trainer):
         #self.cfg_challenge = cfg_challenge
         self.cfg_valid_data_frames = cfg_valid_data_frames
 
+        self.best_checkpoint_path = None
+
         run_name = f"{args.TASK}_{args.MODEL.type}_{args.MODEL.backbone.type}_{args.MODEL.head.type}"
 
         self.wandb_run = wandb.init(
@@ -277,6 +279,7 @@ class Trainer_e2e(Trainer):
                     
         if is_best:
             best_path = os.path.join(self.save_dir, "best_checkpoint.pt")
+            self.best_checkpoint_path = best_path
             torch.save(checkpoint, best_path)
             logging.info(f"Best checkpoint saved: {best_path}")
             

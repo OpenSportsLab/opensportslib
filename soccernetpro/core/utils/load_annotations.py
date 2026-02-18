@@ -9,7 +9,7 @@ from soccernetpro.core.utils.video_processing import get_stride, read_fps, get_n
 from soccernetpro.core.utils.config import load_json
 from collections import defaultdict
 
-def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False):
+def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False, input_type="video"):
 
     with open(annotations_path, "r") as f:
         data = json.load(f)
@@ -50,13 +50,14 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
         clips = [
             inp["path"]
             for inp in item.get("inputs", [])
-            if inp.get("type") == "video" and "path" in inp
+            if inp.get("type") == input_type and "path" in inp
         ]
         if not clips:
             continue
 
         grouped[group_id]["video_paths"].extend(clips)
         grouped[group_id]["label"] = label_idx
+        grouped[group_id]["id"] = group_id
 
     return list(grouped.values()), label_map
 
@@ -443,7 +444,7 @@ def check_config(cfg, split="train"):
             cfg.TRAIN.start_valid_epoch = (
                 cfg.TRAIN.num_epochs - cfg.TRAIN.base_num_valid_epochs
             )
-        if cfg.DATA.crop_dim <= 0:
+        if cfg.DATA.crop_dim is None or cfg.DATA.crop_dim <= 0:
             cfg.DATA.crop_dim = None
         if (
             data_path != None

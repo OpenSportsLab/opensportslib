@@ -3,6 +3,7 @@ TASK: classification
 DATA:
   dataset_name: mvfouls
   data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
+  data_modality: video
   view_type: multi  # multi or single
   num_classes: 8 # mvfoul
   train: 
@@ -66,6 +67,8 @@ MODEL:
     
 
 TRAIN:
+  monitor: balanced_accuracy # balanced_accuracy, loss
+  mode: max # max or min
   enabled: true
   use_weighted_sampler: false
   use_weighted_loss: true
@@ -94,6 +97,7 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  use_seed: false
   seed: 42
   GPU: 4
   device: cuda   # auto | cuda | cpu

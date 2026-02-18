@@ -45,7 +45,7 @@ def build_scheduler(optimizer, cfg, default_args=None):
     """
     if cfg.type == "ReduceLROnPlateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode=cfg.mode, verbose=cfg.verbose, patience=cfg.patience
+            optimizer, mode=cfg.mode, patience=cfg.patience
         )
         logging.info("Using ReduceLROnPlateau")
     elif cfg.type == "ChainedSchedulerE2E":
