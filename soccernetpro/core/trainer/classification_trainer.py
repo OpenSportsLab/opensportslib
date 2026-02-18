@@ -1,5 +1,14 @@
 # soccernetpro/core/trainer/classification_trainer.py
 
+"""classification trainers for video and tracking modalities.
+
+provides a base trainer with modality-agnostic training, validation,
+and test loops, plus two modality-specific subclasses that implement
+the forward pass. Trainer_Classification is the top-level dispatcher 
+consumed by the API layer.
+
+"""
+
 import os
 import gc
 import json
@@ -13,22 +22,52 @@ import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from transformers import Trainer as HFTrainer, TrainingArguments
 from soccernetpro.core.utils.ddp import DistributedWeightedSampler
-from soccernetpro.metrics.classification_metric import compute_classification_metrics, process_preds_labels
+
 from soccernetpro.core.utils.wandb import log_confusion_matrix_wandb
 from soccernetpro.core.utils.checkpoint import *
+
 from soccernetpro.core.utils.config import select_device
 import torch.distributed as dist
 from datetime import datetime
 from soccernetpro.core.utils.seed import seed_worker
+from soccernetpro.metrics.classification_metric import (
+    compute_classification_metrics,
+    process_preds_labels
+)
 
-# ============================================================
-# Base Trainer
-# ============================================================
+# -------------------------------------------------------------------
+# base classification trainer
+# -------------------------------------------------------------------
 
 class BaseTrainerClassification:
-    """
-    Base trainer with common functionality for classification tasks.
-    Subclasses implement _forward_batch() for modality-specific logic.
+    """modality-agnostic training loop for classification.
+
+    handles epoch iteration, gradient updates, DDP gather, 
+    metric computation, W&B logging, checkpoint saving, and JSON
+    prediction export. subclasses only need to override _forward_batch()
+    with modality-specific tensor preparation.
+
+    Args:
+        train_loader: DataLoader for training set.
+        val_loader: DataLoader for validation set.
+        test_loader: DataLoader for test set (may be None during training).
+        model: the classification model (already on device).
+        optimizer: PyTorch optimizer.
+        scheduler: learning-rate scheduler.
+        criterion: loss function callable.
+        class_weights: optional per-class weight tensor for the loss.
+        class_names: dict mapping class indices to names.
+        save_dir: root directory for checkpoint and prediction output.
+        model_name: name used for the checkpoint sub-directory.
+        max_epochs: maximum number of training epochs.
+        device: torch.device or device string.
+        top_k: k value for top-k accuracy computation.
+        wandb_project: W&B project name.
+        wandb_run_name: W&B run display name.
+        wandb_config: dict of hyperparameters logged to W&B.
+        patience: early-stopping patience (0=disabled).
+        monitor: metric name to monitor for checkpointing.
+        mode: "max" or "min" depending on the monitored metric.
     """
     
     def __init__(
@@ -76,6 +115,7 @@ class BaseTrainerClassification:
         self.mode = mode
 
         self.rank = dist.get_rank() if dist.is_initialized() else 0
+        
         if self.rank == 0:
             # W&B init
             self.wandb_run = wandb.init(
@@ -99,54 +139,78 @@ class BaseTrainerClassification:
         except Exception:
             pass
 
+    # -- abstract forward pass --------------------------------------
+    
     def _forward_batch(self, batch):
-        """
-        Modality-specific forward pass. Override in subclass.
-        Returns: logits, labels
+        """run the modality-specific forward pass.
+
+        must be overridden by every subclass.
+
+        Args:
+            batch: a dict produced by the DataLoader.
+
+        Returns:
+            a tuple (logits, labels) where both are tensors on
+            self.device.
         """
         raise NotImplementedError
 
+    # -- training loop ----------------------------------------------
+
     def train(self, epoch_start=0, save_every=3):
+        """run the full training loop with validation after each epoch.
+
+        Args:
+            epoch_start: the epoch number to start from (0-based).
+            save_every: currently unused; reserved for periodic 
+            checkpoint saving.
+        """
         logging.info("Starting training")
         monitor = self.monitor
         mode = self.mode
         best_metric = -float("inf") if mode == "max" else float("inf")
         best_path = None
+
         for epoch in range(epoch_start, self.max_epochs):
             print(f"\nEpoch {epoch+1}/{self.max_epochs}")
 
-            # Train
+            # --- train ---
             if hasattr(self.train_loader.sampler, "set_epoch"):
                 self.train_loader.sampler.set_epoch(epoch)
+            
             disable = self.rank != 0
-            pbar = tqdm.tqdm(total=len(self.train_loader), desc="Training", position=0, leave=True, disable=disable)
+            
+            pbar = tqdm.tqdm(
+                total=len(self.train_loader), desc="Training", 
+                position=0, leave=True, disable=disable
+            )
             _, _, train_loss, train_metrics = self._run_epoch(
-                self.train_loader, 
-                epoch + 1, 
-                train=True, 
-                set_name="train", 
-                pbar=pbar
+                self.train_loader, epoch + 1, 
+                train=True, set_name="train", pbar=pbar
             )
             pbar.close()
 
-            # Validation
-            pbar = tqdm.tqdm(total=len(self.val_loader), desc="Valid", position=1, leave=True, disable=disable)
+            # --- validation ---
+            pbar = tqdm.tqdm(
+                total=len(self.val_loader), desc="Valid", 
+                position=1, leave=True, disable=disable
+            )
             _, _, val_loss, val_metrics = self._run_epoch(
-                self.val_loader, 
-                epoch + 1, 
-                train=False, 
-                set_name="valid", 
-                pbar=pbar
+                self.val_loader, epoch + 1, 
+                train=False, set_name="valid", pbar=pbar
             )
             pbar.close()
 
-            # Get current LR before scheduler step
-            prev_lr = self.optimizer.param_groups[0]["lr"] # NOTE: this is for ReduceLROnPlateau scheduler we discussed with Silvio
+            # capture LR before the scheduler step so we can detect
+            # plateau-triggered reductions.
+            val_metric = val_metrics.get(
+                "balanced_accuracy", val_metrics.get("accuracy", 0)
+            )
+            train_metric = train_metrics.get(
+                "balanced_accuracy", train_metrics.get("accuracy", 0)
+            )
 
-            # Scheduler step (ReduceLROnPlateau needs metric)
-            val_metric = val_metrics.get("balanced_accuracy", val_metrics.get("accuracy", 0))
-            train_metric = train_metrics.get("balanced_accuracy", train_metrics.get("accuracy", 0))
-
+            # ReduceLROnPlateau needs the monitored metric
             if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                 self.scheduler.step(val_loss)
             else:
@@ -184,22 +248,28 @@ class BaseTrainerClassification:
             
         print("Training finished.")
 
-    # =========================================================
-    # TEST = Separate Call
-    # =========================================================
+    
+    # -- TEST evaluation ------------------------------------------
+    
     def test(self, epoch=None, detailed_results=False):
-        """
-        Run test set evaluation.
-        If epoch is provided, logs under that epoch number.
+        """run the test set evaluation.
+
+        Args:
+            epoch: the epoch number to evaluate (if None, uses "final").
+            detailed_results: whether to compute detailed classification metrics.
+
+        Returns:
+            a tuple (test_loss, test_metrics).
         """
         print("\nRunning TEST evaluation")
-        pbar = tqdm.tqdm(total=len(self.test_loader), desc="Test", position=0, leave=True, disable = self.rank != 0)
+        pbar = tqdm.tqdm(
+            total=len(self.test_loader), desc="Test", position=0, 
+            leave=True, disable = self.rank != 0
+        )
         all_logits, all_labels, test_loss, test_metrics = self._run_epoch(
             self.test_loader,
             epoch if epoch is not None else "final",
-            train=False,
-            set_name="test",
-            pbar=pbar
+            train=False, set_name="test", pbar=pbar
         )
         pbar.close()
 
@@ -212,18 +282,38 @@ class BaseTrainerClassification:
             print("TEST METRICS:", test_metrics)
 
             if detailed_results:
-                from soccernetpro.metrics.classification_metric import compute_detailed_classification_metrics
+                from soccernetpro.metrics.classification_metric import (
+                    compute_detailed_classification_metrics
+                )
                 compute_detailed_classification_metrics(
-                    all_logits=all_logits,
-                    all_labels=all_labels,
-                    class_names=self.class_names,
-                    save_dir=self.save_dir,
-                    set_name="test",
+                    all_logits=all_logits, all_labels=all_labels,
+                    class_names=self.class_names, save_dir=self.save_dir,
+                    set_name="test"
                 )
 
         return test_loss, test_metrics
 
+    # -- single epoch logic -------------------------------------
+
     def _run_epoch(self, dataloader, epoch, train=False, set_name="train", pbar=None):
+        """execute one pass over a dataloader.
+
+        handles forward/backward, per-batch bookkeeping, DDP gather, metric
+        computation, confusion-matrix logging, and JSON prediction export.
+
+        Args:
+            dataloader: the DataLoader to iterate over.
+            epoch: the epoch number (for checkpointing and folder naming).
+            train: if True, compute gradients and update weights.
+            set_name: "train", "valid", or "test" (for logging and JSON).
+            pbar: optional tqdm progress bar.
+
+        Returns:
+            a tuple (all_logits, all_labels, avg_loss, metrics).
+            on non-rank-0 DDP workers the first two are None and metrics
+            is an empty dict.
+        """
+        
         import torch.distributed as dist
 
         if train:
@@ -241,11 +331,11 @@ class BaseTrainerClassification:
         # -------- Create epoch folder --------
         epoch_dir = os.path.join(self.save_dir, str(epoch))
         os.makedirs(epoch_dir, exist_ok=True)
-        save_path = os.path.join(epoch_dir, f"predictions_{set_name}_epoch_{epoch}.json")
+        save_path = os.path.join(
+            epoch_dir, f"predictions_{set_name}_epoch_{epoch}.json"
+        )
 
-        # =========================================================
-        # LOOP
-        # =========================================================
+        # --- batch loop ---
         for batch in dataloader:
             if pbar:
                 pbar.update()
@@ -254,7 +344,10 @@ class BaseTrainerClassification:
                 logits, labels = self._forward_batch(batch)
 
                 if self.class_weights is not None:
-                    loss = self.criterion(output=logits, labels=labels, weight=self.class_weights.to(self.device))
+                    loss = self.criterion(
+                        output=logits, labels=labels,
+                        weight=self.class_weights.to(self.device)
+                    )
                 else:
                     loss = self.criterion(output=logits, labels=labels)
 
@@ -273,7 +366,7 @@ class BaseTrainerClassification:
             all_logits.append(logits_cpu)
             all_labels.append(labels_cpu)
 
-            # -------- JSON preds --------
+            # per-sample predictions for JSON export.
             probs = torch.softmax(logits_cpu, dim=1)
             preds = torch.argmax(probs, dim=1)
             confs = probs.max(dim=1).values
@@ -287,9 +380,7 @@ class BaseTrainerClassification:
                     "pred_class_idx": preds[i].item(),
                 })
 
-        # =========================================================
-        # CONCAT LOCAL
-        # =========================================================
+        # --- concatenate local predictions ---
         if len(all_logits) > 0:
             all_logits = torch.cat(all_logits).numpy()
             all_labels = torch.cat(all_labels).numpy()
@@ -297,9 +388,7 @@ class BaseTrainerClassification:
             all_logits = np.zeros((0, 1))
             all_labels = np.zeros((0,))
 
-        # =========================================================
-        # DDP GATHER (SAFE — handles uneven sizes)
-        # =========================================================
+        # --- DDP gather (handles uneven shard sizes) ---
         if dist.is_initialized():
             gathered = [None for _ in range(dist.get_world_size())]
             dist.all_gather_object(gathered, (all_logits, all_labels, results))
@@ -309,23 +398,21 @@ class BaseTrainerClassification:
                 all_labels = np.concatenate([g[1] for g in gathered])
                 results = [r for g in gathered for r in g[2]]
             else:
-                # non-rank0 returns early
                 return None, None, 0.0, {}
 
-        # =========================================================
-        # METRICS (rank 0 only)
-        # =========================================================
+        # --- metrics (rank-0 only in DDP) ---
         metrics = compute_classification_metrics(
-            (all_logits, all_labels),
-            top_k=self.top_k
+            (all_logits, all_labels), top_k=self.top_k,
         )
 
-        # =========================================================
-        # CONFUSION MATRIX (rank 0 only)
-        # =========================================================
+        # --- confusion matrix (validation and test only) ---
         if self.rank == 0 and set_name in ["valid", "test"]:
-            preds_all, labels_all, _ = process_preds_labels((all_logits, all_labels))
-            class_names = [self.class_names[i] for i in sorted(self.class_names.keys())]
+            preds_all, labels_all, _ = process_preds_labels(
+                (all_logits, all_labels)
+            )
+            class_names = [
+                self.class_names[i] for i in sorted(self.class_names.keys())
+            ]
 
             log_confusion_matrix_wandb(
                 y_true=labels_all.tolist(),
@@ -334,9 +421,7 @@ class BaseTrainerClassification:
                 split_name=set_name,
             )
 
-        # =========================================================
-        # SAVE JSON (rank 0 only)
-        # =========================================================
+        # --- save JSON (rank-0 only) ---
         if self.rank == 0:
             submission = {
                 "version": "2.0",
@@ -362,14 +447,11 @@ class BaseTrainerClassification:
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
 
-        # =========================================================
         return all_logits, all_labels, total_loss / max(1, total_batches), metrics
 
 
-
-    # =========================================================
-    # CHECKPOINT
-    # =========================================================
+    # -- checkpoint saving ---------------------------------------
+    
     def _save_checkpoint(self, filename, epoch, tag=None):
         epoch_dir = os.path.join(self.save_dir, str(filename))
         os.makedirs(epoch_dir, exist_ok=True)
@@ -394,14 +476,26 @@ class BaseTrainerClassification:
         return path_aux
 
 
-# ============================================================
-# MV Trainer (Video)
-# ============================================================
+# --------------------------------------------------------------
+# modality-specific trainers 
+# --------------------------------------------------------------
 
 class MVTrainerClassification(BaseTrainerClassification):
-    """Trainer for multi-view video classification."""
+    """forward pass for multi-view video classification.
+    
+    expects batches with pixel_values of shape
+    (B, V, C, T, H, W) and integer labels of shape (B,).
+    """
 
     def _forward_batch(self, batch):
+        """move video clips to device and run the model.
+
+        Args:
+            batch: dict with keys "pixel_values" and "labels".
+
+        Returns:
+            a tuple (logits, labels) on self.device.
+        """
         mvclips = batch["pixel_values"].to(self.device).float()
         labels = batch["labels"].to(self.device)
 
@@ -423,10 +517,22 @@ class MVTrainerClassification(BaseTrainerClassification):
 # ============================================================
 
 class TrackingTrainerClassification(BaseTrainerClassification):
-    """Trainer for tracking-based classification."""
+    """forward pass for tracking-based classification.
+    
+    expects batches with x of shape (B, N, 2), edge_index of shape (2, E),
+    batch of shape (B,), batch_size, seq_len, and integer labels of shape (B,).
+    """
 
     def _forward_batch(self, batch):
-        # Move all tensors to device at once
+        """move tracking data to device and run the model.
+
+        Args:
+            batch: dict with keys "x", "edge_index", "batch", "batch_size",
+            "seq_len", and "labels".
+
+        Returns:
+            a tuple (logits, labels) on self.device.
+        """
         tracking_batch = {
             "x": batch["x"].to(self.device),
             "edge_index": batch["edge_index"].to(self.device),
@@ -441,9 +547,19 @@ class TrackingTrainerClassification(BaseTrainerClassification):
         return logits, labels
 
 
+# --------------------------------------------------------------
+# unified trainer dispatcher 
+# --------------------------------------------------------------
+
 class Trainer_Classification:
-    """
-    Unified trainer that dispatches to appropriate trainer based on config.
+    """high-level trainer that dispatches to the right modality trainer.
+
+    consumed by ClassificationAPI. Responsible for building data
+    loaders, optimizers, schedulers, and samplers, then delegating the
+    actual loop to MVTrainerClassification or TrackingTrainerClassification.
+
+    Args:
+        config: the configuration object.
     """
     
     def __init__(self, config):
@@ -456,9 +572,35 @@ class Trainer_Classification:
         self.trainer = None
 
     def compute_metrics(self, pred, mode="logits"):
-        return compute_classification_metrics(pred, top_k=2, mode=mode)
+        """thin wrapper around the metric module.
+
+        Args:
+            pred: a tuple (logits, labels).
+            mode: "logits" or "labels" (default: "logits").
+
+        Returns:
+            a dictionary of classification metrics.
+        """
+        return compute_classification_metrics(
+            pred, top_k=2, mode=mode
+        )
+
+    # -- training -----------------------------------------------
 
     def train(self, model, train_dataset, val_dataset=None, rank=0, world_size=1):
+        """build all training components and run the loop.
+
+        detects the model type (HuggingFace vs. custom) and the data 
+        modality (video vs. tracking) to select the right trainer class,
+        sampler, and collate function.
+
+        Args:
+            model: the classification model.
+            train_dataset: training ClassificationDataset.
+            val_dataset: validation ClassificationDataset (optional).
+            rank: GPU rank (0-indexed).
+            world_size: total number of GPUs.
+        """
         from soccernetpro.core.loss.builder import build_criterion
         from soccernetpro.core.optimizer.builder import build_optimizer
         from soccernetpro.core.scheduler.builder import build_scheduler
@@ -467,13 +609,13 @@ class Trainer_Classification:
         from torch.utils.data.distributed import DistributedSampler
 
         is_ddp = world_size > 1
-
         modality = getattr(self.config.DATA, 'data_modality', 'video')
-        seed = getattr(self.config.SYSTEM, 'seed', 42)
+        seed = self.config.SYSTEM.seed
+
         g = torch.Generator()
         g.manual_seed(seed)
 
-        # HuggingFace models (VideoMAE)
+        # HuggingFace models (e.g. VideoMAE) use the HF Trainer.
         if self.config.MODEL.type == "huggingface":
             self._train_huggingface(model, train_dataset, val_dataset)
             return
@@ -483,37 +625,40 @@ class Trainer_Classification:
                 self.device = torch.device(f"cuda:{rank}")
         else:
                 self.device = select_device(self.config.SYSTEM)
-        # Custom models (MV or Tracking)
+        
         self.model = model.to(self.device)
 
         if is_ddp:
             self.model = DDP(self.model, device_ids=[rank])
 
         # Build components
-        optimizer = build_optimizer(self.model.parameters(), cfg=self.config.TRAIN.optimizer)
-        scheduler = build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
+        optimizer = build_optimizer(
+            self.model.parameters(), cfg=self.config.TRAIN.optimizer
+        )
+        scheduler = build_scheduler(
+            optimizer, cfg=self.config.TRAIN.scheduler
+        )
         criterion = build_criterion(self.config.TRAIN.criterion)
 
-        # Class weights
+        # --- class weights for the loss ---
         if self.config.TRAIN.use_weighted_loss:
             class_weights = train_dataset.get_class_weights(
-                num_classes=train_dataset.num_classes(),
-                sqrt=True
+                num_classes=train_dataset.num_classes(), sqrt=True
             ).to(self.device)
         else:
             class_weights = None
 
-        # Collate function
+        # tracking modality needs a customm collate that merges PyG
+        # Data objects into a single batched graph per timestamp.
         collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
 
-        # Sampler
-                # -------------------------
-        # TRAIN SAMPLER
-        # -------------------------
+        # --- train sampler ---
         if self.config.TRAIN.use_weighted_sampler:
             sample_weights = train_dataset.get_sample_weights()
 
-            samples_per_class = getattr(self.config.TRAIN, 'samples_per_class', None)
+            samples_per_class = getattr(
+                self.config.TRAIN, 'samples_per_class', None
+            )
             if samples_per_class:
                 num_classes = train_dataset.num_classes()
                 num_samples = samples_per_class * num_classes
@@ -554,9 +699,7 @@ class Trainer_Classification:
             shuffle = not is_ddp
 
 
-        # -------------------------
-        # VAL SAMPLER (SEPARATE!)
-        # -------------------------
+        # --- validation sampler ---
         if is_ddp:
             val_sampler = DistributedSampler(
                 val_dataset,
@@ -583,20 +726,19 @@ class Trainer_Classification:
             val_dataset,
             batch_size=self.config.DATA.valid.dataloader.batch_size,
             shuffle=False,
-            sampler=val_sampler,   # ← IMPORTANT
+            sampler=val_sampler,   
             num_workers=self.config.DATA.valid.dataloader.num_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
         )
 
-        # Select trainer class
+        # select the modality-specific trainer.
         if modality == "tracking_parquet":
             TrainerClass = TrackingTrainerClassification
         else:
             TrainerClass = MVTrainerClassification
 
-        # Create trainer
         self.trainer = TrainerClass(
             train_loader=train_loader,
             val_loader=val_loader,
