@@ -73,7 +73,7 @@ TRAIN:
   use_weighted_sampler: true
   use_weighted_loss: false
   samples_per_class: 4000
-  epochs: 1
+  epochs: 10
   patience: 10
   save_every: 20
   detailed_results: true
