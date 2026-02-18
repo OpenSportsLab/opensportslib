@@ -37,8 +37,8 @@ pip install --pre soccernetpro
 
 We welcome contributions to SoccerNetPro.
 
-- 📘 **Contributor Guide:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)  
-- 🛠 **Developer Guide:** [docs/DEVELOPERS.md](docs/DEVELOPERS.md)
+- 📘 **Contributor Guide:** [CONTRIBUTING.md](soccernetpro/docs/CONTRIBUTING.md)  
+- 🛠 **Developer Guide:** [DEVELOPERS.md](soccernetpro/docs/DEVELOPERS.md)
 
 These documents explain:
 - How to add models and datasets  

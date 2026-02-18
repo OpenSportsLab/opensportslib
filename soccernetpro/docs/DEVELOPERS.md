@@ -188,14 +188,4 @@ This is where you can modify:
 
 ### High-Level Workflow
 
-YAML Config
-   ↓
-APIs (apis/)
-   ↓
-Datasets (datasets/)
-   ↓
-Models (models/)
-   ↓
-Trainer (core/trainer/)
-   ↓
-Metrics (metrics/)
+YAML Config -> APIs (apis/) -> Datasets (datasets/) -> Models (models/) -> Trainer (core/trainer/) -> Metrics (metrics/)
