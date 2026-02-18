@@ -57,6 +57,7 @@ TASK: classification
 DATA:
   dataset_name: mvfouls
   data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
+  data_modality: video
   view_type: multi  # multi or single
   num_classes: 8 # mvfoul
   train: 
@@ -120,6 +121,8 @@ MODEL:
     
 
 TRAIN:
+  monitor: balanced_accuracy # balanced_accuracy, loss
+  mode: max # max or min
   enabled: true
   use_weighted_sampler: false
   use_weighted_loss: true
@@ -148,13 +151,122 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  use_seed: false
   seed: 42
   GPU: 4
   device: cuda   # auto | cuda | cpu
   gpu_id: 0
+
 ```
 
-2. Localization
+2. Classification (Tracking)
+```bash
+TASK: classification
+
+DATA:
+  dataset_name: sngar
+  data_modality: tracking_parquet
+  data_dir: /home/karkid/soccernetpro/sngar-tracking
+  preload_data: false
+  train: 
+    type: annotations_train.json
+    video_path: ${DATA.data_dir}/train
+    path: ${DATA.train.video_path}/train.json
+    dataloader:
+      batch_size: 32
+      shuffle: true
+      num_workers: 8
+      pin_memory: true
+  valid:
+    type: annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.valid.video_path}/valid.json
+    dataloader:
+      batch_size: 32
+      num_workers: 8
+      shuffle: false
+  test:
+    type: annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.test.video_path}/test.json
+    dataloader:
+      batch_size: 32
+      num_workers: 8
+      shuffle: false
+  num_frames: 16
+  frame_interval: 9
+  augmentations:
+    vertical_flip: true
+    horizontal_flip: true
+    team_flip: true
+  normalize: true
+  num_objects: 23
+  feature_dim: 8
+  pitch_half_length: 85.0
+  pitch_half_width: 50.0
+  max_displacement: 110.0
+  max_ball_height: 30.0
+
+MODEL:
+  type: custom
+  backbone:
+    type: graph_conv
+    encoder: graphconv
+    hidden_dim: 64
+    num_layers: 20
+    dropout: 0.1
+  neck:
+    type: TemporalAggregation
+    agr_type: maxpool
+    hidden_dim: 64
+    dropout: 0.1
+  head:
+    type: TrackingClassifier
+    hidden_dim: 64
+    dropout: 0.1
+    num_classes: 10
+  edge: positional
+  k: 8
+  r: 15.0
+
+TRAIN:
+  monitor: loss # balanced_accuracy, loss
+  mode: min # max or min
+  enabled: true
+  use_weighted_sampler: true
+  use_weighted_loss: false
+  samples_per_class: 4000
+  epochs: 10
+  patience: 10
+  save_every: 20
+  detailed_results: true
+
+  optimizer:
+    type: Adam
+    lr: 0.001
+
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: ${TRAIN.mode}
+    patience: 10
+    factor: 0.1
+    min_lr: 1e-8
+  
+  criterion:
+    type: CrossEntropyLoss
+
+  save_dir: ./checkpoints_tracking
+
+SYSTEM:
+ log_dir: ./logs
+ use_seed: true
+ seed: 42
+ GPU: 4
+ device: cuda   # auto | cuda | cpu
+ gpu_id: 0
+```
+
+3. Localization
 ```bash
 TASK: localization
 
@@ -166,6 +278,16 @@ DATA:
   classes:
     - PASS
     - DRIVE
+    - HEADER
+    - HIGH PASS
+    - OUT
+    - CROSS
+    - THROW IN
+    - SHOT
+    - BALL PLAYER BLOCK
+    - PLAYER SUCCESSFUL TACKLE
+    - FREE KICK
+    - GOAL
     
   epoch_num_frames: 500000
   mixup: true
@@ -185,7 +307,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/train/
-    path: ${DATA.train.video_path}/annotations-train.json
+    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -197,7 +319,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -218,10 +340,10 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations-test.json
+    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
     results: results_spotting_test
     nms_window: 2 
-    metric: loose
+    metric: tight
     overlap_len: 50
     dataloader:
       batch_size: 4
@@ -254,7 +376,7 @@ TRAIN:
   num_epochs: 10
   acc_grad_iter: 1
   base_num_valid_epochs: 30
-  start_valid_epoch: 1
+  start_valid_epoch: 4
   valid_map_every: 1
   criterion_valid: map
 
@@ -263,7 +385,7 @@ TRAIN:
 
   optimizer:
     type: AdamWithScaler
-    lr: 0.001
+    lr: 0.01
 
   scheduler:
     type: ChainedSchedulerE2E
