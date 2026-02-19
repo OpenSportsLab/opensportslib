@@ -433,6 +433,11 @@ myModel = model.classification(
     config="/path/to/classification.yaml"
 )
 
+## Localization ##
+# myModel = model.localization(
+#     config="/path/to/classification.yaml"
+# )
+
 # Train on your dataset
 myModel.train(
     train_set="/path/to/train_annotations.json",
@@ -450,6 +455,11 @@ def main():
         config="/path/to/classification.yaml",
         data_dir="/path/to/dataset_root"
     )
+
+    ## Localization ##
+    # myModel = model.localization(
+    #     config="/path/to/classification.yaml"
+    # )
 
     myModel.train(
         train_set="/path/to/train_annotations.json",
@@ -472,6 +482,11 @@ myModel = model.classification(
     config="/path/to/classification.yaml"
 )
 
+## Localization ##
+# myModel = model.localization(
+#     config="/path/to/classification.yaml"
+# )
+
 # Run inference on test set
 metrics = myModel.infer(
     test_set="/path/to/test_annotations.json",
@@ -489,6 +504,11 @@ def main():
         config="/path/to/classification.yaml",
         data_dir="/path/to/dataset_root"
     )
+
+    ## Localization ##
+    # myModel = model.localization(
+    #     config="/path/to/classification.yaml"
+    # )
 
     metrics = myModel.infer(
         test_set="/path/to/test_annotations.json",
