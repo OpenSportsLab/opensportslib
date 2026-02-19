@@ -191,3 +191,9 @@ def select_device(config):
         print(f"GPU: {torch.cuda.get_device_name(device)}")
 
     return device
+
+def is_local_path(p):
+    return p and (
+        os.path.exists(p) or
+        p.endswith((".pt", ".pth", ".tar"))
+    )

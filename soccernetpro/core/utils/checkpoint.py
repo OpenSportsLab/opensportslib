@@ -102,12 +102,12 @@ def load_checkpoint(
 
     ckpt_path = None
     hf_error = None
-
+    is_local = os.path.exists(path)
     # --------------------------------------------------
     # Try Hugging Face FIRST
     # --------------------------------------------------
     try:
-        from huggingface_hub import hf_hub_download, whoami, login
+        from huggingface_hub import hf_hub_download, whoami, login, list_repo_files
 
         # Ensure auth if needed
         if hf_token is None:
@@ -117,15 +117,34 @@ def load_checkpoint(
                 if sys.stdin.isatty():
                     login()
 
-        print(f"[HF] Trying HuggingFace repo: {path}")
+        if not is_local:
+            print(f"[HF] Inspecting repo: {path}")
 
-        ckpt_path = hf_hub_download(
-            repo_id=path,
-            filename=hf_filename,
-            token=hf_token,
-        )
+            files = list_repo_files(path, token=hf_token)
 
-        print(f"[HF] Loaded from cache: {ckpt_path}")
+            # find checkpoint file automatically
+            candidates = [
+                f for f in files
+                if f.endswith((".pt", ".pth", ".pth.tar", ".bin"))
+            ]
+
+            if not candidates:
+                raise FileNotFoundError(
+                    f"No checkpoint file found in HF repo {path}. "
+                    f"Files: {files}"
+                )
+
+            # pick first candidate
+            hf_filename = candidates[0]
+            print(f"[HF] Using checkpoint file: {hf_filename}")
+
+            ckpt_path = hf_hub_download(
+                repo_id=path,
+                filename=hf_filename,
+                token=hf_token,
+            )
+
+            print(f"[HF] Loaded from cache: {ckpt_path}")
 
     except Exception as e:
         hf_error = e
@@ -135,7 +154,7 @@ def load_checkpoint(
     # --------------------------------------------------
     path = expand(path)
     if ckpt_path is None:
-        if not os.path.exists(path):
+        if not is_local:
             raise FileNotFoundError(
                 f"Checkpoint not found on HuggingFace OR locally: {path}"
             ) from hf_error
