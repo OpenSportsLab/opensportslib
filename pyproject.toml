@@ -1,45 +1,22 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = [ "setuptools>=61.0",]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "soccernetpro"
-version = "0.0.1.dev9"
+version = "0.0.1.dev10"
 description = "SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data."
-authors = [{ name = "Jeet Vora" }]
 readme = "README.md"
 requires-python = ">=3.11"
-
-dependencies = [
-    "SoccerNet",
-    "av",
-    "decord; platform_system != 'Darwin' and platform_machine != 'arm64'",
-    "evaluate",
-    "scikit-learn",
-    "torch",
-    "torchvision",
-    "transformers==4.57.3",
-    "tokenizers==0.22.1",
-    "accelerate",
-    "wandb",
-    "opencv-python",
-    "omegaconf",
-    "timm",
-]
+dependencies = [ "SoccerNet", "av", "decord; platform_system != 'Darwin' and platform_machine != 'arm64'", "evaluate", "scikit-learn", "torch", "torchvision", "transformers==4.57.3", "tokenizers==0.22.1", "accelerate", "wandb", "opencv-python", "omegaconf", "timm",]
+[[project.authors]]
+name = "Jeet Vora"
 
 [project.optional-dependencies]
-localization = [
-    "nvidia-dali-cuda120",
-    "cupy-cuda12x",
-    "tabulate"
-]
-tracking = [
-    "torch-geometric"
-]
-
-[tool.setuptools]
-packages = { find = {} }
+localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate",]
+tracking = [ "torch-geometric",]
 
 [tool.setuptools.package-data]
-# include YAML configs and JSON files inside the package
-soccernetpro = ["soccernetpro/config/*.yaml"]
+soccernetpro = [ "soccernetpro/config/*.yaml",]
+
+[tool.setuptools.packages.find]
