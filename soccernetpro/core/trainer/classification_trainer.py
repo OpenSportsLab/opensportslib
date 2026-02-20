@@ -371,31 +371,38 @@ class BaseTrainerClassification:
             if pbar:
                 pbar.update()
 
+            has_labels = "labels" in batch or "label" in batch
             with torch.set_grad_enabled(train):
                 logits, labels = self._forward_batch(batch)
+                if labels is None:
+                    has_labels = False
 
-                if self.class_weights is not None:
-                    loss = self.criterion(
-                        output=logits, labels=labels,
-                        weight=self.class_weights.to(self.device)
-                    )
-                else:
-                    loss = self.criterion(output=logits, labels=labels)
+                loss = None
+                if has_labels:
+                    if self.class_weights is not None:
+                        loss = self.criterion(
+                            output=logits, labels=labels,
+                            weight=self.class_weights.to(self.device)
+                        )
+                    else:
+                        loss = self.criterion(output=logits, labels=labels)
 
-                if train:
+                if train and loss is not None:
                     self.optimizer.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
 
-            total_loss += loss.item()
-            total_batches += 1
+            if loss is not None:
+                total_loss += loss.item()
+                total_batches += 1
 
             logits_cpu = logits.detach().cpu()
-            labels_cpu = labels.detach().cpu()
-
             all_logits.append(logits_cpu)
-            all_labels.append(labels_cpu)
+
+            if has_labels:
+                labels_cpu = labels.detach().cpu()
+                all_labels.append(labels_cpu)
 
             # per-sample predictions for JSON export.
             probs = torch.softmax(logits_cpu, dim=1)
@@ -414,9 +421,12 @@ class BaseTrainerClassification:
         # --- concatenate local predictions ---
         if len(all_logits) > 0:
             all_logits = torch.cat(all_logits).numpy()
-            all_labels = torch.cat(all_labels).numpy()
         else:
             all_logits = np.zeros((0, 1))
+
+        if len(all_labels) > 0:
+            all_labels = torch.cat(all_labels).numpy()
+        else:
             all_labels = np.zeros((0,))
 
         # --- DDP gather (handles uneven shard sizes) ---
@@ -432,12 +442,15 @@ class BaseTrainerClassification:
                 return None, None, 0.0, {}
 
         # --- metrics (rank-0 only in DDP) ---
-        metrics = compute_classification_metrics(
-            (all_logits, all_labels), top_k=self.top_k,
-        )
+        if len(all_labels) > 0:
+            metrics = compute_classification_metrics(
+                (all_logits, all_labels), top_k=self.top_k,
+            )
+        else:
+            metrics = {}
 
         # --- confusion matrix (validation and test only) ---
-        if self.rank == 0 and set_name in ["valid", "test"]:
+        if self.rank == 0 and set_name in ["valid", "test"] and len(all_labels) > 0:
             preds_all, labels_all, _ = process_preds_labels(
                 (all_logits, all_labels)
             )
@@ -474,7 +487,7 @@ class BaseTrainerClassification:
                 })
 
             logging.info(f"RESULTS Length: {len(results)}")
-
+            logging.info(f"Predicitions are stored at : {save_path}")
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
 
@@ -528,7 +541,9 @@ class MVTrainerClassification(BaseTrainerClassification):
             a tuple (logits, labels) on self.device.
         """
         mvclips = batch["pixel_values"].to(self.device).float()
-        labels = batch["labels"].to(self.device)
+        labels = batch.get("labels", None)
+        if labels is not None:
+            labels = labels.to(self.device)
 
         outputs = self.model(mvclips)
 
@@ -571,7 +586,9 @@ class TrackingTrainerClassification(BaseTrainerClassification):
             "batch_size": batch["batch_size"],
             "seq_len": batch["seq_len"],
         }
-        labels = batch["labels"].to(self.device)
+        labels = batch.get("labels", None)
+        if labels is not None:
+            labels = labels.to(self.device)
         
         logits = self.model(tracking_batch)
         

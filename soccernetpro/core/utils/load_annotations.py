@@ -9,7 +9,7 @@ from soccernetpro.core.utils.video_processing import get_stride, read_fps, get_n
 from soccernetpro.core.utils.config import load_json
 from collections import defaultdict
 
-def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False, input_type="video"):
+def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False, input_type="video", allow_missing_labels=False):
 
     with open(annotations_path, "r") as f:
         data = json.load(f)
@@ -30,14 +30,19 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
     })
 
     for item in data["data"]:
-        action_label = item["labels"][task_key]["label"]
+        label_idx = None
 
-        if action_label in exclude_labels:
-            continue
-        if action_label not in label_map:
-            continue
+        if "labels" in item and task_key in item["labels"]:
+            action_label = item["labels"][task_key].get("label", None)
+            if action_label in exclude_labels:
+                continue
 
-        label_idx = label_map[action_label]
+            if action_label in label_map:
+                label_idx = label_map[action_label]
+
+        elif not allow_missing_labels:
+            # training mode requires labels
+            continue
 
         # Extract group key
         item_id = item["id"]
@@ -56,7 +61,8 @@ def load_annotations(annotations_path, task_key="action", exclude_labels=[""], m
             continue
 
         grouped[group_id]["video_paths"].extend(clips)
-        grouped[group_id]["label"] = label_idx
+        if label_idx is not None:
+            grouped[group_id]["label"] = label_idx
         grouped[group_id]["id"] = group_id
 
     return list(grouped.values()), label_map

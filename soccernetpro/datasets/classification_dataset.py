@@ -79,11 +79,14 @@ class ClassificationDataset(Dataset):
         # view_type is optional; only MVFoul uses it as of now
         is_multiview = getattr(config.DATA, "view_type", None) == "multi"
 
+        allow_missing_labels = split in ["test", "infer"]
+
         self.samples, self.label_map = load_annotations(
             annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
-            input_type=config.DATA.data_modality
+            input_type=config.DATA.data_modality,
+            allow_missing_labels=allow_missing_labels
         )
 
         # invert to id -> name and propagate into the config so
@@ -94,6 +97,8 @@ class ClassificationDataset(Dataset):
 
         print(self.config.DATA.num_classes, "classes:", self.config.DATA.classes)
         print("Label Map : ", self.label_map)
+
+        self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
 
     # -- Sampling / loss weights ------------------------------------------
     
@@ -223,7 +228,9 @@ class VideoDataset(ClassificationDataset):
 
     def __getitem__(self, idx):
         item = self.samples[idx]
-        label = torch.tensor(item["label"], dtype=torch.long)
+        label = item.get("label", None)
+        if label is not None:
+            label = torch.tensor(label, dtype=torch.long)
         video_paths = item["video_paths"]
         sample_id = item["id"]
 
@@ -244,7 +251,10 @@ class VideoDataset(ClassificationDataset):
             v = self.processor(v, return_tensors="pt")#, do_rescale=False) 
             pixel_values = v["pixel_values"].float()
             pixel_values = pixel_values.squeeze(0)
-            return {"pixel_values": pixel_values, "labels": label, "id": sample_id}
+            out = {"pixel_values": pixel_values, "id": sample_id}
+            if label is not None:
+                out["labels"] = label
+            return out
         
         else:
             # non-huggingface path: stack all views into (V, C, T, H, W)
@@ -263,7 +273,10 @@ class VideoDataset(ClassificationDataset):
             # Stack → (V, C, T, H, W)
             videos = torch.stack(view_tensors, dim=0)
             #print("VIDEOS:", videos.shape)
-            return {"pixel_values": videos, "labels": label, "id": sample_id}
+            out = {"pixel_values": videos, "id": sample_id}
+            if label is not None:
+                out["labels"] = label
+            return out
 
 
 # -------------------------------------------------------------
@@ -468,12 +481,14 @@ class TrackingDataset(ClassificationDataset):
             )
             graphs.append(data)
         
-        return {
+        out = {
             "graphs": graphs,
-            "label": sample["label"],
             "seq_len": len(graphs),
             "id": sample["id"]
         }
+        if "label" in sample:
+            out["label"] = sample["label"]
+        return out
 
     def _getitem_on_the_fly(self, idx):
         """load, parse, and process a single sample from disk."""
@@ -536,10 +551,12 @@ class TrackingDataset(ClassificationDataset):
             )
             graphs.append(data)
         
-        return {
+        out = {
             "graphs": graphs,
-            "label": label,
             "seq_len": len(graphs),
             "id": item["id"]
         }
+        if "label" in label:
+            out["label"] = label
+        return out
         
