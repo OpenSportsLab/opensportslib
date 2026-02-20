@@ -412,15 +412,26 @@ ball-action-spotting = https://huggingface.co/datasets/OpenSportsLab/soccernetpr
 
 # Download weights from HF
 1. classification (mvit)
-https://huggingface.co/jeetv/snpro-classification-mvit/tree/main
+(MVFoul classification) https://huggingface.co/jeetv/snpro-classification-mvit/tree/main
+
+2. Localization (E2E spot)
+- (2023 Ball Action Spotting - 2 classes) https://huggingface.co/jeetv/snpro-snbas-2023/tree/main
+- (2024 Ball Action Spotting - 12 classes) https://huggingface.co/jeetv/snpro-snbas-2024/tree/main
+
 
 Usage:
 ```bash
 ### Load weights from HF ###
+
+#### For Classification ####
 myModel.infer(
     test_set="/path/to/annotations.json",
-    pretrained="jeetv/snpro-classification-mvit", # Important
+    pretrained="jeetv/snpro-classification-mvit", # classification (MViT)
 )
+
+#### For Localization ####
+pretrained = "jeetv/snpro-snbas-2023" # SNBAS - 2 classes (E2E spot)
+pretrained = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
 ```
 
 ## Train on SINGLE GPU
