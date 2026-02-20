@@ -1,0 +1,66 @@
+name: Auto Publish to PyPI
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine toml
+
+      - name: Bump version
+        run: |
+          python - << 'EOF'
+          import toml
+          import re
+
+          data = toml.load("pyproject.toml")
+          v = data["project"]["version"]
+
+          match = re.match(r"(.*?\.dev)(\d+)", v)
+          if match:
+              base, num = match.groups()
+              new_v = f"{base}{int(num)+1}"
+          else:
+              new_v = v + ".dev1"
+
+          data["project"]["version"] = new_v
+          with open("pyproject.toml", "w") as f:
+              toml.dump(data, f)
+
+          print("New version:", new_v)
+          EOF
+
+      - name: Commit bumped version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add pyproject.toml
+          git commit -m "auto bump version" || echo "no changes"
+          git push
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish
+        run: twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
