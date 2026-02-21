@@ -422,7 +422,15 @@ class GraphEncoder(nn.Module):
         x = self.node_encoder(x)
 
         for layer in self.gcn_layers:
+            if self.conv_type == 'edgeconv':
+                edge_index = self._compute_edge_dynamic(x, batch)
             x = layer(x, edge_index)
 
         graph_embedding = global_mean_pool(x, batch)
         return graph_embedding
+
+    def _compute_edge_dynamic(self, x, batch, k=8):
+        """Compute dynamic KNN edges for EdgeConv layers."""
+        from torch_geometric.nn import knn_graph
+        edge_index = knn_graph(x, k=k, batch=batch, loop=False)
+        return edge_index
