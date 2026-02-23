@@ -46,7 +46,7 @@ def build(config, annotations_path, processor=None, split="train"):
 
     if modality == "tracking_parquet":
         return TrackingDataset(config, annotations_path, split)
-    elif modality == "video":
+    elif modality in ("video", "frames_npy"):
         return VideoDataset(config, annotations_path, processor, split)
     else:
         raise ValueError(f"Unknown data_modality: {modality}")
@@ -170,9 +170,9 @@ class VideoDataset(ClassificationDataset):
         super().__init__(config, annotations_path, split)
 
         self.processor = processor
-        self.view_type = config.DATA.view_type
-        self.num_frames = config.DATA.num_frames
-        self.input_fps = config.DATA.input_fps
+        self.view_type = getattr(config.DATA, "view_type", "single")
+        self.num_frames = getattr(config.DATA, "num_frames", None)
+        self.input_fps = getattr(config.DATA, "input_fps", None)
         self.transform = build_transform(config, mode=self.split)
 
     def _select_views(self, video_paths):
@@ -202,6 +202,17 @@ class VideoDataset(ClassificationDataset):
         Returns:
             numpy.ndarray of shape (T, H, W, C).
         """
+        full_path = os.path.join(self.config.DATA.data_dir, path)
+
+        if full_path.endswith(".npy"):
+            frames = np.load(full_path).astype(np.float32) / 255.0
+            if self.transform is not None:
+                frames = self.transform(frames)
+            mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            frames = (frames - mean) / std
+            return frames
+
         v = read_video(os.path.join(self.config.DATA.data_dir, path))
 
         v = process_frames(
@@ -247,23 +258,27 @@ class VideoDataset(ClassificationDataset):
             return {"pixel_values": pixel_values, "labels": label, "id": sample_id}
         
         else:
-            # non-huggingface path: stack all views into (V, C, T, H, W)
-            view_tensors=[]
+            view_tensors = []
             for path in selected_paths:
                 v = self._load_and_sample_clip(path)
-                
-                # (T, H, W, C) → (T, C, H, W)
-                v = torch.from_numpy(v).permute(0, 3, 1, 2)
 
-                # (T, C, H, W) → (C, T, H, W)
-                v_t = get_transforms_model(self.config.MODEL.pretrained_model)(v)
+                if path.endswith(".npy"):
+                    # frames_npy
+                    v = torch.from_numpy(v)  # (T, H, W, C)
+                else:
+                    # existing raw video path: apply torchvision model transforms
+                    v = torch.from_numpy(v).permute(0, 3, 1, 2)  # (T, C, H, W)
+                    v = get_transforms_model(self.config.MODEL.pretrained_model)(v)  # (C, T, H, W)
 
-                view_tensors.append(v_t)
+                view_tensors.append(v)
 
-            # Stack → (V, C, T, H, W)
-            videos = torch.stack(view_tensors, dim=0)
-            #print("VIDEOS:", videos.shape)
-            return {"pixel_values": videos, "labels": label, "id": sample_id}
+            if selected_paths[0].endswith(".npy"):
+                # frames_npy: single view, return (T, H, W, C) matching pixels_vs_positions
+                return {"pixel_values": view_tensors[0], "labels": label, "id": sample_id}
+            else:
+                # existing multi-view path: stack to (V, C, T, H, W)
+                videos = torch.stack(view_tensors, dim=0)
+                return {"pixel_values": videos, "labels": label, "id": sample_id}
 
 
 # -------------------------------------------------------------
@@ -542,4 +557,3 @@ class TrackingDataset(ClassificationDataset):
             "seq_len": len(graphs),
             "id": item["id"]
         }
-        

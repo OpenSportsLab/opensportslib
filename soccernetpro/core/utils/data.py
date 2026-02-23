@@ -74,3 +74,11 @@ def tracking_collate_fn(batch):
         'labels': torch.tensor([item['label'] for item in batch], dtype=torch.long),
         'id': [item['id'] for item in batch],
     }
+
+def mixup_data(x, y, alpha=0.2):
+    """blend pairs of samples and their labels for mixup augmentation."""
+    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+    index = torch.randperm(x.size(0)).to(x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    return mixed_x, y, y[index], lam
+    
