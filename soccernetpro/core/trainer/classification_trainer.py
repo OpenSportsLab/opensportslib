@@ -809,7 +809,7 @@ class Trainer_Classification:
                     rank=rank,
                     replacement=True,
                     num_samples=num_samples,
-                    seed=self.config.TRAIN.seed
+                    seed=self.config.SYSTEM.seed
                 )
             else:
                 train_sampler = WeightedRandomSampler(

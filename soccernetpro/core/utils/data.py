@@ -1,6 +1,7 @@
 from collections import defaultdict
 from torch.utils.data import Subset
 import torch
+import numpy as np
 
 def balanced_subset(dataset, samples_per_class=5):
     class_indices = defaultdict(list)

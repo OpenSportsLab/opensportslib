@@ -400,7 +400,7 @@ class TrackingDataset(ClassificationDataset):
             all_positions = []
             
             for t, (_, row) in enumerate(df.iterrows()):
-                features, positions = self._parse_frame(row)
+                features, positions = parse_frame(row)
                 all_features[t] = features
                 all_positions.append(positions)
             
