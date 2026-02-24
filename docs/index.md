@@ -31,13 +31,10 @@ From action recognition and temporal event spotting to retrieval and automatic c
 
 ## Quick links
 
-- [Installation](installation.md)
-- [Getting Started](getting_started.md)
-- [Training Guide](training.md)
-- [Inference Guide](inference.md)
-- [Configuration](config.md)
-- [API Reference](api.md)
-- [FAQ](faq.md)
+- [Installation](getting-started/installation.md)
+- [Project Structure](getting-started/project_structure.md)
+- [Training & Inference](tni/tni.md)
+- [API Reference](api/api.md)
 
 ## License
 
@@ -45,7 +42,7 @@ This project offers two licensing options to suit different needs:
 
 - **GPL-3.0 License**:  
   This open-source license is intended for students, researchers, and the community. It supports open collaboration and sharing under the terms of the GNU General Public License v3.0.  
-  See the [`LICENSE.txt`]() file for full details.
+  See the [`LICENSE.txt`](license.txt) file for full details.
 
 - **Commercial License**:  
   Designed for commercial use, this option allows integration of the software into proprietary products and services without the open-source obligations of GPL-3.0.  
