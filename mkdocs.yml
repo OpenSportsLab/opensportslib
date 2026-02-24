@@ -1,0 +1,64 @@
+site_name: SoccerNetPro
+site_description: SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
+repo_url: https://github.com/OpenSportsLab/soccernetpro
+repo_name: OpenSportsLab/soccernetpro
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.integrate
+    - content.action.edit
+
+  palette:
+    - scheme: default
+      primary: green
+      accent: lime
+    - scheme: slate
+      primary: green
+      accent: lime
+
+nav:
+  - Home: index.md
+
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Project Structure: getting-started/project_structure.md
+
+  - Training & Inference:
+      - Training & Inference: tni/tni.md
+
+  - API Reference:
+      - API: api/api.md
+
+  - Contributing: contributing.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
