@@ -2,7 +2,7 @@ name: Deploy Docs
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, main]
 
 permissions:
   contents: write
