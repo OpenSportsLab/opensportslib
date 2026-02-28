@@ -10,7 +10,7 @@ DATA:
   train:
     path: ${DATA.data_dir}/annotations_train.json
     dataloader:
-      batch_size: 16
+      batch_size: 32
       shuffle: true
       num_workers: 8
       pin_memory: true
@@ -62,7 +62,7 @@ TRAIN:
   use_weighted_sampler: true
   samples_per_class: 4000
   use_weighted_loss: false
-  epochs: 1
+  epochs: 100
   patience: 5
   save_dir: ./checkpoints_video
   log_interval: 10
@@ -90,7 +90,7 @@ TRAIN:
 SYSTEM:
   log_dir: ./logs
   use_seed: true
-  seed: 123
+  seed: 42
   GPU: 1
   device: cuda
   gpu_id: 0
