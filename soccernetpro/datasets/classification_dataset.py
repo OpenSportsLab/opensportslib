@@ -86,6 +86,10 @@ class ClassificationDataset(Dataset):
             input_type=config.DATA.data_modality
         )
 
+        max_samples = getattr(config.DATA, 'max_samples', None)
+        if max_samples:
+            self.samples = self.samples[:max_samples]
+
         # invert to id -> name and propagate into the config so
         # downstream components (metrics, logging) can look it up.
         self.label_map = {v: k for k, v in self.label_map.items()}

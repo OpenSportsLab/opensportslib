@@ -89,7 +89,7 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
     sorted_labels = np.array([name_to_sorted_idx[idx_to_name[l]] for l in all_labels])
     sorted_preds = np.array([name_to_sorted_idx[idx_to_name[p]] for p in preds])
 
-    cm = confusion_matrix(sorted_labels, sorted_preds)
+    cm = confusion_matrix(sorted_labels, sorted_preds, labels=list(range(len(sorted_class_names))))
     per_class_accuracy = np.diag(cm) / np.maximum(cm.sum(axis=1), 1) * 100
     balanced_acc = balanced_accuracy_score(sorted_labels, sorted_preds) * 100
 
@@ -128,6 +128,7 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
         f.write("Classification Report:\n\n")
         f.write(classification_report(
             sorted_labels, sorted_preds,
+            labels=list(range(len(sorted_class_names))),
             target_names=sorted_class_names,
             zero_division=0
         ))

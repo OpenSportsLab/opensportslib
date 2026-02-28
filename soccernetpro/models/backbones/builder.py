@@ -487,13 +487,22 @@ class VideoBackbone(nn.Module):
             from transformers import CLIPVisionModel
             return CLIPVisionModel.from_pretrained(pretrained)
 
-        elif self.backbone_type in ("videomae", "videomae2"):
+        elif self.backbone_type == "videomae":
             from transformers import VideoMAEModel
             return VideoMAEModel.from_pretrained(
                 pretrained,
                 ignore_mismatched_sizes=True,
             )
 
+        elif self.backbone_type == "videomae2":
+            from transformers import AutoModel, AutoConfig
+            config = AutoConfig.from_pretrained(pretrained, trust_remote_code=True)
+            return AutoModel.from_pretrained(
+                pretrained,
+                config=config,
+                trust_remote_code=True,
+                use_safetensors=True,
+            )
         else:
             raise ValueError(f"Unknown VideoBackbone type: {self.backbone_type}")
 
@@ -503,9 +512,16 @@ class VideoBackbone(nn.Module):
             return list(self.model.encoder.layer)
         elif self.backbone_type == "clip":
             return list(self.model.vision_model.encoder.layers)
-        elif self.backbone_type in ("videomae", "videomae2"):
+        elif self.backbone_type == "videomae":
             return list(self.model.encoder.layer)
-        return []
+
+        elif self.backbone_type == "videomae2":
+            # OpenGVLab custom model; inspect structure at runtime
+            if hasattr(self.model, "encoder") and hasattr(self.model.encoder, "layer"):
+                return list(self.model.encoder.layer)
+            elif hasattr(self.model, "blocks"):
+                return list(self.model.blocks)
+            return []
 
     def _apply_freeze(self, cfg):
         freeze = getattr(cfg, "freeze", True)
@@ -561,11 +577,14 @@ class VideoBackbone(nn.Module):
                 feat = out.pooler_output                      # (B*T, hidden_dim)
                 return feat.view(B, T, -1)                    # (B, T, hidden_dim)
 
-            elif self.backbone_type in ("videomae", "videomae2"):
-                # VideoMAEModel expects (B, T, C, H, W)
+            elif self.backbone_type == "videomae":
                 x_vid = x.permute(0, 1, 4, 2, 3)             # (B, T, C, H, W)
                 out = self.model(pixel_values=x_vid)
-                # mean-pool over the patch sequence dimension
                 feat = out.last_hidden_state.mean(dim=1)      # (B, hidden_dim)
+                return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
+
+            elif self.backbone_type == "videomae2":
+                x_vid = x.permute(0, 4, 1, 2, 3)             # (B, C, T, H, W)
+                feat = self.model.extract_features(pixel_values=x_vid)  # (B, hidden_dim)
                 return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
 

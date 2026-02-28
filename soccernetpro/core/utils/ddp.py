@@ -1,8 +1,6 @@
 import torch.distributed as dist
 def ddp_setup(rank, world_size):
     import os
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 def ddp_cleanup():
@@ -71,7 +69,7 @@ class DistributedWeightedSampler(Sampler):
             generator=g
         )
 
-        return (self.rank_indices[i] for i in sampled)
+        return (self.rank_indices[i] % self.dataset_size for i in sampled)
 
     def __len__(self):
         return self.num_samples
