@@ -143,17 +143,17 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
     
     tsv_path = os.path.join(results_dir, f'{set_name}_results.tsv')
     with open(tsv_path, 'w') as f:
-        acc_cols = [f"acc_{name}" for name in sorted_class_names]
-        f1_cols = [f"f1_{name}" for name in sorted_class_names]
-        header = "balanced_acc\tmacro_f1\t" + "\t".join(acc_cols) + "\t" + "\t".join(f1_cols)
-        values = (
-            f"{balanced_acc:.2f}\t{macro_f1:.2f}\t"
-            + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(sorted_class_names)))
-            + "\t"
-            + "\t".join(f"{per_class_f1[i]:.2f}" for i in range(len(sorted_class_names)))
-        )
+        header = "metric\t" + "\t".join(sorted_class_names) + "\toverall"
         f.write(header + "\n")
-        f.write(values + "\n")
+
+        acc_row = "accuracy\t" + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{balanced_acc:.2f}"
+        f.write(acc_row + "\n")
+
+        f1_row = "f1\t" + "\t".join(f"{per_class_f1[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{macro_f1:.2f}"
+        f.write(f1_row + "\n")
+
+        samples_row = "samples\t" + "\t".join(str(int(cm[i].sum())) for i in range(len(sorted_class_names))) + f"\t{int(cm.sum())}"
+        f.write(samples_row + "\n")
 
     print(f"Saved TSV to {tsv_path}")
     
