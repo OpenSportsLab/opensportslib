@@ -124,6 +124,7 @@ class BaseTrainerClassification:
         self.config = config
 
         self.best_checkpoint_path = None
+        self.best_metric = None
         self.revert_on_lr_reduction = revert_on_lr_reduction
         self._best_model_state = None
         
@@ -535,8 +536,11 @@ class BaseTrainerClassification:
             "scheduler": self.scheduler.state_dict(),
             "monitor": self.monitor,
             "mode": self.mode,
-            "best_metric": self.best_metric
+            "best_metric": self.best_metric,
         }
+
+        if hasattr(self, "scaler"):
+            state["scaler"] = self.scaler.state_dict()
 
         name = f"epoch_{epoch}.pt"
         if tag:
@@ -848,15 +852,22 @@ class Trainer_Classification:
         else:
             val_sampler = None
 
+        num_train_workers = self.config.DATA.train.dataloader.num_workers
+        num_val_workers = self.config.DATA.valid.dataloader.num_workers
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.DATA.train.dataloader.batch_size,
             shuffle=(train_sampler is None and shuffle),
             sampler=train_sampler,
-            num_workers=self.config.DATA.train.dataloader.num_workers,
+            num_workers=num_train_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
+            generator=g,
+            drop_last=True,
+            persistent_workers=num_train_workers > 0,
+            prefetch_factor=4 if num_train_workers > 0 else None,
         )
 
         val_loader = DataLoader(
@@ -864,10 +875,13 @@ class Trainer_Classification:
             batch_size=self.config.DATA.valid.dataloader.batch_size,
             shuffle=False,
             sampler=val_sampler,   
-            num_workers=self.config.DATA.valid.dataloader.num_workers,
+            num_workers=num_val_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
+            generator=g,
+            persistent_workers=num_val_workers > 0,
+            prefetch_factor=4 if num_val_workers > 0 else None,
         )
 
         # select the modality-specific trainer.

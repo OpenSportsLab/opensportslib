@@ -4,26 +4,26 @@ DATA:
   dataset_name: sngar
   data_dir: /home/spark_user1/soccernetpro/sngar-frames
   data_modality: frames_npy
-  # max_samples: 100
+  max_samples: 100
   num_frames: 16
   frame_size: [224, 224]
   train:
     path: ${DATA.data_dir}/annotations_train.json
     dataloader:
-      batch_size: 32
+      batch_size: 64
       shuffle: true
       num_workers: 8
       pin_memory: true
   valid:
     path: ${DATA.data_dir}/annotations_valid.json
     dataloader:
-      batch_size: 16
+      batch_size: 64
       num_workers: 8
       shuffle: false
   test:
     path: ${DATA.data_dir}/annotations_test.json
     dataloader:
-      batch_size: 16
+      batch_size: 64
       num_workers: 8
       shuffle: false
   augmentations:
@@ -47,6 +47,8 @@ MODEL:
     agr_type: maxpool             # avgpool | maxpool | bilstm | tcn | attention
     hidden_dim: 768
     dropout: 0.1
+    lstm_dropout: 0.3             # only used when agr_type is bilstm
+    num_attention_heads: 8        # only used when agr_type is attention (8 for video, 4 for tracking)
   head:
     type: TrackingClassifier
     hidden_dim: 64
@@ -54,12 +56,12 @@ MODEL:
     dropout: 0.1
 
 TRAIN:
-  monitor: loss
-  mode: min
+  monitor: balanced_accuracy
+  mode: max
   enabled: true
   use_amp: true
   mixup_alpha: 0.2
-  use_weighted_sampler: true
+  use_weighted_sampler: false
   samples_per_class: 4000
   use_weighted_loss: false
   epochs: 100
@@ -77,7 +79,7 @@ TRAIN:
     lr: 0.0001
     betas: [0.9, 0.999]
     eps: 0.0000001
-    weight_decay: 0.001
+    weight_decay: 0.0001
     amsgrad: false
 
   scheduler:

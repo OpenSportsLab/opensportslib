@@ -16,7 +16,10 @@ def build_neck(cfg, default_args=None):
             temporal_type=cfg.agr_type,
             hidden_dim=cfg.hidden_dim,
             window_size=default_args["window_size"],
-            dropout=cfg.dropout
+            dropout=cfg.dropout,
+            use_position_encoding=getattr(cfg, "use_position_encoding", False),
+            num_attention_heads=getattr(cfg, "num_attention_heads", 4),
+            lstm_dropout=getattr(cfg, "lstm_dropout", 0.1)
         )
     else:
         raise ValueError(f"Unknown neck type: {cfg.type}")
@@ -135,17 +138,22 @@ class ViewAvgAggregate(nn.Module):
         return pooled_view.squeeze(), aux
 
 class TemporalAggregation(nn.Module):
-    def __init__(self, temporal_type, hidden_dim, window_size, dropout=0.1):
+    def __init__(self, temporal_type, hidden_dim, window_size, dropout=0.1,
+                 use_position_encoding=False, num_attention_heads=4, lstm_dropout=0.3):
         super().__init__()
 
+        self.num_attention_heads = num_attention_heads
         self.temporal_type = temporal_type
         self.hidden_dim = hidden_dim
         self.feat_dim = hidden_dim * 2 if temporal_type == "bilstm" else hidden_dim
+        self.use_position_encoding = use_position_encoding
+        self.lstm_dropout = lstm_dropout
 
-        # learnable temporal position encoding
-        self.temporal_position_encoding = nn.Parameter(
-            torch.randn(1, window_size, hidden_dim) * 0.02
-        )
+        # learnable temporal position encoding (only used when explicitly enabled)
+        if self.use_position_encoding:
+            self.temporal_position_encoding = nn.Parameter(
+                torch.randn(1, window_size, hidden_dim) * 0.02
+            )
 
         # build temporal module
         self.temporal = self._build_temporal_module(temporal_type, hidden_dim, dropout)
@@ -154,7 +162,7 @@ class TemporalAggregation(nn.Module):
         if temporal_type == 'bilstm':
             return nn.LSTM(
                 hidden_dim, hidden_dim, num_layers=2,
-                batch_first=True, bidirectional=True, dropout=dropout
+                batch_first=True, bidirectional=True, dropout=self.lstm_dropout
             )
 
         elif temporal_type == 'tcn':
@@ -163,36 +171,38 @@ class TemporalAggregation(nn.Module):
                 nn.ReLU(),
                 nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
             )
-        
+
         elif temporal_type == 'attention':
             return nn.MultiheadAttention(
-                hidden_dim, num_heads=4, dropout=dropout, batch_first=True
+                hidden_dim, num_heads=self.num_attention_heads, 
+                dropout=dropout, batch_first=True
             )
-        
-        else:  # pool, maxpool
+
+        else:  # avgpool, maxpool
             return None
 
     def forward(self, x):
         seq_len = x.size(1)
 
-        x = x + self.temporal_position_encoding[:, :seq_len, :]
+        if self.use_position_encoding:
+            x = x + self.temporal_position_encoding[:, :seq_len, :]
 
         if self.temporal_type == 'avgpool':
             x = torch.mean(x, dim=1)
-        
+
         elif self.temporal_type == 'maxpool':
             x = torch.max(x, dim=1)[0]
-        
+
         elif self.temporal_type == 'tcn':
             x = x.permute(0, 2, 1)
             x = self.temporal(x)
             x = x.permute(0, 2, 1)
             x = torch.max(x, dim=1)[0]
-        
+
         elif self.temporal_type == 'attention':
             x, _ = self.temporal(x, x, x)
             x = torch.max(x, dim=1)[0]
-        
+
         elif self.temporal_type == 'bilstm':
             lstm_out, _ = self.temporal(x)
             x = torch.max(lstm_out, dim=1)[0]

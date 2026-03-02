@@ -574,13 +574,13 @@ class VideoBackbone(nn.Module):
             elif self.backbone_type == "clip":
                 x_flat = x.view(B * T, H, W, C).permute(0, 3, 1, 2)
                 out = self.model(pixel_values=x_flat)
-                feat = out.pooler_output                      # (B*T, hidden_dim)
+                feat = out.last_hidden_state[:, 0, :]         # (B*T, hidden_dim)
                 return feat.view(B, T, -1)                    # (B, T, hidden_dim)
 
             elif self.backbone_type == "videomae":
                 x_vid = x.permute(0, 1, 4, 2, 3)             # (B, T, C, H, W)
                 out = self.model(pixel_values=x_vid)
-                feat = out.last_hidden_state.mean(dim=1)      # (B, hidden_dim)
+                feat = out.last_hidden_state[:, 0, :]         # (B, hidden_dim)
                 return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
 
             elif self.backbone_type == "videomae2":

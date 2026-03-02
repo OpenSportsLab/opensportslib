@@ -57,6 +57,7 @@ MODEL:
     agr_type: maxpool
     hidden_dim: 64
     dropout: 0.1
+    use_position_encoding: true
   head:
     type: TrackingClassifier
     hidden_dim: 64
