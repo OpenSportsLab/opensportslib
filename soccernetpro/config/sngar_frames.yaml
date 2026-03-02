@@ -1,0 +1,98 @@
+TASK: classification
+
+DATA:
+  dataset_name: sngar
+  data_dir: /home/spark_user1/soccernetpro/sngar-frames
+  data_modality: frames_npy
+  max_samples: 100
+  num_frames: 16
+  frame_size: [224, 224]
+  train:
+    path: ${DATA.data_dir}/annotations_train.json
+    dataloader:
+      batch_size: 64
+      shuffle: true
+      num_workers: 8
+      pin_memory: true
+  valid:
+    path: ${DATA.data_dir}/annotations_valid.json
+    dataloader:
+      batch_size: 64
+      num_workers: 8
+      shuffle: false
+  test:
+    path: ${DATA.data_dir}/annotations_test.json
+    dataloader:
+      batch_size: 64
+      num_workers: 8
+      shuffle: false
+  augmentations:
+    random_horizontal_flip: true
+    flip_prob: 0.5
+    color_jitter: true
+    jitter_prob: 0.5
+    jitter_params: [0.2, 0.2, 0.2, 0.1]
+
+MODEL:
+  type: custom
+  backbone:
+    type: dinov3                  # dinov3 | clip | videomae | videomae2
+    pretrained_model: facebook/dinov3-vitb16-pretrain-lvd1689m
+    # facebook/dinov3-vitb16-pretrain-lvd1689m | openai/clip-vit-base-patch16 | MCG-NJU/videomae-base | OpenGVLab/VideoMAEv2-Base
+    hidden_dim: 768
+    freeze: true
+    unfreeze_last_n_layers: 0     # 0 = frozen backbone, >0 = unfreeze last N layers
+  neck:
+    type: TemporalAggregation
+    agr_type: maxpool             # avgpool | maxpool | bilstm | tcn | attention
+    hidden_dim: 768
+    dropout: 0.1
+    lstm_dropout: 0.3             # only used when agr_type is bilstm
+    num_attention_heads: 8        # only used when agr_type is attention (8 for video, 4 for tracking)
+  head:
+    type: TrackingClassifier
+    hidden_dim: 64
+    num_classes: 10               # must match the number of action classes in the dataset
+    dropout: 0.1
+
+TRAIN:
+  monitor: balanced_accuracy
+  mode: max
+  enabled: true
+  use_amp: true
+  mixup_alpha: 0.2
+  use_weighted_sampler: false
+  samples_per_class: 4000
+  use_weighted_loss: false
+  epochs: 100
+  patience: 5
+  save_dir: ./checkpoints_video
+  log_interval: 10
+  save_every: 5
+  detailed_results: true
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+    betas: [0.9, 0.999]
+    eps: 0.0000001
+    weight_decay: 0.0001
+    amsgrad: false
+
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    patience: 5
+    factor: 0.1
+    min_lr: 1e-8
+
+SYSTEM:
+  log_dir: ./logs
+  use_seed: true
+  seed: 42
+  GPU: 1
+  device: cuda
+  gpu_id: 0

@@ -46,7 +46,7 @@ def build(config, annotations_path, processor=None, split="train"):
 
     if modality == "tracking_parquet":
         return TrackingDataset(config, annotations_path, split)
-    elif modality == "video":
+    elif modality in ("video", "frames_npy"):
         return VideoDataset(config, annotations_path, processor, split)
     else:
         raise ValueError(f"Unknown data_modality: {modality}")
@@ -88,6 +88,10 @@ class ClassificationDataset(Dataset):
             input_type=config.DATA.data_modality,
             allow_missing_labels=allow_missing_labels
         )
+
+        max_samples = getattr(config.DATA, 'max_samples', None)
+        if max_samples:
+            self.samples = self.samples[:max_samples]
 
         # invert to id -> name and propagate into the config so
         # downstream components (metrics, logging) can look it up.
@@ -175,9 +179,9 @@ class VideoDataset(ClassificationDataset):
         super().__init__(config, annotations_path, split)
 
         self.processor = processor
-        self.view_type = config.DATA.view_type
-        self.num_frames = config.DATA.num_frames
-        self.input_fps = config.DATA.input_fps
+        self.view_type = getattr(config.DATA, "view_type", "single")
+        self.num_frames = getattr(config.DATA, "num_frames", None)
+        self.input_fps = getattr(config.DATA, "input_fps", None)
         self.transform = build_transform(config, mode=self.split)
 
     def _select_views(self, video_paths):
@@ -207,6 +211,17 @@ class VideoDataset(ClassificationDataset):
         Returns:
             numpy.ndarray of shape (T, H, W, C).
         """
+        full_path = os.path.join(self.config.DATA.data_dir, path)
+
+        if full_path.endswith(".npy"):
+            frames = np.load(full_path).astype(np.float32) / 255.0
+            if self.transform is not None:
+                frames = self.transform(frames)
+            mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            frames = (frames - mean) / std
+            return frames
+
         v = read_video(os.path.join(self.config.DATA.data_dir, path))
 
         v = process_frames(
@@ -257,23 +272,28 @@ class VideoDataset(ClassificationDataset):
             return out
         
         else:
-            # non-huggingface path: stack all views into (V, C, T, H, W)
-            view_tensors=[]
+            view_tensors = []
             for path in selected_paths:
                 v = self._load_and_sample_clip(path)
+
+                if path.endswith(".npy"):
+                    # frames_npy
+                    v = torch.from_numpy(v)  # (T, H, W, C)
+                else:
+                    # existing raw video path: apply torchvision model transforms
+                    v = torch.from_numpy(v).permute(0, 3, 1, 2)  # (T, C, H, W)
+                    v = get_transforms_model(self.config.MODEL.pretrained_model)(v)  # (C, T, H, W)
+
+                view_tensors.append(v)
+
+            if selected_paths[0].endswith(".npy"):
+                # frames_npy: single view, return (T, H, W, C) matching pixels_vs_positions
+                out = {"pixel_values": view_tensors[0], "id": sample_id}
+            else:
+                # existing multi-view path: stack to (V, C, T, H, W)
+                videos = torch.stack(view_tensors, dim=0)
+                out = {"pixel_values": videos, "id": sample_id}
                 
-                # (T, H, W, C) → (T, C, H, W)
-                v = torch.from_numpy(v).permute(0, 3, 1, 2)
-
-                # (T, C, H, W) → (C, T, H, W)
-                v_t = get_transforms_model(self.config.MODEL.pretrained_model)(v)
-
-                view_tensors.append(v_t)
-
-            # Stack → (V, C, T, H, W)
-            videos = torch.stack(view_tensors, dim=0)
-            #print("VIDEOS:", videos.shape)
-            out = {"pixel_values": videos, "id": sample_id}
             if label is not None:
                 out["labels"] = label
             return out
@@ -398,7 +418,7 @@ class TrackingDataset(ClassificationDataset):
             all_positions = []
             
             for t, (_, row) in enumerate(df.iterrows()):
-                features, positions = self._parse_frame(row)
+                features, positions = parse_frame(row)
                 all_features[t] = features
                 all_positions.append(positions)
             

@@ -207,6 +207,8 @@ class VideoTransform:
         if self.mode != "train":
             return frames
 
+        is_float = frames.dtype in (np.float32, np.float64)
+
         T_, H, W, C = frames.shape
         frames_t = torch.from_numpy(frames).permute(0, 3, 1, 2)
 
@@ -284,6 +286,7 @@ class VideoTransform:
 
         # ---------------- Color jitter ----------------
         if getattr(aug, "color_jitter", False):
+            jitter_prob = getattr(aug, "jitter_prob", 1.0) # defaults to 1.0
             brightness, contrast, saturation, hue = getattr(
                 aug, "jitter_params", (0.2, 0.2, 0.2, 0.05)
             )
@@ -296,138 +299,11 @@ class VideoTransform:
             if random.random() < getattr(aug, "flip_prob", 0.5):
                 frames_t = torch.flip(frames_t, dims=[3])
 
-        return frames_t.permute(0, 2, 3, 1).numpy().astype(np.uint8)
+        result = frames_t.permute(0, 2, 3, 1)
+        return result.numpy().astype(np.float32 if is_float else np.uint8)
 
 
 def build_transform(config, mode="train"):
-    # import random
-    # import numpy as np
-    # import torch
-    # import torchvision.transforms as T
-    # import torchvision.transforms.functional as F
-
-    # frame_height, frame_width = config.DATA.frame_size
-    # augmentations = config.DATA.augmentations
-
-    # def transform_fn(frames: np.ndarray):
-    #     """
-    #     frames: np.ndarray, (T, H, W, C), dtype=uint8
-    #     returns: np.ndarray, (T, H, W, C), dtype=uint8
-    #     """
-
-    #     if mode != "train":
-    #         return frames  # processor handles resize & norm
-
-    #     T_, H, W, C = frames.shape
-    #     frames_t = torch.from_numpy(frames).permute(0, 3, 1, 2)  # T,C,H,W
-
-    #     # ---- Random resized crop (once per clip) ----
-    #     if getattr(augmentations, "random_crop", False):
-    #         scale = getattr(augmentations, "scale", (0.8, 1.0))
-    #         ratio = getattr(augmentations, "ratio", (3/4, 4/3))
-
-    #         i, j, h, w = torch.transforms.RandomResizedCrop.get_params(
-    #             frames_t[0],
-    #             scale=scale,
-    #             ratio=ratio,
-    #         )
-
-    #         frames_t = torch.stack([
-    #             F.resized_crop(
-    #                 f,
-    #                 i, j, h, w,
-    #                 size=(frame_height, frame_width),
-    #                 interpolation=F.InterpolationMode.BILINEAR,
-    #             )
-    #             for f in frames_t
-    #         ])
-
-    #     # ---- Random affine (translate + scale, ONCE per clip) ----
-    #     if getattr(augmentations, "random_affine", False):
-    #         max_translate = getattr(augmentations, "translate", (0.1, 0.1))
-    #         scale_range = getattr(augmentations, "affine_scale", (0.9, 1.0))
-
-    #         tx = int(random.uniform(-max_translate[0], max_translate[0]) * W)
-    #         ty = int(random.uniform(-max_translate[1], max_translate[1]) * H)
-    #         scale_factor = random.uniform(scale_range[0], scale_range[1])
-
-    #         frames_t = torch.stack([
-    #             F.affine(
-    #                 f,
-    #                 angle=0.0,
-    #                 translate=[tx, ty],
-    #                 scale=scale_factor,
-    #                 shear=[0.0, 0.0],
-    #                 interpolation=F.InterpolationMode.BILINEAR,
-    #             )
-    #             for f in frames_t
-    #         ])
-
-    #     # ---- Random perspective (ONCE per clip) ----
-    #     if getattr(augmentations, "random_perspective", False):
-    #         distortion_scale = getattr(augmentations, "distortion_scale", 0.3)
-    #         p = getattr(augmentations, "perspective_prob", 0.5)
-
-    #         if random.random() < p:
-    #             startpoints, endpoints = T.RandomPerspective.get_params(
-    #                 width=W,
-    #                 height=H,
-    #                 distortion_scale=distortion_scale,
-    #             )
-
-    #             frames_t = torch.stack([
-    #                 F.perspective(
-    #                     f,
-    #                     startpoints=startpoints,
-    #                     endpoints=endpoints,
-    #                     interpolation=F.InterpolationMode.BILINEAR,
-    #                 )
-    #                 for f in frames_t
-    #             ])
-
-    #     # ---- Random rotation (ONCE per clip) ----
-    #     if getattr(augmentations, "random_rotation", False):
-    #         degrees = getattr(augmentations, "rotation_degrees", 5)
-    #         angle = random.uniform(-degrees, degrees)
-
-    #         frames_t = torch.stack([
-    #             F.rotate(
-    #                 f,
-    #                 angle=angle,
-    #                 interpolation=F.InterpolationMode.BILINEAR,
-    #             )
-    #             for f in frames_t
-    #         ])
-
-
-    #     # ---- Color jitter (ONCE per clip) ----
-    #     if getattr(augmentations, "color_jitter", False):
-    #         brightness, contrast, saturation, hue = getattr(
-    #             augmentations,
-    #             "jitter_params",
-    #             (0.2, 0.2, 0.2, 0.05),
-    #         )
-
-    #         # Create jitter transform ONCE
-    #         color_jitter = T.ColorJitter(
-    #             brightness=brightness,
-    #             contrast=contrast,
-    #             saturation=saturation,
-    #             hue=hue,
-    #         )
-
-    #         # Apply same jitter to all frames
-    #         frames_t = torch.stack([
-    #             color_jitter(f) for f in frames_t
-    #         ])
-        
-    #     # ---- Horizontal flip (once per clip) ----
-    #     if getattr(augmentations, "random_horizontal_flip", False):
-    #         if random.random() < getattr(augmentations, "flip_prob", 0.5):
-    #             frames_t = torch.flip(frames_t, dims=[3])
-
-    #     return frames_t.permute(0, 2, 3, 1).numpy().astype(np.uint8)
-
     return VideoTransform(config, mode)
 
 def get_transforms_model(pre_model):

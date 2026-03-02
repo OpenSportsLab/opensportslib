@@ -82,6 +82,8 @@ def build_backbone(cfg, default_args=None):
         )
     elif cfg.type in ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]:
         backbone = TorchvisionVideoExtractFeatures(cfg.type)
+    elif cfg.type in ["dinov3", "clip", "videomae", "videomae2"]:
+        backbone = VideoBackbone(cfg)
     else:
         backbone = None
 
@@ -422,7 +424,167 @@ class GraphEncoder(nn.Module):
         x = self.node_encoder(x)
 
         for layer in self.gcn_layers:
+            if self.conv_type == 'edgeconv':
+                edge_index = self._compute_edge_dynamic(x, batch)
             x = layer(x, edge_index)
 
         graph_embedding = global_mean_pool(x, batch)
         return graph_embedding
+
+    def _compute_edge_dynamic(self, x, batch, k=8):
+        """Compute dynamic KNN edges for EdgeConv layers."""
+        from torch_geometric.nn import knn_graph
+        edge_index = knn_graph(x, k=k, batch=batch, loop=False)
+        return edge_index
+
+        
+# -----------------------------------------------------------------------
+# new custom path: pure feature extractor backbone
+# -----------------------------------------------------------------------
+
+class VideoBackbone(nn.Module):
+    """pure feature extractor for the custom frames_npy path.
+
+    supports four backbone types:
+        - dinov3:   DINOv2 ViT, processes frames independently, CLS token output.
+        - clip:     CLIP ViT vision encoder, processes frames independently.
+        - videomae: VideoMAE (MCG-NJU/videomae-base), processes full clip.  
+        - videomae2: VideoMAEv2 (OpenGVLab/VideoMAEv2-Base), processes full clip.
+
+    Args:
+        cfg: MODEL.backbone config node. required fields:
+            type (str): one of VIDEO_BACKBONE_TYPES.
+            pretrained_model (str): HuggingFace model ID.
+            hidden_dim (int): expected output feature dimension.
+            freeze (bool): if True, freeze all backbone weights first.
+            unfreeze_last_n_layers (int): number of encoder layers to thaw
+                after freezing. 0 means fully frozen backbone.
+    """
+
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.backbone_type = cfg.type
+        self.feat_dim = cfg.hidden_dim
+
+        pretrained = cfg.pretrained_model
+        print(f"Building VideoBackbone: {cfg.type} from {pretrained}")
+
+        self.model = self._build_model(pretrained)
+        self._apply_freeze(cfg)
+        self._fully_frozen =  (
+            getattr(cfg, "freeze", True)
+            and getattr(cfg, "unfreeze_last_n_layers", 0) == 0
+        )
+        self._log_trainable()
+
+    def _build_model(self, pretrained):
+        if self.backbone_type == "dinov3":
+            from transformers import AutoModel
+            return AutoModel.from_pretrained(pretrained)
+
+        elif self.backbone_type == "clip":
+            from transformers import CLIPVisionModel
+            return CLIPVisionModel.from_pretrained(pretrained)
+
+        elif self.backbone_type == "videomae":
+            from transformers import VideoMAEModel
+            return VideoMAEModel.from_pretrained(
+                pretrained,
+                ignore_mismatched_sizes=True,
+            )
+
+        elif self.backbone_type == "videomae2":
+            from transformers import AutoModel, AutoConfig
+            config = AutoConfig.from_pretrained(pretrained, trust_remote_code=True)
+            return AutoModel.from_pretrained(
+                pretrained,
+                config=config,
+                trust_remote_code=True,
+                use_safetensors=True,
+            )
+        else:
+            raise ValueError(f"Unknown VideoBackbone type: {self.backbone_type}")
+
+    def _get_encoder_layers(self):
+        """return the list of encoder layer modules for selective unfreezing."""
+        if self.backbone_type == "dinov3":
+            return list(self.model.encoder.layer)
+        elif self.backbone_type == "clip":
+            return list(self.model.vision_model.encoder.layers)
+        elif self.backbone_type == "videomae":
+            return list(self.model.encoder.layer)
+
+        elif self.backbone_type == "videomae2":
+            # OpenGVLab custom model; inspect structure at runtime
+            if hasattr(self.model, "encoder") and hasattr(self.model.encoder, "layer"):
+                return list(self.model.encoder.layer)
+            elif hasattr(self.model, "blocks"):
+                return list(self.model.blocks)
+            return []
+
+    def _apply_freeze(self, cfg):
+        freeze = getattr(cfg, "freeze", True)
+        if not freeze:
+            # full finetuning: leave all params trainable
+            return
+
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        n = getattr(cfg, "unfreeze_last_n_layers", 0)
+        if n == 0:
+            return
+
+        layers = self._get_encoder_layers()
+        if not layers:
+            return
+
+        for layer in layers[-n:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+
+    def _log_trainable(self):
+        trainable = [n for n, p in self.model.named_parameters() if p.requires_grad]
+        print(f"VideoBackbone trainable params: {len(trainable)}")
+        for n in trainable:
+            print(" ", n)
+
+    def forward(self, x):
+        """
+        Args:
+            x: (B, T, H, W, C) float32, imagenet-normalized.
+
+        Returns:
+            (B, T, hidden_dim) for image backbones
+            (B, 1, hidden_dim) for video backbones
+        """
+        B, T, H, W, C = x.shape
+
+        with torch.set_grad_enabled(self.training and not self._fully_frozen):
+                
+            if self.backbone_type == "dinov3":
+                # flatten time into batch, permute to (B*T, C, H, W)
+                x_flat = x.view(B * T, H, W, C).permute(0, 3, 1, 2)
+                out = self.model(pixel_values=x_flat)
+                # CLS token is index 0 of last_hidden_state
+                feat = out.last_hidden_state[:, 0, :]        # (B*T, hidden_dim)
+                return feat.view(B, T, -1)                    # (B, T, hidden_dim)
+
+            elif self.backbone_type == "clip":
+                x_flat = x.view(B * T, H, W, C).permute(0, 3, 1, 2)
+                out = self.model(pixel_values=x_flat)
+                feat = out.last_hidden_state[:, 0, :]         # (B*T, hidden_dim)
+                return feat.view(B, T, -1)                    # (B, T, hidden_dim)
+
+            elif self.backbone_type == "videomae":
+                x_vid = x.permute(0, 1, 4, 2, 3)             # (B, T, C, H, W)
+                out = self.model(pixel_values=x_vid)
+                feat = out.last_hidden_state[:, 0, :]         # (B, hidden_dim)
+                return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
+
+            elif self.backbone_type == "videomae2":
+                x_vid = x.permute(0, 4, 1, 2, 3)             # (B, C, T, H, W)
+                feat = self.model.extract_features(pixel_values=x_vid)  # (B, hidden_dim)
+                return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
+

@@ -78,7 +78,7 @@ def compute_classification_metrics(eval_pred, top_k=None, mode="logits"):
     return metrics
 
 def compute_detailed_classification_metrics(all_logits, all_labels, class_names, save_dir, set_name):
-    from sklearn.metrics import confusion_matrix, classification_report, balanced_accuracy_score
+    from sklearn.metrics import confusion_matrix, classification_report, balanced_accuracy_score, f1_score
 
     preds = np.argmax(all_logits, axis=-1)
 
@@ -89,9 +89,13 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
     sorted_labels = np.array([name_to_sorted_idx[idx_to_name[l]] for l in all_labels])
     sorted_preds = np.array([name_to_sorted_idx[idx_to_name[p]] for p in preds])
 
-    cm = confusion_matrix(sorted_labels, sorted_preds)
+    all_class_labels = list(range(len(sorted_class_names)))
+
+    cm = confusion_matrix(sorted_labels, sorted_preds, labels=all_class_labels)
     per_class_accuracy = np.diag(cm) / np.maximum(cm.sum(axis=1), 1) * 100
     balanced_acc = balanced_accuracy_score(sorted_labels, sorted_preds) * 100
+    per_class_f1 = f1_score(sorted_labels, sorted_preds, labels=all_class_labels, average=None, zero_division=0) * 100
+    macro_f1 = f1_score(sorted_labels, sorted_preds, labels=all_class_labels, average="macro", zero_division=0) * 100
 
     import matplotlib
     matplotlib.use("Agg")
@@ -118,36 +122,55 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
     
     report_path = os.path.join(results_dir, f'{set_name}_detailed_metrics.txt')
     with open(report_path, 'w') as f:
-        f.write(f"Balanced Accuracy: {balanced_acc:.2f}%\n\n")
-        f.write(f"{'Class':<30} {'Accuracy':>10} {'Samples':>10}\n")
-        f.write("-" * 55 + "\n")
+        f.write(f"Balanced Accuracy: {balanced_acc:.2f}%\n")
+        f.write(f"Macro F1:          {macro_f1:.2f}%\n\n")
+        f.write(f"{'Class':<30} {'Accuracy':>10} {'F1':>10} {'Samples':>10}\n")
+        f.write("-" * 65 + "\n")
         for i, class_name in enumerate(sorted_class_names):
             num_samples = int(cm[i].sum())
-            f.write(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {num_samples:>10}\n")
-        f.write("-" * 55 + "\n\n")
+            f.write(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {per_class_f1[i]:>9.2f}% {num_samples:>10}\n")
+        f.write("-" * 65 + "\n\n")
         f.write("Classification Report:\n\n")
         f.write(classification_report(
             sorted_labels, sorted_preds,
+            labels=all_class_labels,
             target_names=sorted_class_names,
             zero_division=0
         ))
-        f.write("\n" + "-" * 55 + "\n\n")
+        f.write("\n" + "-" * 65 + "\n\n")
         f.write("Confusion Matrix:\n\n")
         f.write(f"{cm}\n")
     
     tsv_path = os.path.join(results_dir, f'{set_name}_results.tsv')
     with open(tsv_path, 'w') as f:
-        header = "balanced_acc\t" + "\t".join(sorted_class_names)
-        values = f"{balanced_acc:.2f}\t" + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(sorted_class_names)))
+        header = "metric\t" + "\t".join(sorted_class_names) + "\toverall"
         f.write(header + "\n")
-        f.write(values + "\n")
+
+        acc_row = "accuracy\t" + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{balanced_acc:.2f}"
+        f.write(acc_row + "\n")
+
+        f1_row = "f1\t" + "\t".join(f"{per_class_f1[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{macro_f1:.2f}"
+        f.write(f1_row + "\n")
+
+        samples_row = "samples\t" + "\t".join(str(int(cm[i].sum())) for i in range(len(sorted_class_names))) + f"\t{int(cm.sum())}"
+        f.write(samples_row + "\n")
 
     print(f"Saved TSV to {tsv_path}")
     
     print(f"\nSaved detailed metrics to {report_path}")
+    print(f"\nBalanced Accuracy: {balanced_acc:.2f}%")
+    print(f"Macro F1:          {macro_f1:.2f}%\n")
+    print(f"{'Class':<30} {'Accuracy':>10} {'F1':>10} {'Samples':>10}")
+    print("-" * 65)
+    for i, class_name in enumerate(sorted_class_names):
+        num_samples = int(cm[i].sum())
+        print(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {per_class_f1[i]:>9.2f}% {num_samples:>10}")
+    print("-" * 65)
     
     return {
         "balanced_accuracy": balanced_acc,
+        "macro_f1": macro_f1,
         "per_class_accuracy": {name: per_class_accuracy[i] for i, name in enumerate(sorted_class_names)},
+        "per_class_f1": {name: per_class_f1[i] for i, name in enumerate(sorted_class_names)},
     }
     

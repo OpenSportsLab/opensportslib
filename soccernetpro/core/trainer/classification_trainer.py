@@ -19,7 +19,12 @@ import torch
 import tqdm
 import wandb
 import numpy as np
-from torch.utils.data import DataLoader, WeightedRandomSampler
+
+from torch.utils.data import (
+    DataLoader, 
+    WeightedRandomSampler,
+)
+
 from transformers import Trainer as HFTrainer, TrainingArguments
 from soccernetpro.core.utils.ddp import DistributedWeightedSampler
 
@@ -27,6 +32,7 @@ from soccernetpro.core.utils.wandb import log_confusion_matrix_wandb
 from soccernetpro.core.utils.checkpoint import *
 
 from soccernetpro.core.utils.config import select_device
+from soccernetpro.core.utils.data import mixup_data
 import torch.distributed as dist
 from datetime import datetime
 from soccernetpro.core.utils.seed import seed_worker
@@ -93,6 +99,7 @@ class BaseTrainerClassification:
         monitor="balanced_accuracy",
         mode="max",
         revert_on_lr_reduction=False,
+        config=None,
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -114,8 +121,10 @@ class BaseTrainerClassification:
 
         self.monitor = monitor
         self.mode = mode
+        self.config = config
 
         self.best_checkpoint_path = None
+        self.best_metric = None
         self.revert_on_lr_reduction = revert_on_lr_reduction
         self._best_model_state = None
         
@@ -159,6 +168,47 @@ class BaseTrainerClassification:
             self.device.
         """
         raise NotImplementedError
+
+    # -- process batch ----------------------------------------------
+
+    def _process_batch(self, batch, train):
+        """run forward pass, compute loss, and optionally update weights.
+
+        the default implementation calls _forward_batch() for the
+        modality-specific forward pass, then computes the loss and
+        runs the backward step.  subclasses may override this entirely
+        to inject AMP, mixup, or other training-time modifications
+        without touching the base training loop.
+
+        Args:
+            batch: a dict produced by the DataLoader.
+            train: if True, compute gradients and update weights.
+
+        Returns:
+            a tuple (logits, labels, loss).
+        """
+        has_labels = "labels" in batch or "label" in batch
+        with torch.set_grad_enabled(train):
+            logits, labels = self._forward_batch(batch)
+            if labels is None:
+                    has_labels = False
+            loss = None
+            if has_labels:
+                if self.class_weights is not None:
+                    loss = self.criterion(
+                        output=logits, labels=labels,
+                        weight=self.class_weights.to(self.device)
+                    )
+                else:
+                    loss = self.criterion(output=logits, labels=labels)
+
+            if train and loss is not None:
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
+
+        return logits, labels, loss, has_labels
 
     # -- training loop ----------------------------------------------
 
@@ -224,6 +274,17 @@ class BaseTrainerClassification:
                 self.scheduler.step()
 
             current_lr = self.optimizer.param_groups[0]["lr"]
+
+            # early stopping: mirror pixels_vs_positions behavior
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                min_lr = self.scheduler.min_lrs[0]
+                if current_lr <= 2 * min_lr:
+                    if self.rank == 0:
+                        logging.info(
+                            f"Early stopping at epoch {epoch+1}: "
+                            f"lr {current_lr:.2e} <= 2 * min_lr {min_lr:.2e}"
+                        )
+                    break
 
             # When ReduceLROnPlateau drops the LR, revert weights to
             # the best checkpoint so training continues from the
@@ -371,27 +432,7 @@ class BaseTrainerClassification:
             if pbar:
                 pbar.update()
 
-            has_labels = "labels" in batch or "label" in batch
-            with torch.set_grad_enabled(train):
-                logits, labels = self._forward_batch(batch)
-                if labels is None:
-                    has_labels = False
-
-                loss = None
-                if has_labels:
-                    if self.class_weights is not None:
-                        loss = self.criterion(
-                            output=logits, labels=labels,
-                            weight=self.class_weights.to(self.device)
-                        )
-                    else:
-                        loss = self.criterion(output=logits, labels=labels)
-
-                if train and loss is not None:
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                    self.optimizer.step()
+            logits, labels, loss, has_labels = self._process_batch(batch, train)
 
             if loss is not None:
                 total_loss += loss.item()
@@ -507,8 +548,11 @@ class BaseTrainerClassification:
             "scheduler": self.scheduler.state_dict(),
             "monitor": self.monitor,
             "mode": self.mode,
-            "best_metric": self.best_metric
+            "best_metric": self.best_metric,
         }
+
+        if hasattr(self, "scaler"):
+            state["scaler"] = self.scaler.state_dict()
 
         name = f"epoch_{epoch}.pt"
         if tag:
@@ -594,6 +638,71 @@ class TrackingTrainerClassification(BaseTrainerClassification):
         
         return logits, labels
 
+class FramesTrainerClassification(BaseTrainerClassification):
+    """forward pass for frames_npy video classification.
+
+    supports optional mixed-precision training (AMP) and mixup
+    augmentation, controlled via config.TRAIN.use_amp and
+    config.TRAIN.mixup_alpha respectively.
+
+    expects batches with pixel_values of shape (B, T, H, W, C)
+    and integer labels of shape (B,).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cfg = self.config
+        self.use_amp = getattr(cfg.TRAIN, "use_amp", False) if cfg else False
+        self.mixup_alpha = getattr(cfg.TRAIN, "mixup_alpha", 0.0) if cfg else 0.0
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+
+    def _forward_batch(self, batch):
+        pixel_values = batch["pixel_values"].to(self.device).float()
+        labels = batch["labels"].to(self.device)
+        logits = self.model({"pixel_values": pixel_values})
+        return logits, labels
+
+    def _process_batch(self, batch, train):
+        pixel_values = batch["pixel_values"].to(self.device).float()
+        labels = batch["labels"].to(self.device)
+
+        with torch.set_grad_enabled(train):
+            use_mixup = (
+                train
+                and self.mixup_alpha > 0
+                and np.random.random() > 0.5
+            )
+
+            with torch.amp.autocast("cuda", enabled=self.use_amp):
+                if use_mixup:
+                    pixel_values, labels_a, labels_b, lam = mixup_data(
+                        pixel_values, labels, self.mixup_alpha
+                    )
+                    logits = self.model({"pixel_values": pixel_values})
+                    loss = (
+                        lam * self.criterion(output=logits, labels=labels_a)
+                        + (1 - lam) * self.criterion(output=logits, labels=labels_b)
+                    )
+                    labels = labels_a
+                else:
+                    logits = self.model({"pixel_values": pixel_values})
+                    if self.class_weights is not None:
+                        loss = self.criterion(
+                            output=logits, labels=labels,
+                            weight=self.class_weights.to(self.device),
+                        )
+                    else:
+                        loss = self.criterion(output=logits, labels=labels)
+
+            if train:
+                self.optimizer.zero_grad(set_to_none=True)
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+
+        return logits, labels, loss
 
 # --------------------------------------------------------------
 # unified trainer dispatcher 
@@ -720,7 +829,7 @@ class Trainer_Classification:
                     rank=rank,
                     replacement=True,
                     num_samples=num_samples,
-                    seed=self.config.TRAIN.seed
+                    seed=self.config.SYSTEM.seed
                 )
             else:
                 train_sampler = WeightedRandomSampler(
@@ -759,15 +868,22 @@ class Trainer_Classification:
         else:
             val_sampler = None
 
+        num_train_workers = self.config.DATA.train.dataloader.num_workers
+        num_val_workers = self.config.DATA.valid.dataloader.num_workers
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.DATA.train.dataloader.batch_size,
             shuffle=(train_sampler is None and shuffle),
             sampler=train_sampler,
-            num_workers=self.config.DATA.train.dataloader.num_workers,
+            num_workers=num_train_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
+            generator=g,
+            drop_last=True,
+            persistent_workers=num_train_workers > 0,
+            prefetch_factor=4 if num_train_workers > 0 else None,
         )
 
         val_loader = DataLoader(
@@ -775,15 +891,20 @@ class Trainer_Classification:
             batch_size=self.config.DATA.valid.dataloader.batch_size,
             shuffle=False,
             sampler=val_sampler,   
-            num_workers=self.config.DATA.valid.dataloader.num_workers,
+            num_workers=num_val_workers,
             pin_memory=True,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
+            generator=g,
+            persistent_workers=num_val_workers > 0,
+            prefetch_factor=4 if num_val_workers > 0 else None,
         )
 
         # select the modality-specific trainer.
         if modality == "tracking_parquet":
             TrainerClass = TrackingTrainerClassification
+        elif modality == "frames_npy":
+            TrainerClass = FramesTrainerClassification
         else:
             TrainerClass = MVTrainerClassification
 
@@ -815,7 +936,8 @@ class Trainer_Classification:
             patience=getattr(self.config.TRAIN, "patience", 0),
             monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
             mode=getattr(self.config.TRAIN, "mode", "max"),
-            revert_on_lr_reduction=(modality == "tracking_parquet"),
+            revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+            config=self.config,
         )
 
         self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
@@ -935,6 +1057,8 @@ class Trainer_Classification:
             # Select trainer class based on modality
             if modality == "tracking_parquet":
                 TrainerClass = TrackingTrainerClassification
+            elif modality == "frames_npy":
+                TrainerClass = FramesTrainerClassification
             else:
                 TrainerClass = MVTrainerClassification
 
@@ -965,7 +1089,8 @@ class Trainer_Classification:
                 },
                 monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
                 mode=getattr(self.config.TRAIN, "mode", "max"),
-                revert_on_lr_reduction=(modality == "tracking_parquet"),
+                revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+                config=self.config,
             )
             loss, metrics = self.test_trainer.test(
                 detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)
@@ -1041,4 +1166,3 @@ class Trainer_Classification:
             self.epoch = epoch
             logging.info(f"Model loaded from {path}, epoch: {epoch}")
             return self.model, self.optimizer, self.scheduler, self.epoch
-
