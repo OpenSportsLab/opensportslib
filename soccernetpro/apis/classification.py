@@ -205,7 +205,7 @@ class ClassificationAPI:
         test_set=None, 
         pretrained=None, 
         use_ddp=False,
-        use_wandb=False
+        use_wandb=True
     ):
         """run a full training loop.
 
@@ -271,7 +271,7 @@ class ClassificationAPI:
         pretrained=None, 
         predictions=None, 
         use_ddp=False, 
-        use_wandb=False
+        use_wandb=True
     ):
         """run inference or evaluate saved predictions.
         

@@ -6,7 +6,6 @@ import time
 class LocalizationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
         from soccernetpro.core.utils.config import load_config_omega
-        from soccernetpro.core.utils.wandb import init_wandb
         #from ..core.trainer import Trainer
         import uuid
 
@@ -47,7 +46,6 @@ class LocalizationAPI:
 
         logger = logging.getLogger(__name__)
 
-        self.wandb = init_wandb(self.config)
         print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("SAVEDIR:", self.config.TRAIN.save_dir)
@@ -56,13 +54,14 @@ class LocalizationAPI:
         #self.trainer = Trainer(self.config)
 
 
-    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False):
+    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False, use_wandb=True):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_trainer
         from soccernetpro.core.utils.default_args import get_default_args_trainer, get_default_args_train
         from soccernetpro.core.utils.config import select_device, resolve_config_omega
         from soccernetpro.core.utils.load_annotations import check_config
+        from soccernetpro.core.utils.wandb import init_wandb
         import random
         import numpy as np
         import torch
@@ -77,6 +76,7 @@ class LocalizationAPI:
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
+        init_wandb(self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
         logging.info("Configuration:")
         logging.info(self.config)
         #print(self.config)
@@ -149,19 +149,21 @@ class LocalizationAPI:
         return self.best_checkpoint
   
 
-    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False):
+    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False, use_wandb=True):
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
         from soccernetpro.core.trainer.localization_trainer import build_inferer, build_evaluator
         from soccernetpro.core.utils.config import select_device, resolve_config_omega, is_local_path
         from soccernetpro.core.utils.checkpoint import load_checkpoint, localization_remap
         from soccernetpro.core.utils.load_annotations import check_config
+        from soccernetpro.core.utils.wandb import init_wandb
         import time
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
         self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
+        init_wandb(self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
         logging.info("Configuration:")
         logging.info(self.config)
         # Start Timing
