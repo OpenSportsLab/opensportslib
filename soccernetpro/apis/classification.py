@@ -35,6 +35,7 @@ class ClassificationAPI:
         from soccernetpro.core.utils.config import (
             load_config_omega
         )
+        import uuid
 
         if config is None:
             raise ValueError("config path is required")
@@ -49,10 +50,15 @@ class ClassificationAPI:
 
         # checkpoint output directory; never derived from BASE_DIR so the
         # user always has explicit control over where weights are written.
+        self.run_id = os.environ.get("RUN_ID") or str(uuid.uuid4())[:8]
+        os.environ["RUN_ID"] = self.run_id
+
         self.save_dir = expand(
             save_dir or self.config.TRAIN.save_dir or "./checkpoints"
         )
-        os.makedirs(self.save_dir, exist_ok=True)
+        save_filename = os.path.join(self.config.MODEL.backbone.type, self.run_id)
+        self.config.TRAIN.save_dir = os.path.join(self.save_dir, save_filename)
+        os.makedirs(self.config.TRAIN.save_dir, exist_ok=True)
 
         # DDP rank; used for logging and checkpointing.
         rank = int(os.environ.get("RANK", 0))
@@ -60,7 +66,7 @@ class ClassificationAPI:
         self.best_checkpoint=None
 
         log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
-        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.config.TRAIN.save_dir, log_dir), exist_ok=True)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -70,25 +76,25 @@ class ClassificationAPI:
             ],
             force=True,
         )
-
         if rank == 0:
             logging.info(f"DATA DIR     : {self.config.DATA.data_dir}")
-            logging.info(f"MODEL SAVEDIR: {self.save_dir}")
+            logging.info(f"MODEL SAVEDIR: {self.config.TRAIN.save_dir}")
 
     # -----------------------------------------------------------------
     # internal DDP worker
     # -----------------------------------------------------------------
-
+    @staticmethod
     def _worker_ddp(
-        self, 
         rank, 
         world_size, 
         mode, 
+        config,
         return_queue=None, 
         train_set=None, 
         valid_set=None, 
         test_set=None, 
-        pretrained=None
+        pretrained=None,
+        use_wandb=False
     ):
         """execute a single training or inference job on one GPU.
 
@@ -111,6 +117,7 @@ class ClassificationAPI:
         import torch
         from soccernetpro.core.trainer.classification_trainer import Trainer_Classification
         from soccernetpro.core.utils.ddp import ddp_setup, ddp_cleanup
+        from soccernetpro.core.utils.wandb import init_wandb
         from soccernetpro.core.utils.seed import set_reproducibility
         from soccernetpro.datasets.builder import build_dataset
         from soccernetpro.models.builder import build_model
@@ -126,11 +133,14 @@ class ClassificationAPI:
         if rank != 0:
             logging.getLogger().setLevel(logging.ERROR)
 
+        if rank == 0:
+            init_wandb(config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+
         # reproducibility: 
         # we default to reproducible training, but allow the user to
         # disable this via SYSTEM.use_seed=False in the config.
-        if getattr(self.config.SYSTEM, "use_seed", False):
-            set_reproducibility(self.config.SYSTEM.seed)
+        if getattr(config.SYSTEM, "use_seed", False):
+            set_reproducibility(config.SYSTEM.seed)
 
         is_ddp = world_size > 1
         if is_ddp:
@@ -139,26 +149,26 @@ class ClassificationAPI:
             device = torch.device(f"cuda:{rank}")
         else:
             from soccernetpro.core.utils.config import select_device
-            device = select_device(self.config.SYSTEM)
+            device = select_device(config.SYSTEM)
         
         # each process creates a fresh trainer to avoid shared mutable state.
-        trainer = Trainer_Classification(self.config)
+        trainer = Trainer_Classification(config)
         trainer.device = device
 
         # build or restore the model.
         if pretrained:
             model, processor, scheduler, epoch = trainer.load(pretrained)
         else:
-            model, processor = build_model(self.config, device)
+            model, processor = build_model(config, device)
 
         trainer.model = model
 
         if mode == "train":
             train_data = build_dataset(
-                self.config, train_set, processor, split="train"
+                config, train_set, processor, split="train"
             )
             valid_data = build_dataset(
-                self.config, valid_set, processor, split="valid"
+                config, valid_set, processor, split="valid"
             )
             best_ckpt = trainer.train(
                 model, train_data, valid_data, 
@@ -171,7 +181,7 @@ class ClassificationAPI:
 
         elif mode == "infer":
             test_data = build_dataset(
-                self.config, test_set, processor, split="test"
+                config, test_set, processor, split="test"
             )
 
             metrics = trainer.infer(
@@ -194,7 +204,8 @@ class ClassificationAPI:
         valid_set=None, 
         test_set=None, 
         pretrained=None, 
-        use_ddp=False
+        use_ddp=False,
+        use_wandb=False
     ):
         """run a full training loop.
 
@@ -229,23 +240,25 @@ class ClassificationAPI:
         if use_ddp:
             logging.info(f"Launching DDP on {world_size} GPUs")
             mp.spawn(
-                self._worker_ddp,
+                ClassificationAPI._worker_ddp,
                 args=(
-                    world_size, "train", queue, 
-                    train_set, valid_set, None, pretrained
+                    world_size, "train", self.config, queue, 
+                    train_set, valid_set, None, pretrained, use_wandb
                 ),
                 nprocs=world_size,
             )
         else:
             logging.info("Single GPU training")
-            self._worker_ddp(
+            ClassificationAPI._worker_ddp(
                 rank=0,
                 world_size=1,
                 mode="train",
+                config=self.config,
                 return_queue=queue,
                 train_set=train_set,
                 valid_set=valid_set,
                 pretrained=pretrained,
+                use_wandb=use_wandb
             )
         
         self.best_checkpoint = queue.get()
@@ -257,7 +270,8 @@ class ClassificationAPI:
         test_set=None, 
         pretrained=None, 
         predictions=None, 
-        use_ddp=False
+        use_ddp=False, 
+        use_wandb=False
     ):
         """run inference or evaluate saved predictions.
         
@@ -305,21 +319,23 @@ class ClassificationAPI:
             
             if use_ddp:
                 mp.spawn(
-                    self._worker_ddp,
+                    ClassificationAPI._worker_ddp,
                     args=(
-                        world_size, "infer", queue, 
-                        None, None, test_set, pretrained
+                        world_size, "infer", self.config, queue, 
+                        None, None, test_set, pretrained, use_wandb
                     ),
                     nprocs=world_size,
                 )
             else:
-                self._worker_ddp(
+                ClassificationAPI._worker_ddp(
                     rank=0,
                     world_size=1,
                     mode="infer",
+                    config=self.config,
                     return_queue=queue,
                     test_set=test_set,
                     pretrained=pretrained,
+                    use_wandb=use_wandb
                 )
             
             # rank-0 pushes metrics into the queue; retrieve them here.

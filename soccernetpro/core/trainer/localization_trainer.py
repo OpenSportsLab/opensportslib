@@ -213,25 +213,7 @@ class Trainer_e2e(Trainer):
 
         self.best_checkpoint_path = None
 
-        run_name = f"{args.TASK}_{args.MODEL.type}_{args.MODEL.backbone.type}_{args.MODEL.head.type}"
-
-        self.wandb_run = wandb.init(
-            project=args.TASK,
-            name=run_name,
-            config={
-                "backbone": args.MODEL.backbone.type,
-                "head": args.MODEL.head.type,
-                "lr": args.TRAIN.optimizer.lr,
-                "batch_size": args.DATA.train.dataloader.batch_size,
-                "num_classes": len(args.DATA.classes) if hasattr(args.DATA, "classes") else None,
-                "epochs": args.TRAIN.num_epochs,
-                "resume": start_epoch > 0,
-            },
-            reinit=True
-        )
-
-        run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
-        self.save_dir = os.path.join(work_dir, run_name, run_id)
+        self.save_dir = work_dir #os.path.join(work_dir, run_name, run_id)
         os.makedirs(self.save_dir, exist_ok=True)
         try:
             wandb.watch(self.model, log="gradients", log_freq=100)

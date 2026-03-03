@@ -1,6 +1,45 @@
 import wandb
 import matplotlib.pyplot as plt
 import numpy as np
+import logging
+
+def init_wandb(cfg, run_id, use_wandb=False):
+    """
+    Initialize Weights & Biases if enabled.
+    
+    Args:
+        cfg: config object with attributes:
+             - use_wandb (bool)
+             - project_name (str)
+             - run_name (str)
+    """
+
+    if not use_wandb:
+        logging.info("W&B disabled.")
+        return None
+
+    try:
+        import wandb
+    except ImportError:
+        logging.warning("wandb not installed. Install with `pip install wandb`.")
+        return None
+
+    if getattr(cfg.DATA, "data_modality"):
+        run_name = f"{cfg.MODEL.backbone.type}_{cfg.DATA.data_modality}"
+    else:
+        run_name = f"{cfg.MODEL.backbone.type}"
+
+    wandb.init(
+        project=cfg.TASK,
+        name=run_name,
+        id=run_id,
+        resume="allow",
+        config=vars(cfg) if hasattr(cfg, "__dict__") else cfg,
+    )
+
+    logging.info(f"Wandb initialised")
+    return wandb
+
 
 def log_attention_wandb(attention, split_name):
 

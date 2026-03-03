@@ -92,9 +92,6 @@ class BaseTrainerClassification:
         max_epochs=1000,
         device="cuda",
         top_k=2,
-        wandb_project="classification",
-        wandb_run_name=None,
-        wandb_config=None,
         patience=10,
         monitor="balanced_accuracy",
         mode="max",
@@ -130,21 +127,7 @@ class BaseTrainerClassification:
         
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         
-        if self.rank == 0:
-            # W&B init
-            self.wandb_run = wandb.init(
-                project=wandb_project,
-                name=wandb_run_name,
-                config=wandb_config,
-                reinit=True
-            )
-            run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
-        else:
-            self.wandb_run = None
-            run_id = time.strftime("%Y%m%d-%H%M%S")
-
-        #run_id = wandb.run.id if wandb.run else time.strftime("%Y%m%d-%H%M%S")
-        self.save_dir = os.path.join(save_dir, model_name, run_id)
+        self.save_dir = save_dir
         os.makedirs(self.save_dir, exist_ok=True)
 
         try:
@@ -923,16 +906,6 @@ class Trainer_Classification:
             max_epochs=self.config.TRAIN.epochs,
             device=self.device,
             top_k=2,
-            wandb_project=self.config.TASK,
-            wandb_run_name=f"{self.config.MODEL.backbone.type}_{modality}",
-            wandb_config={
-                "modality": modality,
-                "backbone": self.config.MODEL.backbone.type,
-                "aggregation": self.config.MODEL.neck.agr_type,
-                "lr": self.config.TRAIN.optimizer.lr,
-                "batch_size": self.config.DATA.train.dataloader.batch_size,
-                #"num_classes": self.config.DATA.num_classes
-            },
             patience=getattr(self.config.TRAIN, "patience", 0),
             monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
             mode=getattr(self.config.TRAIN, "mode", "max"),
@@ -1077,16 +1050,6 @@ class Trainer_Classification:
                 max_epochs=self.config.TRAIN.epochs,
                 device=self.device,
                 top_k=2,
-                wandb_project=self.config.TASK,
-                wandb_run_name=f"{self.config.MODEL.backbone.type}_{modality}_test",
-                wandb_config={
-                    "modality": modality,
-                    "backbone": self.config.MODEL.backbone.type,
-                    "aggregation": self.config.MODEL.neck.agr_type,
-                    "lr": self.config.TRAIN.optimizer.lr,
-                    "batch_size": self.config.DATA.train.dataloader.batch_size,
-                    #"num_classes": self.config.DATA.num_classes
-                },
                 monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
                 mode=getattr(self.config.TRAIN, "mode", "max"),
                 revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),

@@ -1,5 +1,4 @@
 TASK: classification
-
 DATA:
   dataset_name: mvfouls
   data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls

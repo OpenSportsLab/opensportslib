@@ -6,7 +6,9 @@ import time
 class LocalizationAPI:
     def __init__(self, config=None, data_dir=None, save_dir=None):
         from soccernetpro.core.utils.config import load_config_omega
+        from soccernetpro.core.utils.wandb import init_wandb
         #from ..core.trainer import Trainer
+        import uuid
 
         if config is None:
             raise ValueError("config path is required")
@@ -19,10 +21,19 @@ class LocalizationAPI:
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
         print(self.config.DATA.classes)
         # User controls model saving location (never use BASE_DIR)
-        #self.save_dir = expand(save_dir or self.config.TRAIN.save_dir or "./checkpoints")
-        #os.makedirs(self.save_dir, exist_ok=True)
+
+        self.run_id = os.environ.get("RUN_ID") or str(uuid.uuid4())[:8]
+        os.environ["RUN_ID"] = self.run_id
+
+        self.save_dir = expand(
+            save_dir or self.config.TRAIN.save_dir or "./checkpoints"
+        )
+        save_filename = os.path.join(self.config.MODEL.backbone.type, self.run_id)
+        self.config.TRAIN.save_dir = os.path.join(self.save_dir, save_filename)
+        os.makedirs(self.config.TRAIN.save_dir, exist_ok=True)
+
         log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
-        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.config.TRAIN.save_dir, log_dir), exist_ok=True)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -35,10 +46,12 @@ class LocalizationAPI:
         self.best_checkpoint=None
 
         logger = logging.getLogger(__name__)
+
+        self.wandb = init_wandb(self.config)
         print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
+        print("SAVEDIR:", self.config.TRAIN.save_dir)
         print("Classes :", self.config.DATA.classes)
-        #print("MODEL SAVEDIR:", self.save_dir)
 
         #self.trainer = Trainer(self.config)
 
