@@ -16,7 +16,7 @@ TASK: classification
 
 DATA:
   dataset_name: mvfouls
-  data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
+  data_dir: /home/vorajv/opensportslib/SoccerNet/mvfouls
   data_modality: video
   view_type: multi  # multi or single
   num_classes: 8 # mvfoul
@@ -126,7 +126,7 @@ TASK: classification
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/karkid/soccernetpro/sngar-tracking
+  data_dir: /home/karkid/opensportslib/sngar-tracking
   preload_data: false
   train: 
     type: annotations_train.json
@@ -234,7 +234,7 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/soccernetpro/SoccerNet/annotations/
+  data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
   classes:
     - PASS
     - DRIVE
@@ -368,15 +368,15 @@ Download annotation files from the links below.
 ### 1. Classification
 
 - **MVFouls**  
-  https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/mvfouls  
+  https://huggingface.co/datasets/OpenSportsLab/opensportslib-classification-vars/tree/mvfouls  
 
 - **SVFouls**  
-  https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/svfouls  
+  https://huggingface.co/datasets/OpenSportsLab/opensportslib-classification-vars/tree/svfouls  
 
 ### 2. Localization
 
 - **Ball Action Spotting**  
-  https://huggingface.co/datasets/OpenSportsLab/soccernetpro-localization-snbas/tree/main  
+  https://huggingface.co/datasets/OpenSportsLab/opensportslib-localization-snbas/tree/main  
 
 
 ---
@@ -414,7 +414,7 @@ pretrained = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
 
 ## Train on SINGLE GPU
 ```bash
-from soccernetpro import model
+from opensportslib import model
 import wandb
 
 # Initialize model with config
@@ -437,7 +437,7 @@ myModel.train(
 
 ## Train on Multiple GPU (DDP)
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 def main():
     myModel = model.classification(
@@ -464,7 +464,7 @@ if __name__ == "__main__":
 
 ## Test / Inference on SINGLE GPU
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 # Load trained model
 myModel = model.classification(
@@ -486,7 +486,7 @@ metrics = myModel.infer(
 
 ## Test / Inference on Multiple GPU (DDP)
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 def main():
     myModel = model.classification(

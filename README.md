@@ -1,14 +1,14 @@
-# SoccerNetPro
-SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
+# OpenSportsLib
+OpenSportsLib is the professional library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
 
 ## Development
 ```bash
 ### Clone the github repo
-git clone https://github.com/OpenSportsLab/soccernetpro.git 
+git clone https://github.com/OpenSportsLab/opensportslib.git 
 
 ### Requirements and installation ###
-conda create -n SoccerNet python=3.12 pip
-conda activate SoccerNet
+conda create -n osl python=3.12 pip
+conda activate osl
 pip install -e .
 
 or 
@@ -30,17 +30,17 @@ git checkout -b <new_feature/fix/bug>
 ## Installation
 
 ```bash
-conda create -n SoccerNet python=3.12 pip
-conda activate SoccerNet
-pip install --pre soccernetpro
+conda create -n osl python=3.12 pip
+conda activate osl
+pip install --pre opensportslib
 ```
 
 ## 🤝 Contributing & Developer Guide
 
-We welcome contributions to SoccerNetPro.
+We welcome contributions to OpenSportsLib.
 
-- 📘 **Contributor Guide:** [CONTRIBUTING.md](soccernetpro/docs/CONTRIBUTING.md)  
-- 🛠 **Developer Guide:** [DEVELOPERS.md](soccernetpro/docs/DEVELOPERS.md)
+- 📘 **Contributor Guide:** [CONTRIBUTING.md](opensportslib/docs/CONTRIBUTING.md)  
+- 🛠 **Developer Guide:** [DEVELOPERS.md](opensportslib/docs/DEVELOPERS.md)
 
 These documents explain:
 - How to add models and datasets  
@@ -56,7 +56,7 @@ TASK: classification
 
 DATA:
   dataset_name: mvfouls
-  data_dir: /home/vorajv/soccernetpro/SoccerNet/mvfouls
+  data_dir: /home/vorajv/opensportslib/SoccerNet/mvfouls
   data_modality: video
   view_type: multi  # multi or single
   num_classes: 8 # mvfoul
@@ -166,7 +166,7 @@ TASK: classification
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/karkid/soccernetpro/sngar-tracking
+  data_dir: /home/karkid/opensportslib/sngar-tracking
   preload_data: false
   train: 
     type: annotations_train.json
@@ -274,7 +274,7 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/soccernetpro/SoccerNet/annotations/
+  data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
   classes:
     - PASS
     - DRIVE
@@ -404,11 +404,11 @@ SYSTEM:
 ## Annotations (train/valid/test) (.json) format
 Download annotations file from below links
 1. Classification
-mvfouls = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/mvfouls
-svfouls = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-vars/tree/svfouls
+mvfouls = https://huggingface.co/datasets/OpenSportsLab/opensportslib-classification-vars/tree/mvfouls
+svfouls = https://huggingface.co/datasets/OpenSportsLab/opensportslib-classification-vars/tree/svfouls
 
 2. Localization
-ball-action-spotting = https://huggingface.co/datasets/OpenSportsLab/soccernetpro-localization-snbas/tree/main
+ball-action-spotting = https://huggingface.co/datasets/OpenSportsLab/opensportslib-localization-snbas/tree/main
 
 # Download weights from HF
 1. classification (mvit)
@@ -436,7 +436,7 @@ pretrained = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
 
 ## Train on SINGLE GPU
 ```bash
-from soccernetpro import model
+from opensportslib import model
 import wandb
 
 # Initialize model with config
@@ -459,7 +459,7 @@ myModel.train(
 
 ## Train on Multiple GPU (DDP)
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 def main():
     myModel = model.classification(
@@ -486,7 +486,7 @@ if __name__ == "__main__":
 
 ## Test / Inference on SINGLE GPU
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 # Load trained model
 myModel = model.classification(
@@ -508,7 +508,7 @@ metrics = myModel.infer(
 
 ## Test / Inference on Multiple GPU (DDP)
 ```bash
-from soccernetpro import model
+from opensportslib import model
 
 def main():
     myModel = model.classification(

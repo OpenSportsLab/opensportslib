@@ -1,6 +1,6 @@
 # Installation
 
-SoccerNetPro can be installed either from **PyPI** or from source in **editable mode** (recommended for development).
+OpenSportsLib can be installed either from **PyPI** or from source in **editable mode** (recommended for development).
 
 ---
 
@@ -9,13 +9,13 @@ SoccerNetPro can be installed either from **PyPI** or from source in **editable 
 #### Create a Virtual Environment
 Use Conda to manage dependencies and ensure Python 3.12 compatibility.
 ```bash
-conda create -n SoccerNet python=3.12 pip
-conda activate SoccerNet
+conda create -n osl python=3.12 pip
+conda activate osl
 ```
 
 #### PyPI install
 ```bash
-pip install --pre soccernetpro
+pip install --pre opensportslib
 ```
 !!! note
     The `--pre` flag installs the latest pre-release version from PyPI.
@@ -23,8 +23,8 @@ pip install --pre soccernetpro
 ## Verify installation
 
 ```python
-import soccernetpro
-print("SoccerNetPro installed successfully")
+import opensportslib
+print("OpenSportsLib installed successfully")
 ```
 
 ## Option 2 — Install from Source (Editable Mode) ⭐ Recommended
@@ -36,14 +36,14 @@ print("SoccerNetPro installed successfully")
 
 #### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/OpenSportsLab/soccernetpro.git 
-cd soccernetpro
+git clone https://github.com/OpenSportsLab/opensportslib.git 
+cd opensportslib
 ```
 #### Step 2: Create a Virtual Environment
 Use Conda to manage dependencies and ensure Python 3.12 compatibility.
 ```bash
-conda create -n SoccerNet python=3.12 pip
-conda activate SoccerNet
+conda create -n osl python=3.12 pip
+conda activate osl
 ```
 #### Step 3: Install in Editable Mode
 Install the base package or include optional dependencies for specific tasks like localization:

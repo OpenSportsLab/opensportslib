@@ -3,9 +3,9 @@ requires = [ "setuptools>=61.0",]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "soccernetpro"
+name = "opensportslib"
 version = "0.0.1.dev14"
-description = "SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data."
+description = "OpenSportsLib is the professional library, designed for advanced video understanding in sports. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with sports video data."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [ "SoccerNet", "av", "decord; platform_system != 'Darwin' and platform_machine != 'arm64'", "evaluate", "scikit-learn", "torch", "torchvision", "transformers==4.57.3", "tokenizers==0.22.1", "accelerate", "wandb", "opencv-python", "omegaconf", "timm",]
@@ -17,6 +17,6 @@ localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate",]
 tracking = [ "torch-geometric",]
 
 [tool.setuptools.package-data]
-soccernetpro = [ "soccernetpro/config/*.yaml",]
+opensportslib = [ "opensportslib/config/*.yaml",]
 
 [tool.setuptools.packages.find]

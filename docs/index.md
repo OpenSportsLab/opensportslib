@@ -1,10 +1,10 @@
-# SoccernetPro
+# OpenSportsLib
 
-Welcome to the SoccernetPro!
+Welcome to the OpenSportsLib!
 
-SoccerNetPro is a deep learning–based backend toolkit for advanced soccer video understanding. Built as a professional extension of the SoccerNet ecosystem, it provides production-ready and research-grade modules for training, evaluating, and deploying state-of-the-art models on soccer video data.
+OpenSportsLib is a deep learning–based backend toolkit for advanced sports video understanding. It provides production-ready and research-grade modules for training, evaluating, and deploying state-of-the-art models on sports video data.
 
-From action recognition and temporal event spotting to retrieval and automatic captioning, SoccerNetPro offers a unified framework for developing scalable football video intelligence systems.
+From action recognition and temporal event spotting to retrieval and automatic captioning, OpenSportsLib offers a unified framework for developing scalable sports video intelligence systems.
 
 
 ![Main GUI Screenshot](assets/soccer.jpg)
@@ -17,10 +17,10 @@ From action recognition and temporal event spotting to retrieval and automatic c
 - Config-driven experiments for reproducibility
 - Pretrained model support and checkpoint management
 - Multi-GPU and distributed training compatibility
-- Standardized dataset loaders for SoccerNet formats
+- Standardized dataset loaders for SN formats
 - Easy integration into research workflows and production backends
 
-**Why use SoccerNetPro?**
+**Why use OpenSportsLib?**
 
 - Build and train state-of-the-art models for soccer video analysis
 - Unified pipeline for research and production deployment

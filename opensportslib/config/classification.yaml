@@ -1,0 +1,104 @@
+TASK: classification
+DATA:
+  dataset_name: mvfouls
+  data_dir: /home/vorajv/opensportslib/SoccerNet/mvfouls
+  data_modality: video
+  view_type: multi  # multi or single
+  num_classes: 8 # mvfoul
+  train: 
+    type: annotations_train.json
+    video_path: ${DATA.data_dir}/train
+    path: ${DATA.train.video_path}/annotations-train.json
+    dataloader:
+      batch_size: 8
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+  valid:
+    type: annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.valid.video_path}/annotations-valid.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
+  test:
+    type: annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.test.video_path}/annotations-test.json
+    dataloader:
+      batch_size: 1
+      num_workers: 1
+      shuffle: false
+  num_frames: 16               # 8 before + 8 after the foul
+  input_fps: 25                # Original FPS of video
+  target_fps: 17               # Temporal downsampling to 1s clip (approx)
+  start_frame: 63            # Start frame of clip relative to foul frame
+  end_frame: 87              # End frame of clip relative to foul frame
+  frame_size: [224, 224]       # Spatial resolution (HxW)
+  augmentations:
+    random_affine: true
+    translate: [0.1, 0.1]        
+    affine_scale: [0.9, 1.0]     
+    random_perspective: true
+    distortion_scale: 0.3        
+    perspective_prob: 0.5
+    random_rotation: true
+    rotation_degrees: 5          
+    color_jitter: true
+    jitter_params: [0.2, 0.2, 0.2, 0.1]   # brightness, contrast, saturation, hue
+    random_horizontal_flip: true
+    flip_prob: 0.5
+    random_crop: false
+
+MODEL:
+  type: custom # huggingface, custom 
+  backbone: 
+    type: mvit_v2_s # video_mae, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
+  neck:
+    type: MV_Aggregate
+    agr_type: max   # max, mean, attention
+  head: 
+    type: MV_LinearLayer
+  pretrained_model: mvit_v2_s # MCG-NJU/videomae-base, OpenGVLab/VideoMAEv2-Base, r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s
+  unfreeze_head: true  # for videomae backbone
+  unfreeze_last_n_layers: 3 # for videomae backbone
+    
+
+TRAIN:
+  monitor: balanced_accuracy # balanced_accuracy, loss
+  mode: max # max or min
+  enabled: true
+  use_weighted_sampler: false
+  use_weighted_loss: true
+  epochs: 20 #20
+  log_interval: 10
+  save_every: 2 #5
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamW
+    lr: 0.0001  #0.001
+    backbone_lr: 0.00005
+    head_lr: 0.001
+    betas: [0.9, 0.999]
+    eps: 0.0000001
+    weight_decay: 0.001 #0.01 - videomae, 0.001 - others
+    amsgrad: false
+  
+  scheduler:
+    type: StepLR
+    step_size: 3
+    gamma: 0.1
+
+SYSTEM:
+  log_dir: ./logs
+  save_dir: ./checkpoints
+  use_seed: false
+  seed: 42
+  GPU: 4
+  device: cuda   # auto | cuda | cpu
+  gpu_id: 0
+

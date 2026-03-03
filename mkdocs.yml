@@ -1,7 +1,7 @@
-site_name: SoccerNetPro
-site_description: SoccerNetPro is the professional extension of the popular SoccerNet library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
-repo_url: https://github.com/OpenSportsLab/soccernetpro
-repo_name: OpenSportsLab/soccernetpro
+site_name: OpenSportsLib
+site_description: OpenSportsLib is the professional library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
+repo_url: https://github.com/OpenSportsLab/opensportslib
+repo_name: OpenSportsLab/opensportslib
 
 theme:
   name: material
