@@ -101,7 +101,7 @@ MODEL:
 
 TRAIN:
   type: trainer_e2e
-  num_epochs: 10
+  num_epochs: 5
   acc_grad_iter: 1
   base_num_valid_epochs: 30
   start_valid_epoch: 4
