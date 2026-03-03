@@ -1,4 +1,4 @@
-name: Auto Publish to PyPI
+name: Auto Pre-release Publish to PyPI
 
 on:
   push:
