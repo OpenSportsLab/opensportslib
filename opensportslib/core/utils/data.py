@@ -47,13 +47,13 @@ def unbatch_tensor(tensor, batch_size, dim=1, unsqueeze=False):
         return torch.cat(torch.chunk(tensor, nb_chunks, dim=0), dim=dim).contiguous()
 
 
-from torch_geometric.data import Batch
-
 def tracking_collate_fn(batch):
     """
     Custom collate function for tracking data.
     Uses PyG Batch.from_data_list for efficient C++ batching.
     """
+    from torch_geometric.data import Batch
+    
     batch_size = len(batch)
     seq_len = batch[0]['seq_len']
     
