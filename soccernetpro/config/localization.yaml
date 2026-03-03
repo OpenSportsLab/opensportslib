@@ -98,8 +98,6 @@ MODEL:
       type: gru
     multi_gpu: true
     load_weights: null
-    save_dir: ./checkpoints
-    work_dir: ${MODEL.save_dir}
 
 TRAIN:
   type: trainer_e2e
@@ -125,6 +123,8 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  save_dir: ./checkpoints
+  work_dir: ${SYSTEM.save_dir}
   seed: 42
   GPU: 4         # number of gpus to use
   device: cuda   # auto | cuda | cpu

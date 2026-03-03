@@ -72,7 +72,6 @@ TRAIN:
   use_weighted_sampler: false
   use_weighted_loss: true
   epochs: 20 #20
-  save_dir: ./checkpoints
   log_interval: 10
   save_every: 2 #5
 
@@ -96,6 +95,7 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  save_dir: ./checkpoints
   use_seed: false
   seed: 42
   GPU: 4

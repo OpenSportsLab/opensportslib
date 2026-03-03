@@ -901,7 +901,7 @@ class Trainer_Classification:
             criterion=criterion,
             class_weights=class_weights,
             class_names=train_dataset.label_map,
-            save_dir=self.config.TRAIN.save_dir,
+            save_dir=self.config.SYSTEM.save_dir,
             model_name=self.config.MODEL.backbone.type,
             max_epochs=self.config.TRAIN.epochs,
             device=self.device,
@@ -924,7 +924,7 @@ class Trainer_Classification:
 
         args = TrainingArguments(
             label_names=["labels"],
-            output_dir=self.config.TRAIN.save_dir,
+            output_dir=self.config.SYSTEM.save_dir,
             per_device_train_batch_size=self.config.DATA.train.dataloader.batch_size,
             per_device_eval_batch_size=self.config.DATA.valid.dataloader.batch_size,
             num_train_epochs=self.config.TRAIN.epochs,
@@ -967,7 +967,7 @@ class Trainer_Classification:
         if self.config.MODEL.type == "huggingface":
 
             args = TrainingArguments(
-            output_dir=self.config.TRAIN.save_dir,  # any directory, not used here
+            output_dir=self.config.SYSTEM.save_dir,  # any directory, not used here
             per_device_eval_batch_size=1#self.config.DATA.valid.dataloader.batch_size,  # or whatever batch size you want
             )
 
@@ -1045,7 +1045,7 @@ class Trainer_Classification:
                 criterion=criterion,
                 class_weights=None,
                 class_names=test_dataset.label_map,
-                save_dir=self.config.TRAIN.save_dir,
+                save_dir=self.config.SYSTEM.save_dir,
                 model_name=self.config.MODEL.backbone.type,
                 max_epochs=self.config.TRAIN.epochs,
                 device=self.device,

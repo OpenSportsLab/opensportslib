@@ -25,14 +25,14 @@ class LocalizationAPI:
         os.environ["RUN_ID"] = self.run_id
 
         self.save_dir = expand(
-            save_dir or self.config.TRAIN.save_dir or "./checkpoints"
+            save_dir or self.config.SYSTEM.save_dir or "./checkpoints"
         )
         save_filename = os.path.join(self.config.MODEL.backbone.type, self.run_id)
-        self.config.TRAIN.save_dir = os.path.join(self.save_dir, save_filename)
-        os.makedirs(self.config.TRAIN.save_dir, exist_ok=True)
+        self.config.SYSTEM.save_dir = os.path.join(self.save_dir, save_filename)
+        os.makedirs(self.config.SYSTEM.save_dir, exist_ok=True)
 
         log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
-        os.makedirs(os.path.join(self.config.TRAIN.save_dir, log_dir), exist_ok=True)
+        os.makedirs(os.path.join(self.config.SYSTEM.save_dir, log_dir), exist_ok=True)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -48,7 +48,7 @@ class LocalizationAPI:
 
         print("CONFIG PATH  :", config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
-        print("SAVEDIR:", self.config.TRAIN.save_dir)
+        print("SAVEDIR:", self.config.SYSTEM.save_dir)
         print("Classes :", self.config.DATA.classes)
 
         #self.trainer = Trainer(self.config)
@@ -185,19 +185,13 @@ class LocalizationAPI:
             if pretrained:
                 #pretrained = expand(pretrained)
                 if is_local_path(pretrained):
-                    self.config.MODEL.work_dir = os.path.dirname(os.path.abspath(pretrained))
-                else:
-                    self.config.MODEL.work_dir = os.path.join(self.config.MODEL.work_dir,
-                                                            f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}"
-                                                            )
-                    
+                    self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(pretrained))
+                
                 self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
                                             path=pretrained,
                                             device=device,
                                             key_remap_fn=localization_remap)
 
-            #self.config.MODEL.work_dir= os.path.dirname(pretrained) if pretrained else os.path.join(self.config.MODEL.work_dir, f"{self.config.TASK}_{self.config.MODEL.type}_{self.config.MODEL.backbone.type}_{self.config.MODEL.head.type}")
-            
             # Datasets
             # Test
             data_obj_test = build_dataset(self.config, split="test")

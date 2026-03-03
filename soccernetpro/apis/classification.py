@@ -28,7 +28,7 @@ class ClassificationAPI:
         data_dir: override for DATA.data_dir in the config.
             if None, the value from the config is used.
         save_dir: override for the checkpoint output directory.
-            falls back to TRAIN.save_dir, then "./checkpoints".
+            falls back to SYSTEM.save_dir, then "./checkpoints".
     """
 
     def __init__(self, config=None, data_dir=None, save_dir=None):
@@ -54,11 +54,11 @@ class ClassificationAPI:
         os.environ["RUN_ID"] = self.run_id
 
         self.save_dir = expand(
-            save_dir or self.config.TRAIN.save_dir or "./checkpoints"
+            save_dir or self.config.SYSTEM.save_dir or "./checkpoints"
         )
         save_filename = os.path.join(self.config.MODEL.backbone.type, self.run_id)
-        self.config.TRAIN.save_dir = os.path.join(self.save_dir, save_filename)
-        os.makedirs(self.config.TRAIN.save_dir, exist_ok=True)
+        self.config.SYSTEM.save_dir = os.path.join(self.save_dir, save_filename)
+        os.makedirs(self.config.SYSTEM.save_dir, exist_ok=True)
 
         # DDP rank; used for logging and checkpointing.
         rank = int(os.environ.get("RANK", 0))
@@ -66,7 +66,7 @@ class ClassificationAPI:
         self.best_checkpoint=None
 
         log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
-        os.makedirs(os.path.join(self.config.TRAIN.save_dir, log_dir), exist_ok=True)
+        os.makedirs(os.path.join(self.config.SYSTEM.save_dir, log_dir), exist_ok=True)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -78,7 +78,7 @@ class ClassificationAPI:
         )
         if rank == 0:
             logging.info(f"DATA DIR     : {self.config.DATA.data_dir}")
-            logging.info(f"MODEL SAVEDIR: {self.config.TRAIN.save_dir}")
+            logging.info(f"MODEL SAVEDIR: {self.config.SYSTEM.save_dir}")
 
     # -----------------------------------------------------------------
     # internal DDP worker

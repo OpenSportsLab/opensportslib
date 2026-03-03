@@ -59,7 +59,7 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
         evaluator: The constructed trainer.
     """
     if cfg.TRAIN.type == "trainer_e2e":
-        print(cfg.MODEL.work_dir)
+        print(cfg.SYSTEM.work_dir)
         checkpoint_dir = default_args["work_dir"]
         start_epoch = 0
         logging.info(f"Checkpoint directory: {checkpoint_dir}")
@@ -534,8 +534,8 @@ class Inferer:
             Dict containing predictions
         """
         pred_file = None
-        if self.cfg_model.work_dir is not None:
-            pred_file = os.path.join(self.cfg_model.work_dir, cfg.DATA.test.results)
+        if cfg.SYSTEM.work_dir is not None:
+            pred_file = os.path.join(cfg.SYSTEM.work_dir, cfg.DATA.test.results)
             mAP = infer_and_process_predictions_e2e(
                 model,
                 getattr(cfg, "dali", False),
@@ -601,11 +601,11 @@ class Evaluator:
             cfg_testset (dict): Config dict that contains informations for the predictions.
         """
         if self.evaluate_Spotting == "evaluate_pred_JSON":
-            return self.evaluate_pred_JSON(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_JSON(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_SN":
-            return self.evaluate_pred_SN(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_SN(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_E2E":
-            return self.evaluate_pred_E2E(cfg_testset, self.cfg.MODEL.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_E2E(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
 
 
     # def evaluate_common_JSON(self, cfg, results, metric):

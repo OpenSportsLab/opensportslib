@@ -84,7 +84,7 @@ def get_default_args_trainer(cfg, len_train_loader):
     if cfg.TRAIN.type == "trainer_e2e":
         return {
             "len_train_loader": len_train_loader,
-            "work_dir": cfg.MODEL.work_dir,
+            "work_dir": cfg.SYSTEM.work_dir,
             "dali": cfg.dali,
             "repartitions": cfg.TRAIN.repartitions if cfg.dali else None,
             "cfg_test": cfg.DATA.test,
@@ -92,7 +92,7 @@ def get_default_args_trainer(cfg, len_train_loader):
             "cfg_valid_data_frames": cfg.DATA.valid_data_frames,
         }
     else:
-        return {"work_dir": cfg.MODEL.work_dir}
+        return {"work_dir": cfg.SYSTEM.work_dir}
 
 
 def get_default_args_train(model, train_loader, valid_loader, classes, trainer_type):

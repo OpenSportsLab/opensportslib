@@ -66,7 +66,6 @@ TRAIN:
   use_weighted_loss: false
   epochs: 100
   patience: 5
-  save_dir: ./checkpoints_video
   log_interval: 10
   save_every: 5
   detailed_results: true
@@ -91,6 +90,7 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  save_dir: ./checkpoints_video
   use_seed: true
   seed: 42
   GPU: 1

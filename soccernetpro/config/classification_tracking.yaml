@@ -93,10 +93,9 @@ TRAIN:
   criterion:
     type: CrossEntropyLoss
 
-  save_dir: ./checkpoints_tracking
-
 SYSTEM:
  log_dir: ./logs
+ save_dir: ./checkpoints_tracking
  use_seed: true
  seed: 42
  GPU: 4
