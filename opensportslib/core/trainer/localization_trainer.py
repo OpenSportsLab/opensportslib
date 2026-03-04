@@ -547,6 +547,9 @@ class Inferer:
                 cfg.DATA.test.dataloader,
                 return_pred=False,
             )
+            wandb.log({
+                "test/Avg_mAP": mAP,
+            })
             pred_json_file = os.path.join(pred_file + ".json")
             pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
             logging.info("Predictions saved")

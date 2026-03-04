@@ -35,7 +35,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from opensportslib.core.utils.config import load_json, store_gz_json, store_json
-
+from opensportslib.core.utils.wandb import log_table_wandb
 # from oslactionspotting.core.utils.score import compute_mAPs_E2E
 import time
 import json
@@ -205,18 +205,19 @@ def compute_mAPs_E2E(truth, pred, tolerances=[0, 1, 2, 3, 4], plot_pr=False):
         mAPs.append(mAP)
         class_aps.append(("mAP", mAP))
         class_aps_for_tol.append(class_aps)
-    header = ["AP @ tol"] + tolerances
+    header = ["Class"] + [f"AP@{t}" for t in tolerances]
     rows = []
     for c, _ in class_aps_for_tol[0]:
-        row = [c]
+        row = [str(c)]
         for class_aps in class_aps_for_tol:
             for c2, val in class_aps:
                 if c2 == c:
-                    row.append(val * 100)
+                    row.append(float(val) * 100)
         rows.append(row)
-    print(tabulate(rows, headers=header, floatfmt="0.2f"))
 
-    print("Avg mAP (across tolerances): {:0.2f}".format(np.mean(mAPs) * 100))
+    log_table_wandb(name="AP@tol", rows=rows, headers=header)
+    logging.info(tabulate(rows, headers=header, floatfmt="0.2f"))
+    logging.info("Avg mAP (across tolerances): {:0.2f}".format(np.mean(mAPs) * 100))
 
     if plot_pr:
         for i, tol in enumerate(tolerances):
@@ -536,8 +537,8 @@ def infer_and_process_predictions_e2e(
 
     avg_mAP = None
     if calc_stats:
-        print("=== Results on {} (w/o NMS) ===".format(split))
-        print("Error (frame-level): {:0.2f}\n".format(err.get() * 100))
+        logging.info(f"=== Results on {split} (w/o NMS) ===")
+        logging.info(f"Error (frame-level): {err.get() * 100:.2f}")
 
         def get_f1_tab_row(str_k):
             k = classes[str_k] if str_k != "any" else None
@@ -546,12 +547,13 @@ def infer_and_process_predictions_e2e(
         rows = [get_f1_tab_row("any")]
         for c in sorted(classes):
             rows.append(get_f1_tab_row(c))
-        print(
+        header = ["Exact frame", "F1", "TP", "FP", "FN"]
+        logging.info(
             tabulate(
-                rows, headers=["Exact frame", "F1", "TP", "FP", "FN"], floatfmt="0.2f"
+                rows, headers=header, floatfmt="0.2f"
             )
         )
-        print()
+        log_table_wandb(name="Confusion matrix table", rows=rows, headers=header)
 
         mAPs, _ = compute_mAPs_E2E(dataset.labels, pred_events_high_recall)
         avg_mAP = np.mean(mAPs[1:])
@@ -567,7 +569,7 @@ def infer_and_process_predictions_e2e(
     if return_pred:
         return pred_events_high_recall
 
-    print("avg_mAP:", avg_mAP)
+    logging.info(f"avg_mAP: {avg_mAP}")
     return avg_mAP
 
 
@@ -1468,7 +1470,9 @@ def compute_performances_mAP(
         )
     )
 
-    result = tabulate(rows, headers=["", "Any", "Visible", "Unseen"])
+    header = ["", "Any", "Visible", "Unseen"]
+    result = tabulate(rows, headers=header)
+    log_table_wandb(name=f"Final Scores (Metric : {metric})", rows=rows, headers=header)
     logging.info("Best Performance at end of training ")
     logging.info("Metric: " + metric)
     logging.info("\n" + result)

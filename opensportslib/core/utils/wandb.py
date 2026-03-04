@@ -40,6 +40,24 @@ def init_wandb(cfg, run_id, use_wandb=False):
     logging.info(f"Wandb initialised")
     return wandb
 
+def log_table_wandb(name, rows, headers):
+    """
+    Log a table to Weights & Biases.
+
+    Args:
+        name (str): Name of the table in wandb.
+        rows (list[list]): Table rows.
+        headers (list[str]): Column headers.
+    """
+    if wandb.run is None:
+        return
+
+    table = wandb.Table(columns=headers)
+
+    for row in rows:
+        table.add_data(*row)
+
+    wandb.log({name: table})
 
 def log_attention_wandb(attention, split_name):
 
