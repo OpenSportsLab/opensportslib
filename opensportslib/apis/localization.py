@@ -155,7 +155,7 @@ class LocalizationAPI:
         from opensportslib.core.trainer.localization_trainer import build_inferer, build_evaluator
         from opensportslib.core.utils.config import select_device, resolve_config_omega, is_local_path
         from opensportslib.core.utils.checkpoint import load_checkpoint, localization_remap
-        from opensportslib.core.utils.load_annotations import check_config
+        from opensportslib.core.utils.load_annotations import check_config, has_localization_events
         from opensportslib.core.utils.wandb import init_wandb
         import time
 
@@ -210,8 +210,19 @@ class LocalizationAPI:
 
         #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
         json_gz_file = predictions if predictions else json_gz_file
-        evaluator = build_evaluator(cfg=self.config)
-        metrics = evaluator.evaluate(cfg_testset=self.config.DATA.test, json_gz_file=json_gz_file)
+
+        metrics = None
+
+        if has_localization_events(self.config.DATA.test.path):
+            logging.info("Ground truth labels detected → running evaluation")
+
+            evaluator = build_evaluator(cfg=self.config)
+            metrics = evaluator.evaluate(
+                cfg_testset=self.config.DATA.test,
+                json_gz_file=json_gz_file
+            )
+        else:
+            logging.info("No labels found in annotation file → skipping evaluation")
 
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics

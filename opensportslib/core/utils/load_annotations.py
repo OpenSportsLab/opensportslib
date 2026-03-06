@@ -113,6 +113,22 @@ def load_annotations_(annotations_path, exclude_labels=None):
     print(label_map)
     return samples, label_map
 
+
+def has_localization_events(annotation_path):
+    import json
+
+    if annotation_path is None:
+        return False
+
+    with open(annotation_path) as f:
+        data = json.load(f)
+
+    for item in data.get("data", []):
+        if item.get("events"):
+            return True
+
+    return False
+
 def annotationstoe2eformat(
     label_files,
     video_dirs,
