@@ -1,9 +1,3 @@
-# API Overview
-
-This page describes the high-level APIs and internal architecture of **OpenSportsLib**.  
-It explains how the framework is structured and where to extend it.
-
----
 ## 📁 Folder Structure
 
 The following is the detailed folder structure for the `OpenSportsLib` repository, describing the organization of core modules, configurations, and documentation.

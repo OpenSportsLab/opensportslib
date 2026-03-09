@@ -1,6 +1,4 @@
-# Contribution
-
-We welcome contributors!
+# CONTRIBUTING.md
 This guide outlines the workflow and standards for developers looking to extend or maintain the OpenSportsLib library.
 
 ## 1. Development Environment Setup
@@ -89,7 +87,6 @@ git push origin feature/your-feature-name
 Raise a Pull Request (PR) to merge your branch back into the `dev` branch.
 
 ✅ PR Checklist:
-
 - [ ] Tests Pass: All existing logic remains functional.
 - [ ] Runs on GPU: Code is compatible with CUDA environments.
 - [ ] Config Works: YAML configurations resolve correctly.

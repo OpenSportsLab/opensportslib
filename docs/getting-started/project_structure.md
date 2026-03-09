@@ -1,17 +1,17 @@
 # Project Structure
 
-This page describes the core layout of the SoccerNetPro repository and where key components live.
+This page describes the core layout of the OpenSportsLib repository and where key components live.
 
 ---
 
 ## Repository Layout
 
 ```text
-soccernetpro/
+opensportslib/
 ├── MANIFEST.in
 ├── README.md
 ├── pyproject.toml
-└── soccernetpro/
+└── opensportslib/
     ├── __init__.py
 
     ├── apis/                   # High-level user APIs
