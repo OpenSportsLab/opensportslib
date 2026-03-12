@@ -15,7 +15,8 @@ or
 
 pip install -e .[localization]
 or 
-pip install -e .[tracking]
+## Want to use "torch-geometric","torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"
+pip install -e .[py-geometric] -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
 
 ### git branch and merge rules ###
 1. Check and verify current branch is "dev" - git status
@@ -32,6 +33,11 @@ git checkout -b <new_feature/fix/bug>
 ```bash
 conda create -n osl python=3.12 pip
 conda activate osl
+
+## Release stable version
+pip install opensportslib
+
+## Pre-release version
 pip install --pre opensportslib
 ```
 
