@@ -14,6 +14,12 @@ conda activate osl
 ```
 
 #### PyPI install
+Stable version
+```bash
+pip install opensportslib
+```
+
+Pre-release version
 ```bash
 pip install --pre opensportslib
 ```
