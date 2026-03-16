@@ -6,7 +6,8 @@ These examples are meant to help users and contributors understand the expected 
 
 ## Recommended contents
 
-- `classification.yaml`
+- `classification_video.yaml`
+- `classification_tracking.yaml`
 - `localization.yaml`
 - additional task specific configs as the library grows
 
