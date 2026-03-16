@@ -48,7 +48,7 @@ pip install "opensportslib[localization]"
 pip install "opensportslib[tracking]"
 ```
 
-> Requires **Python 3.11+**.
+> Requires **Python 3.12+**.
 
 ---
 
@@ -155,12 +155,10 @@ Generate text descriptions for sports events and temporal segments.
 Use the README for the fast start, then go deeper through:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
-- Example configs: `examples/configs/`
-- Quickstart scripts: `examples/quickstart/`
-- Contribution guide: `CONTRIBUTING.md`
-- Developer guide: `DEVELOPERS.md`
-
-> Keep detailed configuration examples outside the main README so the landing page stays lightweight and easy to scan.
+- Example configs: [examples/configs/](examples/configs/)
+- Quickstart scripts: [examples/quickstart/](examples/quickstart/)
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Developer guide: [DEVELOPERS.md](DEVELOPERS.md)
 
 ---
 
@@ -205,8 +203,8 @@ We welcome contributions to OpenSportsLib.
 
 Please check:
 
-- `CONTRIBUTING.md`
-- `DEVELOPERS.md`
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [DEVELOPERS.md](DEVELOPERS.md)
 
 These documents describe:
 
@@ -222,10 +220,10 @@ These documents describe:
 OpenSportsLib is available under dual licensing.
 
 ### Open source license
-AGPL 3.0 for research, academic, and community use.
+[AGPL 3.0](LICENSE) for research, academic, and community use.
 
 ### Commercial license
-For proprietary or commercial deployment, please refer to `LICENSE-COMMERCIAL`.
+For proprietary or commercial deployment, please refer to [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
 
 ---
 
