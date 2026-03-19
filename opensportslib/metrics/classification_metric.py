@@ -82,14 +82,26 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
 
     preds = np.argmax(all_logits, axis=-1)
 
-    sorted_class_names = sorted(class_names.values())
-    name_to_sorted_idx = {name: i for i, name in enumerate(sorted_class_names)}
     idx_to_name = class_names
 
-    sorted_labels = np.array([name_to_sorted_idx[idx_to_name[l]] for l in all_labels])
-    sorted_preds = np.array([name_to_sorted_idx[idx_to_name[p]] for p in preds])
+    # count samples per class from true labels to order by frequency
+    from collections import Counter
+    label_counts = Counter(all_labels)
+    # map from class index to name, then sort by count descending
+    all_class_names = list(class_names.values())
+    name_to_original_idx = {v: k for k, v in class_names.items()}
+    ordered_class_names = sorted(
+        all_class_names,
+        key=lambda name: label_counts.get(name_to_original_idx[name], 0),
+        reverse=True
+    )
 
-    all_class_labels = list(range(len(sorted_class_names)))
+    name_to_ordered_idx = {name: i for i, name in enumerate(ordered_class_names)}
+
+    sorted_labels = np.array([name_to_ordered_idx[idx_to_name[l]] for l in all_labels])
+    sorted_preds = np.array([name_to_ordered_idx[idx_to_name[p]] for p in preds])
+
+    all_class_labels = list(range(len(ordered_class_names)))
 
     cm = confusion_matrix(sorted_labels, sorted_preds, labels=all_class_labels)
     per_class_accuracy = np.diag(cm) / np.maximum(cm.sum(axis=1), 1) * 100
@@ -104,14 +116,14 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
     import os
 
     plt.figure(figsize=(12, 10))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
-                xticklabels=sorted_class_names, yticklabels=sorted_class_names)
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=ordered_class_names, yticklabels=ordered_class_names)
     plt.title(f'Confusion Matrix ({set_name})')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    
+
     plots_dir = os.path.join(save_dir, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, f'confusion_matrix_{set_name}.png'), dpi=300, bbox_inches='tight')
@@ -119,14 +131,14 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
 
     results_dir = os.path.join(save_dir, 'results')
     os.makedirs(results_dir, exist_ok=True)
-    
+
     report_path = os.path.join(results_dir, f'{set_name}_detailed_metrics.txt')
     with open(report_path, 'w') as f:
         f.write(f"Balanced Accuracy: {balanced_acc:.2f}%\n")
         f.write(f"Macro F1:          {macro_f1:.2f}%\n\n")
         f.write(f"{'Class':<30} {'Accuracy':>10} {'F1':>10} {'Samples':>10}\n")
         f.write("-" * 65 + "\n")
-        for i, class_name in enumerate(sorted_class_names):
+        for i, class_name in enumerate(ordered_class_names):
             num_samples = int(cm[i].sum())
             f.write(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {per_class_f1[i]:>9.2f}% {num_samples:>10}\n")
         f.write("-" * 65 + "\n\n")
@@ -134,43 +146,48 @@ def compute_detailed_classification_metrics(all_logits, all_labels, class_names,
         f.write(classification_report(
             sorted_labels, sorted_preds,
             labels=all_class_labels,
-            target_names=sorted_class_names,
+            target_names=ordered_class_names,
             zero_division=0
         ))
         f.write("\n" + "-" * 65 + "\n\n")
         f.write("Confusion Matrix:\n\n")
         f.write(f"{cm}\n")
-    
+
     tsv_path = os.path.join(results_dir, f'{set_name}_results.tsv')
     with open(tsv_path, 'w') as f:
-        header = "metric\t" + "\t".join(sorted_class_names) + "\toverall"
+        header = "metric\toverall\t" + "\t".join(ordered_class_names)
         f.write(header + "\n")
 
-        acc_row = "accuracy\t" + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{balanced_acc:.2f}"
+        acc_row = "accuracy\t" + f"{balanced_acc:.2f}\t" + "\t".join(f"{per_class_accuracy[i]:.2f}" for i in range(len(ordered_class_names)))
         f.write(acc_row + "\n")
 
-        f1_row = "f1\t" + "\t".join(f"{per_class_f1[i]:.2f}" for i in range(len(sorted_class_names))) + f"\t{macro_f1:.2f}"
+        f1_row = "f1\t" + f"{macro_f1:.2f}\t" + "\t".join(f"{per_class_f1[i]:.2f}" for i in range(len(ordered_class_names)))
         f.write(f1_row + "\n")
 
-        samples_row = "samples\t" + "\t".join(str(int(cm[i].sum())) for i in range(len(sorted_class_names))) + f"\t{int(cm.sum())}"
+        samples_row = "samples\t" + f"{int(cm.sum())}\t" + "\t".join(str(int(cm[i].sum())) for i in range(len(ordered_class_names)))
         f.write(samples_row + "\n")
 
+        f.write("\n\nConfusion Matrix\n")
+        f.write("True \\ Predicted\t" + "\t".join(ordered_class_names) + "\n")
+        for i, name in enumerate(ordered_class_names):
+            row = name + "\t" + "\t".join(str(cm[i][j]) for j in range(len(ordered_class_names)))
+            f.write(row + "\n")
+
     print(f"Saved TSV to {tsv_path}")
-    
+
     print(f"\nSaved detailed metrics to {report_path}")
     print(f"\nBalanced Accuracy: {balanced_acc:.2f}%")
     print(f"Macro F1:          {macro_f1:.2f}%\n")
     print(f"{'Class':<30} {'Accuracy':>10} {'F1':>10} {'Samples':>10}")
     print("-" * 65)
-    for i, class_name in enumerate(sorted_class_names):
+    for i, class_name in enumerate(ordered_class_names):
         num_samples = int(cm[i].sum())
         print(f"{class_name:<30} {per_class_accuracy[i]:>9.2f}% {per_class_f1[i]:>9.2f}% {num_samples:>10}")
     print("-" * 65)
-    
+
     return {
         "balanced_accuracy": balanced_acc,
         "macro_f1": macro_f1,
-        "per_class_accuracy": {name: per_class_accuracy[i] for i, name in enumerate(sorted_class_names)},
-        "per_class_f1": {name: per_class_f1[i] for i, name in enumerate(sorted_class_names)},
-    }
-    
+        "per_class_accuracy": {name: per_class_accuracy[i] for i, name in enumerate(ordered_class_names)},
+        "per_class_f1": {name: per_class_f1[i] for i, name in enumerate(ordered_class_names)},
+    }    
