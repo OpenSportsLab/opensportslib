@@ -1,29 +1,36 @@
 TASK: classification
+# this is the config for classification task on sngar-frames dataset.
+# this config is used for the main experiments reported in the paper:
+# "Pixels or Positions? Benchmarking Modalities in Group Activity Recognition"
+# https://arxiv.org/abs/2511.12606
+# videomaev2 - fully finetuned on the sngar-frames dataset.
+# it has all the hyperparameters value used to reproduce the results reported in the paper.
 
 DATA:
   dataset_name: sngar
   data_dir: /home/spark_user1/opensportslib/sngar-frames
   data_modality: frames_npy
-  max_samples: 100
+  # max_samples: 100 # only used for quick testing
   num_frames: 16
   frame_size: [224, 224]
   train:
     path: ${DATA.data_dir}/annotations_train.json
     dataloader:
-      batch_size: 64
+      batch_size: 8 # for frozen backbone, use 64
+      # for unfrozen backbone, use 32-16-8 depending on the memory available
       shuffle: true
       num_workers: 8
       pin_memory: true
   valid:
     path: ${DATA.data_dir}/annotations_valid.json
     dataloader:
-      batch_size: 64
+      batch_size: 8
       num_workers: 8
       shuffle: false
   test:
     path: ${DATA.data_dir}/annotations_test.json
     dataloader:
-      batch_size: 64
+      batch_size: 8
       num_workers: 8
       shuffle: false
   augmentations:
@@ -36,11 +43,11 @@ DATA:
 MODEL:
   type: custom
   backbone:
-    type: dinov3                  # dinov3 | clip | videomae | videomae2
-    pretrained_model: facebook/dinov3-vitb16-pretrain-lvd1689m
-    # facebook/dinov3-vitb16-pretrain-lvd1689m | openai/clip-vit-base-patch16 | MCG-NJU/videomae-base | OpenGVLab/VideoMAEv2-Base
+    type: videomae2                  # dinov3 | videomae | videomae2
+    pretrained_model: OpenGVLab/VideoMAEv2-Base
+    # facebook/dinov3-vitb16-pretrain-lvd1689m | MCG-NJU/videomae-base | OpenGVLab/VideoMAEv2-Base
     hidden_dim: 768
-    freeze: true
+    freeze: false # true for frozen backbone, false for unfrozen backbone i.e. full-finetuning
     unfreeze_last_n_layers: 0     # 0 = frozen backbone, >0 = unfreeze last N layers
   neck:
     type: TemporalAggregation
@@ -56,12 +63,12 @@ MODEL:
     dropout: 0.1
 
 TRAIN:
-  monitor: balanced_accuracy
-  mode: max
+  monitor: loss # balanced_accuracy, loss
+  mode: min # max or min
   enabled: true
   use_amp: true
   mixup_alpha: 0.2
-  use_weighted_sampler: false
+  use_weighted_sampler: true
   samples_per_class: 4000
   use_weighted_loss: false
   epochs: 100
@@ -75,7 +82,7 @@ TRAIN:
 
   optimizer:
     type: AdamW
-    lr: 0.0001
+    lr: 0.00005 # tune lr based on the backbone
     betas: [0.9, 0.999]
     eps: 0.0000001
     weight_decay: 0.0001
