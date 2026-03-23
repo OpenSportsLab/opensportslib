@@ -45,7 +45,7 @@ pip install --pre opensportslib
 
 ```bash
 pip install "opensportslib[localization]"
-pip install "opensportslib[py-geometric]"
+pip install "opensportslib[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
 ```
 
 > Requires **Python 3.12+**.
@@ -176,7 +176,7 @@ pip install -e .
 
 ```bash
 pip install -e ".[localization]"
-pip install -e ".[tracking]"
+pip install -e ".[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
 ```
 
 ### Conda option

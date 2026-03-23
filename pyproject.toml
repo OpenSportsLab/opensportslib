@@ -7,7 +7,7 @@ name = "opensportslib"
 version = "0.0.1.dev4"
 description = "OpenSportsLib is the professional library, designed for advanced video understanding in sports. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with sports video data."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [ "SoccerNet", "av", "decord; platform_system != 'Darwin' and platform_machine != 'arm64'", "evaluate", "scikit-learn", "torch", "torchvision", "transformers==4.57.3", "tokenizers==0.22.1", "accelerate", "wandb", "opencv-python", "omegaconf", "timm",]
 [[project.authors]]
 name = "Jeet Vora"

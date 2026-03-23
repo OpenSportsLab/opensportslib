@@ -37,8 +37,7 @@ nav:
 
   - API Reference:
       - API: api/api.md
-
-  - Contributing: contributing.md
+      
 
 plugins:
   - search
