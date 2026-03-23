@@ -37,10 +37,14 @@ nav:
 
   - API Reference:
       - API: api/api.md
+  
+  - Contributing: contributing.md 
       
 
 plugins:
   - search
+  - include-markdown:
+      rewrite_relative_urls: true
   - mkdocstrings:
       handlers:
         python:
@@ -58,6 +62,10 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.tabbed
+
+  - pymdownx.snippets:
+      base_path: .
+
   - pymdownx.highlight:
       anchor_linenums: true
       pygments_lang_class: true

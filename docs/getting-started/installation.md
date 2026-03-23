@@ -58,7 +58,7 @@ Install the base package or include optional dependencies for specific tasks lik
 pip install -e .
 
 # OR for localization support
-pip install -e .[localization]
+pip install -e ".[localization]"
  
 # OR want to use "torch-geometric","torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"
 pip install -e ".[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
