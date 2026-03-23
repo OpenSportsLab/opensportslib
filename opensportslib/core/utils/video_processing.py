@@ -143,6 +143,33 @@ def distribute_elements(batch_size, len_devices):
 
     return distribution
 
+def _load_frame_deferred(gpu_transform, batch, device):
+    """Load frames on the device and applying some transforms.
+
+    Args:
+        gpu_transform : Transform to apply to the frames.
+        batch : Batch containing the frames and possibly some other datas as
+        "mix_weight" and "mix_frame" is mixup is applied while processing videos.
+        device : The device on which we load the data.
+
+    Returns:
+        frame (torch.tensor).
+    """
+    frame = batch["frame"].to(device)
+    with torch.no_grad():
+        for i in range(frame.shape[0]):
+            frame[i] = gpu_transform(frame[i])
+
+        if "mix_weight" in batch:
+            weight = batch["mix_weight"].to(device)
+            frame *= weight[:, None, None, None, None]
+
+            frame_mix = batch["mix_frame"]
+            for i in range(frame.shape[0]):
+                frame[i] += (1.0 - weight[i]) * gpu_transform(frame_mix[i].to(device))
+    return frame
+
+
 def _get_deferred_rgb_transform(IMAGENET_MEAN, IMAGENET_STD):
     import torchvision.transforms as T
     import torch.nn as nn
@@ -172,6 +199,96 @@ def _get_deferred_rgb_transform(IMAGENET_MEAN, IMAGENET_STD):
     ]
     return torch.jit.script(nn.Sequential(*img_transforms))
 
+
+def _get_img_transforms(
+    IMAGENET_MEAN, IMAGENET_STD, is_eval, crop_dim, modality, same_transform, defer_transform=False, multi_crop=False,
+):
+
+    """Get the cropping transformations and some images transformations that will be applied.
+
+    Args:
+        is_eval (bool): Whether we want train or eval transformations.
+        crop_dim (int): Dimension for cropping.
+        modality (string): Modality of the frame.
+        same_transform (bool): Whether to apply same transform to each frame.
+        defer_transform (bool): Whether some transforms have been defered to gpu.
+            Default: False.
+        multi_crop (bool): Whether multi cropping is applied.
+            Default: False.
+
+    Returns:
+        crop_transform
+        img_transform
+    """
+    import torchvision.transforms as transforms
+    import torch.nn as nn
+
+    crop_transform = None
+    if crop_dim is not None:
+        if multi_crop:
+            assert is_eval
+            crop_transform = ThreeCrop(crop_dim)
+        elif is_eval:
+            crop_transform = transforms.CenterCrop(crop_dim)
+        elif same_transform:
+            print("=> Using seeded crops!")
+            crop_transform = SeedableRandomSquareCrop(crop_dim)
+        else:
+            crop_transform = transforms.RandomCrop(crop_dim)
+
+    img_transforms = []
+    if modality == "rgb":
+        if not is_eval:
+            img_transforms.append(transforms.RandomHorizontalFlip())
+
+            if not defer_transform:
+                img_transforms.extend(
+                    [
+                        # Jittering separately is faster (low variance)
+                        transforms.RandomApply(
+                            nn.ModuleList([transforms.ColorJitter(hue=0.2)]), p=0.25
+                        ),
+                        transforms.RandomApply(
+                            nn.ModuleList(
+                                [transforms.ColorJitter(saturation=(0.7, 1.2))]
+                            ),
+                            p=0.25,
+                        ),
+                        transforms.RandomApply(
+                            nn.ModuleList(
+                                [transforms.ColorJitter(brightness=(0.7, 1.2))]
+                            ),
+                            p=0.25,
+                        ),
+                        transforms.RandomApply(
+                            nn.ModuleList(
+                                [transforms.ColorJitter(contrast=(0.7, 1.2))]
+                            ),
+                            p=0.25,
+                        ),
+                        # Jittering together is slower (high variance)
+                        # transforms.RandomApply(
+                        #     nn.ModuleList([
+                        #         transforms.ColorJitter(
+                        #             brightness=(0.7, 1.2), contrast=(0.7, 1.2),
+                        #             saturation=(0.7, 1.2), hue=0.2)
+                        #     ]), p=0.8),
+                        transforms.RandomApply(
+                            nn.ModuleList([transforms.GaussianBlur(5)]), p=0.25
+                        ),
+                    ]
+                )
+
+        if not defer_transform:
+            img_transforms.append(
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+            )
+    else:
+        raise NotImplementedError(modality)
+
+    img_transform = torch.jit.script(nn.Sequential(*img_transforms))
+    return crop_transform, img_transform
+
 def get_remaining(data_len, batch_size):
     """Return the padding that ensures that all batches have an equal number of items, which is required with the pipeline to make sur that all clips are processed.
     Args:
@@ -189,6 +306,80 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
+
+class RandomHorizontalFlipFLow(nn.Module):
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, img):
+        if torch.rand(1)[0] < self.p:
+            shape = img.shape
+            img.view((-1,) + shape[-3:])[:, 1, :, :] *= -1
+            return img.flip(-1)
+        return img
+
+
+class RandomOffsetFlow(nn.Module):
+
+    def __init__(self, p=0.5, x=0.1, y=0.05):
+        super().__init__()
+        self.p = p
+        self.x = x
+        self.y = y
+
+    def forward(self, img):
+        if torch.rand(1)[0] < self.p:
+            shape = img.shape
+            view = img.view((-1,) + shape[-3:])
+            view[:, 1, :, :] += (torch.rand(1, device=img.device)[0] * 2 - 1) * self.x
+            view[:, 0, :, :] += (torch.rand(1, device=img.device)[0] * 2 - 1) * self.y
+        return img
+
+
+class RandomGaussianNoise(nn.Module):
+
+    def __init__(self, p=0.5, s=0.1):
+        super().__init__()
+        self.p = p
+        self.std = s**0.5
+
+    def forward(self, img):
+        v = torch.rand(1)[0]
+        if v < self.p:
+            img += torch.randn(img.shape, device=img.device) * self.std
+        return img
+
+
+class SeedableRandomSquareCrop:
+
+    def __init__(self, dim):
+        self._dim = dim
+
+    def __call__(self, img):
+        c, h, w = img.shape[-3:]
+        x, y = 0, 0
+        if h > self._dim:
+            y = random.randint(0, h - self._dim)
+        if w > self._dim:
+            x = random.randint(0, w - self._dim)
+        return F.crop(img, y, x, self._dim, self._dim)
+
+
+class ThreeCrop:
+
+    def __init__(self, dim):
+        self._dim = dim
+
+    def __call__(self, img):
+        c, h, w = img.shape[-3:]
+        y = (h - self._dim) // 2
+        ret = []
+        dw = w - self._dim
+        for x in (0, dw // 2, dw):
+            ret.append(F.crop(img, y, x, self._dim, self._dim))
+        return torch.stack(ret)
 
 
 class VideoTransform:
@@ -327,7 +518,207 @@ def get_transforms_model(pre_model):
 
     return transforms_model
 
+def feats2clip(
+    feats, stride, clip_length, padding="replicate_last", off=0, modif_last_index=False
+):
+    """Converts a sequence of feature vectors into a sequence of overlapping clips.
+    Args:
+        feats: A tensor of shape (num_frames, feature_dim), representing the input feature vectors.
+        stride: The step size between the starting points of consecutive clips.
+        clip_length: The number of frames in each clip.
+        padding: The padding strategy, either "zeropad" or "replicate_last".
+        off: An offset to adjust the starting points of clips.
+        modif_last_index: A flag indicating whether to modify the last index to ensure the last clip is aligned with the end of feats.
+    """
+    if padding == "zeropad":
+        print("beforepadding", feats.shape)
+        pad = feats.shape[0] - int(feats.shape[0] / stride) * stride
+        print("pad need to be", clip_length - pad)
+        m = torch.nn.ZeroPad2d((0, 0, clip_length - pad, 0))
+        feats = m(feats)
+        print("afterpadding", feats.shape)
+        # nn.ZeroPad2d(2)
+    if modif_last_index:
+        off = 0
+    idx = torch.arange(start=0, end=feats.shape[0] - 1, step=stride)
+    idxs = []
+    for i in torch.arange(-off, clip_length - off):
+        idxs.append(idx + i)
+    idx = torch.stack(idxs, dim=1)
 
+    if padding == "replicate_last":
+        idx = idx.clamp(0, feats.shape[0] - 1)
+    if modif_last_index:
+        idx[-1] = torch.arange(clip_length) + feats.shape[0] - clip_length
+        return feats[idx, :]
+    # print(idx)
+    return feats[idx, ...]
+
+def getNegativeIndexes(labels, params, chunk_size):
+
+    zero_one_labels = np.zeros(labels.shape)
+    for i in np.arange(labels.shape[1]):
+        zero_one_labels[:, i] = 1 - np.logical_or(
+            np.where(labels[:, i] >= params[3, i], 1, 0),
+            np.where(labels[:, i] <= params[0, i], 1, 0),
+        )
+    zero_one = np.where(np.sum(zero_one_labels, axis=1) > 0, 0, 1)
+
+    zero_one_pad = np.append(
+        np.append(
+            [
+                1 - zero_one[0],
+            ],
+            zero_one,
+            axis=0,
+        ),
+        [1 - zero_one[-1]],
+        axis=0,
+    )
+    zero_one_pad_shift = np.append(zero_one_pad[1:], zero_one_pad[-1])
+
+    zero_one_sub = zero_one_pad - zero_one_pad_shift
+
+    zero_to_one_index = np.where(zero_one_sub == -1)[0]
+    one_to_zero_index = np.where(zero_one_sub == 1)[0]
+
+    if zero_to_one_index[0] > one_to_zero_index[0]:
+        one_to_zero_index = one_to_zero_index[1:]
+    if zero_to_one_index.shape[0] > one_to_zero_index.shape[0]:
+        zero_to_one_index = zero_to_one_index[:-1]
+
+    list_indexes = list()
+
+    for i, j in zip(zero_to_one_index, one_to_zero_index):
+        if j - i >= chunk_size:
+            list_indexes.append([i, j])
+
+    return list_indexes
+
+def getChunks_anchors(labels, game_index, params, chunk_size=240, receptive_field=80):
+
+    # get indexes of labels
+    indexes = list()
+    for i in np.arange(labels.shape[1]):
+        indexes.append(np.where(labels[:, i] == 0)[0].tolist())
+
+    # Positive chunks
+    anchors = list()
+
+    class_counter = 0
+    for event in indexes:
+        for element in event:
+            anchors.append([game_index, element, class_counter])
+        class_counter += 1
+
+    # Negative chunks
+
+    negative_indexes = getNegativeIndexes(labels, params, chunk_size)
+
+    for negative_index in negative_indexes:
+        start = [negative_index[0], negative_index[1]]
+        anchors.append([game_index, start, labels.shape[1]])
+
+    return anchors
+
+def getTimestampTargets(labels, num_detections):
+
+    targets = np.zeros(
+        (labels.shape[0], num_detections, 2 + labels.shape[-1]), dtype="float"
+    )
+
+    for i in np.arange(labels.shape[0]):
+
+        time_indexes, class_values = np.where(labels[i] == 0)
+
+        counter = 0
+
+        for time_index, class_value in zip(time_indexes, class_values):
+
+            # Confidence
+            targets[i, counter, 0] = 1.0
+            # frame index normalized
+            targets[i, counter, 1] = time_index / (labels.shape[1])
+            # The class one hot encoded
+            targets[i, counter, 2 + class_value] = 1.0
+            counter += 1
+
+            if counter >= num_detections:
+                print(
+                    "More timestamp than what was fixed... A lot happened in that chunk"
+                )
+                break
+
+    return targets
+
+
+def rulesToCombineShifts(shift_from_last_event, shift_until_next_event, params):
+    """Set the rule to combine shifts based on two rules and parameters.
+
+    Args:
+        shift_from_last_event: First rule.
+        shift_until_next_event: Second rule.
+        params: Parameters to choose the rule.
+    Returns:
+        The rule.
+    """
+    s1 = shift_from_last_event
+    s2 = shift_until_next_event
+    K = params
+
+    if s1 < K[2]:
+        value = s1
+    elif s1 < K[3]:
+        if s2 <= K[0]:
+            value = s1
+        else:
+            if (s1 - K[2]) / (K[3] - K[2]) < (K[1] - s2) / (K[1] - K[0]):
+                value = s1
+            else:
+                value = s2
+    else:
+        value = s2
+
+    return value
+
+
+def oneHotToShifts(onehot, params):
+    """
+
+    Args:
+        onehot: onehot vector of the shape (number of frames, number of actions).
+        params: used to construct the shift.
+    """
+    nb_frames = onehot.shape[0]
+    nb_actions = onehot.shape[1]
+
+    Shifts = np.empty(onehot.shape)
+
+    for i in range(nb_actions):
+
+        x = onehot[:, i]
+        K = params[:, i]
+        shifts = np.empty(nb_frames)
+
+        loc_events = np.where(x == 1)[0]
+        nb_events = len(loc_events)
+
+        if nb_events == 0:
+            shifts = np.full(nb_frames, K[0])
+        elif nb_events == 1:
+            shifts = np.arange(nb_frames) - loc_events
+        else:
+            loc_events = np.concatenate(([-K[3]], loc_events, [nb_frames - K[0]]))
+            for j in range(nb_frames):
+                shift_from_last_event = j - loc_events[np.where(j >= loc_events)[0][-1]]
+                shift_until_next_event = j - loc_events[np.where(j < loc_events)[0][0]]
+                shifts[j] = rulesToCombineShifts(
+                    shift_from_last_event, shift_until_next_event, K
+                )
+
+        Shifts[:, i] = shifts
+
+    return Shifts
 # import torch
 # import numpy as np
 # import decord

@@ -386,6 +386,20 @@ def construct_labels(path, extract_fps):
         num_frames, fps, wanted_sample_fps if wanted_sample_fps < fps else fps
     )
 
+    return [
+        {
+            "video": path,
+            "path": path,
+            "num_frames": num_frames_after,
+            "num_frames_base": num_frames,
+            "num_events": 0,
+            "events": [],
+            "fps": sample_fps,
+            "width": 398,
+            "height": 224,
+        }
+    ], get_stride(fps, wanted_sample_fps if wanted_sample_fps < fps else fps)
+
 
 # def get_repartition_gpu():
 #     """Returns the distribution of gpus that will be used by pipelines for dali."""
