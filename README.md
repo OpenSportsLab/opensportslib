@@ -45,7 +45,7 @@ pip install --pre opensportslib
 
 ```bash
 pip install "opensportslib[localization]"
-pip install "opensportslib[tracking]"
+pip install "opensportslib[py-geometric]"
 ```
 
 > Requires **Python 3.12+**.
