@@ -719,6 +719,131 @@ def oneHotToShifts(onehot, params):
         Shifts[:, i] = shifts
 
     return Shifts
+
+def timestamps2long(output_spotting, video_size, chunk_size, receptive_field):
+    """Method to transform the timestamps to vectors"""
+    start = 0
+    last = False
+    receptive_field = receptive_field // 2
+
+    timestamps_long = (
+        torch.zeros(
+            [video_size, output_spotting.size()[-1] - 2],
+            dtype=torch.float,
+            device=output_spotting.device,
+        )
+        - 1
+    )
+
+    for batch in np.arange(output_spotting.size()[0]):
+
+        tmp_timestamps = (
+            torch.zeros(
+                [chunk_size, output_spotting.size()[-1] - 2],
+                dtype=torch.float,
+                device=output_spotting.device,
+            )
+            - 1
+        )
+
+        for i in np.arange(output_spotting.size()[1]):
+            tmp_timestamps[
+                torch.floor(output_spotting[batch, i, 1] * (chunk_size - 1)).type(
+                    torch.int
+                ),
+                torch.argmax(output_spotting[batch, i, 2:]).type(torch.int),
+            ] = output_spotting[batch, i, 0]
+
+        # ------------------------------------------
+        # Store the result of the chunk in the video
+        # ------------------------------------------
+
+        # For the first chunk
+        if start == 0:
+            timestamps_long[0 : chunk_size - receptive_field] = tmp_timestamps[
+                0 : chunk_size - receptive_field
+            ]
+
+        # For the last chunk
+        elif last:
+            timestamps_long[start + receptive_field : start + chunk_size] = (
+                tmp_timestamps[receptive_field:]
+            )
+            break
+
+        # For every other chunk
+        else:
+            timestamps_long[
+                start + receptive_field : start + chunk_size - receptive_field
+            ] = tmp_timestamps[receptive_field : chunk_size - receptive_field]
+
+        # ---------------
+        # Loop Management
+        # ---------------
+
+        # Update the index
+        start += chunk_size - 2 * receptive_field
+        # Check if we are at the last index of the game
+        if start + chunk_size >= video_size:
+            start = video_size - chunk_size
+            last = True
+    return timestamps_long
+
+
+def batch2long(output_segmentation, video_size, chunk_size, receptive_field):
+    """Method to transform the batches to vectors."""
+    start = 0
+    last = False
+    receptive_field = receptive_field // 2
+
+    segmentation_long = torch.zeros(
+        [video_size, output_segmentation.size()[-1]],
+        dtype=torch.float,
+        device=output_segmentation.device,
+    )
+
+    for batch in np.arange(output_segmentation.size()[0]):
+
+        tmp_segmentation = torch.nn.functional.one_hot(
+            torch.argmax(output_segmentation[batch], dim=-1),
+            num_classes=output_segmentation.size()[-1],
+        )
+
+        # ------------------------------------------
+        # Store the result of the chunk in the video
+        # ------------------------------------------
+
+        # For the first chunk
+        if start == 0:
+            segmentation_long[0 : chunk_size - receptive_field] = tmp_segmentation[
+                0 : chunk_size - receptive_field
+            ]
+
+        # For the last chunk
+        elif last:
+            segmentation_long[start + receptive_field : start + chunk_size] = (
+                tmp_segmentation[receptive_field:]
+            )
+            break
+
+        # For every other chunk
+        else:
+            segmentation_long[
+                start + receptive_field : start + chunk_size - receptive_field
+            ] = tmp_segmentation[receptive_field : chunk_size - receptive_field]
+
+        # ---------------
+        # Loop Management
+        # ---------------
+
+        # Update the index
+        start += chunk_size - 2 * receptive_field
+        # Check if we are at the last index of the game
+        if start + chunk_size >= video_size:
+            start = video_size - chunk_size
+            last = True
+    return segmentation_long
+
 # import torch
 # import numpy as np
 # import decord

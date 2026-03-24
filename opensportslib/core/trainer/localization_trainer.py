@@ -135,6 +135,9 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
             trainer.best_criterion_valid = checkpoint.get('best_criterion_valid', 
                 0 if cfg.TRAIN.criterion_valid == "map" else float("inf"))
             logging.info(f"Restored best epoch: {trainer.best_epoch}")
+    
+    else:
+        trainer = Trainer_pl(cfg, default_args["work_dir"])
             
 
     return trainer
@@ -147,6 +150,37 @@ class Trainer(ABC):
     def train(self):
         pass
 
+class Trainer_pl(Trainer):
+    """Trainer class used for models that rely on lightning modules.
+
+    Args:
+        cfg (dict): Dict config. It should contain the key 'max_epochs' and the key 'GPU'.
+    """
+
+    def __init__(self, cfg, work_dir):
+        from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        import pytorch_lightning as pl
+
+        self.work_dir = work_dir
+        call = MyCallback()
+        self.trainer = pl.Trainer(
+            max_epochs=cfg.max_epochs,
+            devices=[cfg.GPU],
+            callbacks=[call, CustomProgressBar(refresh_rate=1)],
+            num_sanity_val_steps=0,
+        )
+
+    def train(self, **kwargs):
+        self.trainer.fit(**kwargs)
+
+        best_model = kwargs["model"].best_state
+
+        logging.info("Done training")
+        logging.info("Best epoch: {}".format(best_model.get("epoch")))
+        torch.save(best_model, os.path.join(self.work_dir, "model.pth.tar"))
+
+        logging.info("Model saved")
+        logging.info(os.path.join(self.work_dir, "model.pth.tar"))
 
 
 class Trainer_e2e(Trainer):
