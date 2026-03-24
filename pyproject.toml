@@ -13,7 +13,7 @@ dependencies = [ "SoccerNet", "av", "decord; platform_system != 'Darwin' and pla
 name = "Jeet Vora"
 
 [project.optional-dependencies]
-localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate",]
+localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate", "pytorch-lightning"]
 py-geometric = [ "torch-geometric", "torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv",]
 
 [tool.setuptools.package-data]

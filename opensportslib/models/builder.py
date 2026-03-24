@@ -29,7 +29,29 @@ def build_model(config, device):
     
     if task == "localization":
         from opensportslib.models.base.e2e import E2EModel
-        if config.MODEL.type == "E2E":
+        from opensportslib.models.base.contextaware import LiteContextAwareModel
+        from opensportslib.models.base.learnablepooling import LiteLearnablePoolingModel
+        
+        if config.MODEL.type == "LearnablePooling":
+            model = LiteLearnablePoolingModel(
+                cfg=config,
+                weights=config.MODEL.load_weights,
+                backbone=config.MODEL.backbone,
+                head=config.MODEL.head,
+                neck=config.MODEL.neck,
+                post_proc=config.MODEL.post_proc,
+                runner=config.RUNNER.type,
+            )
+        elif config.MODEL.type == "ContextAware":
+            model = LiteContextAwareModel(
+                cfg=config,
+                weights=config.MODEL.load_weights,
+                backbone=config.MODEL.backbone,
+                head=config.MODEL.head,
+                neck=config.MODEL.neck,
+                runner=config.RUNNER.type,
+            )
+        elif config.MODEL.type == "E2E":
             model = E2EModel(config, 
                             len(config.DATA.classes)+1,
                             config.MODEL.backbone,
