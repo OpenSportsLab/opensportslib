@@ -1,6 +1,10 @@
 import torch
 import numpy as np
 import math
+import random
+import torch.nn as nn
+import torchvision.transforms as T
+import torchvision.transforms.functional as F
 
 try:
     import decord
@@ -300,12 +304,6 @@ def get_remaining(data_len, batch_size):
     """
     return (math.ceil(data_len / batch_size) * batch_size) - data_len
 
-
-import random
-import numpy as np
-import torch
-import torchvision.transforms as T
-import torchvision.transforms.functional as F
 
 class RandomHorizontalFlipFLow(nn.Module):
 
