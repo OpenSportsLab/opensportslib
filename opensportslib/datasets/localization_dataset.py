@@ -16,7 +16,7 @@ import logging
 import tqdm
 from opensportslib.core.utils.default_args import get_default_args_dataset
 from opensportslib.core.utils.load_annotations import get_repartition_gpu
-from opensportslib.opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts
+from opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts
 from SoccerNet.Downloader import getListGames
 from SoccerNet.Downloader import SoccerNetDownloader
 from SoccerNet.Evaluation.utils import (
@@ -246,7 +246,7 @@ class LocalizationDataset(Dataset):
             num_workers=cfg.num_workers if gpu >= 0 else 0,
             pin_memory=cfg.pin_memory if gpu >= 0 else False,
             prefetch_factor=(
-                cfg.prefetch_factor if "prefetch_factor" in cfg.keys() else None
+                getattr(cfg, "prefetch_factor", None)
             ),
             worker_init_fn=worker_init_fn
         )
@@ -457,7 +457,7 @@ class ActionSpotDataset(Dataset):
         from opensportslib.core.utils.video_processing import _get_deferred_rgb_transform, _get_img_transforms
 
         self._src_file = label_file
-        self._labels = annotationstoe2eformat(
+        self._labels, self.task_name = annotationstoe2eformat(
             label_file, video_dir, input_fps, extract_fps, False
         )
         # self._labels = load_json(label_file)
@@ -491,17 +491,17 @@ class ActionSpotDataset(Dataset):
 
         self._mixup = mixup
 
+        self.IMAGENET_MEAN = IMAGENET_MEAN
+        self.IMAGENET_STD = IMAGENET_STD
+        self.TARGET_HEIGHT = TARGET_HEIGHT
+        self.TARGET_WIDTH = TARGET_WIDTH
         # Try to do defer the latter half of the transforms to the GPU
         self._gpu_transform = None
         if not is_eval and same_transform:
             if modality == "rgb":
                 print("=> Deferring some RGB transforms to the GPU!")
-                self._gpu_transform = _get_deferred_rgb_transform()
+                self._gpu_transform = _get_deferred_rgb_transform(self.IMAGENET_MEAN, self.IMAGENET_STD)
 
-        self.IMAGENET_MEAN = IMAGENET_MEAN
-        self.IMAGENET_STD = IMAGENET_STD
-        self.TARGET_HEIGHT = TARGET_HEIGHT
-        self.TARGET_WIDTH = TARGET_WIDTH
 
         crop_transform, img_transform = _get_img_transforms(
             self.IMAGENET_MEAN,
@@ -771,7 +771,7 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
     
         self._src_file = label_file
         if label_file.endswith(".json"):
-            self._labels = annotationstoe2eformat(
+            self._labels, self.task_name = annotationstoe2eformat(
                 label_file, video_dir, input_fps, extract_fps, False
             )
             # self._labels = load_json(label_file)
