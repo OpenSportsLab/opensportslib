@@ -39,6 +39,9 @@ DATA:
     color_jitter: true
     jitter_prob: 0.5
     jitter_params: [0.2, 0.2, 0.2, 0.1]
+  data_slicing: # only used for data scaling experiments
+    enabled: false
+    training_matches: 45  # default: all 45 training matches
 
 MODEL:
   type: custom
