@@ -341,7 +341,7 @@ class TrackingDataset(ClassificationDataset):
     """
         
     def __init__(self, config, annotations_path, split="train"):
-        super().__init__(config, annotations_path, split)
+        super().__init__(config, annotations_path, processor=None, split=split)
 
         from opensportslib.datasets.utils.tracking import (
             FEATURE_DIM,
