@@ -206,7 +206,7 @@ class LocalizationAPI:
             # # Inference
             inferer = build_inferer(cfg=self.config.MODEL,
                                     model=self.model)
-            json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
+            json_gz_file = inferer.infer(cfg=self.config, data=dataset_Test)
 
         #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
         json_gz_file = predictions if predictions else json_gz_file
