@@ -26,10 +26,10 @@ try:
     import nvidia.dali.fn as fn
     import nvidia.dali.types as types
     from nvidia.dali.plugin.pytorch import DALIGenericIterator
-    import cupy
     DALI_AVAILABLE = True
 
 except ImportError:
+    print("NO DALI")
     DALI_AVAILABLE = False
     # Optional: placeholders (prevents NameError)
     pipeline_def = None
@@ -1246,6 +1246,8 @@ if DALI_AVAILABLE:
             Returns:
                 labels (cupy.array): the list of labels (corresponding to events) corresponding with the extracted frames.
             """
+            import cupy
+
             video_meta = self._labels[label.item()]
             base_idx = frame_num.item() // self._stride
             labels = cupy.zeros(self.clip_len, np.int64)
@@ -1421,6 +1423,8 @@ if DALI_AVAILABLE:
             super().__init__(self.pipes, output_map, size=size)
 
         def __next__(self):
+            import cupy
+
             out = super().__next__()
             video_names = []
             starts = cupy.zeros(len(self.devices) * self.batch_size, np.int64)
