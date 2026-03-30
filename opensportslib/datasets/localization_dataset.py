@@ -3,7 +3,6 @@ import torch
 import random
 from torch.utils.data import Dataset
 import tempfile
-import cupy
 import copy
 import math
 import numpy as np
@@ -27,6 +26,7 @@ try:
     import nvidia.dali.fn as fn
     import nvidia.dali.types as types
     from nvidia.dali.plugin.pytorch import DALIGenericIterator
+    import cupy
     DALI_AVAILABLE = True
 
 except ImportError:
