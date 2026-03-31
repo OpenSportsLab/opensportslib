@@ -112,7 +112,7 @@ class LocalizationAPI:
             gpu=self.config.SYSTEM.GPU,
             default_args=data_obj_train.default_args,
         )
-        train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
+        train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
         print(len(train_loader))
         # Valid
         data_obj_valid = build_dataset(self.config,split="valid")
@@ -121,7 +121,7 @@ class LocalizationAPI:
             gpu= self.config.SYSTEM.GPU,
             default_args=data_obj_valid.default_args,
         )
-        valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
+        valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
         print(len(valid_loader))
 
         # Trainer
@@ -200,13 +200,13 @@ class LocalizationAPI:
                 gpu=self.config.SYSTEM.GPU,
                 default_args=data_obj_test.default_args,
             )
-            test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=True)
+            test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
             print(len(test_loader))
 
             # # Inference
             inferer = build_inferer(cfg=self.config.MODEL,
                                     model=self.model)
-            json_gz_file = inferer.infer(cfg=self.config, data=test_loader)
+            json_gz_file = inferer.infer(cfg=self.config, data=dataset_Test)
 
         #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
         json_gz_file = predictions if predictions else json_gz_file
