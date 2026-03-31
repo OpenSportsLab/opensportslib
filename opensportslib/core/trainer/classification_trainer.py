@@ -685,7 +685,7 @@ class FramesTrainerClassification(BaseTrainerClassification):
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
-        return logits, labels, loss
+        return logits, labels, loss, True
 
 # --------------------------------------------------------------
 # unified trainer dispatcher 
