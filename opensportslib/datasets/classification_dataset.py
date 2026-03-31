@@ -81,14 +81,35 @@ class ClassificationDataset(Dataset):
 
         allow_missing_labels = split in ["test", "infer"]
 
+        # these lines of code are used for data scaling experiments.
+        # if you want to check how the model performance changes with different 
+        # number of games in the training set, you can use this code.
+        # to use this, you need to add the following to the config:
+        # DATA:
+        #   data_slicing:
+        #     enabled: true
+        #     training_matches: <number of games to include in the training set>
+        # we will refer to this as "data slicing" in the rest of the code.
+        max_games = None
+        slicing_cfg = getattr(config.DATA, "data_slicing", None)
+        if slicing_cfg and getattr(slicing_cfg, "enabled", False) and split == "train":
+            max_games = getattr(slicing_cfg, "training_matches", None)
+
         self.samples, self.label_map = load_annotations(
             annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
             input_type=config.DATA.data_modality,
-            allow_missing_labels=allow_missing_labels
+            allow_missing_labels=allow_missing_labels,
+            max_games=max_games
         )
 
+        # this is used for quick testing of the model.
+        # we can only use a small subset of data (ideally 100 samples) to 
+        # test the overall integration quickly.
+        # to use this, you need to add the following to the config:
+        # DATA:
+        #   max_samples: <number of samples to include in the training set>
         max_samples = getattr(config.DATA, 'max_samples', None)
         if max_samples:
             self.samples = self.samples[:max_samples]
@@ -320,7 +341,7 @@ class TrackingDataset(ClassificationDataset):
     """
         
     def __init__(self, config, annotations_path, split="train"):
-        super().__init__(config, annotations_path, split)
+        super().__init__(config, annotations_path, processor=None, split=split)
 
         from opensportslib.datasets.utils.tracking import (
             FEATURE_DIM,
@@ -576,7 +597,7 @@ class TrackingDataset(ClassificationDataset):
             "seq_len": len(graphs),
             "id": item["id"]
         }
-        if "label" in label:
+        if label is not None:
             out["label"] = label
         return out
         

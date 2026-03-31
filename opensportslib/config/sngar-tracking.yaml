@@ -1,9 +1,15 @@
 TASK: classification
+# this is the config for classification task on sngar-tracking dataset.
+# this config is used for the main experiments reported in the paper:
+# "Pixels or Positions? Benchmarking Modalities in Group Activity Recognition"
+# https://arxiv.org/abs/2511.12606
+# this is used to train our baseline model that is GIN backbone + Maxpool temporal aggregation + positional edges.
+# it has all the hyperparameters value used to reproduce the results reported in the paper.
 
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/karkid/opensportslib/sngar-tracking
+  data_dir: /home/karkid/opensportslib/tracking-dataset
   preload_data: false
   train: 
     type: annotations_train.json
@@ -43,12 +49,15 @@ DATA:
   pitch_half_width: 50.0
   max_displacement: 110.0
   max_ball_height: 30.0
+  data_slicing: # only used for data scaling experiments
+    enabled: false
+    training_matches: 45  # default: all 45 training matches
 
 MODEL:
   type: custom
   backbone:
     type: graph_conv
-    encoder: graphconv
+    encoder: gin
     hidden_dim: 64
     num_layers: 20
     dropout: 0.1
@@ -74,7 +83,7 @@ TRAIN:
   use_weighted_sampler: true
   use_weighted_loss: false
   samples_per_class: 4000
-  epochs: 10
+  epochs: 100
   patience: 10
   save_every: 20
   detailed_results: true

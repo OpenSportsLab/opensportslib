@@ -9,10 +9,50 @@ from opensportslib.core.utils.video_processing import get_stride, read_fps, get_
 from opensportslib.core.utils.config import load_json
 from collections import defaultdict
 
-def load_annotations(annotations_path, task_key="action", exclude_labels=[""], multiview=False, input_type="video", allow_missing_labels=False):
+def load_annotations(
+    annotations_path,
+    task_key="action",
+    exclude_labels=None,
+    multiview=False,
+    input_type="video",
+    allow_missing_labels=False,
+    max_games=None
+):
 
     with open(annotations_path, "r") as f:
         data = json.load(f)
+
+    # this is used for data slicing experiments.
+    # and doesn't affect the validation and test sets.
+    # if you haven't added "data_scaling" to the config, this will be ignored.
+    if max_games is not None:
+        all_game_ids = sorted(set(
+            item.get("metadata", {}).get("game_id", "")
+            for item in data["data"]
+        )) 
+
+        # remove empty string if any items lack game_id
+        all_game_ids = [g for g in all_game_ids if g]
+
+        # warn if any items lack game_id
+        items_without_game_id = sum(
+            1 for item in data["data"]
+            if not item.get("metadata", {}).get("game_id", "")
+        )
+        if items_without_game_id > 0:
+            print(f"warning: {items_without_game_id}/{len(data['data'])} items have "
+                  f"no game_id, these will not be affected by data slicing")
+
+        if max_games < len(all_game_ids):
+            keep_ids = set(all_game_ids[:max_games])
+            original_count = len(data["data"])
+            data["data"] = [
+                item for item in data["data"]
+                if item.get("metadata", {}).get("game_id", "") in keep_ids
+            ]
+            print(f"data slicing: {max_games}/{len(all_game_ids)} games, "
+                  f"{len(data['data'])}/{original_count} samples retained")
+    # ----- data slicing ends here -----
 
     exclude_labels = set(exclude_labels or [""])
 
