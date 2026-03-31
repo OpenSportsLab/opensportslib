@@ -115,7 +115,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         INPUT: a Tensor of shape (batch_size,window_size,feature_size)
         OUTPUTS: a Tensor of shape (batch_size,num_classes+1)
         """
-        super().__init__(cfg.training)
+        super().__init__(cfg.TRAIN)
 
         self.model = LearnablePoolingModel(weights, backbone, neck, head, post_proc)
 

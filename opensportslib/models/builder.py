@@ -40,7 +40,7 @@ def build_model(config, device):
                 head=config.MODEL.head,
                 neck=config.MODEL.neck,
                 post_proc=config.MODEL.post_proc,
-                runner=config.RUNNER.type,
+                runner=config.MODEL.runner.type,
             )
         elif config.MODEL.type == "ContextAware":
             model = LiteContextAwareModel(
@@ -49,8 +49,9 @@ def build_model(config, device):
                 backbone=config.MODEL.backbone,
                 head=config.MODEL.head,
                 neck=config.MODEL.neck,
-                runner=config.RUNNER.type,
+                runner=config.MODEL.runner.type,
             )
+            
         elif config.MODEL.type == "E2E":
             model = E2EModel(config, 
                             len(config.DATA.classes)+1,
@@ -60,6 +61,6 @@ def build_model(config, device):
                             modality=config.DATA.modality,
                             device=device,
                             multi_gpu=config.MODEL.multi_gpu)
-            return model
+        return model
     else:
         raise ValueError(f"Unsupported model type: {config.MODEL.backbone} for task: {task}")

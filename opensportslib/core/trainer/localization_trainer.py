@@ -164,8 +164,8 @@ class Trainer_pl(Trainer):
         self.work_dir = work_dir
         call = MyCallback()
         self.trainer = pl.Trainer(
-            max_epochs=cfg.max_epochs,
-            devices=[cfg.GPU],
+            max_epochs=cfg.TRAIN.max_epochs,
+            devices=cfg.SYSTEM.GPU,
             callbacks=[call, CustomProgressBar(refresh_rate=1)],
             num_sanity_val_steps=0,
         )
@@ -496,24 +496,25 @@ class Inferer:
         self.model = model
         self.infer_Spotting=infer_Spotting
 
-    def infer(self, cfg, data):
+    def infer(self, cfg, data, dataloader=None):
         """Infer actions from data.
 
         Args:
             data : The data from which we will infer.
+            dataloader : The dataloader for the test data.
 
         Returns:
             Dict containing predictions
         """
         if self.infer_Spotting=="infer_JSON":
-            return self.infer_JSON(cfg, self.model, data)
+            return self.infer_JSON(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_SN":    
-            return self.infer_SN(cfg, self.model, data)
+            return self.infer_SN(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_E2E":
-            return self.infer_E2E(cfg, self.model, data)
+            return self.infer_E2E(cfg, self.model, data, dataloader)
 
 
-    def infer_common(self, cfg, model, data):
+    def infer_common(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model.
 
         Args:
@@ -525,10 +526,21 @@ class Inferer:
             Dict containing predictions
         """
         # Run Inference on Dataset
-        pass
+        from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        import pytorch_lightning as pl
+
+        if cfg.work_dir is not None and dataloader is not None:
+            
+            evaluator = pl.Trainer(
+                callbacks=[CustomProgressBar()],
+                devices=[cfg.training.GPU],
+                num_sanity_val_steps=0,
+            )
+            evaluator.predict(model, dataloader)
+            return model.json_data
 
 
-    def infer_JSON(self, cfg, model, data):
+    def infer_JSON(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for NetVlad/CALF methods
 
         Args:
@@ -539,10 +551,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_SN(self, cfg, model, data):
+    def infer_SN(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the SNV2 data
 
         Args:
@@ -553,10 +565,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_E2E(self, cfg, model, data):
+    def infer_E2E(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the e2espot method.
 
         Args:
@@ -997,7 +1009,8 @@ class Evaluator:
         Returns
             The different mAPs computed.
         """
-
+        from SoccerNet.Evaluation.utils import INVERSE_EVENT_DICTIONARY_V2
+        from SoccerNet.Evaluation.ActionSpotting import evaluate
         # challenge sets to be tested on EvalAI
         if "challenge" in cfg.split:
             print("Visit eval.ai to evaluate performances on Challenge set")

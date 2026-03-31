@@ -107,7 +107,7 @@ class LiteContextAwareModel(LiteBaseModel):
         post_proc="NMS",
         runner="runner_CALF",
     ):
-        super().__init__(cfg.training)
+        super().__init__(cfg.TRAIN)
 
         # check compatibility dims Backbone - Neck - Head
         assert backbone.output_dim == neck.input_size
