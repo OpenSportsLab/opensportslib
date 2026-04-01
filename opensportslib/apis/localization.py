@@ -155,7 +155,7 @@ class LocalizationAPI:
         from opensportslib.core.trainer.localization_trainer import build_inferer, build_evaluator
         from opensportslib.core.utils.config import select_device, resolve_config_omega, is_local_path
         from opensportslib.core.utils.checkpoint import load_checkpoint, localization_remap
-        from opensportslib.core.utils.load_annotations import check_config, has_localization_events
+        from opensportslib.core.utils.load_annotations import check_config, has_localization_events, whether_infer_split
         from opensportslib.core.utils.wandb import init_wandb
         import time
 
@@ -163,6 +163,7 @@ class LocalizationAPI:
         self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
+        self.config.infer_split = whether_infer_split(self.config.DATA.test)
         init_wandb(self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
         logging.info("Configuration:")
         logging.info(self.config)
@@ -179,18 +180,28 @@ class LocalizationAPI:
             logging.info("No predictions provided, running inference.")
             device = select_device(self.config.SYSTEM)
             self.model = build_model(self.config, device=device)
+            inner_model = getattr(self.model, "_model", None)
+            if inner_model is None:
+                inner_model = getattr(self.model, "model", self.model)
             print("Model type:", type(self.model))
-            print("Torch model type:", type(self.model._model))
+            print("Torch model type:", type(inner_model))
             # Load model
             if pretrained:
                 #pretrained = expand(pretrained)
                 if is_local_path(pretrained):
                     self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(pretrained))
                 
-                self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
+                inner_model, _, _, epoch = load_checkpoint(model=inner_model,
                                             path=pretrained,
                                             device=device,
                                             key_remap_fn=localization_remap)
+
+                if hasattr(self.model, "_model"):
+                    self.model._model = inner_model
+                elif hasattr(self.model, "model"):
+                    self.model.model = inner_model
+                else:
+                    self.model = inner_model
 
             # Datasets
             # Test
@@ -219,7 +230,7 @@ class LocalizationAPI:
             evaluator = build_evaluator(cfg=self.config)
             metrics = evaluator.evaluate(
                 cfg_testset=self.config.DATA.test,
-                json_gz_file=json_gz_file
+                json_gz_file=self.config.DATA.test.results if isinstance(json_gz_file, dict) else json_gz_file
             )
         else:
             logging.info("No labels found in annotation file → skipping evaluation")

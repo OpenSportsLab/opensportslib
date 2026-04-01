@@ -537,3 +537,33 @@ def check_config(cfg, split="train"):
         
         #print(classes)
         cfg.DATA.classes = load_classes(classes)
+
+
+def whether_infer_split(cfg):
+    """Given a config dict, check whether we want to infer a split or a single element (can be a game, video or feature file)/
+
+    Args:
+        cfg (dict): Config dict.
+
+    Returns:
+        bool : True if we infer split, false otherwise. Raises an error if the input is not expected.
+    """
+    if cfg.type == "SoccerNetGames" or cfg.type == "SoccerNetClipsTestingCALF":
+        if cfg.split == None:
+            return False
+        else:
+            return True
+    elif (
+        cfg.type == "FeatureVideosfromJSON" or cfg.type == "FeatureVideosChunksfromJson"
+    ):
+        if cfg.path.endswith(".json"):
+            return True
+        else:
+            return False
+    elif cfg.type == "VideoGameWithOpencvVideo" or cfg.type == "VideoGameWithDaliVideo":
+        if cfg.path.endswith(".json"):
+            return True
+        else:
+            return False
+    else:
+        raise ValueError(f"Unknown dataset type {cfg.type}")

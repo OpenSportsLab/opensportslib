@@ -171,11 +171,11 @@ class LiteContextAwareModel(LiteBaseModel):
         if self.infer_split:
             self.output_folder, self.output_results, self.stop_predict = (
                 check_if_should_predict(
-                    self.cfg.dataset.test.results, self.cfg.work_dir, self.overwrite
+                    self.cfg.DATA.test.results, self.cfg.SYSTEM.work_dir, self.overwrite
                 )
             )
             if self.runner == "runner_JSON":
-                self.target_dir = os.path.join(self.cfg.work_dir, self.output_folder)
+                self.target_dir = os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder)
             else:
                 self.target_dir = self.output_results
 
@@ -225,19 +225,19 @@ class LiteContextAwareModel(LiteBaseModel):
                     if self.infer_split:
                         os.makedirs(
                             os.path.join(
-                                self.cfg.work_dir, self.output_folder, list_game[index]
+                                self.cfg.SYSTEM.work_dir, self.output_folder, list_game[index]
                             ),
                             exist_ok=True,
                         )
                         output_file = os.path.join(
-                            self.cfg.work_dir,
+                            self.cfg.SYSTEM.work_dir,
                             self.output_folder,
                             list_game[index],
                             "results_spotting.json",
                         )
                     else:
                         output_file = os.path.join(
-                            self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                            self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                         )
                     json_data = predictions2json(
                         detections_numpy[index * 2],
@@ -257,18 +257,18 @@ class LiteContextAwareModel(LiteBaseModel):
                     if self.infer_split:
                         video = os.path.splitext(video)[0]
                         os.makedirs(
-                            os.path.join(self.cfg.work_dir, self.output_folder, video),
+                            os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, video),
                             exist_ok=True,
                         )
                         output_file = os.path.join(
-                            self.cfg.work_dir,
+                            self.cfg.SYSTEM.work_dir,
                             self.output_folder,
                             video,
                             "results_spotting.json",
                         )
                     else:
                         output_file = os.path.join(
-                            self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                            self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                         )
 
                     json_data = get_json_data(video)
@@ -283,13 +283,13 @@ class LiteContextAwareModel(LiteBaseModel):
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,
-                    target_dir=os.path.join(self.cfg.work_dir, self.output_folder),
+                    target_dir=os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.work_dir,
+                        self.cfg.SYSTEM.work_dir,
                         self.output_folder,
                     )
                 )
@@ -299,7 +299,7 @@ class LiteContextAwareModel(LiteBaseModel):
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                     )
                 )
 

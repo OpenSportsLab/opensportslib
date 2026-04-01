@@ -2,6 +2,7 @@ import wandb
 import matplotlib.pyplot as plt
 import numpy as np
 import logging
+import os
 
 def init_wandb(cfg, run_id, use_wandb=False):
     """
@@ -23,6 +24,15 @@ def init_wandb(cfg, run_id, use_wandb=False):
     except ImportError:
         logging.warning("wandb not installed. Install with `pip install wandb`.")
         return None
+
+    # Prevent multiple processes from initializing wandb
+    rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", 0)))
+    if rank != 0:
+        return None
+
+    # Prevent re-initialization
+    if wandb.run is not None:
+        return wandb
 
     if getattr(cfg.DATA, "data_modality", None):
         run_name = f"{cfg.MODEL.backbone.type}_{cfg.DATA.data_modality}"

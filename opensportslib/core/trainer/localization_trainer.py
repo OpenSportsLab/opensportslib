@@ -169,6 +169,7 @@ class Trainer_pl(Trainer):
             callbacks=[call, CustomProgressBar(refresh_rate=1)],
             num_sanity_val_steps=0,
         )
+        self.best_checkpoint_path = None
 
     def train(self, **kwargs):
         self.trainer.fit(**kwargs)
@@ -177,10 +178,12 @@ class Trainer_pl(Trainer):
 
         logging.info("Done training")
         logging.info("Best epoch: {}".format(best_model.get("epoch")))
-        torch.save(best_model, os.path.join(self.work_dir, "model.pth.tar"))
+        best_path = os.path.join(self.work_dir, "model.pth.tar")
+        self.best_checkpoint_path = best_path
+        torch.save(best_model, best_path)
 
         logging.info("Model saved")
-        logging.info(os.path.join(self.work_dir, "model.pth.tar"))
+        logging.info(best_path)
 
 
 class Trainer_e2e(Trainer):
@@ -529,11 +532,11 @@ class Inferer:
         from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
         import pytorch_lightning as pl
 
-        if cfg.work_dir is not None and dataloader is not None:
+        if cfg.SYSTEM.work_dir is not None and dataloader is not None:
             
             evaluator = pl.Trainer(
                 callbacks=[CustomProgressBar()],
-                devices=[cfg.training.GPU],
+                devices=cfg.SYSTEM.GPU,
                 num_sanity_val_steps=0,
             )
             evaluator.predict(model, dataloader)
@@ -747,7 +750,6 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
-
         if cfg.path is None:
             return
 
@@ -768,6 +770,7 @@ class Evaluator:
 
         # detect v2 prediction
         pred_is_v2 = isinstance(pred_data, dict) and pred_data is not None and "data" in pred_data
+        print("PRED V2 :", pred_is_v2)
         # --------------------------------------------------
         # CLASSES
         # --------------------------------------------------
@@ -812,10 +815,11 @@ class Evaluator:
 
             # ---------------- GT ----------------
             if gt_is_v2:
+                print("Game: ", game)
                 video_path = game["inputs"][0]["path"]
                 labels = [{"label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                           } for e in game.get("events", [])]
             else:
                 video_path = game["path"]
@@ -837,7 +841,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
@@ -871,7 +875,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])

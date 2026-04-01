@@ -71,7 +71,7 @@ DATA:
     output_map: [data, label]
     video_path: ${DATA.data_dir}
     path: ${DATA.test.video_path}/annotations-2024-224p-test.json
-    results: results_spotting_test
+    results: results_spotting_test_netvlad++_resnetpca512
     framerate: 2
     window_size: 20
     metric: tight
@@ -84,7 +84,7 @@ DATA:
 MODEL:
     type: LearnablePooling
     runner:
-      type: runner_pooling
+      type: runner_JSON
     backbone:
       type: PreExtactedFeatures
       encoder: ResNET_TF2_PCA512
@@ -139,7 +139,7 @@ SYSTEM:
   save_dir: ./checkpoints
   work_dir: ${SYSTEM.save_dir}
   seed: 42
-  GPU: 1        # number of gpus to use
+  GPU: 4        # number of gpus to use
   device: cuda   # auto | cuda | cpu
   gpu_id: 0      # device id for single gpu training
 
