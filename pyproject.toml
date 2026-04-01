@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opensportslib"
-version = "0.0.1.dev17"
+version = "0.0.1.dev18"
 description = "OpenSportsLib is the professional library, designed for advanced video understanding in sports. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with sports video data."
 readme = "README.md"
 requires-python = ">=3.12"
