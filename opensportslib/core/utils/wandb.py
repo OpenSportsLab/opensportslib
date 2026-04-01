@@ -24,7 +24,9 @@ def init_wandb(cfg, run_id, use_wandb=False):
         logging.warning("wandb not installed. Install with `pip install wandb`.")
         return None
 
-    if getattr(cfg.DATA, "data_modality", None):
+    if getattr(cfg, "TASK", None) == "pretraining":
+        run_name = f"ssl_{cfg.SSL.method}_{cfg.MODEL.encoder.type}"
+    elif getattr(cfg.DATA, "data_modality", None):
         run_name = f"{cfg.MODEL.backbone.type}_{cfg.DATA.data_modality}"
     else:
         run_name = f"{cfg.MODEL.backbone.type}"

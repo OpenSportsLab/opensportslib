@@ -1,0 +1,63 @@
+TASK: pretraining
+
+SSL:
+  method: dino
+  dino:
+    momentum: 0.996            # EMA momentum for teacher
+    teacher_temp: 0.04         # temperature for teacher softmax
+    student_temp: 0.1          # temperature for student softmax
+    center_momentum: 0.9       # momentum for output centering
+    head_hidden_dim: 2048
+    head_bottleneck_dim: 256
+    head_out_dim: 65536
+
+DATA:
+  data_dir: /path/to/unlabeled/videos
+  num_frames: 16
+  frame_size: [224, 224]
+  patch_size: 16
+  tubelet_size: 2
+  batch_size: 64
+  num_workers: 4
+  input_fps: 25
+  target_fps: null
+  augmentations:
+    random_horizontal_flip: true
+    color_jitter: true
+    jitter_params: [0.4, 0.4, 0.4, 0.1]
+    random_crop: true
+
+MODEL:
+  encoder:
+    type: vit_base
+    embed_dim: 768
+    depth: 12
+    num_heads: 12
+  decoder:
+    depth: 0                   # not used for DINO
+    embed_dim: 0
+
+TRAIN:
+  epochs: 200
+  save_every: 20
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+    betas: [0.9, 0.95]
+    eps: 0.00000001
+    weight_decay: 0.05
+    amsgrad: false
+  scheduler:
+    type: CosineAnnealingLR
+    T_max: 200
+  warmup_epochs: 10
+  save_backbone_only: true
+
+SYSTEM:
+  log_dir: ./logs
+  save_dir: ./checkpoints
+  use_seed: true
+  seed: 42
+  GPU: 4
+  device: cuda
+  gpu_id: 0

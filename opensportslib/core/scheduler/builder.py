@@ -72,6 +72,11 @@ def build_scheduler(optimizer, cfg, default_args=None):
         )
     elif cfg.type == "StepLR":
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=cfg.step_size, gamma=cfg.gamma)
+    elif cfg.type == "CosineAnnealingLR":
+        T_max = getattr(cfg, "T_max", 200)
+        eta_min = getattr(cfg, "eta_min", 0)
+        scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
+        logging.info(f"Using CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
     else:
         scheduler = None
     return scheduler

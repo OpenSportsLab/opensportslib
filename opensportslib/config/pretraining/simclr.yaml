@@ -1,0 +1,59 @@
+TASK: pretraining
+
+SSL:
+  method: simclr
+  simclr:
+    temperature: 0.1           # NT-Xent temperature
+    proj_hidden_dim: 2048      # projection head hidden dim
+    proj_out_dim: 128          # projection head output dim
+
+DATA:
+  data_dir: /path/to/unlabeled/videos
+  num_frames: 16
+  frame_size: [224, 224]
+  patch_size: 16
+  tubelet_size: 2
+  batch_size: 256              # SimCLR benefits from large batches
+  num_workers: 4
+  input_fps: 25
+  target_fps: null
+  augmentations:
+    random_horizontal_flip: true
+    color_jitter: true
+    jitter_params: [0.8, 0.8, 0.8, 0.2]
+    random_crop: true
+
+MODEL:
+  encoder:
+    type: vit_base
+    embed_dim: 768
+    depth: 12
+    num_heads: 12
+  decoder:
+    depth: 0                   # not used for SimCLR
+    embed_dim: 0
+
+TRAIN:
+  epochs: 200
+  save_every: 20
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+    betas: [0.9, 0.999]
+    eps: 0.00000001
+    weight_decay: 0.05
+    amsgrad: false
+  scheduler:
+    type: CosineAnnealingLR
+    T_max: 200
+  warmup_epochs: 10
+  save_backbone_only: true
+
+SYSTEM:
+  log_dir: ./logs
+  save_dir: ./checkpoints
+  use_seed: true
+  seed: 42
+  GPU: 4
+  device: cuda
+  gpu_id: 0
