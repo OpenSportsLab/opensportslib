@@ -29,7 +29,6 @@ try:
     DALI_AVAILABLE = True
 
 except ImportError:
-    print("NO DALI")
     DALI_AVAILABLE = False
     # Optional: placeholders (prevents NameError)
     pipeline_def = None
@@ -67,7 +66,6 @@ class LocalizationDataset(Dataset):
 
     
     def building_dataset(self, cfg, gpu=None, default_args=None):
-        print(cfg)
         if cfg.type == "SoccerNetClips" or cfg.type == "SoccerNetGames":
             if cfg.split == None:
                 dataset = SoccerNetGameClips(
@@ -1576,7 +1574,8 @@ class FeaturefromJson(Dataset):
                 with open(single_path) as f:
                     tmp = json.load(f)
                     self.data_json.append(tmp)
-                    self.classes.append(tmp["labels"])
+                    for task_name, task_data in tmp["labels"].items():
+                        self.classes.append(task_data.get("labels", {}))
             assert all(x == self.classes[0] for x in self.classes) == True
             self.classes = self.classes[0]
 
@@ -1588,15 +1587,19 @@ class FeaturefromJson(Dataset):
                 with open(path) as f:
                     tmp = json.load(f)
                     self.data_json = [tmp]
-                self.classes = tmp["labels"]
+                
+                for task_name, task_data in tmp["labels"].items():
+                    self.classes = task_data.get("labels", {})
             else:
                 self.is_json = False
                 self.data_json = [
                     {
-                        "videos": [
+                        "data": [
                             {
-                                "path": path,
-                                "annotations": [],
+                                "inputs": [{
+                                    "path": path
+                                }],
+                                "events": [],
                             }
                         ]
                     }
@@ -1608,6 +1611,7 @@ class FeaturefromJson(Dataset):
                     self.classes = load_text(self.classes)
 
         self.num_classes = len(self.classes)
+        print(self.num_classes)
         self.event_dictionary = {cls: i_cls for i_cls, cls in enumerate(self.classes)}
         self.inverse_event_dictionary = {
             i_cls: cls for i_cls, cls in enumerate(self.classes)
@@ -1633,8 +1637,8 @@ class FeaturefromJson(Dataset):
         # time = annotation["gameTime"]
         event = annotation["label"]
 
-        if "position" in annotation.keys():
-            frame = int(self.framerate * (int(annotation["position"]) / 1000))
+        if "position_ms" in annotation.keys():
+            frame = int(self.framerate * (int(annotation["position_ms"]) / 1000))
         else:
             time = annotation["gameTime"]
 
@@ -1685,11 +1689,11 @@ class FeatureClipsfromJSON(FeaturefromJson):
                 else:
                     logging.info("Processing " + path)
                 # loop over videos
-                for video in tqdm.tqdm(single_data_json["videos"]):
+                for video in tqdm.tqdm(single_data_json["data"]):
                     # for video in tqdm(self.data_json["videos"]):
                     # Load features
                     features = np.load(
-                        os.path.join(self.features_dir[i], video["path"])
+                        os.path.join(self.features_dir[i], video["inputs"][0]["path"])
                     )
                     features = features.reshape(-1, features.shape[-1])
 
@@ -1705,7 +1709,7 @@ class FeatureClipsfromJSON(FeaturefromJson):
                     labels[:, 0] = 1  # those are BG classes
 
                     # loop annotation for that video
-                    for annotation in video["annotations"]:
+                    for annotation in video.get("events", []):
 
                         label, frame, cont = self.annotation(annotation)
 
@@ -1743,20 +1747,20 @@ class FeatureClipsfromJSON(FeaturefromJson):
         if self.train:
             return self.features_clips[index, :, :], self.labels_clips[index, :]
         else:
-            video = self.data_json[0]["videos"][index]
-
+            video = self.data_json[0]["data"][index]
+            video_path = video["inputs"][0]["path"]
             # Load features
             if self.is_json:
-                features = np.load(os.path.join(self.features_dir[0], video["path"]))
+                features = np.load(os.path.join(self.features_dir[0], video_path))
             else:
-                features = np.load(os.path.join(video["path"]))
+                features = np.load(os.path.join(video_path))
             features = features.reshape(-1, features.shape[-1])
 
             # Load labels
             labels = np.zeros((features.shape[0], self.num_classes))
 
-            if "annotations" in video.keys():
-                for annotation in video["annotations"]:
+            if "events" in video.keys():
+                for annotation in video.get("events", []):
 
                     label, frame, cont = self.annotation(annotation)
 
@@ -1773,13 +1777,13 @@ class FeatureClipsfromJSON(FeaturefromJson):
                 clip_length=self.window_size_frame,
             )
 
-            return video["path"], features, labels
+            return video_path, features, labels
 
     def __len__(self):
         if self.train:
             return len(self.features_clips)
         else:
-            return len(self.data_json[0]["videos"])
+            return len(self.data_json[0]["data"])
 
 
 class FeatureClipChunksfromJson(FeaturefromJson):
@@ -1844,18 +1848,18 @@ class FeatureClipChunksfromJson(FeaturefromJson):
                 else:
                     logging.info("Processing " + path)
                 # loop over videos
-                for video in tqdm.tqdm(single_data_json["videos"]):
+                for video in tqdm.tqdm(single_data_json["data"]):
                     # for video in tqdm(self.data_json["videos"]):
                     # Load features
                     features = np.load(
-                        os.path.join(self.features_dir[i], video["path"])
+                        os.path.join(self.features_dir[i], video["inputs"][0]["path"])
                     )
 
                     # Load labels
                     labels = np.zeros((features.shape[0], self.num_classes))
 
                     # loop annotation for that video
-                    for annotation in video["annotations"]:
+                    for annotation in video.get("events", []):
 
                         label, frame, cont = self.annotation(annotation)
 
@@ -1938,19 +1942,19 @@ class FeatureClipChunksfromJson(FeaturefromJson):
                 torch.from_numpy(clip_targets),
             )
         else:
-            video = self.data_json[0]["videos"][index]
-
+            video = self.data_json[0]["data"][index]
+            video_path = video["inputs"][0]["path"]
             # Load features
             if self.is_json:
-                features = np.load(os.path.join(self.features_dir[0], video["path"]))
+                features = np.load(os.path.join(self.features_dir[0], video_path))
             else:
-                features = np.load(os.path.join(video["path"]))
+                features = np.load(os.path.join(video_path))
 
             # Load labels
             labels = np.zeros((features.shape[0], self.num_classes))
 
             if "annotations" in video.keys():
-                for annotation in video["annotations"]:
+                for annotation in video.get("events",[]):
 
                     label, frame, cont = self.annotation(annotation)
                     if cont:
@@ -1977,7 +1981,7 @@ class FeatureClipChunksfromJson(FeaturefromJson):
         if self.train:
             return self.chunks_per_epoch
         else:
-            return len(self.data_json[0]["videos"])
+            return len(self.data_json[0]["data"])
 
 
 

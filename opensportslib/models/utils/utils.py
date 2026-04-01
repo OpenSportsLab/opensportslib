@@ -64,16 +64,34 @@ def get_spot_from_NMS(Input, window=60, thresh=0.0):
     return np.transpose([indexes, MaxValues])
 
 
+# def get_json_data(info):
+#     """Create a dict that is the content of a json file.
+#     The dict contains the keys:
+#         -Url which is the name of the feature/video file/game.
+#         -predictions that will contain a list of predictions.
+#     """
+#     json_data = dict()
+#     json_data["Url"] = info
+#     json_data["predictions"] = list()
+#     return json_data
+
+
 def get_json_data(info):
-    """Create a dict that is the content of a json file.
-    The dict contains the keys:
-        -Url which is the name of the feature/video file/game.
-        -predictions that will contain a list of predictions.
-    """
-    json_data = dict()
-    json_data["Url"] = info
-    json_data["predictions"] = list()
-    return json_data
+    """Initialize JSON in new v2.0 format."""
+
+    return {
+        "data": [
+            {
+                "inputs": [
+                    {
+                        "type": "video",
+                        "path": info,
+                    }
+                ],
+                "events": []
+            }
+        ]
+    }
 
 
 def get_prediction_data(

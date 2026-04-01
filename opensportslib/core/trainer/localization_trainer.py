@@ -164,11 +164,12 @@ class Trainer_pl(Trainer):
         self.work_dir = work_dir
         call = MyCallback()
         self.trainer = pl.Trainer(
-            max_epochs=cfg.max_epochs,
-            devices=[cfg.GPU],
+            max_epochs=cfg.TRAIN.max_epochs,
+            devices=cfg.SYSTEM.GPU,
             callbacks=[call, CustomProgressBar(refresh_rate=1)],
             num_sanity_val_steps=0,
         )
+        self.best_checkpoint_path = None
 
     def train(self, **kwargs):
         self.trainer.fit(**kwargs)
@@ -177,10 +178,12 @@ class Trainer_pl(Trainer):
 
         logging.info("Done training")
         logging.info("Best epoch: {}".format(best_model.get("epoch")))
-        torch.save(best_model, os.path.join(self.work_dir, "model.pth.tar"))
+        best_path = os.path.join(self.work_dir, "model.pth.tar")
+        self.best_checkpoint_path = best_path
+        torch.save(best_model, best_path)
 
         logging.info("Model saved")
-        logging.info(os.path.join(self.work_dir, "model.pth.tar"))
+        logging.info(best_path)
 
 
 class Trainer_e2e(Trainer):
@@ -496,24 +499,25 @@ class Inferer:
         self.model = model
         self.infer_Spotting=infer_Spotting
 
-    def infer(self, cfg, data):
+    def infer(self, cfg, data, dataloader=None):
         """Infer actions from data.
 
         Args:
             data : The data from which we will infer.
+            dataloader : The dataloader for the test data.
 
         Returns:
             Dict containing predictions
         """
         if self.infer_Spotting=="infer_JSON":
-            return self.infer_JSON(cfg, self.model, data)
+            return self.infer_JSON(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_SN":    
-            return self.infer_SN(cfg, self.model, data)
+            return self.infer_SN(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_E2E":
-            return self.infer_E2E(cfg, self.model, data)
+            return self.infer_E2E(cfg, self.model, data, dataloader)
 
 
-    def infer_common(self, cfg, model, data):
+    def infer_common(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model.
 
         Args:
@@ -525,10 +529,21 @@ class Inferer:
             Dict containing predictions
         """
         # Run Inference on Dataset
-        pass
+        from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        import pytorch_lightning as pl
+
+        if cfg.SYSTEM.work_dir is not None and dataloader is not None:
+            
+            evaluator = pl.Trainer(
+                callbacks=[CustomProgressBar()],
+                devices=cfg.SYSTEM.GPU,
+                num_sanity_val_steps=0,
+            )
+            evaluator.predict(model, dataloader)
+            return model.json_data
 
 
-    def infer_JSON(self, cfg, model, data):
+    def infer_JSON(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for NetVlad/CALF methods
 
         Args:
@@ -539,10 +554,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_SN(self, cfg, model, data):
+    def infer_SN(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the SNV2 data
 
         Args:
@@ -553,10 +568,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_E2E(self, cfg, model, data):
+    def infer_E2E(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the e2espot method.
 
         Args:
@@ -735,7 +750,6 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
-
         if cfg.path is None:
             return
 
@@ -756,6 +770,7 @@ class Evaluator:
 
         # detect v2 prediction
         pred_is_v2 = isinstance(pred_data, dict) and pred_data is not None and "data" in pred_data
+        print("PRED V2 :", pred_is_v2)
         # --------------------------------------------------
         # CLASSES
         # --------------------------------------------------
@@ -800,10 +815,11 @@ class Evaluator:
 
             # ---------------- GT ----------------
             if gt_is_v2:
+                print("Game: ", game)
                 video_path = game["inputs"][0]["path"]
                 labels = [{"label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                           } for e in game.get("events", [])]
             else:
                 video_path = game["path"]
@@ -825,7 +841,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
@@ -859,7 +875,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
@@ -997,7 +1013,8 @@ class Evaluator:
         Returns
             The different mAPs computed.
         """
-
+        from SoccerNet.Evaluation.utils import INVERSE_EVENT_DICTIONARY_V2
+        from SoccerNet.Evaluation.ActionSpotting import evaluate
         # challenge sets to be tested on EvalAI
         if "challenge" in cfg.split:
             print("Visit eval.ai to evaluate performances on Challenge set")

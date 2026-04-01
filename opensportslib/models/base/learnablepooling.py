@@ -115,7 +115,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         INPUT: a Tensor of shape (batch_size,window_size,feature_size)
         OUTPUTS: a Tensor of shape (batch_size,num_classes+1)
         """
-        super().__init__(cfg.training)
+        super().__init__(cfg.TRAIN)
 
         self.model = LearnablePoolingModel(weights, backbone, neck, head, post_proc)
 
@@ -160,12 +160,12 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         if self.infer_split:
             self.output_folder, self.output_results, self.stop_predict = (
                 check_if_should_predict(
-                    self.cfg.dataset.test.results, self.cfg.work_dir, self.overwrite
+                    self.cfg.DATA.test.results, self.cfg.SYSTEM.work_dir, self.overwrite
                 )
             )
 
             if self.runner == "runner_JSON":
-                self.target_dir = os.path.join(self.cfg.work_dir, self.output_folder)
+                self.target_dir = os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder)
             else:
                 self.target_dir = self.output_results
 
@@ -178,13 +178,13 @@ class LiteLearnablePoolingModel(LiteBaseModel):
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,
-                    target_dir=os.path.join(self.cfg.work_dir, self.output_folder),
+                    target_dir=os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.work_dir,
+                        self.cfg.SYSTEM.work_dir,
                         self.output_folder,
                     )
                 )
@@ -194,7 +194,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                     )
                 )
 
@@ -237,16 +237,16 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                     ):
                         spots = get_spot(
                             timestamp_long[:, l],
-                            window=self.cfg.model.post_proc.NMS_window
-                            * self.cfg.model.backbone.framerate,
-                            thresh=self.cfg.model.post_proc.NMS_threshold,
+                            window=self.cfg.MODEL.post_proc.NMS_window
+                            * self.cfg.MODEL.backbone.framerate,
+                            thresh=self.cfg.MODEL.post_proc.NMS_threshold,
                         )
                         for spot in spots:
                             frame_index = int(spot[0])
                             confidence = spot[1]
                             if confidence < 0.5:
                                 continue
-                            json_data["predictions"].append(
+                            json_data["data"][0]["events"].append(
                                 get_prediction_data(
                                     False,
                                     frame_index,
@@ -259,29 +259,29 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                                 )
                             )
 
-                    json_data["predictions"] = sorted(
-                        json_data["predictions"], key=lambda x: int(x["position"])
+                    json_data["data"][0]["events"] = sorted(
+                        json_data["data"][0]["events"], key=lambda x: int(x["position"])
                     )
-                    json_data["predictions"] = sorted(
-                        json_data["predictions"], key=lambda x: int(x["half"])
+                    json_data["data"][0]["events"] = sorted(
+                        json_data["data"][0]["events"], key=lambda x: int(x["half"])
                     )
 
                 # if game_ID.startswith('/'):
                 #     game_ID = game_ID[1:]
                 if self.infer_split:
                     os.makedirs(
-                        os.path.join(self.cfg.work_dir, self.output_folder, game_ID),
+                        os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, game_ID),
                         exist_ok=True,
                     )
                     output_file = os.path.join(
-                        self.cfg.work_dir,
+                        self.cfg.SYSTEM.work_dir,
                         self.output_folder,
                         game_ID,
                         "results_spotting.json",
                     )
                 else:
                     output_file = os.path.join(
-                        self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                     )
                 with open(output_file, "w") as output_file:
                     json.dump(json_data, output_file, indent=4)
@@ -310,9 +310,9 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 for l in range(self.trainer.predict_dataloaders.dataset.num_classes):
                     spots = get_spot(
                         timestamp_long[:, l],
-                        window=self.cfg.model.post_proc.NMS_window
-                        * self.cfg.model.backbone.framerate,
-                        thresh=self.cfg.model.post_proc.NMS_threshold,
+                        window=self.cfg.MODEL.post_proc.NMS_window
+                        * self.cfg.MODEL.backbone.framerate,
+                        thresh=self.cfg.MODEL.post_proc.NMS_threshold,
                     )
                     for spot in spots:
                         frame_index = int(spot[0])
@@ -321,7 +321,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                         if confidence < self.confidence_threshold:
                             continue
 
-                        json_data["predictions"].append(
+                        json_data["data"][0]["events"].append(
                             get_prediction_data(
                                 False,
                                 frame_index,
@@ -334,26 +334,26 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                             )
                         )
 
-                json_data["predictions"] = sorted(
-                    json_data["predictions"], key=lambda x: int(x["position"])
+                json_data["data"][0]["events"] = sorted(
+                    json_data["data"][0]["events"], key=lambda x: int(x["position"])
                 )
 
                 # if video.startswith('/'):
                 #     video = video[1:]
                 if self.infer_split:
                     os.makedirs(
-                        os.path.join(self.cfg.work_dir, self.output_folder, video),
+                        os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, video),
                         exist_ok=True,
                     )
                     output_file = os.path.join(
-                        self.cfg.work_dir,
+                        self.cfg.SYSTEM.work_dir,
                         self.output_folder,
                         video,
                         "results_spotting.json",
                     )
                 else:
                     output_file = os.path.join(
-                        self.cfg.work_dir, f"{self.cfg.dataset.test.results}.json"
+                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
                     )
                 with open(output_file, "w") as output_file:
                     json.dump(json_data, output_file, indent=4)

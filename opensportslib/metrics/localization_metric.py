@@ -880,7 +880,7 @@ def label2vector(
 
         else:
             time = annotation["gameTime"]
-
+            print(time)
             minutes = int(time[-5:-3])
             seconds = int(time[-2::])
             # annotation at millisecond precision
