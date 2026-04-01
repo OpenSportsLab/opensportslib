@@ -109,8 +109,8 @@ MODEL:
 
 TRAIN:
   type: trainer_pooling
-  max_epochs: 1000
-  evaluation_frequency: 1000
+  max_epochs: 200
+  evaluation_frequency: 200
   framerate: 2
   batch_size: 256
 

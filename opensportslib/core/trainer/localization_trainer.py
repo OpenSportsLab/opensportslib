@@ -160,10 +160,17 @@ class Trainer_pl(Trainer):
     def __init__(self, cfg, work_dir):
         from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
         import pytorch_lightning as pl
+        from pytorch_lightning.loggers import WandbLogger
+        import wandb
+
+        wandb_logger = None
+        if wandb.run is not None:  # means init_wandb already ran
+            wandb_logger = WandbLogger(experiment=wandb.run)
 
         self.work_dir = work_dir
         call = MyCallback()
         self.trainer = pl.Trainer(
+            logger=wandb_logger,
             max_epochs=cfg.TRAIN.max_epochs,
             devices=cfg.SYSTEM.GPU,
             callbacks=[call, CustomProgressBar(refresh_rate=1)],
@@ -815,7 +822,6 @@ class Evaluator:
 
             # ---------------- GT ----------------
             if gt_is_v2:
-                print("Game: ", game)
                 video_path = game["inputs"][0]["path"]
                 labels = [{"label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
