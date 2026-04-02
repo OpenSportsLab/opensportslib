@@ -184,16 +184,25 @@ def load_checkpoint(
     model_keys = list(model.state_dict().keys())
     ckpt_keys  = list(state_dict.keys())
 
-    ckpt_has_module  = ckpt_keys[0].startswith("module.")
-    model_has_module = model_keys[0].startswith("module.")
+    # ckpt_has_module  = ckpt_keys[0].startswith("module.")
+    # model_has_module = model_keys[0].startswith("module.")
 
-    # Case 1: checkpoint has module., model doesn't
-    if ckpt_has_module and not model_has_module:
-        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+    # # Case 1: checkpoint has module., model doesn't
+    # if ckpt_has_module and not model_has_module:
+    #     state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
 
-    # Case 2: checkpoint doesn't have module., model does
-    elif not ckpt_has_module and model_has_module:
-        state_dict = {f"module.{k}": v for k, v in state_dict.items()}
+    # # Case 2: checkpoint doesn't have module., model does
+    # elif not ckpt_has_module and model_has_module:
+    #     state_dict = {f"module.{k}": v for k, v in state_dict.items()}
+
+    def strip_prefix(state_dict, prefix):
+        return {
+            k[len(prefix):] if k.startswith(prefix) else k: v
+            for k, v in state_dict.items()
+        }
+
+    state_dict = strip_prefix(state_dict, "module.")
+    state_dict = strip_prefix(state_dict, "model.")
 
     # Optional custom remap
     if key_remap_fn:

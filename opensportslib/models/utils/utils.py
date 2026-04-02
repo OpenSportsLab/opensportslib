@@ -275,7 +275,7 @@ def predictions2json_runnerjson(
 
         confidence = predictions_video[frame_index, class_index]
 
-        json_data["predictions"].append(
+        json_data["data"][0]["events"].append(
             get_prediction_data(
                 True,
                 frame_index,

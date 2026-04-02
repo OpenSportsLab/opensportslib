@@ -42,6 +42,7 @@ import tqdm
 import numpy as np
 from opensportslib.core.utils.config import load_gz_json, load_json
 from abc import ABC, abstractmethod
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -159,9 +160,9 @@ class Trainer_pl(Trainer):
 
     def __init__(self, cfg, work_dir):
         from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        from pytorch_lightning.callbacks import ModelCheckpoint
         import pytorch_lightning as pl
         from pytorch_lightning.loggers import WandbLogger
-        import wandb
 
         wandb_logger = None
         if wandb.run is not None:  # means init_wandb already ran
@@ -169,11 +170,19 @@ class Trainer_pl(Trainer):
 
         self.work_dir = work_dir
         call = MyCallback()
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=self.work_dir,
+            filename="best",
+            monitor=getattr(cfg.TRAIN, 'monitor', 'valid_loss'),   # or your metric
+            mode=getattr(cfg.TRAIN, 'mode', 'min'),
+            save_top_k=1,
+        )
         self.trainer = pl.Trainer(
             logger=wandb_logger,
-            max_epochs=cfg.TRAIN.max_epochs,
-            devices=cfg.SYSTEM.GPU,
-            callbacks=[call, CustomProgressBar(refresh_rate=1)],
+            max_epochs=getattr(cfg.TRAIN, 'max_epochs', 200),
+            devices="auto",
+            accelerator="auto",
+            callbacks=[call, CustomProgressBar(refresh_rate=1), checkpoint_callback],
             num_sanity_val_steps=0,
         )
         self.best_checkpoint_path = None
@@ -181,16 +190,27 @@ class Trainer_pl(Trainer):
     def train(self, **kwargs):
         self.trainer.fit(**kwargs)
 
-        best_model = kwargs["model"].best_state
+        # best_model = kwargs["model"].best_state
 
-        logging.info("Done training")
-        logging.info("Best epoch: {}".format(best_model.get("epoch")))
-        best_path = os.path.join(self.work_dir, "model.pth.tar")
-        self.best_checkpoint_path = best_path
-        torch.save(best_model, best_path)
+        # logging.info("Done training")
+        # logging.info("Best epoch: {}".format(best_model.get("epoch")))
+        # best_path = os.path.join(self.work_dir, "model.pth.tar")
+        # self.best_checkpoint_path = best_path
+        # torch.save(best_model, best_path)
 
-        logging.info("Model saved")
-        logging.info(best_path)
+        # logging.info("Model saved")
+        # logging.info(best_path)
+
+        self.best_checkpoint_path = self.trainer.checkpoint_callback.best_model_path
+
+        from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
+        @rank_zero_only
+        def log():
+            logging.info("Done training")
+            logging.info(f"Best model saved at: {self.best_checkpoint_path}")
+
+        log()
 
 
 class Trainer_e2e(Trainer):
@@ -538,12 +558,19 @@ class Inferer:
         # Run Inference on Dataset
         from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
         import pytorch_lightning as pl
+        from pytorch_lightning.loggers import WandbLogger
+
+        wandb_logger = None
+        if wandb.run is not None:  # means init_wandb already ran
+            wandb_logger = WandbLogger(experiment=wandb.run)
 
         if cfg.SYSTEM.work_dir is not None and dataloader is not None:
             
             evaluator = pl.Trainer(
+                logger=wandb_logger,
                 callbacks=[CustomProgressBar()],
-                devices=cfg.SYSTEM.GPU,
+                devices=1,
+                accelerator="auto",
                 num_sanity_val_steps=0,
             )
             evaluator.predict(model, dataloader)
@@ -777,7 +804,6 @@ class Evaluator:
 
         # detect v2 prediction
         pred_is_v2 = isinstance(pred_data, dict) and pred_data is not None and "data" in pred_data
-        print("PRED V2 :", pred_is_v2)
         # --------------------------------------------------
         # CLASSES
         # --------------------------------------------------
@@ -1054,10 +1080,13 @@ class Evaluator:
                 "{:0.2f}".format(results["a_mAP_unshown"] * 100),
             )
         )
-
+        header = ["", "Any", "Visible", "Unseen"]
+        result = tabulate(rows, headers=header)
+        from opensportslib.core.utils.wandb import log_table_wandb
+        log_table_wandb(name=f"Final Scores (Metric : {metric})", rows=rows, headers=header)
         logging.info("Best Performance at end of training ")
         logging.info("Metric: " + metric)
-        print(tabulate(rows, headers=["", "Any", "Visible", "Unseen"]))
+        logging.info("\n" + result)
         # logging.info("a_mAP visibility all: " +  str(results["a_mAP"]))
         # logging.info("a_mAP visibility all per class: " +  str( results["a_mAP_per_class"]))
 

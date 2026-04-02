@@ -26,7 +26,7 @@ class ContextAwareLoss(torch.nn.Module):
 
         super(ContextAwareLoss, self).__init__()
 
-        self.K = torch.FloatTensor(K * framerate).cuda()
+        self.K = torch.FloatTensor(K * framerate)
         self.hit_radius = float(hit_radius)
         self.miss_radius = float(miss_radius)
 
@@ -40,7 +40,7 @@ class ContextAwareLoss(torch.nn.Module):
         Returns:
             torch.Tensor: The returned loss.
         """
-        K = self.K
+        K = self.K.to(output.device)
         hit_radius = self.hit_radius
         miss_radius = self.miss_radius
 
