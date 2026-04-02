@@ -249,10 +249,10 @@ class LiteContextAwareModel(LiteBaseModel):
                     self.json_data = json_data
             elif self.runner == "runner_JSON":
                 list_videos = self.trainer.predict_dataloaders.dataset.data_json[0][
-                    "videos"
+                    "data"
                 ]
                 for index in np.arange(len(list_videos)):
-                    video = list_videos[index]["path"]
+                    video = list_videos[index]["inputs"][0]["path"]
 
                     if self.infer_split:
                         video = os.path.splitext(video)[0]

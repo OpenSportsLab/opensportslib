@@ -3,7 +3,7 @@ TASK: localization
 dali: True
 
 DATA:
-  dataset_name: SoccerNet
+  dataset_name: SoccerNet-Ball-Action-Spotting
   data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
   classes:
     - PASS
