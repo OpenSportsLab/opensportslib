@@ -7,7 +7,7 @@ OpenSportsLib is a deep learning–based backend toolkit for advanced sports vid
 From action recognition and temporal event spotting to retrieval and automatic captioning, OpenSportsLib offers a unified framework for developing scalable sports video intelligence systems.
 
 
-![Main GUI Screenshot](assets/soccer.jpg)
+![Main GUI Screenshot](assets/osl.jpg)
 
 **Features**
 
@@ -36,16 +36,16 @@ From action recognition and temporal event spotting to retrieval and automatic c
 - [Training & Inference](tni/tni.md)
 - [API Reference](api/api.md)
 
+
 ## License
 
 This project offers two licensing options to suit different needs:
 
-- **GPL-3.0 License**:  
-  This open-source license is intended for students, researchers, and the community. It supports open collaboration and sharing under the terms of the GNU General Public License v3.0.  
-  See the [`LICENSE.txt`](license.txt) file for full details.
+- **AGPL-3.0 License**:  
+  This open-source license is intended for students, researchers, and the community. It supports open collaboration and sharing under the terms of the GNU Affero General Public License v3.0  
 
 - **Commercial License**:  
-  Designed for commercial use, this option allows integration of the software into proprietary products and services without the open-source obligations of GPL-3.0.  
+  Designed for commercial use, this option allows integration of the software into proprietary products and services without the open-source obligations of AGPL-3.0.  
   For commercial deployment, please contact the project maintainers to obtain a commercial license.
 
 **Contact:** OpenSportsLab / project maintainers

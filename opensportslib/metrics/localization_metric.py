@@ -880,9 +880,9 @@ def label2vector(
 
         else:
             time = annotation["gameTime"]
-
-            minutes = int(time[-5:-3])
-            seconds = int(time[-2::])
+            if time is not None:
+                minutes = int(time[-5:-3])
+                seconds = int(time[-2::])
             # annotation at millisecond precision
             if "position" in annotation:
                 frame = int(framerate * (int(annotation["position"]) / 1000))
@@ -931,7 +931,7 @@ def predictions2vector(
 
         event = annotation["label"]
 
-        if "frame" in annotation:
+        if "frame" in annotation and annotation["frame"] is not None:
             frame = int(annotation["frame"])
         else:
             time = int(annotation["position"])

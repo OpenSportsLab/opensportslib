@@ -1,0 +1,169 @@
+TASK: localization
+
+dali: false
+
+DATA:
+  dataset_name: SoccerNet
+  data_dir: /home/vorajv/opensportslib/SoccerNet/
+  classes:
+    - Penalty
+    - Kick-off
+    - Goal
+    - Substitution
+    - Offside
+    - Shots on target
+    - Shots off target
+    - Clearance
+    - Ball out of play
+    - Throw-in
+    - Foul
+    - Indirect free-kick
+    - Direct free-kick
+    - Corner
+    - Yellow card
+    - Red card
+    - Yellow->red card
+    
+  epoch_num_frames: 500000
+  mixup: true
+  modality: rgb
+  crop_dim: -1
+  dilate_len: 0        # Dilate ground truth labels
+  clip_len: 100
+  input_fps: 25
+  extract_fps: 2
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+  target_height: 224
+  target_width: 398
+
+  train:
+    type: FeatureClipChunksfromJson
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}
+    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
+    framerate: 2
+    chunk_size: 120
+    receptive_field: 40
+    chunks_per_epoch: 6000
+    dataloader:
+      batch_size: 256
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+
+  valid:
+    type: FeatureClipChunksfromJson
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}
+    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
+    framerate: 2
+    chunk_size: 120
+    receptive_field: 40
+    chunks_per_epoch: 6000
+    dataloader:
+      batch_size: 256
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+
+  test:
+    type: FeatureVideosChunksfromJson
+    classes: ${DATA.classes}
+    output_map: [data, label]
+    video_path: ${DATA.data_dir}
+    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
+    results: results_spotting_test_calf_resnetpca512
+    framerate: 2
+    chunk_size: 120
+    receptive_field: 40
+    chunks_per_epoch: 6000
+    metric: loose
+    dataloader:
+      batch_size: 1
+      shuffle: false
+      num_workers: 1
+      pin_memory: true
+
+MODEL:
+    type: ContextAware
+    runner:
+      type: runner_JSON
+    backbone:
+      type: PreExtactedFeatures
+      encoder: ResNET_TF2_PCA512
+      feature_dim: 512
+      output_dim: 512
+      framerate: 2
+    neck:
+      type: CNN++
+      input_size: 512
+      num_classes: 17
+      chunk_size: 120
+      dim_capsule: 16
+      receptive_field: 40
+      num_detections: 15
+      framerate: 2
+    head:
+      type: SpottingCALF
+      dim_capsule: 16
+      num_detections: 15
+      chunk_size: 120
+      num_classes: 17
+    load_weights: null
+
+TRAIN:
+  type: trainer_CALF
+  max_epochs: 200
+  evaluation_frequency: 200
+  framerate: 2
+  batch_size: 32
+  monitor: valid_loss
+  mode: min
+
+  criterion:
+    type: Combined2x
+    w_1: 0.000367
+    loss_1:
+      type: ContextAwareLoss
+      K: [[-100, -98, -20, -40, -96, -5, -8, -93, -99, -31, -75, -10, -97, -75, -20, -84, -18], 
+            [-50, -49, -10, -20, -48, -3, -4, -46, -50, -15, -37, -5, -49, -38, -10, -42, -9], 
+            [50, 49, 60, 10, 48, 3, 4, 46, 50, 15, 37, 5, 49, 38, 10, 42, 9], 
+            [100, 98, 90, 20, 96, 5, 8, 93, 99, 31, 75, 10, 97, 75, 20, 84, 18]]
+      framerate: 2
+      hit_radius: 0.1
+      miss_radius: 0.9
+    w_2: 1.0
+    loss_2:
+      type: SpottingLoss
+      lambda_coord: 5.0
+      lambda_noobj: 0.5
+
+  optimizer:
+    type: Adam
+    lr: 0.001
+    betas: [0.9, 0.999]
+    eps: 1e-07
+    weight_decay: 0
+    amsgrad: false
+
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    factor: 1e-03
+    min_lr: 1e-06
+    patience: 25
+    verbose: true
+
+
+SYSTEM:
+  log_dir: ./logs
+  save_dir: ./checkpoints
+  work_dir: ${SYSTEM.save_dir}
+  seed: 42
+  GPU: 4        # number of gpus to use
+  device: cuda   # auto | cuda | cpu
+  gpu_id: 0      # device id for single gpu training
+

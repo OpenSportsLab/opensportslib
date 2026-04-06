@@ -42,6 +42,7 @@ import tqdm
 import numpy as np
 from opensportslib.core.utils.config import load_gz_json, load_json
 from abc import ABC, abstractmethod
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,9 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
             trainer.best_criterion_valid = checkpoint.get('best_criterion_valid', 
                 0 if cfg.TRAIN.criterion_valid == "map" else float("inf"))
             logging.info(f"Restored best epoch: {trainer.best_epoch}")
+    
+    else:
+        trainer = Trainer_pl(cfg, default_args["work_dir"])
             
 
     return trainer
@@ -147,6 +151,66 @@ class Trainer(ABC):
     def train(self):
         pass
 
+class Trainer_pl(Trainer):
+    """Trainer class used for models that rely on lightning modules.
+
+    Args:
+        cfg (dict): Dict config. It should contain the key 'max_epochs' and the key 'GPU'.
+    """
+
+    def __init__(self, cfg, work_dir):
+        from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        from pytorch_lightning.callbacks import ModelCheckpoint
+        import pytorch_lightning as pl
+        from pytorch_lightning.loggers import WandbLogger
+
+        wandb_logger = None
+        if wandb.run is not None:  # means init_wandb already ran
+            wandb_logger = WandbLogger(experiment=wandb.run)
+
+        self.work_dir = work_dir
+        call = MyCallback()
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=self.work_dir,
+            filename="best",
+            monitor=getattr(cfg.TRAIN, 'monitor', 'valid_loss'),   # or your metric
+            mode=getattr(cfg.TRAIN, 'mode', 'min'),
+            save_top_k=1,
+        )
+        self.trainer = pl.Trainer(
+            logger=wandb_logger,
+            max_epochs=getattr(cfg.TRAIN, 'max_epochs', 200),
+            devices="auto",
+            accelerator="auto",
+            callbacks=[call, CustomProgressBar(refresh_rate=1), checkpoint_callback],
+            num_sanity_val_steps=0,
+        )
+        self.best_checkpoint_path = None
+
+    def train(self, **kwargs):
+        self.trainer.fit(**kwargs)
+
+        # best_model = kwargs["model"].best_state
+
+        # logging.info("Done training")
+        # logging.info("Best epoch: {}".format(best_model.get("epoch")))
+        # best_path = os.path.join(self.work_dir, "model.pth.tar")
+        # self.best_checkpoint_path = best_path
+        # torch.save(best_model, best_path)
+
+        # logging.info("Model saved")
+        # logging.info(best_path)
+
+        self.best_checkpoint_path = self.trainer.checkpoint_callback.best_model_path
+
+        from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
+        @rank_zero_only
+        def log():
+            logging.info("Done training")
+            logging.info(f"Best model saved at: {self.best_checkpoint_path}")
+
+        log()
 
 
 class Trainer_e2e(Trainer):
@@ -462,24 +526,25 @@ class Inferer:
         self.model = model
         self.infer_Spotting=infer_Spotting
 
-    def infer(self, cfg, data):
+    def infer(self, cfg, data, dataloader=None):
         """Infer actions from data.
 
         Args:
             data : The data from which we will infer.
+            dataloader : The dataloader for the test data.
 
         Returns:
             Dict containing predictions
         """
         if self.infer_Spotting=="infer_JSON":
-            return self.infer_JSON(cfg, self.model, data)
+            return self.infer_JSON(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_SN":    
-            return self.infer_SN(cfg, self.model, data)
+            return self.infer_SN(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_E2E":
-            return self.infer_E2E(cfg, self.model, data)
+            return self.infer_E2E(cfg, self.model, data, dataloader)
 
 
-    def infer_common(self, cfg, model, data):
+    def infer_common(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model.
 
         Args:
@@ -491,10 +556,28 @@ class Inferer:
             Dict containing predictions
         """
         # Run Inference on Dataset
-        pass
+        from opensportslib.core.utils.lightning import CustomProgressBar, MyCallback
+        import pytorch_lightning as pl
+        from pytorch_lightning.loggers import WandbLogger
+
+        wandb_logger = None
+        if wandb.run is not None:  # means init_wandb already ran
+            wandb_logger = WandbLogger(experiment=wandb.run)
+
+        if cfg.SYSTEM.work_dir is not None and dataloader is not None:
+            
+            evaluator = pl.Trainer(
+                logger=wandb_logger,
+                callbacks=[CustomProgressBar()],
+                devices=1,
+                accelerator="auto",
+                num_sanity_val_steps=0,
+            )
+            evaluator.predict(model, dataloader)
+            return model.json_data
 
 
-    def infer_JSON(self, cfg, model, data):
+    def infer_JSON(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for NetVlad/CALF methods
 
         Args:
@@ -505,10 +588,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_SN(self, cfg, model, data):
+    def infer_SN(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the SNV2 data
 
         Args:
@@ -519,10 +602,10 @@ class Inferer:
         Returns:
             Dict containing predictions
         """
-        return self.infer_common(cfg, model, data)
+        return self.infer_common(cfg, model, data, dataloader)
 
 
-    def infer_E2E(self, cfg, model, data):
+    def infer_E2E(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model for the e2espot method.
 
         Args:
@@ -701,7 +784,6 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
-
         if cfg.path is None:
             return
 
@@ -769,7 +851,7 @@ class Evaluator:
                 video_path = game["inputs"][0]["path"]
                 labels = [{"label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                           } for e in game.get("events", [])]
             else:
                 video_path = game["path"]
@@ -791,7 +873,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
@@ -825,7 +907,7 @@ class Evaluator:
                            "label": e.get("label"),  
                            "gameTime": e.get("gameTime"),
                            "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms")),
+                           "position": int(e.get("position_ms", e.get("position"))),
                            "frame": e.get("frame")
                         }
                         for e in item.get("events", [])
@@ -963,7 +1045,8 @@ class Evaluator:
         Returns
             The different mAPs computed.
         """
-
+        from SoccerNet.Evaluation.utils import INVERSE_EVENT_DICTIONARY_V2
+        from SoccerNet.Evaluation.ActionSpotting import evaluate
         # challenge sets to be tested on EvalAI
         if "challenge" in cfg.split:
             print("Visit eval.ai to evaluate performances on Challenge set")
@@ -997,10 +1080,13 @@ class Evaluator:
                 "{:0.2f}".format(results["a_mAP_unshown"] * 100),
             )
         )
-
+        header = ["", "Any", "Visible", "Unseen"]
+        result = tabulate(rows, headers=header)
+        from opensportslib.core.utils.wandb import log_table_wandb
+        log_table_wandb(name=f"Final Scores (Metric : {metric})", rows=rows, headers=header)
         logging.info("Best Performance at end of training ")
         logging.info("Metric: " + metric)
-        print(tabulate(rows, headers=["", "Any", "Visible", "Unseen"]))
+        logging.info("\n" + result)
         # logging.info("a_mAP visibility all: " +  str(results["a_mAP"]))
         # logging.info("a_mAP visibility all per class: " +  str( results["a_mAP_per_class"]))
 
