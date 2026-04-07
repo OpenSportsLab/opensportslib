@@ -4,6 +4,9 @@ import numpy as np
 import logging
 import os
 
+def _wandb_ready():
+    return getattr(wandb, "run", None) is not None
+
 def init_wandb(cfg, run_id, use_wandb=False):
     """
     Initialize Weights & Biases if enabled.
@@ -59,7 +62,7 @@ def log_table_wandb(name, rows, headers):
         rows (list[list]): Table rows.
         headers (list[str]): Column headers.
     """
-    if wandb.run is None:
+    if not _wandb_ready():
         return
 
     table = wandb.Table(columns=headers)
@@ -70,6 +73,8 @@ def log_table_wandb(name, rows, headers):
     wandb.log({name: table})
 
 def log_attention_wandb(attention, split_name):
+    if not _wandb_ready():
+        return
 
     attn = attention.detach().cpu().numpy()
 
@@ -87,6 +92,8 @@ def log_attention_wandb(attention, split_name):
 
 
 def log_sample_videos_wandb(mvclips, preds, labels, split_name, max_samples=2, fps=5):
+    if not _wandb_ready():
+        return
 
 
     # mvclips: (B, V, C, T, H, W)
@@ -110,6 +117,8 @@ def log_sample_videos_wandb(mvclips, preds, labels, split_name, max_samples=2, f
 
 
 def log_confusion_matrix_wandb(y_true, y_pred, class_names, split_name):
+    if not _wandb_ready():
+        return
     wandb.log({
         f"{split_name}/confusion_matrix": wandb.plot.confusion_matrix(
             probs=None,

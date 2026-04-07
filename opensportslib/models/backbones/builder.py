@@ -32,9 +32,18 @@ import torch
 import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
 
 from opensportslib.models.utils.shift import make_temporal_shift
+
+
+def _use_pretrained_weights(default=True):
+    """Control pretrained backbone loading from env for offline/local runs."""
+    flag = os.environ.get("OSL_PRETRAINED_WEIGHTS", "1").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
 
 
 def build_backbone(cfg, default_args=None):
@@ -160,7 +169,10 @@ class ConvNextTinyExtractFeatures(BaseExtractFeatures):
     def __init__(self, feature_arch, clip_len, is_rgb, in_channels):
         super().__init__()
         import timm
-        features = timm.create_model("convnext_tiny", pretrained=is_rgb)
+        features = timm.create_model(
+            "convnext_tiny",
+            pretrained=_use_pretrained_weights(is_rgb)
+        )
         feat_dim = features.head.fc.in_features
         features.head.fc = nn.Identity()
 
@@ -195,7 +207,7 @@ class RegnetyExtractFeatures(BaseExtractFeatures):
                 "rny002": "regnety_002",
                 "rny008": "regnety_008",
             }[feature_arch.rsplit("_", 1)[0]],
-            pretrained=is_rgb,
+            pretrained=_use_pretrained_weights(is_rgb),
         )
         feat_dim = features.head.fc.in_features
         features.head.fc = nn.Identity()
@@ -233,7 +245,9 @@ class ResnetExtractFeatures(nn.Module):
         super().__init__()
 
         resnet_name = feature_arch.split("_")[0].replace("rn", "resnet")
-        features = getattr(torchvision.models, resnet_name)(pretrained=is_rgb)
+        features = getattr(torchvision.models, resnet_name)(
+            pretrained=_use_pretrained_weights(is_rgb)
+        )
         feat_dim = features.fc.in_features
         features.fc = nn.Identity()
         # import torchsummary
@@ -297,24 +311,25 @@ class TorchvisionVideoExtractFeatures(nn.Module):
 
         self.name = name
         print("Building Torchvision Video Backbone:", name)
+        use_pretrained = _use_pretrained_weights(True)
         if name == "r3d_18":
-            weights = R3D_18_Weights.DEFAULT
+            weights = R3D_18_Weights.DEFAULT if use_pretrained else None
             model = r3d_18(weights=weights)
             self.feat_dim = 512
         elif name == "mc3_18":
-            weights = MC3_18_Weights.DEFAULT
+            weights = MC3_18_Weights.DEFAULT if use_pretrained else None
             model = mc3_18(weights=weights)
             self.feat_dim = 512
         elif name == "r2plus1d_18":
-            weights = R2Plus1D_18_Weights.DEFAULT
+            weights = R2Plus1D_18_Weights.DEFAULT if use_pretrained else None
             model = r2plus1d_18(weights=weights)
             self.feat_dim = 512
         elif name == "s3d":
-            weights = S3D_Weights.DEFAULT
+            weights = S3D_Weights.DEFAULT if use_pretrained else None
             model = s3d(weights=weights)
             self.feat_dim = 400
         elif name == "mvit_v2_s":
-            weights = MViT_V2_S_Weights.DEFAULT
+            weights = MViT_V2_S_Weights.DEFAULT if use_pretrained else None
             model = mvit_v2_s(weights=weights)
             self.feat_dim = 400
         else:
@@ -587,4 +602,3 @@ class VideoBackbone(nn.Module):
                 x_vid = x.permute(0, 4, 1, 2, 3)             # (B, C, T, H, W)
                 feat = self.model.extract_features(pixel_values=x_vid)  # (B, hidden_dim)
                 return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
-
