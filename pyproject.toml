@@ -15,6 +15,7 @@ name = "Jeet Vora"
 [project.optional-dependencies]
 localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate", "pytorch-lightning",]
 py-geometric = [ "torch-geometric", "torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv",]
+test = [ "pytest", "pytest-cov", ]
 
 [tool.setuptools.package-data]
 opensportslib = [ "opensportslib/config/*.yaml",]
