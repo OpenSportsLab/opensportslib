@@ -26,7 +26,22 @@ def dict_to_namespace(d, skip_keys=("classes",)):
         return d
 
 def namespace_to_dict(ns):
-    return {k: vars(v) if hasattr(v, "__dict__") else v for k, v in vars(ns).items()}
+    """
+    Recursively convert namespace/dict/list containers into plain Python types.
+    """
+    if ns is None or isinstance(ns, (str, int, float, bool)):
+        return ns
+
+    if isinstance(ns, dict):
+        return {str(k): namespace_to_dict(v) for k, v in ns.items()}
+
+    if isinstance(ns, (list, tuple, set)):
+        return [namespace_to_dict(v) for v in ns]
+
+    if hasattr(ns, "__dict__"):
+        return {str(k): namespace_to_dict(v) for k, v in vars(ns).items()}
+
+    return ns
 
 def namespace_to_omegaconf(ns):
     """

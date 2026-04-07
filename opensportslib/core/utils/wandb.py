@@ -3,6 +3,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 import logging
 import os
+from opensportslib.core.utils.config import namespace_to_dict
+
+
+def _flatten_config(data, parent_key="", sep="."):
+    """Flatten nested dict/list config for W&B table-friendly columns."""
+    items = {}
+
+    if isinstance(data, dict):
+        for k, v in data.items():
+            key = f"{parent_key}{sep}{k}" if parent_key else str(k)
+            items.update(_flatten_config(v, key, sep=sep))
+        return items
+
+    if isinstance(data, list):
+        for i, v in enumerate(data):
+            key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+            items.update(_flatten_config(v, key, sep=sep))
+        return items
+
+    if parent_key:
+        items[parent_key] = data
+
+    return items
+
+
+def _pick_keys(data, keys):
+    """Return a shallow dict containing only keys present in data."""
+    if not isinstance(data, dict):
+        return {}
+    return {key: data[key] for key in keys if key in data}
 
 def _wandb_ready():
     return getattr(wandb, "run", None) is not None
@@ -42,12 +72,15 @@ def init_wandb(cfg, run_id, use_wandb=False):
     else:
         run_name = f"{cfg.MODEL.backbone.type}"
 
+    config_plain = namespace_to_dict(cfg)
+    config_flat = _flatten_config(config_plain)
+
     wandb.init(
         project=cfg.TASK,
         name=run_name,
         id=run_id,
         resume="allow",
-        config=vars(cfg) if hasattr(cfg, "__dict__") else cfg,
+        config=config_flat,
     )
 
     logging.info(f"Wandb initialised")
