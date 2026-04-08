@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opensportslib"
-version = "0.1.1.dev"
+version = "0.1.1.dev.dev1"
 description = "OpenSportsLib is the professional library, designed for advanced video understanding in sports. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with sports video data."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,7 @@ name = "Jeet Vora"
 [project.optional-dependencies]
 localization = [ "nvidia-dali-cuda120", "cupy-cuda12x", "tabulate", "pytorch-lightning",]
 py-geometric = [ "torch-geometric", "torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv",]
-test = [ "pytest", "pytest-cov", ]
+test = [ "pytest", "pytest-cov",]
 
 [tool.setuptools.package-data]
 opensportslib = [ "opensportslib/config/*.yaml",]
