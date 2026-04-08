@@ -38,6 +38,23 @@ import os
 from opensportslib.models.utils.shift import make_temporal_shift
 
 
+_PYG_IMPORT_ERROR_MSG = (
+    "torch-geometric is required for graph/tracking models. "
+    "Install with: pip install \"opensportslib[py-geometric]\" "
+    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
+    "or (editable): pip install -e \".[py-geometric]\" "
+    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+)
+
+
+def _import_pyg_nn():
+    try:
+        import torch_geometric.nn as pyg_nn
+    except ImportError as exc:
+        raise ImportError(_PYG_IMPORT_ERROR_MSG) from exc
+    return pyg_nn
+
+
 def _use_pretrained_weights(default=True):
     """Control pretrained backbone loading from env for offline/local runs."""
     flag = os.environ.get("OSL_PRETRAINED_WEIGHTS", "1").strip().lower()
@@ -350,7 +367,8 @@ class GraphEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
         super().__init__()
 
-        from torch_geometric.nn import DeepGCNLayer
+        pyg_nn = _import_pyg_nn()
+        DeepGCNLayer = pyg_nn.DeepGCNLayer
         self.conv_type = conv_type
         self.feat_dim = hidden_dim
 
@@ -371,10 +389,14 @@ class GraphEncoder(nn.Module):
             self.gcn_layers.append(layer)
         
     def _build_conv_layer(self, conv_type, hidden_dim, dropout):
-        from torch_geometric.nn import (
-            GATv2Conv, EdgeConv, SAGEConv, 
-            GINConv, GENConv, GraphConv, MultiAggregation
-        )
+        pyg_nn = _import_pyg_nn()
+        GATv2Conv = pyg_nn.GATv2Conv
+        EdgeConv = pyg_nn.EdgeConv
+        SAGEConv = pyg_nn.SAGEConv
+        GINConv = pyg_nn.GINConv
+        GENConv = pyg_nn.GENConv
+        GraphConv = pyg_nn.GraphConv
+        MultiAggregation = pyg_nn.MultiAggregation
 
         if conv_type == 'graphconv':
             return GraphConv(
@@ -434,7 +456,8 @@ class GraphEncoder(nn.Module):
             raise ValueError(f"Unknown conv type: {conv_type}")
             
     def forward(self, x, edge_index, batch):
-        from torch_geometric.nn import global_mean_pool
+        pyg_nn = _import_pyg_nn()
+        global_mean_pool = pyg_nn.global_mean_pool
         
         x = self.node_encoder(x)
 
@@ -448,7 +471,8 @@ class GraphEncoder(nn.Module):
 
     def _compute_edge_dynamic(self, x, batch, k=8):
         """Compute dynamic KNN edges for EdgeConv layers."""
-        from torch_geometric.nn import knn_graph
+        pyg_nn = _import_pyg_nn()
+        knn_graph = pyg_nn.knn_graph
         edge_index = knn_graph(x, k=k, batch=batch, loop=False)
         return edge_index
 
