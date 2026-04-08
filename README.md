@@ -155,6 +155,7 @@ Generate text descriptions for sports events and temporal segments.
 Use the README for the fast start, then go deeper through:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
+- Configuration guide: https://opensportslab.github.io/opensportslib/tni/config-guide/
 - Example configs: [examples/configs/](examples/configs/)
 - Quickstart scripts: [examples/quickstart/](examples/quickstart/)
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)

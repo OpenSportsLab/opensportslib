@@ -34,6 +34,7 @@ nav:
 
   - Training & Inference:
       - Training & Inference: tni/tni.md
+      - Configuration Guide: tni/config-guide.md
 
   - API Reference:
       - API: api/api.md
