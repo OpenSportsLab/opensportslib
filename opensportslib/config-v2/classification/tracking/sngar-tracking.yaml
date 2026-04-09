@@ -1,0 +1,137 @@
+TASK: classification
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_tracking
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: sngar
+    data_dir: /home/karkid/opensportslib/tracking-dataset
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: annotations_train.json
+        annotation_path: ${DATA.common.data_dir}/train/train.json
+        source_path: ${DATA.common.data_dir}/train
+        dataloader:
+          batch_size: 32
+          shuffle: true
+          num_workers: 8
+          pin_memory: true
+      valid:
+        type: annotations_valid.json
+        annotation_path: ${DATA.common.data_dir}/valid/valid.json
+        source_path: ${DATA.common.data_dir}/valid
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+      test:
+        type: annotations_test.json
+        annotation_path: ${DATA.common.data_dir}/test/test.json
+        source_path: ${DATA.common.data_dir}/test
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+
+  inputs:
+    - modality: tracking
+      representation: raw
+      source:
+        format: parquet
+      sampling:
+        num_frames: 16
+        frame_interval: 9
+      transform:
+        normalize: true
+      augmentations:
+        vertical_flip: true
+        horizontal_flip: true
+        team_flip: true
+      params:
+        preload_data: false
+        objects:
+          num_objects: 23
+          feature_dim: 8
+          pitch_half_length: 85.0
+          pitch_half_width: 50.0
+          max_displacement: 110.0
+          max_ball_height: 30.0
+        data_slicing:
+          enabled: false
+          training_matches: 45
+
+MODEL:
+  family: custom
+  runner:
+    type: classification
+  streams:
+    tracking:
+      enabled: true
+      backbone:
+        type: graph_conv
+        encoder: gin
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+      neck:
+        type: TemporalAggregation
+        agr_type: maxpool
+        hidden_dim: 64
+        dropout: 0.1
+        use_position_encoding: true
+      preprocessor: {}
+  fusion:
+    type: none
+    params: {}
+  head:
+    type: TrackingClassifier
+    hidden_dim: 64
+    dropout: 0.1
+    num_classes: 10
+  graph:
+    edge_type: positional
+    k: 8
+    r: 15.0
+
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: Adam
+    lr: 0.001
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    patience: 10
+    factor: 0.1
+    min_lr: 1e-8
+  execution:
+    enabled: true
+    detailed_results: true
+  sampling:
+    use_weighted_sampler: true
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: loss
+    mode: min
+    patience: 10
+  checkpoint:
+    save_every: 20
+    save_best: true

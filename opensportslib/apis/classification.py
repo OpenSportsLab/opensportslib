@@ -44,9 +44,10 @@ class ClassificationAPI:
         self.config = load_config_omega(self.config_path)
 
         # let the caller override the dataset root directory.
-        self.config.DATA.data_dir = expand(
-            data_dir or self.config.DATA.data_dir
-        )
+        resolved_data_dir = expand(data_dir or self.config.DATA.data_dir)
+        self.config.DATA.data_dir = resolved_data_dir
+        if hasattr(self.config.DATA, "common"):
+            self.config.DATA.common.data_dir = resolved_data_dir
 
         # checkpoint output directory; never derived from BASE_DIR so the
         # user always has explicit control over where weights are written.

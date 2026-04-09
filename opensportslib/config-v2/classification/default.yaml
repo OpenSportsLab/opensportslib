@@ -1,0 +1,100 @@
+TASK: classification
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: dataset_name
+    data_dir: /path/to/data
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /path/to/train.json
+        source_path: /path/to/train
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        annotation_path: /path/to/valid.json
+        source_path: /path/to/valid
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+      test:
+        annotation_path: /path/to/test.json
+        source_path: /path/to/test
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+
+  inputs:
+    - modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 16
+      transform:
+        resize:
+          height: 224
+          width: 224
+      augmentations: {}
+
+MODEL:
+  family: custom
+  runner:
+    type: trainer_classification
+  streams:
+    video:
+      enabled: true
+      backbone: {}
+      neck: {}
+      preprocessor: {}
+  fusion:
+    type: none
+    params: {}
+  head: {}
+  training:
+    pretrained: null
+    load_weights: null
+    unfreeze_last_n_layers: 0
+
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 20
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+  scheduler:
+    type: StepLR
+  execution:
+    enabled: true
+    log_interval: 10
+  sampling:
+    use_weighted_sampler: false
+    use_weighted_loss: false
+  selection:
+    monitor: loss
+    mode: min
+  checkpoint:
+    save_every: 5
+    save_best: true

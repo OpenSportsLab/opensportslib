@@ -17,7 +17,10 @@ class LocalizationAPI:
         self.config_path = expand(config)
         self.config = load_config_omega(self.config_path)
         # User must control dataset folder
-        self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
+        resolved_data_dir = expand(data_dir or self.config.DATA.data_dir)
+        self.config.DATA.data_dir = resolved_data_dir
+        if hasattr(self.config.DATA, "common"):
+            self.config.DATA.common.data_dir = resolved_data_dir
         print(self.config.DATA.classes)
         # User controls model saving location (never use BASE_DIR)
 

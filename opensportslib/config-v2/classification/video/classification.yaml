@@ -1,0 +1,134 @@
+TASK: classification
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: false
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: mvfouls
+    data_dir: /home/vorajv/opensportslib/SoccerNet/mvfouls
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: annotations_train.json
+        annotation_path: ${DATA.common.data_dir}/train/annotations-train.json
+        source_path: ${DATA.common.data_dir}/train
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        type: annotations_valid.json
+        annotation_path: ${DATA.common.data_dir}/valid/annotations-valid.json
+        source_path: ${DATA.common.data_dir}/valid
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 1
+      test:
+        type: annotations_test.json
+        annotation_path: ${DATA.common.data_dir}/test/annotations-test.json
+        source_path: ${DATA.common.data_dir}/test
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 1
+
+  inputs:
+    - modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 16
+        input_fps: 25
+        target_fps: 17
+        start_frame: 63
+        end_frame: 87
+      transform:
+        resize:
+          height: 224
+          width: 224
+      augmentations:
+        random_affine: true
+        translate: [0.1, 0.1]
+        affine_scale: [0.9, 1.0]
+        random_perspective: true
+        distortion_scale: 0.3
+        perspective_prob: 0.5
+        random_rotation: true
+        rotation_degrees: 5
+        color_jitter: true
+        jitter_params: [0.2, 0.2, 0.2, 0.1]
+        random_horizontal_flip: true
+        flip_prob: 0.5
+        random_crop: false
+      params:
+        view_type: multi
+
+MODEL:
+  family: custom
+  runner:
+    type: classification
+  streams:
+    video:
+      enabled: true
+      backbone:
+        type: mvit_v2_s
+      neck:
+        type: MV_Aggregate
+        agr_type: max
+      preprocessor: {}
+  fusion:
+    type: none
+    params: {}
+  head:
+    type: MV_LinearLayer
+  training:
+    pretrained: mvit_v2_s
+    unfreeze_head: true
+    unfreeze_last_n_layers: 3
+
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 20
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+    backbone_lr: 0.00005
+    head_lr: 0.001
+    betas: [0.9, 0.999]
+    eps: 0.0000001
+    weight_decay: 0.001
+    amsgrad: false
+  scheduler:
+    type: StepLR
+    step_size: 3
+    gamma: 0.1
+  execution:
+    enabled: true
+    log_interval: 10
+  sampling:
+    use_weighted_sampler: false
+    use_weighted_loss: true
+  selection:
+    monitor: balanced_accuracy
+    mode: max
+  checkpoint:
+    save_every: 2
+    save_best: true
