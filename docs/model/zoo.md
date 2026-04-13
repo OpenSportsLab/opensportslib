@@ -16,8 +16,8 @@ Explore pretrained models built using **OpenSportsLib** for sports video underst
 
 | Model | Dataset | Classes | tight mAP | loose mAP | Link |
 |------|--------|--------|----------|----------|------|
-| E2E Localization (SNBAS 2025) | SoccerNet 2025 | 12 | 47.98 | 58.35 | https://huggingface.co/OpenSportsLab/oslib-e2e-localization-snbas-2025 |
-| E2E Localization (SNBAS 2023) | SoccerNet 2023 | 2 | 71.48 | 85.62 | https://huggingface.co/OpenSportsLab/oslib-e2e-localization-snbas-2023 |
+| E2E Localization (SNBAS 2025) | SoccerNet Ball Action Spotting 2025 | 12 | 47.98 | 58.35 | https://huggingface.co/OpenSportsLab/oslib-e2e-localization-snbas-2025 |
+| E2E Localization (SNBAS 2023) | SoccerNet Ball Action Spotting 2023 | 2 | 71.48 | 85.62 | https://huggingface.co/OpenSportsLab/oslib-e2e-localization-snbas-2023 |
 
 ---
 
