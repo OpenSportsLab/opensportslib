@@ -32,9 +32,14 @@ nav:
       - Installation: getting-started/installation.md
       - Project Structure: getting-started/project_structure.md
 
+  - Configuration Guide:
+      - Configuration: config/config-guide.md
+
+  - Model Zoo:
+      - Models: model/zoo.md
+
   - Training & Inference:
       - Training & Inference: tni/tni.md
-      - Configuration Guide: tni/config-guide.md
 
   - API Reference:
       - API: api/api.md
