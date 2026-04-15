@@ -52,7 +52,16 @@ def tracking_collate_fn(batch):
     Custom collate function for tracking data.
     Uses PyG Batch.from_data_list for efficient C++ batching.
     """
-    from torch_geometric.data import Batch
+    try:
+        from torch_geometric.data import Batch
+    except ImportError as exc:
+        raise ImportError(
+            "torch-geometric is required for tracking_collate_fn. "
+            "Install with: pip install \"opensportslib[py-geometric]\" "
+            "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
+            "or (editable): pip install -e \".[py-geometric]\" "
+            "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+        ) from exc
     
     batch_size = len(batch)
     seq_len = batch[0]['seq_len']

@@ -14,8 +14,8 @@ class LocalizationAPI:
 
         # Load config
         ### load data_dor first then do load config with omega to resolve $paths
-        config_path = expand(config)
-        self.config = load_config_omega(config_path)
+        self.config_path = expand(config)
+        self.config = load_config_omega(self.config_path)
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
         print(self.config.DATA.classes)
@@ -46,7 +46,7 @@ class LocalizationAPI:
 
         logger = logging.getLogger(__name__)
 
-        print("CONFIG PATH  :", config_path)
+        print("CONFIG PATH  :", self.config_path)
         print("DATA DIR     :", self.config.DATA.data_dir)
         print("SAVEDIR:", self.config.SYSTEM.save_dir)
         print("Classes :", self.config.DATA.classes)
@@ -76,7 +76,7 @@ class LocalizationAPI:
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
-        init_wandb(self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+        init_wandb(self.config_path, self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
         logging.info("Configuration:")
         logging.info(self.config)
         #print(self.config)
@@ -164,7 +164,7 @@ class LocalizationAPI:
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(self.config.DATA.test)
-        init_wandb(self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+        init_wandb(self.config_path, self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
         logging.info("Configuration:")
         logging.info(self.config)
         # Start Timing

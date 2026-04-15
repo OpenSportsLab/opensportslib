@@ -34,11 +34,18 @@ def check_if_should_predict(folder_name, work_dir, overwrite):
 
 def timestamp(model, feat, BS):
     """Compute the timestamps for features using a model and a batch size."""
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = None
+
     timestamp_long = []
     for b in range(int(np.ceil(len(feat) / BS))):
         start_frame = BS * b
         end_frame = BS * (b + 1) if BS * (b + 1) < len(feat) else len(feat)
-        feat_tmp = feat[start_frame:end_frame].cuda()
+        feat_tmp = feat[start_frame:end_frame]
+        if device is not None:
+            feat_tmp = feat_tmp.to(device)
         output = model(feat_tmp).cpu().detach().numpy()
         timestamp_long.append(output)
     return np.concatenate(timestamp_long)

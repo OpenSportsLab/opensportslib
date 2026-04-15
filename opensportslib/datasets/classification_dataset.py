@@ -496,7 +496,16 @@ class TrackingDataset(ClassificationDataset):
         a copy of the feature array is made before augmentation and 
         normalization so the cached data is never mutated.
         """
-        from torch_geometric.data import Data
+        try:
+            from torch_geometric.data import Data
+        except ImportError as exc:
+            raise ImportError(
+                "torch-geometric is required for tracking_parquet datasets. "
+                "Install with: pip install \"opensportslib[py-geometric]\" "
+                "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
+                "or (editable): pip install -e \".[py-geometric]\" "
+                "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+            ) from exc
 
         from opensportslib.datasets.utils.tracking import normalize_features
         
@@ -533,7 +542,16 @@ class TrackingDataset(ClassificationDataset):
 
     def _getitem_on_the_fly(self, idx):
         """load, parse, and process a single sample from disk."""
-        from torch_geometric.data import Data
+        try:
+            from torch_geometric.data import Data
+        except ImportError as exc:
+            raise ImportError(
+                "torch-geometric is required for tracking_parquet datasets. "
+                "Install with: pip install \"opensportslib[py-geometric]\" "
+                "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
+                "or (editable): pip install -e \".[py-geometric]\" "
+                "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+            ) from exc
         
         from opensportslib.datasets.utils.tracking import (
             compute_deltas,
