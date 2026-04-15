@@ -30,6 +30,7 @@ def get_cpu_tag():
 
 def install_torch():
     python = sys.executable
+    subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
     for cuda in CUDA_SUPPORT:
 
         print(f"\n Trying installation: {cuda}\n")
