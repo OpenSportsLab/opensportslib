@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch_geometric.nn import global_mean_pool
 
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck

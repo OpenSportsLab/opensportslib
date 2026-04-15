@@ -403,15 +403,16 @@ class Trainer_e2e(Trainer):
             )
 
             # ---------------- W&B LOG ----------------
-            wandb.log({
-                "epoch": epoch + 1,
-                "train/loss": train_loss,
-                "valid/loss": valid_loss,
-                "valid/mAP": valid_mAP,
-                "lr": self.optimizer.param_groups[0]["lr"],
-                "best/mAP": self.best_criterion_valid if self.criterion_valid == "map" else None,
-                "best/loss": self.best_criterion_valid if self.criterion_valid == "loss" else None,
-            })
+            if wandb.run is not None:
+                wandb.log({
+                    "epoch": epoch + 1,
+                    "train/loss": train_loss,
+                    "valid/loss": valid_loss,
+                    "valid/mAP": valid_mAP,
+                    "lr": self.optimizer.param_groups[0]["lr"],
+                    "best/mAP": self.best_criterion_valid if self.criterion_valid == "map" else None,
+                    "best/loss": self.best_criterion_valid if self.criterion_valid == "loss" else None,
+                })
 
             if self.save_dir is not None:
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -630,9 +631,10 @@ class Inferer:
                 cfg.DATA.test.dataloader,
                 return_pred=False,
             )
-            wandb.log({
-                "test/Avg_mAP": mAP,
-            })
+            if wandb.run is not None:
+                wandb.log({
+                    "test/Avg_mAP": mAP,
+                })
             pred_json_file = os.path.join(pred_file + ".json")
             pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
             logging.info("Predictions saved")
@@ -1091,5 +1093,4 @@ class Evaluator:
         # logging.info("a_mAP visibility all per class: " +  str( results["a_mAP_per_class"]))
 
         return results
-
 

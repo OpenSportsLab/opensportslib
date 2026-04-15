@@ -40,8 +40,8 @@ class ClassificationAPI:
         if config is None:
             raise ValueError("config path is required")
 
-        config_path = expand(config)
-        self.config = load_config_omega(config_path)
+        self.config_path = expand(config)
+        self.config = load_config_omega(self.config_path)
 
         # let the caller override the dataset root directory.
         self.config.DATA.data_dir = expand(
@@ -88,6 +88,7 @@ class ClassificationAPI:
         rank, 
         world_size, 
         mode, 
+        config_path,
         config,
         return_queue=None, 
         train_set=None, 
@@ -134,7 +135,7 @@ class ClassificationAPI:
             logging.getLogger().setLevel(logging.ERROR)
 
         if rank == 0:
-            init_wandb(config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+            init_wandb(config_path, config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
 
         # reproducibility: 
         # we default to reproducible training, but allow the user to
@@ -242,7 +243,7 @@ class ClassificationAPI:
             mp.spawn(
                 ClassificationAPI._worker_ddp,
                 args=(
-                    world_size, "train", self.config, queue, 
+                    world_size, "train", self.config_path, self.config, queue, 
                     train_set, valid_set, None, pretrained, use_wandb
                 ),
                 nprocs=world_size,
@@ -253,6 +254,7 @@ class ClassificationAPI:
                 rank=0,
                 world_size=1,
                 mode="train",
+                config_path=self.config_path,
                 config=self.config,
                 return_queue=queue,
                 train_set=train_set,
@@ -321,7 +323,7 @@ class ClassificationAPI:
                 mp.spawn(
                     ClassificationAPI._worker_ddp,
                     args=(
-                        world_size, "infer", self.config, queue, 
+                        world_size, "infer",self.config_path, self.config, queue, 
                         None, None, test_set, pretrained, use_wandb
                     ),
                     nprocs=world_size,
@@ -331,6 +333,7 @@ class ClassificationAPI:
                     rank=0,
                     world_size=1,
                     mode="infer",
+                    config_path=self.config_path,
                     config=self.config,
                     return_queue=queue,
                     test_set=test_set,

@@ -32,9 +32,35 @@ import torch
 import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
 
 from opensportslib.models.utils.shift import make_temporal_shift
+
+
+_PYG_IMPORT_ERROR_MSG = (
+    "torch-geometric is required for graph/tracking models. "
+    "Install with: pip install \"opensportslib[py-geometric]\" "
+    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
+    "or (editable): pip install -e \".[py-geometric]\" "
+    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+)
+
+
+def _import_pyg_nn():
+    try:
+        import torch_geometric.nn as pyg_nn
+    except ImportError as exc:
+        raise ImportError(_PYG_IMPORT_ERROR_MSG) from exc
+    return pyg_nn
+
+
+def _use_pretrained_weights(default=True):
+    """Control pretrained backbone loading from env for offline/local runs."""
+    flag = os.environ.get("OSL_PRETRAINED_WEIGHTS", "1").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
 
 
 def build_backbone(cfg, default_args=None):
@@ -160,7 +186,10 @@ class ConvNextTinyExtractFeatures(BaseExtractFeatures):
     def __init__(self, feature_arch, clip_len, is_rgb, in_channels):
         super().__init__()
         import timm
-        features = timm.create_model("convnext_tiny", pretrained=is_rgb)
+        features = timm.create_model(
+            "convnext_tiny",
+            pretrained=_use_pretrained_weights(is_rgb)
+        )
         feat_dim = features.head.fc.in_features
         features.head.fc = nn.Identity()
 
@@ -195,7 +224,7 @@ class RegnetyExtractFeatures(BaseExtractFeatures):
                 "rny002": "regnety_002",
                 "rny008": "regnety_008",
             }[feature_arch.rsplit("_", 1)[0]],
-            pretrained=is_rgb,
+            pretrained=_use_pretrained_weights(is_rgb),
         )
         feat_dim = features.head.fc.in_features
         features.head.fc = nn.Identity()
@@ -233,7 +262,9 @@ class ResnetExtractFeatures(nn.Module):
         super().__init__()
 
         resnet_name = feature_arch.split("_")[0].replace("rn", "resnet")
-        features = getattr(torchvision.models, resnet_name)(pretrained=is_rgb)
+        features = getattr(torchvision.models, resnet_name)(
+            pretrained=_use_pretrained_weights(is_rgb)
+        )
         feat_dim = features.fc.in_features
         features.fc = nn.Identity()
         # import torchsummary
@@ -297,24 +328,25 @@ class TorchvisionVideoExtractFeatures(nn.Module):
 
         self.name = name
         print("Building Torchvision Video Backbone:", name)
+        use_pretrained = _use_pretrained_weights(True)
         if name == "r3d_18":
-            weights = R3D_18_Weights.DEFAULT
+            weights = R3D_18_Weights.DEFAULT if use_pretrained else None
             model = r3d_18(weights=weights)
             self.feat_dim = 512
         elif name == "mc3_18":
-            weights = MC3_18_Weights.DEFAULT
+            weights = MC3_18_Weights.DEFAULT if use_pretrained else None
             model = mc3_18(weights=weights)
             self.feat_dim = 512
         elif name == "r2plus1d_18":
-            weights = R2Plus1D_18_Weights.DEFAULT
+            weights = R2Plus1D_18_Weights.DEFAULT if use_pretrained else None
             model = r2plus1d_18(weights=weights)
             self.feat_dim = 512
         elif name == "s3d":
-            weights = S3D_Weights.DEFAULT
+            weights = S3D_Weights.DEFAULT if use_pretrained else None
             model = s3d(weights=weights)
             self.feat_dim = 400
         elif name == "mvit_v2_s":
-            weights = MViT_V2_S_Weights.DEFAULT
+            weights = MViT_V2_S_Weights.DEFAULT if use_pretrained else None
             model = mvit_v2_s(weights=weights)
             self.feat_dim = 400
         else:
@@ -335,7 +367,8 @@ class GraphEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
         super().__init__()
 
-        from torch_geometric.nn import DeepGCNLayer
+        pyg_nn = _import_pyg_nn()
+        DeepGCNLayer = pyg_nn.DeepGCNLayer
         self.conv_type = conv_type
         self.feat_dim = hidden_dim
 
@@ -356,10 +389,14 @@ class GraphEncoder(nn.Module):
             self.gcn_layers.append(layer)
         
     def _build_conv_layer(self, conv_type, hidden_dim, dropout):
-        from torch_geometric.nn import (
-            GATv2Conv, EdgeConv, SAGEConv, 
-            GINConv, GENConv, GraphConv, MultiAggregation
-        )
+        pyg_nn = _import_pyg_nn()
+        GATv2Conv = pyg_nn.GATv2Conv
+        EdgeConv = pyg_nn.EdgeConv
+        SAGEConv = pyg_nn.SAGEConv
+        GINConv = pyg_nn.GINConv
+        GENConv = pyg_nn.GENConv
+        GraphConv = pyg_nn.GraphConv
+        MultiAggregation = pyg_nn.MultiAggregation
 
         if conv_type == 'graphconv':
             return GraphConv(
@@ -419,7 +456,8 @@ class GraphEncoder(nn.Module):
             raise ValueError(f"Unknown conv type: {conv_type}")
             
     def forward(self, x, edge_index, batch):
-        from torch_geometric.nn import global_mean_pool
+        pyg_nn = _import_pyg_nn()
+        global_mean_pool = pyg_nn.global_mean_pool
         
         x = self.node_encoder(x)
 
@@ -433,7 +471,8 @@ class GraphEncoder(nn.Module):
 
     def _compute_edge_dynamic(self, x, batch, k=8):
         """Compute dynamic KNN edges for EdgeConv layers."""
-        from torch_geometric.nn import knn_graph
+        pyg_nn = _import_pyg_nn()
+        knn_graph = pyg_nn.knn_graph
         edge_index = knn_graph(x, k=k, batch=batch, loop=False)
         return edge_index
 
@@ -587,4 +626,3 @@ class VideoBackbone(nn.Module):
                 x_vid = x.permute(0, 4, 1, 2, 3)             # (B, C, T, H, W)
                 feat = self.model.extract_features(pixel_values=x_vid)  # (B, hidden_dim)
                 return feat.unsqueeze(1)                      # (B, 1, hidden_dim)
-

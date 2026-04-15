@@ -286,14 +286,15 @@ class BaseTrainerClassification:
 
             if self.rank == 0:
                 # ---------------- W&B LOG ----------------
-                wandb.log({
-                    "epoch": epoch + 1,
-                    "lr": current_lr,
-                    "train/loss": train_loss,
-                    "valid/loss": val_loss,
-                    **{f"train/{k}": v for k, v in train_metrics.items()},
-                    **{f"valid/{k}": v for k, v in val_metrics.items()},
-                })
+                if wandb.run is not None:
+                    wandb.log({
+                        "epoch": epoch + 1,
+                        "lr": current_lr,
+                        "train/loss": train_loss,
+                        "valid/loss": val_loss,
+                        **{f"train/{k}": v for k, v in train_metrics.items()},
+                        **{f"valid/{k}": v for k, v in val_metrics.items()},
+                    })
 
                 logging.info(f"Train Loss: {train_loss:.4f} | Train Bal Acc: {train_metric:.4f}")
                 logging.info(f"Val Loss: {val_loss:.4f} | Val Bal Acc: {val_metric:.4f}")
@@ -316,9 +317,10 @@ class BaseTrainerClassification:
                 best_path = self._save_checkpoint("best", epoch + 1, tag="best")
                 self.best_checkpoint_path = best_path
 
-                artifact = wandb.Artifact("model-checkpoint", type="model")
-                artifact.add_file(best_path)
-                wandb.log_artifact(artifact)
+                if wandb.run is not None:
+                    artifact = wandb.Artifact("model-checkpoint", type="model")
+                    artifact.add_file(best_path)
+                    wandb.log_artifact(artifact)
             
         if self.rank == 0:
             logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
@@ -350,10 +352,11 @@ class BaseTrainerClassification:
         pbar.close()
 
         if self.rank==0:
-            wandb.log({
-                "test/loss": test_loss,
-                **{f"test/{k}": v for k, v in test_metrics.items()},
-            })
+            if wandb.run is not None:
+                wandb.log({
+                    "test/loss": test_loss,
+                    **{f"test/{k}": v for k, v in test_metrics.items()},
+                })
 
             if detailed_results:
                 from opensportslib.metrics.classification_metric import (
