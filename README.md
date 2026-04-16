@@ -29,6 +29,8 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 ## Installation
 
+> Requires **Python 3.12+**.
+
 ### Stable release
 
 ```bash
@@ -40,15 +42,6 @@ pip install opensportslib
 ```bash
 pip install --pre opensportslib
 ```
-
-### Optional extras
-
-```bash
-pip install "opensportslib[localization]"
-pip install "opensportslib[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
-```
-
-> Requires **Python 3.12+**.
 
 ---
 
