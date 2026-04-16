@@ -29,7 +29,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 ## Installation
 
-> Requires **Python 3.12+**
+> Requires **Python 3.12+**.  
 > Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
 > PyTorch Geometric is supported up to PyTorch 2.10.*.
 
