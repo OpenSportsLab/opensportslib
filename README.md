@@ -29,6 +29,8 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 ## Installation
 
+> Requires **Python 3.12+**.
+
 ### Stable release
 
 ```bash
