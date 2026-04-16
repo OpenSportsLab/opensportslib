@@ -20,7 +20,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test,localization,py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
+          opesnportslib setup --pyg --dali
 
       - name: Run smoke tests
         run: bash scripts/run_smoke_tests.sh

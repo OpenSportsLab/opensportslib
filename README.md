@@ -41,14 +41,27 @@ pip install opensportslib
 pip install --pre opensportslib
 ```
 
-### Optional extras
-
+### Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
 ```bash
-pip install "opensportslib[localization]"
-pip install "opensportslib[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
+# Install PyTorch (CPU/GPU auto-detected)
+opensportslib setup
+
+# Optional: install PyTorch Geometric support
+opensportslib setup --pyg
+
+# Optional: install for DALI support
+opensportslib setup --dali
 ```
 
-> Requires **Python 3.12+**.
+> Requires **Python 3.12+**  
+> Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
+> PyTorch Geometric is supported up to PyTorch 2.10.*.
+
+---
+
+**Note:**  
+Run `opensportslib setup` to automatically configure dependencies.  
+If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
 
 ---
 
@@ -173,13 +186,6 @@ cd opensportslib
 pip install -e .
 ```
 
-### With extras
-
-```bash
-pip install -e ".[localization]"
-pip install -e ".[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
-```
-
 ### Conda option
 
 If you prefer conda:
@@ -188,6 +194,18 @@ If you prefer conda:
 conda create -n osl python=3.12 pip
 conda activate osl
 pip install -e .
+```
+
+### Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
+```bash
+# Install PyTorch (CPU/GPU auto-detected)
+opensportslib setup
+
+# Optional: install PyTorch Geometric support
+opensportslib setup --pyg
+
+# Optional: install for DALI support
+opensportslib setup --dali
 ```
 
 ### Git workflow

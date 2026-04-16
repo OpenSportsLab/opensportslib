@@ -20,12 +20,18 @@ Install the base package or include optional dependencies for specific tasks lik
 ```bash
 # Install core package in editable mode
 pip install -e .
+```
 
-# OR for localization support
-pip install -e ".[localization]"
- 
-# OR want to use "torch-geometric","torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"
-pip install -e ".[py-geometric]" -f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html
+#### Step 4: Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
+```bash
+# Install PyTorch (CPU/GPU auto-detected)
+opensportslib setup
+
+# Optional: install PyTorch Geometric support
+opensportslib setup --pyg
+
+# Optional: install for DALI support
+opensportslib setup --dali
 ```
 
 ## 2. Branching and Merging - Daily workflow for developers

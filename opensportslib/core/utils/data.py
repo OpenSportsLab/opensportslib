@@ -57,10 +57,8 @@ def tracking_collate_fn(batch):
     except ImportError as exc:
         raise ImportError(
             "torch-geometric is required for tracking_collate_fn. "
-            "Install with: pip install \"opensportslib[py-geometric]\" "
-            "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
-            "or (editable): pip install -e \".[py-geometric]\" "
-            "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+            "Run: `opensportslib setup --pyg` to install the correct version "
+            "based on your system (PyTorch & CUDA compatible)."
         ) from exc
     
     batch_size = len(batch)
