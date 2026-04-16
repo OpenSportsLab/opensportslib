@@ -13,6 +13,11 @@ conda create -n osl python=3.12 pip
 conda activate osl
 ```
 
+> Requires **Python 3.12+**  
+> Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
+> PyTorch Geometric is supported up to PyTorch 2.10.*.
+
+
 #### PyPI install
 Stable version
 ```bash
@@ -37,10 +42,6 @@ opensportslib setup --pyg
 # Optional: install for DALI support
 opensportslib setup --dali
 ```
-
-> Requires **Python 3.12+**  
-> Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
-> PyTorch Geometric is supported up to PyTorch 2.10.*.
 
 ---
 
