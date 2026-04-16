@@ -39,11 +39,9 @@ from opensportslib.models.utils.shift import make_temporal_shift
 
 
 _PYG_IMPORT_ERROR_MSG = (
-    "torch-geometric is required for graph/tracking models. "
-    "Install with: pip install \"opensportslib[py-geometric]\" "
-    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html "
-    "or (editable): pip install -e \".[py-geometric]\" "
-    "-f https://pytorch-geometric.com/whl/torch-2.10.0+cu128.html"
+    "torch-geometric is required for tracking_collate_fn. "
+    "Run: `opensportslib setup --pyg` to install the correct version "
+    "based on your system (PyTorch & CUDA compatible)."
 )
 
 
