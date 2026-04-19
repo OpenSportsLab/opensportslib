@@ -7,6 +7,8 @@ This section explains how to:
 - Run inference
 - Use pretrained weights from HuggingFace
 
+For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](config-guide.md).
+
 ---
 ## Configuration Sample (.yaml) file
 
