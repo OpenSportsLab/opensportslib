@@ -232,7 +232,12 @@ class ClassificationAPI:
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
         if pretrained:
-            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+            self.config = fetch_and_merge_pretrained_config(
+                self.config,
+                pretrained,
+                hf_token=hf_token,
+                merge_policy="compatibility",
+            )
 
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")
@@ -317,7 +322,12 @@ class ClassificationAPI:
                 raise ValueError("No pretrained checkpoint provided and no training run found.")
 
         if pretrained:
-            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+            self.config = fetch_and_merge_pretrained_config(
+                self.config,
+                pretrained,
+                hf_token=hf_token,
+                merge_policy="compatibility",
+            )
 
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")

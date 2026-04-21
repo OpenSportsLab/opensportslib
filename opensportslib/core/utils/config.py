@@ -32,6 +32,13 @@ def namespace_to_dict(ns):
     if ns is None or isinstance(ns, (str, int, float, bool)):
         return ns
 
+    try:
+        from omegaconf import DictConfig, ListConfig, OmegaConf
+        if isinstance(ns, (DictConfig, ListConfig)):
+            ns = OmegaConf.to_container(ns, resolve=True)
+    except ImportError:
+        pass
+
     if isinstance(ns, dict):
         return {str(k): namespace_to_dict(v) for k, v in ns.items()}
 
@@ -226,13 +233,54 @@ def save_config(config_obj, path):
     with open(path, "w") as f:
         yaml.dump(cfg_dict, f, default_flow_style=False)
 
-def fetch_and_merge_pretrained_config(target_config, pretrained, hf_token=None):
+def _warn_critical_config_conflicts(target_dict, loaded_dict):
+    import logging
+
+    local_data = target_dict.get("DATA", {}) if isinstance(target_dict, dict) else {}
+    hf_data = loaded_dict.get("DATA", {}) if isinstance(loaded_dict, dict) else {}
+
+    local_num_classes = local_data.get("num_classes")
+    hf_num_classes = hf_data.get("num_classes")
+    if (
+        local_num_classes is not None
+        and hf_num_classes is not None
+        and local_num_classes != hf_num_classes
+    ):
+        logging.warning(
+            "Config mismatch: DATA.num_classes local=%s hf=%s. "
+            "Keeping local runtime config values.",
+            local_num_classes,
+            hf_num_classes,
+        )
+
+    local_classes = local_data.get("classes")
+    hf_classes = hf_data.get("classes")
+    if (
+        local_classes is not None
+        and hf_classes is not None
+        and local_classes != hf_classes
+    ):
+        logging.warning(
+            "Config mismatch: DATA.classes differs between local and HF config. "
+            "Keeping local runtime config values.",
+        )
+
+
+def fetch_and_merge_pretrained_config(
+    target_config, pretrained, hf_token=None, merge_policy="full"
+):
     """
-    Fetch config from a local path or HF repo and merge MODEL, SYSTEM, TRAIN sections.
+    Fetch config from a local path or HF repo and merge it with the local config.
+
+    merge_policy:
+      - "full": legacy behavior; local config overrides loaded config for
+        TASK/MODEL/SYSTEM/TRAIN/DATA.
+      - "compatibility": used for inference; only TASK/MODEL are updated from
+        pretrained config while runtime/system/data settings remain local.
     """
     import os
     import logging
-    from omegaconf import OmegaConf, DictConfig
+    from omegaconf import OmegaConf
     
     loaded_cfg = None
 
@@ -265,20 +313,40 @@ def fetch_and_merge_pretrained_config(target_config, pretrained, hf_token=None):
         
         target_dict = namespace_to_dict(target_config)
         loaded_dict = namespace_to_dict(loaded_cfg)
-        
-        for section in ["TASK", "MODEL", "SYSTEM", "TRAIN", "DATA"]:
-            if section in loaded_dict:
-                # Sanitize the DATA block to strip out remote machine-specific paths
-                if section == "DATA" and isinstance(loaded_dict[section], dict):
-                    keys_to_remove = ["data_dir", "train", "valid", "test"]
-                    for k in keys_to_remove:
-                        loaded_dict[section].pop(k, None)
 
-                # Merge logic: Pretrained config serves as base, local config overrides it.
-                loaded_oc = OmegaConf.create({section: loaded_dict[section]})
-                target_oc = OmegaConf.create({section: target_dict.get(section, {})})
-                merged_oc = OmegaConf.merge(loaded_oc, target_oc)
-                target_dict[section] = OmegaConf.to_container(merged_oc, resolve=False)
+        _warn_critical_config_conflicts(target_dict, loaded_dict)
+
+        if merge_policy == "compatibility":
+            # Keep local runtime config as source of truth. Pull only compatibility-
+            # critical sections from the pretrained config.
+            for section in ["TASK", "MODEL"]:
+                if section in loaded_dict:
+                    if isinstance(loaded_dict[section], dict):
+                        target_oc = OmegaConf.create(target_dict.get(section, {}))
+                        loaded_oc = OmegaConf.create(loaded_dict[section])
+                        merged_oc = OmegaConf.merge(target_oc, loaded_oc)
+                        target_dict[section] = OmegaConf.to_container(merged_oc, resolve=False)
+                    else:
+                        target_dict[section] = loaded_dict[section]
+        elif merge_policy == "full":
+            for section in ["TASK", "MODEL", "SYSTEM", "TRAIN", "DATA"]:
+                if section in loaded_dict:
+                    # Sanitize the DATA block to strip out remote machine-specific paths
+                    if section == "DATA" and isinstance(loaded_dict[section], dict):
+                        keys_to_remove = ["data_dir", "train", "valid", "test"]
+                        for k in keys_to_remove:
+                            loaded_dict[section].pop(k, None)
+
+                    # Legacy merge logic: pretrained config as base, local config overrides it.
+                    if isinstance(loaded_dict[section], dict):
+                        loaded_oc = OmegaConf.create(loaded_dict[section])
+                        target_oc = OmegaConf.create(target_dict.get(section, {}))
+                        merged_oc = OmegaConf.merge(loaded_oc, target_oc)
+                        target_dict[section] = OmegaConf.to_container(merged_oc, resolve=False)
+                    else:
+                        target_dict[section] = target_dict.get(section, loaded_dict[section])
+        else:
+            raise ValueError(f"Unknown merge_policy: {merge_policy}")
 
         # Convert back using DictConfig or SimpleNamespace
         return dict_to_namespace(target_dict)

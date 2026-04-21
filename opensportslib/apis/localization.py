@@ -75,7 +75,12 @@ class LocalizationAPI:
         self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
 
         if pretrained:
-            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+            self.config = fetch_and_merge_pretrained_config(
+                self.config,
+                pretrained,
+                hf_token=hf_token,
+                merge_policy="compatibility",
+            )
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
@@ -163,7 +168,6 @@ class LocalizationAPI:
         import time
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
-        self.config.MODEL.multi_gpu = False
 
         if pretrained is None and predictions is None:
             if hasattr(self, "best_checkpoint") and getattr(self, "best_checkpoint"):
@@ -173,7 +177,14 @@ class LocalizationAPI:
                 raise ValueError("No pretrained checkpoint provided and no training run found.")
 
         if pretrained:
-            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+            self.config = fetch_and_merge_pretrained_config(
+                self.config,
+                pretrained,
+                hf_token=hf_token,
+                merge_policy="compatibility",
+            )
+
+        self.config.MODEL.multi_gpu = False
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
