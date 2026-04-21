@@ -54,12 +54,12 @@ class LocalizationAPI:
         #self.trainer = Trainer(self.config)
 
 
-    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False, use_wandb=True):
+    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False, use_wandb=True, hf_token=None):
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_trainer
         from opensportslib.core.utils.default_args import get_default_args_trainer, get_default_args_train
-        from opensportslib.core.utils.config import select_device, resolve_config_omega
+        from opensportslib.core.utils.config import select_device, resolve_config_omega, fetch_and_merge_pretrained_config
         from opensportslib.core.utils.load_annotations import check_config
         from opensportslib.core.utils.wandb import init_wandb
         import random
@@ -73,6 +73,9 @@ class LocalizationAPI:
         # Expand annotation paths (user or config)
         self.config.DATA.train.path = expand(train_set or self.config.DATA.train.path)
         self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
+
+        if pretrained:
+            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
@@ -149,11 +152,11 @@ class LocalizationAPI:
         return self.best_checkpoint
   
 
-    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False, use_wandb=True):
+    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False, use_wandb=True, hf_token=None):
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_inferer, build_evaluator
-        from opensportslib.core.utils.config import select_device, resolve_config_omega, is_local_path
+        from opensportslib.core.utils.config import select_device, resolve_config_omega, is_local_path, fetch_and_merge_pretrained_config
         from opensportslib.core.utils.checkpoint import load_checkpoint, localization_remap
         from opensportslib.core.utils.load_annotations import check_config, has_localization_events, whether_infer_split
         from opensportslib.core.utils.wandb import init_wandb
@@ -161,6 +164,17 @@ class LocalizationAPI:
 
         self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
         self.config.MODEL.multi_gpu = False
+
+        if pretrained is None and predictions is None:
+            if hasattr(self, "best_checkpoint") and getattr(self, "best_checkpoint"):
+                pretrained = self.best_checkpoint
+                print(f"Using last trained checkpoint: {pretrained}")
+            else:
+                raise ValueError("No pretrained checkpoint provided and no training run found.")
+
+        if pretrained:
+            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(self.config.DATA.test)
@@ -169,12 +183,6 @@ class LocalizationAPI:
         logging.info(self.config)
         # Start Timing
         start = time.time()
-        if pretrained is None and predictions is None:
-            if hasattr(self, "best_checkpoint"):
-                pretrained = self.best_checkpoint
-                print(f"Using last trained checkpoint: {pretrained}")
-            else:
-                raise ValueError("No pretrained checkpoint provided and no training run found.")
             
         if not predictions:
             logging.info("No predictions provided, running inference.")

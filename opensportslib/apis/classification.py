@@ -206,7 +206,8 @@ class ClassificationAPI:
         test_set=None, 
         pretrained=None, 
         use_ddp=False,
-        use_wandb=True
+        use_wandb=True,
+        hf_token=None
     ):
         """run a full training loop.
 
@@ -218,15 +219,20 @@ class ClassificationAPI:
             pretrained: optional checkpoint path for warm-starting.
             use_ddp: if True and more than one GPU is visible,
                 spawn one process per GPU via torch.multiprocessing.spawn.
+            hf_token: optional token to pass to HF Hub for private models.
         """
         import torch
         import torch.multiprocessing as mp
         from opensportslib.core.utils.config import (
-            resolve_config_omega
+            resolve_config_omega,
+            fetch_and_merge_pretrained_config
         )
 
         train_set = expand(train_set or self.config.DATA.annotations.train)
         valid_set = expand(valid_set or self.config.DATA.annotations.valid)
+
+        if pretrained:
+            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
 
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")
@@ -273,7 +279,8 @@ class ClassificationAPI:
         pretrained=None, 
         predictions=None, 
         use_ddp=False, 
-        use_wandb=True
+        use_wandb=True,
+        hf_token=None
     ):
         """run inference or evaluate saved predictions.
         
@@ -288,6 +295,7 @@ class ClassificationAPI:
             predictions: path to a previously saved prediction file.
                 if provided, evaluation is run offline without a model.
             use_ddp: if True, distribute inference across all visible GPUs.
+            hf_token: optional HF token for private model downloads.
 
         Returns:
             a metrics dictionary produced by the trainer.
@@ -295,21 +303,25 @@ class ClassificationAPI:
         import torch
         import torch.multiprocessing as mp
         from opensportslib.core.utils.config import (
-            resolve_config_omega
+            resolve_config_omega,
+            fetch_and_merge_pretrained_config
         )
 
         test_set = expand(test_set or self.config.DATA.annotations.test)
 
-        self.config = resolve_config_omega(self.config)
-        logging.info("Configuration:")
-        logging.info(self.config)
-
         if pretrained is None and predictions is None:
-            if hasattr(self, "best_checkpoint"):
+            if hasattr(self, "best_checkpoint") and getattr(self, "best_checkpoint"):
                 pretrained = self.best_checkpoint
                 logging.info(f"Using last trained checkpoint: {pretrained}")
             else:
                 raise ValueError("No pretrained checkpoint provided and no training run found.")
+
+        if pretrained:
+            self.config = fetch_and_merge_pretrained_config(self.config, pretrained, hf_token=hf_token)
+
+        self.config = resolve_config_omega(self.config)
+        logging.info("Configuration:")
+        logging.info(self.config)
 
         if not predictions:
             # live inference: run the model on test data.

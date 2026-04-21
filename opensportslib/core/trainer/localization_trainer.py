@@ -186,6 +186,7 @@ class Trainer_pl(Trainer):
             num_sanity_val_steps=0,
         )
         self.best_checkpoint_path = None
+        self.config = cfg
 
     def train(self, **kwargs):
         self.trainer.fit(**kwargs)
@@ -209,6 +210,13 @@ class Trainer_pl(Trainer):
         def log():
             logging.info("Done training")
             logging.info(f"Best model saved at: {self.best_checkpoint_path}")
+            
+            # Save the config file uniformly inside the work_dir
+            if hasattr(self, 'config') and self.config is not None:
+                from opensportslib.core.utils.config import save_config
+                config_path = os.path.join(self.work_dir, "config.yaml")
+                save_config(self.config, config_path)
+                logging.info(f"Saved config: {config_path}")
 
         log()
 
@@ -328,6 +336,12 @@ class Trainer_e2e(Trainer):
             self.best_checkpoint_path = best_path
             torch.save(checkpoint, best_path)
             logging.info(f"Best checkpoint saved: {best_path}")
+
+            if self.config is not None:
+                from opensportslib.core.utils.config import save_config
+                config_path = os.path.join(self.save_dir, "config.yaml")
+                save_config(self.config, config_path)
+                logging.info(f"Saved config: {config_path}")
             
     def train(self, train_loader, valid_loader, classes):
         """Training loop with checkpoint management."""

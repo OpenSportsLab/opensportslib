@@ -212,3 +212,75 @@ def is_local_path(p):
         os.path.exists(p) or
         p.endswith((".pt", ".pth", ".tar"))
     )
+
+def save_config(config_obj, path):
+    """Save the configuration object to a YAML file."""
+    from omegaconf import OmegaConf, DictConfig
+    import yaml
+    
+    if isinstance(config_obj, DictConfig):
+        cfg_dict = OmegaConf.to_container(config_obj, resolve=True)
+    else:
+        cfg_dict = namespace_to_dict(config_obj)
+
+    with open(path, "w") as f:
+        yaml.dump(cfg_dict, f, default_flow_style=False)
+
+def fetch_and_merge_pretrained_config(target_config, pretrained, hf_token=None):
+    """
+    Fetch config from a local path or HF repo and merge MODEL, SYSTEM, TRAIN sections.
+    """
+    import os
+    import logging
+    from omegaconf import OmegaConf, DictConfig
+    
+    loaded_cfg = None
+
+    if is_local_path(pretrained):
+        dir_name = os.path.dirname(os.path.abspath(pretrained))
+        yaml_path = os.path.join(dir_name, "config.yaml")
+        json_path = os.path.join(dir_name, "config.json")
+        if os.path.exists(yaml_path):
+            loaded_cfg = load_config_omega(yaml_path)
+            logging.info(f"Loaded config from {yaml_path}")
+        elif os.path.exists(json_path):
+            loaded_cfg = load_config_omega(json_path)
+            logging.info(f"Loaded config from {json_path}")
+    else:
+        try:
+            from huggingface_hub import hf_hub_download
+            try:
+                config_path = hf_hub_download(repo_id=pretrained, filename="config.yaml", token=hf_token)
+                loaded_cfg = load_config_omega(config_path)
+                logging.info(f"Loaded config.yaml from HF repo {pretrained}")
+            except Exception:
+                config_path = hf_hub_download(repo_id=pretrained, filename="config.json", token=hf_token)
+                loaded_cfg = load_config_omega(config_path)
+                logging.info(f"Loaded config.json from HF repo {pretrained}")
+        except Exception as e:
+            logging.warning(f"Could not load config from HF repo {pretrained}: {e}")
+
+    if loaded_cfg is not None:
+        logging.info(f"Merging pretrained config from {pretrained}")
+        
+        target_dict = namespace_to_dict(target_config)
+        loaded_dict = namespace_to_dict(loaded_cfg)
+        
+        for section in ["TASK", "MODEL", "SYSTEM", "TRAIN", "DATA"]:
+            if section in loaded_dict:
+                # Sanitize the DATA block to strip out remote machine-specific paths
+                if section == "DATA" and isinstance(loaded_dict[section], dict):
+                    keys_to_remove = ["data_dir", "train", "valid", "test"]
+                    for k in keys_to_remove:
+                        loaded_dict[section].pop(k, None)
+
+                # Merge logic: Pretrained config serves as base, local config overrides it.
+                loaded_oc = OmegaConf.create({section: loaded_dict[section]})
+                target_oc = OmegaConf.create({section: target_dict.get(section, {})})
+                merged_oc = OmegaConf.merge(loaded_oc, target_oc)
+                target_dict[section] = OmegaConf.to_container(merged_oc, resolve=False)
+
+        # Convert back using DictConfig or SimpleNamespace
+        return dict_to_namespace(target_dict)
+    
+    return target_config

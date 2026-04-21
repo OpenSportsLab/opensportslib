@@ -547,6 +547,13 @@ class BaseTrainerClassification:
         path_aux = os.path.join(epoch_dir, name)
         torch.save(state, path_aux)
         logging.info(f"Saved checkpoint: {path_aux}")
+        
+        if self.config is not None:
+            from opensportslib.core.utils.config import save_config
+            config_path = os.path.join(epoch_dir, "config.yaml")
+            save_config(self.config, config_path)
+            logging.info(f"Saved config: {config_path}")
+
         return path_aux
 
 
