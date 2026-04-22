@@ -301,6 +301,8 @@ def is_local_path(p):
 
 def download_hf_dataset(repo_id, revision=None, hf_token=None):
     """Download an HF dataset repo snapshot and return its local cache path."""
+    import logging
+
     if not repo_id:
         raise ValueError("dataset_repo_id is required to download a Hugging Face dataset.")
 
@@ -312,13 +314,39 @@ def download_hf_dataset(repo_id, revision=None, hf_token=None):
             "Install it with `pip install huggingface_hub`."
         ) from e
 
+    repo_type = "dataset"
+    normalized_repo_id = re.sub(r"[^a-zA-Z0-9._-]+", "__", repo_id)
+    normalized_revision = re.sub(
+        r"[^a-zA-Z0-9._-]+",
+        "__",
+        revision if revision is not None else "main",
+    )
+    local_dir = os.path.join(
+        os.path.expanduser("~"),
+        ".cache",
+        "opensportslib",
+        "huggingface",
+        repo_type,
+        normalized_repo_id,
+        normalized_revision,
+    )
+    logging.info(
+        "Downloading Hugging Face dataset repo=%s revision=%s into %s",
+        repo_id,
+        revision,
+        local_dir,
+    )
+
     try:
-        return snapshot_download(
+        dataset_path = snapshot_download(
             repo_id=repo_id,
-            repo_type="dataset",
+            repo_type=repo_type,
             revision=revision,
             token=hf_token,
+            local_dir=local_dir,
         )
+        logging.info("Hugging Face dataset available at %s", dataset_path)
+        return dataset_path
     except Exception as e:
         revision_msg = f" at revision {revision!r}" if revision is not None else ""
         raise RuntimeError(
