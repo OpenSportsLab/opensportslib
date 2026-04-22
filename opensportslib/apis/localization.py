@@ -4,8 +4,16 @@ import logging
 import time
  
 class LocalizationAPI:
-    def __init__(self, config=None, data_dir=None, save_dir=None):
-        from opensportslib.core.utils.config import load_config_omega
+    def __init__(
+        self,
+        config=None,
+        data_dir=None,
+        save_dir=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
+        hf_token=None,
+    ):
+        from opensportslib.core.utils.config import load_config_omega, resolve_hf_dataset
         #from ..core.trainer import Trainer
         import uuid
 
@@ -14,10 +22,25 @@ class LocalizationAPI:
 
         # Load config
         ### load data_dor first then do load config with omega to resolve $paths
-        self.config_path = expand(config)
+        self.config_path = expand(config) if config else str(
+                    files("opensportslib").joinpath("config/localization.yaml")
+        )
         self.config = load_config_omega(self.config_path)
+        self._data_dir_overridden = data_dir is not None
+        self._dataset_repo_id = dataset_repo_id
+        self._dataset_revision = dataset_revision
+        self._resolved_dataset_source = None
         # User must control dataset folder
         self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
+        self.config = resolve_hf_dataset(
+            self.config,
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+            skip_download=self._data_dir_overridden,
+        )
+        if dataset_repo_id and not self._data_dir_overridden:
+            self._resolved_dataset_source = (dataset_repo_id, dataset_revision)
         print(self.config.DATA.classes)
         # User controls model saving location (never use BASE_DIR)
 
@@ -54,7 +77,38 @@ class LocalizationAPI:
         #self.trainer = Trainer(self.config)
 
 
-    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False, use_wandb=True, hf_token=None):
+    def _resolve_runtime_dataset(self, dataset_repo_id=None, dataset_revision=None, hf_token=None):
+        from opensportslib.core.utils.config import resolve_hf_dataset
+
+        repo_id = dataset_repo_id or self._dataset_repo_id
+        revision = dataset_revision if dataset_revision is not None else self._dataset_revision
+        source = (repo_id, revision)
+
+        if not repo_id or self._resolved_dataset_source == source:
+            return
+
+        self.config = resolve_hf_dataset(
+            self.config,
+            dataset_repo_id=repo_id,
+            dataset_revision=revision,
+            hf_token=hf_token,
+            skip_download=self._data_dir_overridden,
+        )
+        if not self._data_dir_overridden:
+            self._resolved_dataset_source = source
+
+
+    def train(
+        self,
+        train_set=None,
+        valid_set=None,
+        pretrained=None,
+        use_ddp=False,
+        use_wandb=True,
+        hf_token=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
+    ):
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_trainer
@@ -70,9 +124,6 @@ class LocalizationAPI:
         #     self.model, self.processor, _ = self.trainer.load(expand(pretrained))
         # else:
         #     self.model, self.processor = build_model(self.config, self.trainer.device)
-        # Expand annotation paths (user or config)
-        self.config.DATA.train.path = expand(train_set or self.config.DATA.train.path)
-        self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
 
         if pretrained:
             self.config = fetch_and_merge_pretrained_config(
@@ -81,6 +132,16 @@ class LocalizationAPI:
                 hf_token=hf_token,
                 merge_policy="compatibility",
             )
+
+        self._resolve_runtime_dataset(
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+        )
+
+        # Expand annotation paths (user or config)
+        self.config.DATA.train.path = expand(train_set or self.config.DATA.train.path)
+        self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
@@ -157,7 +218,17 @@ class LocalizationAPI:
         return self.best_checkpoint
   
 
-    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False, use_wandb=True, hf_token=None):
+    def infer(
+        self,
+        test_set=None,
+        pretrained=None,
+        predictions=None,
+        use_ddp=False,
+        use_wandb=True,
+        hf_token=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
+    ):
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_inferer, build_evaluator
@@ -166,8 +237,6 @@ class LocalizationAPI:
         from opensportslib.core.utils.load_annotations import check_config, has_localization_events, whether_infer_split
         from opensportslib.core.utils.wandb import init_wandb
         import time
-
-        self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
 
         if pretrained is None and predictions is None:
             if hasattr(self, "best_checkpoint") and getattr(self, "best_checkpoint"):
@@ -183,6 +252,14 @@ class LocalizationAPI:
                 hf_token=hf_token,
                 merge_policy="compatibility",
             )
+
+        self._resolve_runtime_dataset(
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+        )
+
+        self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
 
         self.config.MODEL.multi_gpu = False
 

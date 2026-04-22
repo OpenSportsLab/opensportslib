@@ -87,15 +87,22 @@ def load_config(config_path):
 
 
 def load_config_omega(path):
-    
-    from omegaconf import OmegaConf
+    try:
+        from omegaconf import OmegaConf
+    except ImportError:
+        return load_config(path)
+
     cfg = OmegaConf.load(path)
     # OmegaConf.resolve(cfg)
     # cfg = OmegaConf.to_container(cfg, resolve=True)
     return dict_to_namespace(cfg)
 
 def resolve_config_omega(cfg):
-    from omegaconf import OmegaConf, DictConfig
+    try:
+        from omegaconf import OmegaConf, DictConfig
+    except ImportError:
+        return cfg
+
     #cfg = namespace_to_omegaconf(cfg)
     #cfg = namespace_to_dict(cfg)
     #print(type(cfg))
@@ -105,6 +112,73 @@ def resolve_config_omega(cfg):
     OmegaConf.resolve(cfg)
     cfg = dict_to_namespace(OmegaConf.to_container(cfg, resolve=True))
     return cfg
+
+
+def resolve_config_references(cfg):
+    """Resolve OmegaConf-style interpolations on namespace-backed configs."""
+    try:
+        from omegaconf import OmegaConf
+    except ImportError:
+        return _resolve_config_references_without_omegaconf(cfg)
+
+    cfg_oc = namespace_to_omegaconf(cfg)
+    OmegaConf.resolve(cfg_oc)
+    return dict_to_namespace(OmegaConf.to_container(cfg_oc, resolve=True))
+
+
+def _resolve_config_references_without_omegaconf(cfg):
+    data = namespace_to_dict(cfg)
+
+    def lookup(root, path):
+        current = root
+        for part in path.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+        return current
+
+    def resolve_obj(obj, root):
+        if isinstance(obj, dict):
+            return {key: resolve_obj(value, root) for key, value in obj.items()}
+        if isinstance(obj, list):
+            return [resolve_obj(value, root) for value in obj]
+        if isinstance(obj, str):
+            resolved = obj
+            for match in re.findall(r"\$\{([^}]+)\}", resolved):
+                value = lookup(root, match)
+                if value is not None:
+                    resolved = resolved.replace("${" + match + "}", str(value))
+            return resolved
+        return obj
+
+    for _ in range(10):
+        resolved_data = resolve_obj(data, data)
+        if resolved_data == data:
+            break
+        data = resolved_data
+
+    return dict_to_namespace(data)
+
+
+def _replace_data_dir_references(cfg, old_data_dir, new_data_dir):
+    if not old_data_dir:
+        return cfg
+
+    old_data_dir = expand(old_data_dir)
+    new_data_dir = expand(new_data_dir)
+    data = namespace_to_dict(cfg)
+
+    def replace_obj(obj):
+        if isinstance(obj, dict):
+            return {key: replace_obj(value) for key, value in obj.items()}
+        if isinstance(obj, list):
+            return [replace_obj(value) for value in obj]
+        if isinstance(obj, str) and obj.startswith(old_data_dir):
+            return new_data_dir + obj[len(old_data_dir):]
+        return obj
+
+    return dict_to_namespace(replace_obj(data))
 
 
 def expand(path):
@@ -161,7 +235,11 @@ def load_classes(input):
     Returns:
         Dictionnary with classes associated to indexes.
     """
-    from omegaconf import ListConfig
+    try:
+        from omegaconf import ListConfig
+    except ImportError:
+        ListConfig = ()
+
     if isinstance(input, (list, ListConfig)):
         return {x: i + 1 for i, x in enumerate(input)}
     return {x: i + 1 for i, x in enumerate(load_text(input))}
@@ -219,6 +297,69 @@ def is_local_path(p):
         os.path.exists(p) or
         p.endswith((".pt", ".pth", ".tar"))
     )
+
+
+def download_hf_dataset(repo_id, revision=None, hf_token=None):
+    """Download an HF dataset repo snapshot and return its local cache path."""
+    if not repo_id:
+        raise ValueError("dataset_repo_id is required to download a Hugging Face dataset.")
+
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as e:
+        raise ImportError(
+            "huggingface_hub is required to download datasets from Hugging Face. "
+            "Install it with `pip install huggingface_hub`."
+        ) from e
+
+    try:
+        return snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            revision=revision,
+            token=hf_token,
+        )
+    except Exception as e:
+        revision_msg = f" at revision {revision!r}" if revision is not None else ""
+        raise RuntimeError(
+            f"Could not download Hugging Face dataset repo {repo_id!r}{revision_msg}."
+        ) from e
+
+
+def resolve_hf_dataset(
+    config,
+    dataset_repo_id=None,
+    dataset_revision=None,
+    hf_token=None,
+    skip_download=False,
+):
+    """Resolve a runtime HF dataset repo into DATA.data_dir."""
+    import logging
+
+    if not dataset_repo_id:
+        return config
+
+    if skip_download:
+        logging.info(
+            "Skipping Hugging Face dataset download because data_dir was provided."
+        )
+        return config
+
+    old_data_dir = getattr(config.DATA, "data_dir", None)
+    dataset_path = download_hf_dataset(
+        repo_id=dataset_repo_id,
+        revision=dataset_revision,
+        hf_token=hf_token,
+    )
+    config.DATA.data_dir = expand(dataset_path)
+    logging.info(
+        "Downloaded Hugging Face dataset %s revision=%s to %s",
+        dataset_repo_id,
+        dataset_revision,
+        config.DATA.data_dir,
+    )
+    config = resolve_config_references(config)
+    return _replace_data_dir_references(config, old_data_dir, config.DATA.data_dir)
 
 def save_config(config_obj, path):
     """Save the configuration object to a YAML file."""

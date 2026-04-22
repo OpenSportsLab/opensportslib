@@ -14,7 +14,7 @@ delegating heavy lifting to Trainer_Classification.
 import os
 import logging
 from opensportslib.core.utils.config import expand 
-
+from importlib.resources import files
 
 class ClassificationAPI:
     """top-level entry point for classification training and inference.
@@ -31,22 +31,46 @@ class ClassificationAPI:
             falls back to SYSTEM.save_dir, then "./checkpoints".
     """
 
-    def __init__(self, config=None, data_dir=None, save_dir=None):
+    def __init__(
+        self,
+        config=None,
+        data_dir=None,
+        save_dir=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
+        hf_token=None,
+    ):
         from opensportslib.core.utils.config import (
-            load_config_omega
+            load_config_omega,
+            resolve_hf_dataset,
         )
         import uuid
 
         if config is None:
             raise ValueError("config path is required")
 
-        self.config_path = expand(config)
+        self.config_path = expand(config) if config else str(
+                    files("opensportslib").joinpath("config/classification.yaml")
+        )
         self.config = load_config_omega(self.config_path)
+        self._data_dir_overridden = data_dir is not None
+        self._dataset_repo_id = dataset_repo_id
+        self._dataset_revision = dataset_revision
+        self._resolved_dataset_source = None
 
         # let the caller override the dataset root directory.
         self.config.DATA.data_dir = expand(
             data_dir or self.config.DATA.data_dir
         )
+        self.config = resolve_hf_dataset(
+            self.config,
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+            skip_download=self._data_dir_overridden,
+        )
+        if dataset_repo_id and not self._data_dir_overridden:
+            self._resolved_dataset_source = (dataset_repo_id, dataset_revision)
 
         # checkpoint output directory; never derived from BASE_DIR so the
         # user always has explicit control over where weights are written.
@@ -79,6 +103,26 @@ class ClassificationAPI:
         if rank == 0:
             logging.info(f"DATA DIR     : {self.config.DATA.data_dir}")
             logging.info(f"MODEL SAVEDIR: {self.config.SYSTEM.save_dir}")
+
+    def _resolve_runtime_dataset(self, dataset_repo_id=None, dataset_revision=None, hf_token=None):
+        from opensportslib.core.utils.config import resolve_hf_dataset
+
+        repo_id = dataset_repo_id or self._dataset_repo_id
+        revision = dataset_revision if dataset_revision is not None else self._dataset_revision
+        source = (repo_id, revision)
+
+        if not repo_id or self._resolved_dataset_source == source:
+            return
+
+        self.config = resolve_hf_dataset(
+            self.config,
+            dataset_repo_id=repo_id,
+            dataset_revision=revision,
+            hf_token=hf_token,
+            skip_download=self._data_dir_overridden,
+        )
+        if not self._data_dir_overridden:
+            self._resolved_dataset_source = source
 
     # -----------------------------------------------------------------
     # internal DDP worker
@@ -207,7 +251,9 @@ class ClassificationAPI:
         pretrained=None, 
         use_ddp=False,
         use_wandb=True,
-        hf_token=None
+        hf_token=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
     ):
         """run a full training loop.
 
@@ -220,16 +266,15 @@ class ClassificationAPI:
             use_ddp: if True and more than one GPU is visible,
                 spawn one process per GPU via torch.multiprocessing.spawn.
             hf_token: optional token to pass to HF Hub for private models.
+            dataset_repo_id: optional HF dataset repo id to download at runtime.
+            dataset_revision: optional HF dataset branch, tag, or commit hash.
         """
         import torch
         import torch.multiprocessing as mp
         from opensportslib.core.utils.config import (
             resolve_config_omega,
-            fetch_and_merge_pretrained_config
+            fetch_and_merge_pretrained_config,
         )
-
-        train_set = expand(train_set or self.config.DATA.annotations.train)
-        valid_set = expand(valid_set or self.config.DATA.annotations.valid)
 
         if pretrained:
             self.config = fetch_and_merge_pretrained_config(
@@ -238,6 +283,15 @@ class ClassificationAPI:
                 hf_token=hf_token,
                 merge_policy="compatibility",
             )
+
+        self._resolve_runtime_dataset(
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+        )
+
+        train_set = expand(train_set or self.config.DATA.train.path)
+        valid_set = expand(valid_set or self.config.DATA.valid.path)
 
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")
@@ -285,7 +339,9 @@ class ClassificationAPI:
         predictions=None, 
         use_ddp=False, 
         use_wandb=True,
-        hf_token=None
+        hf_token=None,
+        dataset_repo_id=None,
+        dataset_revision=None,
     ):
         """run inference or evaluate saved predictions.
         
@@ -301,6 +357,8 @@ class ClassificationAPI:
                 if provided, evaluation is run offline without a model.
             use_ddp: if True, distribute inference across all visible GPUs.
             hf_token: optional HF token for private model downloads.
+            dataset_repo_id: optional HF dataset repo id to download at runtime.
+            dataset_revision: optional HF dataset branch, tag, or commit hash.
 
         Returns:
             a metrics dictionary produced by the trainer.
@@ -309,10 +367,8 @@ class ClassificationAPI:
         import torch.multiprocessing as mp
         from opensportslib.core.utils.config import (
             resolve_config_omega,
-            fetch_and_merge_pretrained_config
+            fetch_and_merge_pretrained_config,
         )
-
-        test_set = expand(test_set or self.config.DATA.annotations.test)
 
         if pretrained is None and predictions is None:
             if hasattr(self, "best_checkpoint") and getattr(self, "best_checkpoint"):
@@ -328,6 +384,14 @@ class ClassificationAPI:
                 hf_token=hf_token,
                 merge_policy="compatibility",
             )
+
+        self._resolve_runtime_dataset(
+            dataset_repo_id=dataset_repo_id,
+            dataset_revision=dataset_revision,
+            hf_token=hf_token,
+        )
+
+        test_set = expand(test_set or self.config.DATA.test.path)
 
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")
