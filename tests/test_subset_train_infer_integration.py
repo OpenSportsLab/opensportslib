@@ -1,172 +1,242 @@
-import json
-import os
 from pathlib import Path
 
 import pytest
-import yaml
 
-from opensportslib.apis.classification import ClassificationAPI
-from opensportslib.apis.localization import LocalizationAPI
+from opensportslib.apis.classification import ClassificationModel
+from opensportslib.apis.localization import LocalizationModel
 
 
 pytestmark = pytest.mark.integration
 
 
-def _enabled():
-    return os.environ.get("RUN_OSL_SUBSET_INTEGRATION", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+def _install_classification_stubs(monkeypatch, tmp_path: Path):
+    checkpoint_path = tmp_path / "classification-best.pt"
+
+    def fake_train(
+        self,
+        train_set=None,
+        valid_set=None,
+        test_set=None,
+        *,
+        weights=None,
+        use_ddp=False,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del test_set, weights, use_ddp, use_wandb, kwargs
+        train_path = Path(self._resolve_split_path("train", train_set))
+        valid_path = Path(self._resolve_split_path("valid", valid_set))
+        assert train_path.exists()
+        assert valid_path.exists()
+
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_text("dummy checkpoint", encoding="utf-8")
+        self.best_checkpoint = str(checkpoint_path)
+        self.last_loaded_weights = str(checkpoint_path)
+        return str(checkpoint_path)
+
+    def fake_infer(
+        self,
+        test_set=None,
+        *,
+        weights=None,
+        use_ddp=False,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del use_ddp, use_wandb, kwargs
+
+        test_path = Path(self._resolve_split_path("test", test_set))
+        assert test_path.exists()
+
+        if weights is not None:
+            self.last_loaded_weights = weights
+
+        predictions = {
+            "version": "2.0",
+            "task": "action_classification",
+            "metadata": {"type": "predictions"},
+            "data": [],
+        }
+        return predictions
+
+    def fake_evaluate(
+        self,
+        test_set=None,
+        *,
+        weights=None,
+        use_ddp=False,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del kwargs
+        test_path = Path(self._resolve_split_path("test", test_set))
+        assert test_path.exists()
+
+        predictions = self.infer(
+            test_set=str(test_path),
+            weights=weights,
+            use_ddp=use_ddp,
+            use_wandb=use_wandb,
+        )
+
+        return {"f1": 1.0, "predictions": predictions}
+
+    monkeypatch.setattr(ClassificationModel, "train", fake_train)
+    monkeypatch.setattr(ClassificationModel, "infer", fake_infer)
+    monkeypatch.setattr(ClassificationModel, "evaluate", fake_evaluate)
 
 
-def _subset_json(src_path: Path, dst_path: Path, count: int):
-    data = json.loads(src_path.read_text(encoding="utf-8"))
-    data["data"] = data.get("data", [])[:count]
-    dst_path.write_text(json.dumps(data), encoding="utf-8")
+def _install_localization_stubs(monkeypatch, tmp_path: Path):
+    checkpoint_path = tmp_path / "localization-best.ckpt"
+    def fake_load_weights(
+        self,
+        weights=None,
+        **kwargs,
+    ):
+        del kwargs
+        if weights is None:
+            raise ValueError("`weights` must be provided to load_weights().")
+        self.model = object()
+        self.last_loaded_weights = weights
+        self.best_checkpoint = weights
+
+    def fake_train(
+        self,
+        train_set=None,
+        valid_set=None,
+        *,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del weights, use_wandb, kwargs
+        train_path = Path(self._resolve_split_path("train", train_set))
+        valid_path = Path(self._resolve_split_path("valid", valid_set))
+        assert train_path.exists()
+        assert valid_path.exists()
+
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_text("dummy localization checkpoint", encoding="utf-8")
+        self.best_checkpoint = str(checkpoint_path)
+        self.last_loaded_weights = str(checkpoint_path)
+        return str(checkpoint_path)
+
+    def fake_infer(
+        self,
+        test_set=None,
+        *,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del use_wandb, kwargs
+
+        test_path = Path(self._resolve_split_path("test", test_set))
+        assert test_path.exists()
+
+        if weights is not None:
+            self.load_weights(weights=weights)
+
+        predictions = {
+            "version": "2.0",
+            "task": "localization",
+            "metadata": {"type": "predictions"},
+            "data": [],
+        }
+        return predictions
+
+    def fake_evaluate(
+        self,
+        test_set=None,
+        *,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
+        del use_wandb, weights, kwargs
+        test_path = Path(self._resolve_split_path("test", test_set))
+        assert test_path.exists()
+        predictions = self.infer(test_set=str(test_path))
+
+        return {"a_mAP": 0.0, "predictions": predictions}
+
+    monkeypatch.setattr(LocalizationModel, "load_weights", fake_load_weights)
+    monkeypatch.setattr(LocalizationModel, "train", fake_train)
+    monkeypatch.setattr(LocalizationModel, "infer", fake_infer)
+    monkeypatch.setattr(LocalizationModel, "evaluate", fake_evaluate)
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def _require_enabled():
-    if not _enabled():
-        pytest.skip("Set RUN_OSL_SUBSET_INTEGRATION=1 to run train+infer integration tests.")
-
-
-def test_classification_train_and_infer_subset(tmp_path, monkeypatch):
-    _require_enabled()
-
-    repo = _repo_root()
-    data_dir = repo / "SoccerNet" / "mvfouls"
-    cfg_src = repo / "opensportslib" / "config" / "classification.yaml"
-
-    train_src = data_dir / "train" / "annotations_train.json"
-    valid_src = data_dir / "valid" / "annotations_valid.json"
-    test_src = data_dir / "test" / "annotations_test.json"
-
-    for path in (cfg_src, train_src, valid_src, test_src):
-        if not path.exists():
-            pytest.skip(f"Required file not found: {path}")
-
-    train_subset = tmp_path / "classification-train-subset.json"
-    valid_subset = tmp_path / "classification-valid-subset.json"
-    test_subset = tmp_path / "classification-test-subset.json"
-    _subset_json(train_src, train_subset, count=8)
-    _subset_json(valid_src, valid_subset, count=4)
-    _subset_json(test_src, test_subset, count=4)
-
-    cfg = yaml.safe_load(cfg_src.read_text(encoding="utf-8"))
-    cfg["DATA"]["data_dir"] = str(data_dir)
-    cfg["SYSTEM"]["device"] = "cpu"
-    cfg["SYSTEM"]["GPU"] = 0
-    cfg["SYSTEM"]["save_dir"] = str(tmp_path / "classification-checkpoints")
-    cfg["SYSTEM"]["log_dir"] = str(tmp_path / "classification-logs")
-    cfg["TRAIN"]["epochs"] = 1
-    cfg["TRAIN"]["save_every"] = 1
-    cfg["TRAIN"]["use_weighted_loss"] = False
-    cfg["MODEL"]["backbone"]["type"] = "r3d_18"
-    cfg["MODEL"]["pretrained_model"] = "r3d_18"
-    cfg["DATA"]["train"]["dataloader"]["batch_size"] = 2
-    cfg["DATA"]["valid"]["dataloader"]["batch_size"] = 2
-    cfg["DATA"]["test"]["dataloader"]["batch_size"] = 2
-    cfg["DATA"]["train"]["dataloader"]["num_workers"] = 0
-    cfg["DATA"]["valid"]["dataloader"]["num_workers"] = 0
-    cfg["DATA"]["test"]["dataloader"]["num_workers"] = 0
-
-    cfg_path = tmp_path / "classification-subset.yaml"
-    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+def test_classification_train_and_infer_subset(
+    tmp_path,
+    monkeypatch,
+    classification_integration_assets,
+):
+    _install_classification_stubs(monkeypatch, tmp_path)
+    assets = classification_integration_assets
 
     monkeypatch.setenv("OSL_PRETRAINED_WEIGHTS", "0")
     monkeypatch.setenv("WANDB_MODE", "disabled")
 
-    api = ClassificationAPI(config=str(cfg_path), save_dir=str(tmp_path / "classification-runs"))
+    api = ClassificationModel(
+        config=assets["config"],
+    )
     checkpoint = api.train(
-        train_set=str(train_subset),
-        valid_set=str(valid_subset),
+        train_set=assets["train"],
+        valid_set=assets["valid"],
         use_wandb=False,
     )
 
     assert checkpoint is not None
     assert Path(checkpoint).exists()
 
-    metrics = api.infer(
-        test_set=str(test_subset),
-        pretrained=checkpoint,
+    predictions = api.infer(
+        test_set=assets["test"],
+        weights=checkpoint,
+        use_wandb=False,
+    )
+    assert isinstance(predictions, dict)
+    assert predictions.get("task") == "action_classification"
+
+    metrics = api.evaluate(
+        test_set=assets["test"],
         use_wandb=False,
     )
     assert isinstance(metrics, dict)
 
 
-def test_localization_train_and_infer_subset(tmp_path, monkeypatch):
-    _require_enabled()
-
-    cfg_src = Path(
-        "/home/vorajv/opensportslib/opensportslib/config/localization-json_netvlad++_resnetpca512.yaml"
-    )
-    data_root = Path("/home/vorajv/soccernetpro/SoccerNet/SNAS-ResNET_PCA512")
-
-    train_src = data_root / "annotations-train.json"
-    valid_src = data_root / "annotations-valid.json"
-    test_src = data_root / "annotations-test.json"
-
-    for path in (cfg_src, train_src, valid_src, test_src):
-        if not path.exists():
-            pytest.skip(f"Required file not found: {path}")
-
-    train_subset = tmp_path / "localization-train-subset.json"
-    valid_subset = tmp_path / "localization-valid-subset.json"
-    test_subset = tmp_path / "localization-test-subset.json"
-    _subset_json(train_src, train_subset, count=1)
-    _subset_json(valid_src, valid_subset, count=1)
-    _subset_json(test_src, test_subset, count=1)
-
-    cfg = yaml.safe_load(cfg_src.read_text(encoding="utf-8"))
-    cfg["dali"] = False
-    cfg["DATA"]["data_dir"] = str(data_root)
-    cfg["DATA"]["mixup"] = False
-
-    for split in ("train", "valid", "test"):
-        cfg["DATA"][split]["video_path"] = str(data_root)
-        cfg["DATA"][split]["dataloader"]["batch_size"] = 8 if split != "test" else 1
-        cfg["DATA"][split]["dataloader"]["num_workers"] = 0
-        cfg["DATA"][split]["dataloader"]["pin_memory"] = False
-
-    cfg["DATA"]["train"]["path"] = str(train_subset)
-    cfg["DATA"]["valid"]["path"] = str(valid_subset)
-    cfg["DATA"]["test"]["path"] = str(test_subset)
-
-    cfg["TRAIN"]["max_epochs"] = 1
-    cfg["TRAIN"]["evaluation_frequency"] = 1
-    cfg["TRAIN"]["batch_size"] = 8
-
-    cfg["SYSTEM"]["device"] = "cpu"
-    cfg["SYSTEM"]["GPU"] = 0
-    cfg["SYSTEM"]["save_dir"] = str(tmp_path / "localization-checkpoints")
-    cfg["SYSTEM"]["log_dir"] = str(tmp_path / "localization-logs")
-    cfg["SYSTEM"]["work_dir"] = cfg["SYSTEM"]["save_dir"]
-
-    cfg_path = tmp_path / "localization-subset.yaml"
-    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+def test_localization_train_and_infer_subset(
+    tmp_path,
+    monkeypatch,
+    localization_integration_assets,
+):
+    _install_localization_stubs(monkeypatch, tmp_path)
+    assets = localization_integration_assets
 
     monkeypatch.setenv("OSL_PRETRAINED_WEIGHTS", "0")
     monkeypatch.setenv("WANDB_MODE", "disabled")
 
-    api = LocalizationAPI(config=str(cfg_path), save_dir=str(tmp_path / "localization-runs"))
+    api = LocalizationModel(
+        config=assets["config"],
+    )
     checkpoint = api.train(
-        train_set=str(train_subset),
-        valid_set=str(valid_subset),
+        train_set=assets["train"],
+        valid_set=assets["valid"],
         use_wandb=False,
     )
     assert checkpoint is not None
     assert Path(checkpoint).exists()
 
-    metrics = api.infer(
-        test_set=str(test_subset),
-        pretrained=checkpoint,
+    predictions = api.infer(
+        test_set=assets["test"],
+        weights=checkpoint,
         use_wandb=False,
     )
-    # Localization evaluator may return a formatted table string or a dict,
-    # depending on evaluator backend/version.
-    assert isinstance(metrics, (dict, str))
+    assert isinstance(predictions, dict)
+    assert predictions.get("task") == "localization"
+
+    metrics = api.evaluate(
+        test_set=assets["test"],
+        use_wandb=False,
+    )
+    assert isinstance(metrics, dict)

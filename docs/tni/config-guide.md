@@ -369,7 +369,7 @@ config_path = make_temp_config(
 
 m = model.classification(
     config=config_path,
-    data_dir="/home/vorajv/opensportslib/SoccerNet/mvfouls",
+    overrides={"DATA.data_dir": "$HOME/opensportslib/SoccerNet/mvfouls"},
 )
 ```
 

@@ -1,4 +1,4 @@
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
 
 def main():
@@ -7,20 +7,24 @@ def main():
     Update config and dataset paths before running.
     """
 
-    my_model = model.classification(
-        config="examples/configs/classification_video.yaml"
+    my_model = ClassificationModel(
+        config="examples/configs/classification_video.yaml",
+        weights="/path/to/weights.pt",  # optional
     )
 
     my_model.train(
         train_set="/path/to/train_annotations.json",
         valid_set="/path/to/valid_annotations.json",
-        pretrained="/path/to/pretrained.pt",  # optional
     )
 
-    metrics = my_model.infer(
+    predictions = my_model.infer(
         test_set="/path/to/test_annotations.json",
-        pretrained="/path/to/checkpoints/best.pt",
-        predictions="/path/to/predictions.json",
+    )
+
+    print(predictions)
+
+    metrics = my_model.evaluate(
+        test_set="/path/to/test_annotations.json",
     )
 
     print(metrics)

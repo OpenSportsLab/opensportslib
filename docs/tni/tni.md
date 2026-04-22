@@ -404,14 +404,12 @@ Usage:
 ### Load weights from HF ###
 
 #### For Classification ####
-myModel.infer(
-    test_set="/path/to/annotations.json",
-    pretrained="jeetv/snpro-classification-mvit", # classification (MViT)
-)
+myModel.load_weights(weights="jeetv/snpro-classification-mvit")
 
 #### For Localization ####
-pretrained = "jeetv/snpro-snbas-2023" # SNBAS - 2 classes (E2E spot)
-pretrained = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
+weights = "jeetv/snpro-snbas-2023" # SNBAS - 2 classes (E2E spot)
+weights = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
+myModel.load_weights(weights=weights)
 ```
 
 ## Train on SINGLE GPU
@@ -421,19 +419,19 @@ import wandb
 
 # Initialize model with config
 myModel = model.classification(
-    config="/path/to/classification.yaml"
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
 ## Localization ##
 # myModel = model.localization(
-#     config="/path/to/classification.yaml"
+#     config="/path/to/localization.yaml"
 # )
 
 # Train on your dataset
 myModel.train(
     train_set="/path/to/train_annotations.json",
     valid_set="/path/to/valid_annotations.json",
-    pretrained=/path/to/  # or path to pretrained checkpoint
 )
 ```
 
@@ -444,7 +442,8 @@ from opensportslib import model
 def main():
     myModel = model.classification(
         config="/path/to/classification.yaml",
-        data_dir="/path/to/dataset_root"
+        weights="/path/to/weights.pt",  # optional
+        overrides={"DATA.data_dir": "/path/to/dataset_root"},
     )
 
     ## Localization ##
@@ -455,7 +454,6 @@ def main():
     myModel.train(
         train_set="/path/to/train_annotations.json",
         valid_set="/path/to/valid_annotations.json",
-        pretrained="/path/to/pretrained.pt",  # optional
         use_ddp=True,  # IMPORTANT
     )
 
@@ -470,7 +468,8 @@ from opensportslib import model
 
 # Load trained model
 myModel = model.classification(
-    config="/path/to/classification.yaml"
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
 ## Localization ##
@@ -479,10 +478,12 @@ myModel = model.classification(
 # )
 
 # Run inference on test set
-metrics = myModel.infer(
+predictions = myModel.infer(
     test_set="/path/to/test_annotations.json",
-    pretrained="/path/to/checkpoints/final_model",
-    predictions="/path/to/predictions.json"
+)
+
+metrics = myModel.evaluate(
+    test_set="/path/to/test_annotations.json",
 )
 ```
 
@@ -493,7 +494,8 @@ from opensportslib import model
 def main():
     myModel = model.classification(
         config="/path/to/classification.yaml",
-        data_dir="/path/to/dataset_root"
+        weights="/path/to/weights.pt",  # optional
+        overrides={"DATA.data_dir": "/path/to/dataset_root"},
     )
 
     ## Localization ##
@@ -501,11 +503,13 @@ def main():
     #     config="/path/to/classification.yaml"
     # )
 
-    metrics = myModel.infer(
+    predictions = myModel.infer(
         test_set="/path/to/test_annotations.json",
-        pretrained="/path/to/checkpoints/best.pt",
-        predictions="/path/to/predictions.json",
         use_ddp=True,   # optional (usually not needed)
+    )
+
+    metrics = myModel.evaluate(
+        test_set="/path/to/test_annotations.json",
     )
 
     print(metrics)
