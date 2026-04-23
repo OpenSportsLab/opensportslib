@@ -1,0 +1,69 @@
+import argparse
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from opensportslib.tools.hf_transfer import upload_dataset_inputs_from_json_to_hf
+
+
+def main(
+    repo_id: str,
+    json_path: str,
+    revision: str = "main",
+    commit_message: str | None = None,
+    token: str | None = None,
+) -> None:
+    result = upload_dataset_inputs_from_json_to_hf(
+        repo_id=repo_id,
+        json_path=json_path,
+        revision=revision,
+        commit_message=commit_message,
+        token=token,
+        progress_cb=lambda msg: print(f"[HF] {msg}"),
+    )
+
+    print("Upload complete.")
+    print(f"Repo: {result['repo_id']}")
+    print(f"Branch: {result['revision']}")
+    print(f"Dataset JSON: {result['json_path']}")
+    if "unique_input_file_count" in result:
+        print(f"Unique input files: {result['unique_input_file_count']}")
+    print(f"Uploaded files: {result['uploaded_file_count']}")
+    print(f"Commit message: {result['commit_message']}")
+    print(f"Commit ref: {result['commit_ref']}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Upload files referenced by data[].inputs[].path from a local dataset JSON to a Hugging Face dataset repo."
+    )
+    parser.add_argument("--repo-id", required=True, help="Dataset repo id, e.g. OpenSportsLab/OSL-loc-tennis-public")
+    parser.add_argument("--json-path", required=True, help="Local dataset JSON path.")
+    parser.add_argument(
+        "--revision",
+        default="main",
+        help="Target branch/revision in the dataset repo (default: main).",
+    )
+    parser.add_argument(
+        "--commit-message",
+        default="Upload dataset inputs from JSON",
+        help="Optional commit message prefix.",
+    )
+    parser.add_argument(
+        "--token",
+        default=None,
+        help="Optional Hugging Face token override. If omitted, local HF login is used.",
+    )
+
+    args = parser.parse_args()
+    main(
+        repo_id=args.repo_id,
+        json_path=args.json_path,
+        revision=args.revision,
+        commit_message=args.commit_message,
+        token=args.token,
+    )

@@ -1,8 +1,5 @@
 import importlib
-# from . import apis as model
-# from . import metrics
-# from . import datasets
-# from . import core
+
 
 def __getattr__(name):
     if name == "model":
@@ -13,6 +10,9 @@ def __getattr__(name):
         return importlib.import_module("opensportslib.datasets")
     if name == "core":
         return importlib.import_module("opensportslib.core")
+    if name == "tools":
+        return importlib.import_module("opensportslib.tools")
     raise AttributeError(f"module 'opensportslib' has no attribute '{name}'")
 
-__all__ = ["model", "metrics", "datasets", "core"]
+
+__all__ = ["model", "metrics", "datasets", "core", "tools"]
