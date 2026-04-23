@@ -94,7 +94,7 @@ print("OpenSportsLib imported successfully")
 ```python
 from opensportslib import model
 
-myModel = model.classification(
+myModel = model.ClassificationModel(
     config="/path/to/classification.yaml",
     weights="/path/to/weights.pt",  # optional
 )
