@@ -516,7 +516,7 @@ class BaseTrainerClassification:
                 })
 
             logging.info(f"RESULTS Length: {len(results)}")
-            logging.info(f"Predicitions are stored at : {save_path}")
+            logging.info(f"Predictions are stored at : {save_path}")
             with open(save_path, "w") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
