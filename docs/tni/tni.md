@@ -440,14 +440,13 @@ myModel.train(
 from opensportslib import model
 
 def main():
-    myModel = model.classification(
+    myModel = model.ClassificationModel(
         config="/path/to/classification.yaml",
         weights="/path/to/weights.pt",  # optional
-        overrides={"DATA.data_dir": "/path/to/dataset_root"},
     )
 
     ## Localization ##
-    # myModel = model.localization(
+    # myModel = model.LocalizationModel(
     #     config="/path/to/classification.yaml"
     # )
 
@@ -467,13 +466,13 @@ if __name__ == "__main__":
 from opensportslib import model
 
 # Load trained model
-myModel = model.classification(
+myModel = model.ClassificationModel(
     config="/path/to/classification.yaml",
     weights="/path/to/weights.pt",  # optional
 )
 
 ## Localization ##
-# myModel = model.localization(
+# myModel = model.LocalizationModel(
 #     config="/path/to/classification.yaml"
 # )
 
@@ -492,14 +491,13 @@ metrics = myModel.evaluate(
 from opensportslib import model
 
 def main():
-    myModel = model.classification(
+    myModel = model.ClassificationModel(
         config="/path/to/classification.yaml",
         weights="/path/to/weights.pt",  # optional
-        overrides={"DATA.data_dir": "/path/to/dataset_root"},
     )
 
     ## Localization ##
-    # myModel = model.localization(
+    # myModel = model.LocalizationModel(
     #     config="/path/to/classification.yaml"
     # )
 
