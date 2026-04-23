@@ -237,3 +237,123 @@ def localization_integration_assets(tmp_path: Path) -> dict:
         "test": test_path,
         "results": str(result_path),
     }
+
+
+@pytest.fixture
+def classification_public_dataset_assets(tmp_path: Path) -> dict:
+    data_dir = tmp_path / "mvfouls"
+    save_dir = tmp_path / "classification_public_ckpt"
+    log_dir = tmp_path / "classification_public_logs"
+
+    train_path = _write_annotation(
+        data_dir / "train" / "annotations-train.json",
+        num_samples=4,
+    )
+    valid_path = _write_annotation(
+        data_dir / "valid" / "annotations-valid.json",
+        num_samples=2,
+    )
+    test_path = _write_annotation(
+        data_dir / "test" / "annotations-test.json",
+        num_samples=2,
+    )
+
+    payload = {
+        "DATA": {
+            "dataset_name": "mvfouls",
+            "data_dir": str(data_dir),
+            "train": {"path": train_path},
+            "valid": {"path": valid_path},
+            "test": {"path": test_path},
+        },
+        "MODEL": {
+            "type": "custom",
+            "backbone": {"type": "smoke_backbone"},
+        },
+        "SYSTEM": {
+            "save_dir": str(save_dir),
+            "log_dir": str(log_dir),
+            "GPU": 0,
+            "device": "cpu",
+            "use_seed": False,
+            "seed": 0,
+        },
+        "TRAIN": {"epochs": 1},
+    }
+    config_path = _write_config(tmp_path / "classification-public.yaml", payload)
+
+    return {
+        "config": config_path,
+        "train": train_path,
+        "valid": valid_path,
+        "test": test_path,
+    }
+
+
+@pytest.fixture
+def localization_public_dataset_assets(tmp_path: Path) -> dict:
+    data_dir = tmp_path / "soccernet"
+    save_dir = tmp_path / "localization_public_ckpt"
+    log_dir = tmp_path / "localization_public_logs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    train_path = _write_annotation(
+        data_dir / "train" / "annotations-2024-224p-train.json",
+        num_samples=2,
+    )
+    valid_path = _write_annotation(
+        data_dir / "valid" / "annotations-2024-224p-valid.json",
+        num_samples=1,
+    )
+    test_path = _write_annotation(
+        data_dir / "test" / "annotations-2024-224p-test.json",
+        num_samples=1,
+    )
+    result_path = tmp_path / "results_spotting_test"
+
+    payload = {
+        "dali": False,
+        "DATA": {
+            "dataset_name": "SoccerNet",
+            "data_dir": str(data_dir),
+            "classes": ["PASS", "SHOT"],
+            "mixup": False,
+            "train": {
+                "path": train_path,
+                "video_path": str(data_dir / "train"),
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+            },
+            "valid": {
+                "path": valid_path,
+                "video_path": str(data_dir / "valid"),
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+            },
+            "test": {
+                "path": test_path,
+                "video_path": str(data_dir / "test"),
+                "results": str(result_path),
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+            },
+        },
+        "MODEL": {"backbone": {"type": "smoke_backbone"}, "multi_gpu": False},
+        "TRAIN": {"max_epochs": 1, "evaluation_frequency": 1, "batch_size": 1, "type": "localization"},
+        "SYSTEM": {
+            "save_dir": str(save_dir),
+            "log_dir": str(log_dir),
+            "work_dir": str(save_dir),
+            "GPU": 0,
+            "device": "cpu",
+            "seed": 0,
+        },
+    }
+    config_path = _write_config(tmp_path / "localization-public.yaml", payload)
+
+    return {
+        "config": config_path,
+        "train": train_path,
+        "valid": valid_path,
+        "test": test_path,
+        "results": str(result_path),
+    }

@@ -418,13 +418,13 @@ from opensportslib import model
 import wandb
 
 # Initialize model with config
-myModel = model.classification(
+myModel = model.ClassificationModel(
     config="/path/to/classification.yaml",
     weights="/path/to/weights.pt",  # optional
 )
 
 ## Localization ##
-# myModel = model.localization(
+# myModel = model.LocalizationModel(
 #     config="/path/to/localization.yaml"
 # )
 

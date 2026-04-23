@@ -240,3 +240,53 @@ def test_localization_train_and_infer_subset(
         use_wandb=False,
     )
     assert isinstance(metrics, dict)
+
+
+def test_classification_train_infer_evaluate_public_mvfouls(
+    tmp_path,
+    monkeypatch,
+    classification_public_dataset_assets,
+):
+    _install_classification_stubs(monkeypatch, tmp_path)
+    assets = classification_public_dataset_assets
+
+    monkeypatch.setenv("OSL_PRETRAINED_WEIGHTS", "0")
+    monkeypatch.setenv("WANDB_MODE", "disabled")
+
+    api = ClassificationModel(config=assets["config"])
+    checkpoint = api.train(use_wandb=False)
+
+    assert checkpoint is not None
+    assert Path(checkpoint).exists()
+
+    predictions = api.infer(weights=checkpoint, use_wandb=False)
+    assert isinstance(predictions, dict)
+    assert predictions.get("task") == "action_classification"
+
+    metrics = api.evaluate(use_wandb=False)
+    assert isinstance(metrics, dict)
+
+
+def test_localization_train_infer_evaluate_public_soccernet(
+    tmp_path,
+    monkeypatch,
+    localization_public_dataset_assets,
+):
+    _install_localization_stubs(monkeypatch, tmp_path)
+    assets = localization_public_dataset_assets
+
+    monkeypatch.setenv("OSL_PRETRAINED_WEIGHTS", "0")
+    monkeypatch.setenv("WANDB_MODE", "disabled")
+
+    api = LocalizationModel(config=assets["config"])
+    checkpoint = api.train(use_wandb=False)
+
+    assert checkpoint is not None
+    assert Path(checkpoint).exists()
+
+    predictions = api.infer(weights=checkpoint, use_wandb=False)
+    assert isinstance(predictions, dict)
+    assert predictions.get("task") == "localization"
+
+    metrics = api.evaluate(use_wandb=False)
+    assert isinstance(metrics, dict)
