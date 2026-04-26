@@ -29,7 +29,14 @@ def main(
 
     print(f"Repo: {result['repo_id']} @ {result['revision']}")
     print(f"JSON path: {result['json_path']}")
-    print(f"Matched files: {result['referenced_file_count']}")
+    download_kind = result.get("download_kind", "json")
+    if "referenced_file_count" in result:
+        print(f"Matched files: {result['referenced_file_count']}")
+    elif download_kind == "parquet":
+        print(
+            "Folder download mode: converted parquet folder to OSL JSON and "
+            f"extracted {result.get('extracted_media_count', 0)} media files."
+        )
 
     if dry_run:
         print("Running in DRY-RUN mode (no files downloaded).")
@@ -57,12 +64,18 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Download files referenced in an OSL JSON from a Hugging Face dataset repo."
+        description=(
+            "Download OSL data from HuggingFace using either a JSON file URL "
+            "or a dataset folder URL (tree/...)."
+        )
     )
     parser.add_argument(
         "--url",
         required=True,
-        help="URL of the OSL JSON file on Hugging Face (blob/resolve forms supported).",
+        help=(
+            "URL of an OSL JSON file (blob/resolve) or a dataset folder URL "
+            "(tree/<revision>)."
+        ),
     )
     parser.add_argument(
         "--output-dir",
