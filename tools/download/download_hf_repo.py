@@ -3,8 +3,8 @@
 Usage:
     python tools/download/download_hf_repo.py \
         --repo-id OpenSportsLab/OSL-XFoul \
-        --revision main \
-        --output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul
+        --revision main-parquet \
+        --output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
 """
 
 import argparse

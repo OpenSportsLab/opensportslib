@@ -7,7 +7,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from opensportslib.tools.hf_transfer import upload_dataset_inputs_from_json_to_hf
+from opensportslib.tools.hf_transfer import (
+    upload_dataset_as_parquet_to_hf,
+    upload_dataset_inputs_from_json_to_hf,
+)
 
 
 def main(
@@ -16,20 +19,40 @@ def main(
     revision: str = "main",
     commit_message: str | None = None,
     token: str | None = None,
+    upload_format: str = "json",
+    samples_per_shard: int = 100,
 ) -> None:
-    result = upload_dataset_inputs_from_json_to_hf(
-        repo_id=repo_id,
-        json_path=json_path,
-        revision=revision,
-        commit_message=commit_message,
-        token=token,
-        progress_cb=lambda msg: print(f"[HF] {msg}"),
-    )
+    if upload_format == "parquet":
+        result = upload_dataset_as_parquet_to_hf(
+            repo_id=repo_id,
+            json_path=json_path,
+            revision=revision,
+            commit_message=commit_message,
+            samples_per_shard=samples_per_shard,
+            token=token,
+            progress_cb=lambda msg: print(f"[HF] {msg}"),
+        )
+    else:
+        result = upload_dataset_inputs_from_json_to_hf(
+            repo_id=repo_id,
+            json_path=json_path,
+            revision=revision,
+            commit_message=commit_message,
+            token=token,
+            progress_cb=lambda msg: print(f"[HF] {msg}"),
+        )
 
     print("Upload complete.")
+    print(f"Format: {result.get('upload_kind', upload_format)}")
     print(f"Repo: {result['repo_id']}")
     print(f"Branch: {result['revision']}")
     print(f"Dataset JSON: {result['json_path']}")
+    if "folder_name" in result:
+        print(f"Repo folder: {result['folder_name']}")
+    if "num_samples" in result:
+        print(f"Samples: {result['num_samples']}")
+    if "samples_per_shard" in result:
+        print(f"Samples per shard: {result['samples_per_shard']}")
     if "unique_input_file_count" in result:
         print(f"Unique input files: {result['unique_input_file_count']}")
     print(f"Uploaded files: {result['uploaded_file_count']}")
@@ -39,7 +62,10 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Upload files referenced by data[].inputs[].path from a local dataset JSON to a Hugging Face dataset repo."
+        description=(
+            "Upload a local dataset JSON to a Hugging Face dataset repo as either "
+            "raw JSON-linked inputs or Parquet + WebDataset shards."
+        )
     )
     parser.add_argument("--repo-id", required=True, help="Dataset repo id, e.g. OpenSportsLab/OSL-loc-tennis-public")
     parser.add_argument("--json-path", required=True, help="Local dataset JSON path.")
@@ -58,6 +84,18 @@ if __name__ == "__main__":
         default=None,
         help="Optional Hugging Face token override. If omitted, local HF login is used.",
     )
+    parser.add_argument(
+        "--format",
+        default="json",
+        choices=["json", "parquet"],
+        help="Upload mode: json (raw inputs) or parquet (Parquet + WebDataset).",
+    )
+    parser.add_argument(
+        "--samples-per-shard",
+        type=int,
+        default=100,
+        help="Samples per shard for parquet mode (default: 100).",
+    )
 
     args = parser.parse_args()
     main(
@@ -66,4 +104,6 @@ if __name__ == "__main__":
         revision=args.revision,
         commit_message=args.commit_message,
         token=args.token,
+        upload_format=args.format,
+        samples_per_shard=args.samples_per_shard,
     )

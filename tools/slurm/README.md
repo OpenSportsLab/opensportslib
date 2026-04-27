@@ -81,8 +81,8 @@ sbatch tools/slurm/datasets/download_gar_frames.sbatch
 # usage: sbatch download_hf_repo.sbatch <REPO_ID> [REVISION] [OUTPUT_DIR] [HF_TOKEN]
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \
     OpenSportsLab/OSL-XFoul \
-    main \
-    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+    main-parquet \
+    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
 
 # SoccerNet localization SNAS (224p)
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \

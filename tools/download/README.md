@@ -20,8 +20,8 @@ Basic usage:
 ```bash
 python tools/download/download_hf_repo.py \
 	--repo-id OpenSportsLab/OSL-XFoul \
-	--revision main \
-	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+	--revision main-parquet \
+	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
 ```
 
 Examples for all repos mentioned so far:
@@ -30,8 +30,8 @@ Examples for all repos mentioned so far:
 # OSL-XFoul
 python tools/download/download_hf_repo.py \
 	--repo-id OpenSportsLab/OSL-XFoul \
-	--revision main \
-	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+	--revision main-parquet \
+	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
 
 # SoccerNet localization SNAS (224p)
 python tools/download/download_hf_repo.py \
@@ -93,9 +93,19 @@ python tools/download/download_osl_hf.py \
 ## Upload
 
 ```bash
+# JSON mode (upload dataset JSON + referenced input files)
 python tools/download/upload_osl_hf.py \
 	--repo-id <org/repo> \
 	--json-path <local_dataset.json> \
+	--format json \
+	--revision main
+
+# Parquet mode (convert to Parquet + WebDataset and upload folder)
+python tools/download/upload_osl_hf.py \
+	--repo-id <org/repo> \
+	--json-path <local_dataset.json> \
+	--format parquet \
+	--samples-per-shard 100 \
 	--revision main
 ```
 
@@ -103,6 +113,8 @@ python tools/download/upload_osl_hf.py \
 
 - Gated repos require accepted access terms and authentication (`huggingface-cli login` or `--token`).
 - `download_hf_repo.py` accepts `--repo-type` (`dataset`, `model`, `space`) and optional `--ignore` glob patterns.
+- `upload_osl_hf.py` accepts `--format` (`json`, `parquet`).
+- In parquet mode, output is uploaded under a folder named after the JSON file stem.
 
 ## Python API
 

@@ -34,7 +34,7 @@ sbatch tools/slurm/datasets/download_gar_frames.sbatch
 
 # Generic — any repo/version:
 #   sbatch download_hf_repo.sbatch <REPO_ID> [REVISION] [OUTPUT_DIR] [HF_TOKEN]
-sbatch tools/slurm/datasets/download_hf_repo.sbatch OpenSportsLab/OSL-XFoul main
+sbatch tools/slurm/datasets/download_hf_repo.sbatch OpenSportsLab/OSL-XFoul main-parquet
 
 # Gated repo with a token:
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \
@@ -72,8 +72,8 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
 
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \
     OpenSportsLab/OSL-XFoul \
-    main \
-    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+    main-parquet \
+    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
 
 # soccernetpro-classification-GAR  (branch: tracking-parquet)
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \
