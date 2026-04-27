@@ -12,6 +12,8 @@ Scripts to download and upload OSL datasets via HuggingFace Hub.
 	- Best when you want the entire repo content for a branch/tag/commit.
 - `upload_osl_hf.py`
 	- Uploads local dataset inputs from JSON to a HuggingFace dataset repo.
+	- Automatically creates the target dataset repo if it does not exist.
+	- Automatically creates the target revision branch when `--revision` is not `main` and the branch is missing.
 
 ## Full-repo download (recommended for complete branches)
 
@@ -38,6 +40,11 @@ python tools/download/download_hf_repo.py \
 	--repo-id OpenSportsLab/soccernetpro-localization-snas \
 	--revision 224p \
 	--output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p
+
+python tools/download/download_hf_repo.py \
+	--repo-id OpenSportsLab/soccernetpro-localization-snas \
+	--revision 720p \
+	--output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p
 
 # SoccerNet localization SNAS (ResNET_PCA512)
 python tools/download/download_hf_repo.py \
@@ -109,6 +116,27 @@ python tools/download/upload_osl_hf.py \
 	--revision main
 ```
 
+```bash
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/train.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/valid.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/test.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/challenge.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
+
+
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/train.json --format parquet --shard-size 5GB --revision 224p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/valid.json --format parquet --shard-size 5GB --revision 224p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/test.json --format parquet --shard-size 5GB --revision 224p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/challenge.json --format parquet --shard-size 5GB --revision 224p-parquet
+
+
+
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/train.json --format parquet --shard-size 20GB --revision 720p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/valid.json --format parquet --shard-size 20GB --revision 720p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/test.json --format parquet --shard-size 20GB --revision 720p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/challenge.json --format parquet --shard-size 20GB --revision 720p-parquet
+
+
+```
 ## Notes
 
 - Gated repos require accepted access terms and authentication (`huggingface-cli login` or `--token`).

@@ -8,6 +8,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from opensportslib.tools.hf_transfer import (
+    create_dataset_branch_on_hf,
+    create_dataset_repo_on_hf,
     upload_dataset_as_parquet_to_hf,
     upload_dataset_inputs_from_json_to_hf,
 )
@@ -25,11 +27,31 @@ def main(
     shard_size: int | str = DEFAULT_SHARD_SIZE,
     samples_per_shard: int = 100,
 ) -> None:
+    # Ensure target repo exists (idempotent via exist_ok=True in helper).
+    print(f"[HF] Ensuring dataset repo exists: {repo_id}")
+    create_dataset_repo_on_hf(
+        repo_id=repo_id,
+        token=token,
+        progress_cb=lambda msg: print(f"[HF] {msg}"),
+    )
+
+    # Ensure target revision exists when uploading to a non-main branch.
+    cleaned_revision = str(revision or "").strip() or "main"
+    if cleaned_revision != "main":
+        print(f"[HF] Ensuring branch exists: {repo_id}@{cleaned_revision}")
+        create_dataset_branch_on_hf(
+            repo_id=repo_id,
+            branch=cleaned_revision,
+            source_revision="main",
+            token=token,
+            progress_cb=lambda msg: print(f"[HF] {msg}"),
+        )
+
     if upload_format == "parquet":
         result = upload_dataset_as_parquet_to_hf(
             repo_id=repo_id,
             json_path=json_path,
-            revision=revision,
+            revision=cleaned_revision,
             commit_message=commit_message,
             shard_mode=shard_mode,
             shard_size=shard_size,
@@ -41,7 +63,7 @@ def main(
         result = upload_dataset_inputs_from_json_to_hf(
             repo_id=repo_id,
             json_path=json_path,
-            revision=revision,
+            revision=cleaned_revision,
             commit_message=commit_message,
             token=token,
             progress_cb=lambda msg: print(f"[HF] {msg}"),
