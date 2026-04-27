@@ -21,7 +21,7 @@ Example:
 from opensportslib import model
 
 my_model = model.classification(
-    config="opensportslib/config/classification.yaml"
+    config="examples/configs/classification.yaml"
 )
 ```
 
