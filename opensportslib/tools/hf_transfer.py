@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-from .osl_json_to_parquet import convert_json_to_parquet
+from .osl_json_to_parquet import DEFAULT_SHARD_SIZE, convert_json_to_parquet, parse_shard_size
 from .parquet_to_osl_json import convert_parquet_to_json
 
 
@@ -671,6 +671,8 @@ def upload_dataset_as_parquet_to_hf(
     *,
     revision: str | None = "main",
     commit_message: str | None = None,
+    shard_mode: str = "size",
+    shard_size: int | str = DEFAULT_SHARD_SIZE,
     samples_per_shard: int = 100,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -697,6 +699,10 @@ def upload_dataset_as_parquet_to_hf(
 
     cleaned_revision = str(revision or "").strip() or "main"
     effective_commit_message = (commit_message or "").strip() or "Upload dataset as Parquet + WebDataset"
+    cleaned_shard_mode = str(shard_mode or "size").strip().lower()
+    if cleaned_shard_mode not in {"size", "samples"}:
+        raise ValueError("shard_mode must be either 'size' or 'samples'.")
+    cleaned_shard_size = parse_shard_size(shard_size)
     cleaned_samples_per_shard = int(samples_per_shard or 100)
     if cleaned_samples_per_shard < 1:
         raise ValueError("samples_per_shard must be >= 1.")
@@ -704,9 +710,14 @@ def upload_dataset_as_parquet_to_hf(
     media_root = Path(cleaned_json_path).parent
 
     _ensure_not_cancelled(is_cancelled)
+    shard_desc = (
+        f"shard_size={cleaned_shard_size}"
+        if cleaned_shard_mode == "size"
+        else f"samples_per_shard={cleaned_samples_per_shard}"
+    )
     _emit_progress(
         progress_cb,
-        f"Converting {cleaned_json_path} to Parquet + WebDataset (samples_per_shard={cleaned_samples_per_shard})...",
+        f"Converting {cleaned_json_path} to Parquet + WebDataset ({shard_desc})...",
     )
 
     conversion_result: dict[str, Any] = {}
@@ -719,6 +730,8 @@ def upload_dataset_as_parquet_to_hf(
             json_path=cleaned_json_path,
             media_root=media_root,
             output_dir=parquet_output,
+            shard_mode=cleaned_shard_mode,
+            shard_size=cleaned_shard_size,
             samples_per_shard=cleaned_samples_per_shard,
             missing_policy="skip",
             overwrite=True,
@@ -778,7 +791,10 @@ def upload_dataset_as_parquet_to_hf(
         "upload_kind": "parquet",
         "json_path": cleaned_json_path,
         "folder_name": folder_name,
+        "shard_mode": cleaned_shard_mode,
+        "shard_size": cleaned_shard_size,
         "samples_per_shard": cleaned_samples_per_shard,
+        "num_shards": int(conversion_result.get("num_shards") or 0),
         "num_samples": int(conversion_result.get("num_samples") or 0),
         "input_file_count": input_file_count,
         "uploaded_file_count": total,

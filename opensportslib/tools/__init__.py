@@ -25,11 +25,13 @@ from .hf_transfer import (
     upload_dataset_inputs_from_json_to_hf,
     write_hf_source_metadata_to_dataset_json,
 )
-from .osl_json_to_parquet import convert_json_to_parquet
+from .osl_json_to_parquet import DEFAULT_SHARD_SIZE, convert_json_to_parquet, parse_shard_size
 from .parquet_to_osl_json import convert_parquet_to_json
 
 __all__ = [
     "convert_json_to_parquet",
+    "DEFAULT_SHARD_SIZE",
+    "parse_shard_size",
     "convert_parquet_to_json",
     "HfTransferCancelled",
     "HF_SOURCE_URL_KEY",

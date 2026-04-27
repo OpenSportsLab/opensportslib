@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from opensportslib.tools import convert_json_to_parquet, convert_parquet_to_json
+from opensportslib.tools import convert_json_to_parquet, convert_parquet_to_json, parse_shard_size
 
 
 def test_json_to_parquet_and_back_supports_non_video_inputs(tmp_path):
@@ -143,6 +143,110 @@ def test_json_to_parquet_absolute_paths_rewrites_sample_payload(tmp_path):
     df = pd.read_parquet(out_dir / "metadata.parquet")
     payload_from_parquet = json.loads(df.iloc[0]["sample_payload"])
     assert payload_from_parquet["inputs"][0]["path"] == str(clip_path)
+
+
+def test_json_to_parquet_size_mode_splits_on_target_tar_size(tmp_path):
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    data = []
+    for idx in range(3):
+        clip_path = clips_dir / f"clip_{idx}.bin"
+        clip_path.write_bytes(b"x" * 3_000)
+        data.append({
+            "id": f"sample_{idx}",
+            "inputs": [{"type": "binary", "path": f"clips/clip_{idx}.bin"}],
+        })
+
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(json.dumps({"labels": {}, "data": data}), encoding="utf-8")
+
+    out_dir = tmp_path / "out_size"
+    result = convert_json_to_parquet(
+        json_path=json_path,
+        media_root=tmp_path,
+        output_dir=out_dir,
+        shard_size=15_000,
+        overwrite=True,
+    )
+
+    assert result["shard_mode"] == "size"
+    assert result["shard_size"] == 15_000
+    assert result["num_shards"] == 2
+    metadata_df = pd.read_parquet(out_dir / "metadata.parquet")
+    assert metadata_df["shard_name"].tolist() == [
+        "shard-000000.tar",
+        "shard-000000.tar",
+        "shard-000001.tar",
+    ]
+
+
+def test_json_to_parquet_oversized_sample_gets_single_shard(tmp_path):
+    clip_path = tmp_path / "clips" / "large.bin"
+    clip_path.parent.mkdir()
+    clip_path.write_bytes(b"x" * 5_000)
+    payload = {
+        "labels": {},
+        "data": [
+            {"id": "large", "inputs": [{"type": "binary", "path": "clips/large.bin"}]},
+            {"id": "small", "inputs": []},
+        ],
+    }
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    out_dir = tmp_path / "out_oversized"
+    result = convert_json_to_parquet(
+        json_path=json_path,
+        media_root=tmp_path,
+        output_dir=out_dir,
+        shard_size=2_000,
+        overwrite=True,
+    )
+
+    assert result["num_shards"] == 2
+    metadata_df = pd.read_parquet(out_dir / "metadata.parquet")
+    assert metadata_df["shard_name"].tolist() == ["shard-000000.tar", "shard-000001.tar"]
+
+
+def test_json_to_parquet_samples_mode_preserves_count_based_sharding(tmp_path):
+    payload = {
+        "labels": {},
+        "data": [
+            {"id": f"sample_{idx}", "inputs": []}
+            for idx in range(5)
+        ],
+    }
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    out_dir = tmp_path / "out_samples"
+    result = convert_json_to_parquet(
+        json_path=json_path,
+        media_root=tmp_path,
+        output_dir=out_dir,
+        shard_mode="samples",
+        samples_per_shard=2,
+        overwrite=True,
+    )
+
+    assert result["shard_mode"] == "samples"
+    assert result["samples_per_shard"] == 2
+    assert result["num_shards"] == 3
+    metadata_df = pd.read_parquet(out_dir / "metadata.parquet")
+    assert metadata_df["shard_name"].tolist() == [
+        "shard-000000.tar",
+        "shard-000000.tar",
+        "shard-000001.tar",
+        "shard-000001.tar",
+        "shard-000002.tar",
+    ]
+
+
+def test_parse_shard_size_supports_human_readable_units():
+    assert parse_shard_size("500MB") == 500_000_000
+    assert parse_shard_size("1GB") == 1_000_000_000
+    assert parse_shard_size("1024MiB") == 1024 * 1024**2
+    assert parse_shard_size("42") == 42
 
 
 def test_parquet_to_json_rejects_legacy_schema_without_header(tmp_path):

@@ -105,7 +105,7 @@ python tools/download/upload_osl_hf.py \
 	--repo-id <org/repo> \
 	--json-path <local_dataset.json> \
 	--format parquet \
-	--samples-per-shard 100 \
+	--shard-size 1GB \
 	--revision main
 ```
 

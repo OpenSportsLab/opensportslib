@@ -46,7 +46,7 @@ python tools/convert/osl_json_to_parquet_webdataset.py \
     /path/to/Classification/svfouls/annotations_test.json \
     /path/to/Classification/svfouls \
     /path/to/svfouls_parquet_webdataset \
-    --samples-per-shard 50 \
+    --shard-size 500MB \
     --missing-policy skip \
     --overwrite
 
@@ -62,7 +62,7 @@ python tools/convert/osl_json_to_parquet_webdataset.py \
     /path/to/sngar-tracking/annotations_test.json \
     /path/to/sngar-tracking \
     /path/to/sngar-tracking_parquet_webdataset \
-    --samples-per-shard 50 \
+    --shard-size 500MB \
     --missing-policy skip \
     --overwrite
 

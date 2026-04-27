@@ -16,6 +16,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from opensportslib.tools import convert_json_to_parquet
+from opensportslib.tools.osl_json_to_parquet import DEFAULT_SHARD_SIZE, parse_shard_size
 
 
 if __name__ == "__main__":
@@ -28,11 +29,23 @@ if __name__ == "__main__":
     parser.add_argument("media_root", help="Root directory containing the input files referenced in the JSON.")
     parser.add_argument("output_dir", help="Destination directory for the converted dataset.")
     parser.add_argument(
+        "--shard-mode",
+        default="size",
+        choices=["size", "samples"],
+        help="Shard grouping mode (default: size).",
+    )
+    parser.add_argument(
+        "--shard-size",
+        default="1GB",
+        metavar="SIZE",
+        help="Target TAR shard size for size mode, e.g. 500MB, 1GB, 1024MiB (default: 1GB).",
+    )
+    parser.add_argument(
         "--samples-per-shard",
         type=int,
         default=100,
         metavar="N",
-        help="Number of samples per TAR shard (default: 100).",
+        help="Number of samples per TAR shard when --shard-mode samples is used (default: 100).",
     )
     parser.add_argument(
         "--compression",
@@ -63,12 +76,17 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.shard_mode != "samples" and args.samples_per_shard != 100:
+        parser.error("--samples-per-shard can only be used with --shard-mode samples")
     compression_value: Optional[str] = None if args.compression == "none" else args.compression
+    shard_size_value = parse_shard_size(args.shard_size or DEFAULT_SHARD_SIZE)
 
     result = convert_json_to_parquet(
         json_path=args.json_path,
         media_root=args.media_root,
         output_dir=args.output_dir,
+        shard_mode=args.shard_mode,
+        shard_size=shard_size_value,
         samples_per_shard=args.samples_per_shard,
         compression=compression_value,
         shard_prefix=args.shard_prefix,

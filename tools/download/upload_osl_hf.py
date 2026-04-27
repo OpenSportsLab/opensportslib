@@ -11,6 +11,7 @@ from opensportslib.tools.hf_transfer import (
     upload_dataset_as_parquet_to_hf,
     upload_dataset_inputs_from_json_to_hf,
 )
+from opensportslib.tools.osl_json_to_parquet import DEFAULT_SHARD_SIZE, parse_shard_size
 
 
 def main(
@@ -20,6 +21,8 @@ def main(
     commit_message: str | None = None,
     token: str | None = None,
     upload_format: str = "json",
+    shard_mode: str = "size",
+    shard_size: int | str = DEFAULT_SHARD_SIZE,
     samples_per_shard: int = 100,
 ) -> None:
     if upload_format == "parquet":
@@ -28,6 +31,8 @@ def main(
             json_path=json_path,
             revision=revision,
             commit_message=commit_message,
+            shard_mode=shard_mode,
+            shard_size=shard_size,
             samples_per_shard=samples_per_shard,
             token=token,
             progress_cb=lambda msg: print(f"[HF] {msg}"),
@@ -51,7 +56,10 @@ def main(
         print(f"Repo folder: {result['folder_name']}")
     if "num_samples" in result:
         print(f"Samples: {result['num_samples']}")
-    if "samples_per_shard" in result:
+    if "shard_size" in result:
+        print(f"Shard mode: {result.get('shard_mode', 'size')}")
+        print(f"Shard size: {result['shard_size']}")
+    if result.get("shard_mode") == "samples" and "samples_per_shard" in result:
         print(f"Samples per shard: {result['samples_per_shard']}")
     if "unique_input_file_count" in result:
         print(f"Unique input files: {result['unique_input_file_count']}")
@@ -91,13 +99,26 @@ if __name__ == "__main__":
         help="Upload mode: json (raw inputs) or parquet (Parquet + WebDataset).",
     )
     parser.add_argument(
+        "--shard-mode",
+        default="size",
+        choices=["size", "samples"],
+        help="Shard grouping mode for parquet mode (default: size).",
+    )
+    parser.add_argument(
+        "--shard-size",
+        default="1GB",
+        help="Target TAR shard size for parquet size mode, e.g. 500MB, 1GB, 1024MiB (default: 1GB).",
+    )
+    parser.add_argument(
         "--samples-per-shard",
         type=int,
         default=100,
-        help="Samples per shard for parquet mode (default: 100).",
+        help="Samples per shard for parquet sample mode (default: 100).",
     )
 
     args = parser.parse_args()
+    if args.shard_mode != "samples" and args.samples_per_shard != 100:
+        parser.error("--samples-per-shard can only be used with --shard-mode samples")
     main(
         repo_id=args.repo_id,
         json_path=args.json_path,
@@ -105,5 +126,7 @@ if __name__ == "__main__":
         commit_message=args.commit_message,
         token=args.token,
         upload_format=args.format,
+        shard_mode=args.shard_mode,
+        shard_size=parse_shard_size(args.shard_size),
         samples_per_shard=args.samples_per_shard,
     )
