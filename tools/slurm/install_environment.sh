@@ -13,8 +13,27 @@
 
 mkdir -p ibex_logs
 
+nvidia-smi
+
+module load cuda
+module list
+
+nvidia-smi
+
+
 source ~/miniconda3/etc/profile.d/conda.sh
-conda create -n opensportslib python=3.12 -y
+conda create -n opensportslib -y python=3.12
 conda activate opensportslib
 
+
 pip install -e .
+
+
+# Install PyTorch (CPU/GPU auto-detected)
+opensportslib setup
+
+# Optional: install PyTorch Geometric support
+opensportslib setup --pyg
+
+# Optional: install for DALI support
+opensportslib setup --dali

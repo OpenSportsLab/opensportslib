@@ -25,6 +25,14 @@ Available jobs:
   - Required: `REPO_ID`
   - Optional: `REVISION` (default `main`), `OUTPUT_DIR`, `HF_TOKEN`
 
+- `upload_hf_repo.sbatch`
+  - Generic: upload a local OSL JSON split to a HuggingFace dataset repo
+  - Usage: `sbatch tools/slurm/datasets/upload_hf_repo.sbatch <REPO_ID> <REVISION> <JSON_PATH> [FORMAT] [SHARD_SIZE]`
+  - Required: `REPO_ID`, `REVISION`, `JSON_PATH`
+  - Optional:
+    - `FORMAT` (default `json`, choices: `json|parquet`)
+    - `SHARD_SIZE` (default `1GB`, used for `parquet`)
+
 Run examples:
 
 ```bash
@@ -41,6 +49,27 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
     OpenSportsLab/soccernetpro-classification-GAR tracking-parquet \
   /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/tracking-parquet \
     hf_xxx
+
+# Upload dataset
+sbatch tools/slurm/datasets/upload_hf_repo.sbatch \
+  OpenSportsLab/OSL-SoccerNet 720p-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/train.json \
+  json 20GB
+sbatch tools/slurm/datasets/upload_hf_repo.sbatch \
+  OpenSportsLab/OSL-SoccerNet 720p-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/valid.json \
+  json 20GB
+sbatch tools/slurm/datasets/upload_hf_repo.sbatch \
+  OpenSportsLab/OSL-SoccerNet 720p-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/test.json \
+  json 20GB
+sbatch tools/slurm/datasets/upload_hf_repo.sbatch \
+  OpenSportsLab/OSL-SoccerNet 720p-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/challenge.json \
+  json 20GB
+
+
+
 ```
 
 ### SoccerNet datasets
@@ -57,6 +86,13 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
     OpenSportsLab/soccernetpro-localization-snas \
     224p \
     /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p
+
+
+# soccernetpro-localization-snas  (branch: 720p)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snas \
+    720p \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p
 
 # soccernetpro-localization-snbas  (branch: 224p-2023)
 sbatch tools/slurm/datasets/download_hf_repo.sbatch \
@@ -91,3 +127,4 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
 If the repos are gated, add your token as the 4th argument: `hf_xxx`.
 
 If your cluster requires account charging, uncomment `#SBATCH --account=...` in each script.
+

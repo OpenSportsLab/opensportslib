@@ -130,10 +130,10 @@ python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --j
 
 
 
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/train.json --format parquet --shard-size 20GB --revision 720p-parquet
 python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/valid.json --format parquet --shard-size 20GB --revision 720p-parquet
 python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/test.json --format parquet --shard-size 20GB --revision 720p-parquet
 python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/challenge.json --format parquet --shard-size 20GB --revision 720p-parquet
+python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/train.json --format parquet --shard-size 20GB --revision 720p-parquet
 
 
 ```
