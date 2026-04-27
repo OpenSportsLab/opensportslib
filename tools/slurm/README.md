@@ -17,7 +17,8 @@ tools/slurm/
 │   ├── README.md
 │   ├── download_osl_xfoul.sbatch
 │   ├── download_gar_tracking.sbatch
-│   └── download_gar_frames.sbatch
+│   ├── download_gar_frames.sbatch
+│   └── download_hf_repo.sbatch
 └── training/                       # experiment-specific training jobs
     ├── train_classification.sbatch
     └── train_localization.sbatch
@@ -74,6 +75,50 @@ sbatch tools/slurm/datasets/download_gar_tracking.sbatch
 
 # GAR frames-parquet (gated)
 sbatch tools/slurm/datasets/download_gar_frames.sbatch
+
+
+# Generic full repo download
+# usage: sbatch download_hf_repo.sbatch <REPO_ID> [REVISION] [OUTPUT_DIR] [HF_TOKEN]
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/OSL-XFoul \
+    main \
+    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+
+# SoccerNet localization SNAS (224p)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snas \
+    224p \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p
+
+# SoccerNet localization SNAS (ResNET_PCA512)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snas \
+    ResNET_PCA512 \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512
+
+# SoccerNet localization SNBAS (224p-2023)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snbas \
+    224p-2023 \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023
+
+# SoccerNet classification VARS (mvfouls)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-classification-vars \
+    mvfouls \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls
+
+# SoccerNet classification GAR (gated, tracking-parquet)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-classification-GAR \
+    tracking-parquet \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/tracking-parquet 
+
+# SoccerNet classification GAR (gated, frames-parquet)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-classification-GAR \
+    frames-parquet \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/frames-parquet
 ```
 
 See `tools/slurm/datasets/README.md` for dataset details.

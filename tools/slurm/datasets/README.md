@@ -19,12 +19,75 @@ Available jobs:
   - Revision: `frames-parquet`
   - Access: gated (HF auth + accepted conditions required)
 
+- `download_hf_repo.sbatch`
+  - Generic: download a **full HuggingFace repo snapshot** (dataset branch/tag/commit)
+  - Usage: `sbatch tools/slurm/datasets/download_hf_repo.sbatch <REPO_ID> [REVISION] [OUTPUT_DIR] [HF_TOKEN]`
+  - Required: `REPO_ID`
+  - Optional: `REVISION` (default `main`), `OUTPUT_DIR`, `HF_TOKEN`
+
 Run examples:
 
 ```bash
 sbatch tools/slurm/datasets/download_osl_xfoul.sbatch
 sbatch tools/slurm/datasets/download_gar_tracking.sbatch
 sbatch tools/slurm/datasets/download_gar_frames.sbatch
+
+# Generic — any repo/version:
+#   sbatch download_hf_repo.sbatch <REPO_ID> [REVISION] [OUTPUT_DIR] [HF_TOKEN]
+sbatch tools/slurm/datasets/download_hf_repo.sbatch OpenSportsLab/OSL-XFoul main
+
+# Gated repo with a token:
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-classification-GAR tracking-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/tracking-parquet \
+    hf_xxx
 ```
+
+### SoccerNet datasets
+
+```bash
+# soccernetpro-localization-snas  (branch: ResNET_PCA512)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snas \
+    ResNET_PCA512 \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512
+    
+# soccernetpro-localization-snas  (branch: 224p)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snas \
+    224p \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p
+
+# soccernetpro-localization-snbas  (branch: 224p-2023)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-localization-snbas \
+    224p-2023 \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023
+
+# soccernetpro-classification-vars  (branch: mvfouls)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/soccernetpro-classification-vars \
+    mvfouls \
+    /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls
+
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+    OpenSportsLab/OSL-XFoul \
+    main \
+    /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main
+
+# soccernetpro-classification-GAR  (branch: tracking-parquet)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+  OpenSportsLab/soccernetpro-classification-GAR \
+  tracking-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/tracking-parquet
+
+# soccernetpro-classification-GAR  (branch: frames-parquet)
+sbatch tools/slurm/datasets/download_hf_repo.sbatch \
+  OpenSportsLab/soccernetpro-classification-GAR \
+  frames-parquet \
+  /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR/frames-parquet
+```
+
+If the repos are gated, add your token as the 4th argument: `hf_xxx`.
 
 If your cluster requires account charging, uncomment `#SBATCH --account=...` in each script.
