@@ -32,8 +32,8 @@ Examples for all repos mentioned so far:
 # OSL-XFoul
 python tools/download/download_hf_repo.py \
 	--repo-id OpenSportsLab/OSL-XFoul \
-	--revision main-parquet \
-	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet
+	--revision 224p \
+	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/224p
 
 # SoccerNet localization SNAS (224p)
 python tools/download/download_hf_repo.py \
@@ -91,12 +91,13 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
 ## Targeted download from OSL JSON or folder URL
 
 ```bash
+for revision in 224p 720p; do
+for split in test valid train; do
 python tools/download/download_osl_hf.py \
-	--repo-id OpenSportsLab/OSL-XFoul \
-	--revision main-parquet \
-	--split test \
-	--format parquet \
-	--output-dir /path/to/data/OSL-XFoul \
+	--repo-id OpenSportsLab/OSL-XFoul --revision $revision --split $split --format parquet \
+	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul
+done
+done
 ```
 
 The split downloader treats `--output-dir` as a root and writes files under
