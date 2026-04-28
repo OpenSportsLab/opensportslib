@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         default="downloaded_data",
-        help="Directory to store downloaded files.",
+        help="Root directory for downloads. Files are stored under <output-dir>/<revision>/<split>.",
     )
     parser.add_argument(
         "--format",

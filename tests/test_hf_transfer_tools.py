@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -521,8 +522,6 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
             }
         ]
     }
-    json_path = tmp_path / "test.json"
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
     downloaded = []
 
     class _FakeApi:
@@ -531,9 +530,13 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
 
     def _fake_hf_hub_download(**kwargs):
         downloaded.append(kwargs["filename"])
+        local_dir = Path(kwargs["local_dir"])
         if kwargs["filename"] == "test.json":
+            json_path = local_dir / "test.json"
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(json.dumps(payload), encoding="utf-8")
             return str(json_path)
-        local_path = tmp_path / kwargs["filename"]
+        local_path = local_dir / kwargs["filename"]
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(b"data")
         return str(local_path)
@@ -552,11 +555,14 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
     )
 
     assert downloaded == ["test.json", "test/captions.json", "test/clip_0.mp4"]
-    written_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    expected_output_dir = tmp_path / "dev" / "test"
+    written_payload = json.loads((expected_output_dir / "test.json").read_text(encoding="utf-8"))
     assert written_payload[HF_REPO_ID_KEY] == "OpenSportsLab/repo"
     assert written_payload[HF_BRANCH_KEY] == "dev"
     assert written_payload[HF_SPLIT_KEY] == "test"
     assert result["split"] == "test"
+    assert result["output_dir"] == str(expected_output_dir)
+    assert result["json_path"] == str(expected_output_dir / "test.json")
     assert result["downloaded_file_count"] == 2
 
 
@@ -565,9 +571,9 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
 
     def _fake_snapshot_download(**kwargs):
         calls["snapshot"] = kwargs
-        dataset_dir = tmp_path / "raw" / "test"
+        dataset_dir = Path(kwargs["local_dir"]) / "test"
         dataset_dir.mkdir(parents=True)
-        return str(tmp_path / "raw")
+        return str(kwargs["local_dir"])
 
     def _fake_convert_parquet_to_json(**kwargs):
         calls["convert"] = kwargs
@@ -598,6 +604,8 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
     assert calls["convert"]["dataset_dir"].as_posix().endswith("/test")
     assert result["split"] == "test"
     assert result["folder_path"] == "test"
+    assert result["output_dir"] == str(tmp_path / "dev" / "test")
+    assert result["json_path"] == str(tmp_path / "dev" / "test" / "test.json")
     assert result["num_samples"] == 3
 
 
@@ -610,18 +618,19 @@ def test_download_dataset_split_from_hf_json_writes_hf_metadata_on_non_dry_run(m
             }
         ]
     }
-    json_path = tmp_path / "test.json"
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
-
     class _FakeApi:
         def __init__(self, token=None):
             pass
 
     def _fake_hf_hub_download(**kwargs):
         filename = kwargs.get("filename")
+        local_dir = Path(kwargs["local_dir"])
         if filename == "test.json":
+            json_path = local_dir / "test.json"
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(json.dumps(payload), encoding="utf-8")
             return str(json_path)
-        local_path = tmp_path / filename
+        local_path = local_dir / filename
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(b"video")
         return str(local_path)
@@ -639,7 +648,7 @@ def test_download_dataset_split_from_hf_json_writes_hf_metadata_on_non_dry_run(m
         download_format="json",
     )
 
-    written_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    written_payload = json.loads((tmp_path / "main" / "test" / "test.json").read_text(encoding="utf-8"))
     assert written_payload[HF_REPO_ID_KEY] == "OpenSportsLab/repo"
     assert written_payload[HF_BRANCH_KEY] == "main"
     assert written_payload[HF_SPLIT_KEY] == "test"
@@ -656,9 +665,6 @@ def test_download_dataset_split_from_hf_json_dry_run_does_not_write_hf_metadata(
             }
         ]
     }
-    json_path = tmp_path / "test.json"
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
-
     class _FakeApi:
         def __init__(self, token=None):
             pass
@@ -670,6 +676,9 @@ def test_download_dataset_split_from_hf_json_dry_run_does_not_write_hf_metadata(
     def _fake_hf_hub_download(**kwargs):
         filename = kwargs.get("filename")
         if filename == "test.json":
+            json_path = Path(kwargs["local_dir"]) / "test.json"
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(json.dumps(payload), encoding="utf-8")
             return str(json_path)
         raise AssertionError("Unexpected file download in dry-run mode")
 
@@ -687,10 +696,12 @@ def test_download_dataset_split_from_hf_json_dry_run_does_not_write_hf_metadata(
         dry_run=True,
     )
 
-    written_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    expected_output_dir = tmp_path / "main" / "test"
+    written_payload = json.loads((expected_output_dir / "test.json").read_text(encoding="utf-8"))
     assert HF_REPO_ID_KEY not in written_payload
     assert HF_BRANCH_KEY not in written_payload
     assert "hf_source_metadata" not in result
+    assert result["output_dir"] == str(expected_output_dir)
 
 
 def test_read_hf_source_metadata_from_dataset_reads_split_keys():

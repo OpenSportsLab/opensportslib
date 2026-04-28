@@ -160,6 +160,8 @@ python tools/download_osl_hf.py --repo-id <org/repo> --revision main --split tes
 python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
 
+Downloads are placed under `<output-dir>/<revision>/<split>`.
+
 ---
 
 ## What you can do with OpenSportsLib

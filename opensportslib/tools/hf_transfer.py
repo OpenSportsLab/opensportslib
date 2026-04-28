@@ -156,6 +156,15 @@ def _clean_hf_split(split: str) -> str:
     return cleaned_split
 
 
+def _build_split_output_dir(output_dir: str, revision: str, split: str) -> str:
+    cleaned_output_dir = str(output_dir or "").strip()
+    if not cleaned_output_dir:
+        raise ValueError("output_dir is required.")
+    cleaned_revision = _normalize_repo_path(revision) or "main"
+    cleaned_split = _clean_hf_split(split)
+    return str(Path(cleaned_output_dir) / cleaned_revision / cleaned_split)
+
+
 def _download_parquet_split_and_convert(
     repo_id: str,
     revision: str,
@@ -385,6 +394,7 @@ def download_dataset_split_from_hf(
         raise ValueError("download_format must be 'json' or 'parquet'.")
     if not cleaned_repo_id:
         raise ValueError("repo_id is required.")
+    split_output_dir = _build_split_output_dir(output_dir, cleaned_revision, cleaned_split)
 
     if cleaned_format == "parquet":
         if dry_run:
@@ -393,7 +403,7 @@ def download_dataset_split_from_hf(
             cleaned_repo_id,
             cleaned_revision,
             cleaned_split,
-            output_dir,
+            split_output_dir,
             token=token,
             progress_cb=progress_cb,
             is_cancelled=is_cancelled,
@@ -403,7 +413,7 @@ def download_dataset_split_from_hf(
         cleaned_repo_id,
         cleaned_revision,
         cleaned_split,
-        output_dir,
+        split_output_dir,
         dry_run=dry_run,
         token=token,
         progress_cb=progress_cb,

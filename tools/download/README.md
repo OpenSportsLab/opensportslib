@@ -99,6 +99,9 @@ python tools/download/download_osl_hf.py \
 	--output-dir /path/to/data/OSL-XFoul \
 ```
 
+The split downloader treats `--output-dir` as a root and writes files under
+`<output-dir>/<revision>/<split>`.
+
 ## Upload
 
 ```bash
