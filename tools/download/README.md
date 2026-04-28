@@ -125,23 +125,22 @@ python tools/download/upload_osl_hf.py \
 ```
 
 ```bash
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/train.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/valid.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/test.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/ResNET_PCA512/challenge.json --format parquet --shard-size 1GB --revision ResNET_PCA512-parquet
+for revision in ResNET_PCA512 224p 720p; do
+case "$revision" in
+ResNET_PCA512) shard_size="1GB" ;;
+224p) shard_size="5GB" ;;
+720p) shard_size="20GB" ;;
+*) shard_size="5GB" ;;
+esac
 
+for split in test valid train challenge; do
+python tools/download/upload_osl_hf.py \
+	--repo-id OpenSportsLab/OSL-SoccerNet --revision $revision --split $split --format parquet --shard-size $shard_size \
+	--json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/$revision/$split.json
+done
+done
+```
 
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/train.json --format parquet --shard-size 5GB --revision 224p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/valid.json --format parquet --shard-size 5GB --revision 224p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/test.json --format parquet --shard-size 5GB --revision 224p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/224p/challenge.json --format parquet --shard-size 5GB --revision 224p-parquet
-
-
-
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/valid.json --format parquet --shard-size 20GB --revision 720p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/test.json --format parquet --shard-size 20GB --revision 720p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/challenge.json --format parquet --shard-size 20GB --revision 720p-parquet
-python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --json-path /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas/720p/train.json --format parquet --shard-size 20GB --revision 720p-parquet
 
 
 ```
