@@ -17,19 +17,25 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate opensportslib
 
 # python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/test" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
+#   --repo-id OpenSportsLab/OSL-XFoul \
+#   --revision main-parquet \
+#   --split test \
+#   --format parquet \
+#   --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"
 
 # python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/valid" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
+#   --repo-id OpenSportsLab/OSL-XFoul \
+#   --revision main-parquet \
+#   --split valid \
+#   --format parquet \
+#   --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"
 
 # python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/train" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
+#   --repo-id OpenSportsLab/OSL-XFoul \
+#   --revision main-parquet \
+#   --split train \
+#   --format parquet \
+#   --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"
 
 python tools/training/classification.py \
     --config tools/slurm/training/configs/classification.yaml \

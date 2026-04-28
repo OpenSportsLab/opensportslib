@@ -21,16 +21,22 @@ pwd
 
 # Gated dataset: ensure HF conditions are accepted and auth is available on the node.
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/tracking-parquet/test" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision tracking-parquet \
+  --split test \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/tracking-parquet/valid" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision tracking-parquet \
+  --split valid \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/tracking-parquet/train" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision tracking-parquet \
+  --split train \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-tracking"

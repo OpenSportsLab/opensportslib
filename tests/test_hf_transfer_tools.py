@@ -5,55 +5,22 @@ import pytest
 from opensportslib.tools.hf_transfer import (
     HF_BRANCH_KEY,
     HF_REPO_ID_KEY,
-    HF_SOURCE_URL_KEY,
+    HF_SPLIT_KEY,
     HfTransferCancelled,
     create_dataset_branch_on_hf,
     create_dataset_repo_on_hf,
     dataset_repo_exists_on_hf,
-    download_dataset_from_hf,
+    download_dataset_split_from_hf,
     extract_local_input_upload_entries_from_json,
     extract_repo_paths_from_json,
-    fix_hf_url,
     is_hf_download_url_not_found_error,
     is_hf_repo_not_found_error,
     is_hf_revision_not_found_error,
-    parse_hf_url,
-    parse_types_arg,
     read_hf_source_metadata_from_dataset,
     upload_dataset_as_parquet_to_hf,
     upload_dataset_inputs_from_json_to_hf,
     write_hf_source_metadata_to_dataset_json,
 )
-
-
-def test_fix_hf_url_converts_blob_to_resolve():
-    blob_url = "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json"
-    assert fix_hf_url(blob_url) == "https://huggingface.co/datasets/OpenSportsLab/repo/resolve/main/annotations.json"
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json",
-        "https://huggingface.co/datasets/OpenSportsLab/repo/resolve/main/annotations.json",
-    ],
-)
-def test_parse_hf_url_supports_blob_and_resolve(url):
-    repo_id, revision, path_in_repo = parse_hf_url(url)
-    assert repo_id == "OpenSportsLab/repo"
-    assert revision == "main"
-    assert path_in_repo == "annotations.json"
-
-
-def test_parse_hf_url_rejects_invalid_url_shape():
-    with pytest.raises(ValueError):
-        parse_hf_url("https://huggingface.co/datasets/OpenSportsLab/repo/main/annotations.json")
-
-
-def test_parse_types_arg_handles_all_and_comma_list():
-    assert parse_types_arg("all") == "all"
-    assert parse_types_arg("*") == "all"
-    assert parse_types_arg("video,captions,features") == {"video", "captions", "features"}
 
 
 def test_extract_repo_paths_from_json_supports_legacy_and_osl_v2():
@@ -69,11 +36,11 @@ def test_extract_repo_paths_from_json_supports_legacy_and_osl_v2():
             }
         ],
     }
-    paths = extract_repo_paths_from_json(payload, "all")
+    paths = extract_repo_paths_from_json(payload)
     assert set(paths) == {"legacy/a.mp4", "v2/b.mp4", "v2/c.json"}
 
 
-def test_extract_repo_paths_from_json_filters_by_requested_types():
+def test_extract_repo_paths_from_json_returns_all_input_paths_by_default():
     payload = {
         "data": [
             {
@@ -86,11 +53,7 @@ def test_extract_repo_paths_from_json_filters_by_requested_types():
         ]
     }
 
-    video_only = extract_repo_paths_from_json(payload, {"video"})
-    assert video_only == ["test/a.mp4"]
-
-    with pytest.raises(ValueError):
-        extract_repo_paths_from_json(payload, {"features"})
+    assert extract_repo_paths_from_json(payload) == ["test/a.mp4", "test/a.txt"]
 
 
 def test_extract_local_input_upload_entries_from_json_uses_paths_from_inputs(tmp_path):
@@ -306,6 +269,7 @@ def test_upload_dataset_inputs_from_json_to_hf_uploads_inputs_and_json(monkeypat
         repo_id="OpenSportsLab/test-repo",
         json_path=str(json_path),
         revision="dev-branch",
+        split="test",
         commit_message="Upload test",
         token="hf_token",
     )
@@ -318,13 +282,14 @@ def test_upload_dataset_inputs_from_json_to_hf_uploads_inputs_and_json(monkeypat
     assert commit_kwargs["commit_message"] == "Upload test"
     operations = commit_kwargs["operations"]
     assert len(operations) == 2
-    assert operations[0].path_in_repo == "annotations.json"
+    assert operations[0].path_in_repo == "test.json"
     assert operations[0].path_or_fileobj == str(json_path)
     assert operations[1].path_in_repo == "train/clip_0.mp4"
     assert result["input_file_count"] == 1
     assert result["unique_input_file_count"] == 1
     assert result["uploaded_file_count"] == 2
-    assert result["json_path_in_repo"] == "annotations.json"
+    assert result["split"] == "test"
+    assert result["json_path_in_repo"] == "test.json"
     assert result["revision"] == "dev-branch"
     assert result["commit_ref"] == "abc123"
 
@@ -377,6 +342,7 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
         repo_id="OpenSportsLab/test-repo",
         json_path=str(json_path),
         revision="dev-branch",
+        split="test",
         commit_message="Upload parquet test",
         token="hf_token",
     )
@@ -390,11 +356,13 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
     operations = commit_kwargs["operations"]
     assert len(operations) == 3
     assert [op.path_in_repo for op in operations] == [
-        "annotations/dataset.parquet",
-        "annotations/samples/shard-00000.tar",
-        "annotations/samples/shard-00001.tar",
+        "test/dataset.parquet",
+        "test/samples/shard-00000.tar",
+        "test/samples/shard-00001.tar",
     ]
     assert result["upload_kind"] == "parquet"
+    assert result["split"] == "test"
+    assert result["folder_name"] == "test"
     assert result["uploaded_file_count"] == 3
     assert result["num_samples"] == 2
     assert result["shard_mode"] == "size"
@@ -512,7 +480,7 @@ def test_upload_dataset_as_parquet_to_hf_forwards_sample_mode(monkeypatch, tmp_p
     assert result["samples_per_shard"] == 7
 
 
-def test_download_dataset_from_hf_can_be_cancelled_before_network(monkeypatch, tmp_path):
+def test_download_dataset_split_from_hf_json_can_be_cancelled_before_network(monkeypatch, tmp_path):
     called = {"hf_hub_download": 0}
 
     class _FakeApi:
@@ -529,16 +497,111 @@ def test_download_dataset_from_hf_can_be_cancelled_before_network(monkeypatch, t
     )
 
     with pytest.raises(HfTransferCancelled):
-        download_dataset_from_hf(
-            "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json",
+        download_dataset_split_from_hf(
+            "OpenSportsLab/repo",
+            "main",
+            "test",
             str(tmp_path),
+            download_format="json",
             is_cancelled=lambda: True,
         )
 
     assert called["hf_hub_download"] == 0
 
 
-def test_download_dataset_from_hf_writes_hf_source_metadata_on_non_dry_run(monkeypatch, tmp_path):
+def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs(monkeypatch, tmp_path):
+    payload = {
+        "data": [
+            {
+                "id": "sample_1",
+                "inputs": [
+                    {"path": "test/clip_0.mp4", "type": "video"},
+                    {"path": "test/captions.json", "type": "captions"},
+                ],
+            }
+        ]
+    }
+    json_path = tmp_path / "test.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    downloaded = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+    def _fake_hf_hub_download(**kwargs):
+        downloaded.append(kwargs["filename"])
+        if kwargs["filename"] == "test.json":
+            return str(json_path)
+        local_path = tmp_path / kwargs["filename"]
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(b"data")
+        return str(local_path)
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, _fake_hf_hub_download, object()),
+    )
+
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "dev",
+        "test",
+        str(tmp_path),
+        download_format="json",
+    )
+
+    assert downloaded == ["test.json", "test/captions.json", "test/clip_0.mp4"]
+    written_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert written_payload[HF_REPO_ID_KEY] == "OpenSportsLab/repo"
+    assert written_payload[HF_BRANCH_KEY] == "dev"
+    assert written_payload[HF_SPLIT_KEY] == "test"
+    assert result["split"] == "test"
+    assert result["downloaded_file_count"] == 2
+
+
+def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypatch, tmp_path):
+    calls = {}
+
+    def _fake_snapshot_download(**kwargs):
+        calls["snapshot"] = kwargs
+        dataset_dir = tmp_path / "raw" / "test"
+        dataset_dir.mkdir(parents=True)
+        return str(tmp_path / "raw")
+
+    def _fake_convert_parquet_to_json(**kwargs):
+        calls["convert"] = kwargs
+        output_json_path = kwargs["output_json_path"]
+        output_json_path.write_text(json.dumps({"data": []}), encoding="utf-8")
+        return {"num_samples": 3, "extracted_media_files": 2}
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (object(), object(), _fake_snapshot_download),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer.convert_parquet_to_json",
+        _fake_convert_parquet_to_json,
+    )
+
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "dev",
+        "test",
+        str(tmp_path),
+        download_format="parquet",
+    )
+
+    assert calls["snapshot"]["repo_id"] == "OpenSportsLab/repo"
+    assert calls["snapshot"]["revision"] == "dev"
+    assert calls["snapshot"]["allow_patterns"] == ["test/*"]
+    assert calls["convert"]["dataset_dir"].as_posix().endswith("/test")
+    assert result["split"] == "test"
+    assert result["folder_path"] == "test"
+    assert result["num_samples"] == 3
+
+
+def test_download_dataset_split_from_hf_json_writes_hf_metadata_on_non_dry_run(monkeypatch, tmp_path):
     payload = {
         "data": [
             {
@@ -547,7 +610,7 @@ def test_download_dataset_from_hf_writes_hf_source_metadata_on_non_dry_run(monke
             }
         ]
     }
-    json_path = tmp_path / "annotations.json"
+    json_path = tmp_path / "test.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
 
     class _FakeApi:
@@ -556,7 +619,7 @@ def test_download_dataset_from_hf_writes_hf_source_metadata_on_non_dry_run(monke
 
     def _fake_hf_hub_download(**kwargs):
         filename = kwargs.get("filename")
-        if filename == "annotations.json":
+        if filename == "test.json":
             return str(json_path)
         local_path = tmp_path / filename
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -568,18 +631,23 @@ def test_download_dataset_from_hf_writes_hf_source_metadata_on_non_dry_run(monke
         lambda: (_FakeApi, _fake_hf_hub_download, object()),
     )
 
-    source_url = "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json"
-    result = download_dataset_from_hf(source_url, str(tmp_path))
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path),
+        download_format="json",
+    )
 
     written_payload = json.loads(json_path.read_text(encoding="utf-8"))
-    assert written_payload[HF_SOURCE_URL_KEY] == source_url
     assert written_payload[HF_REPO_ID_KEY] == "OpenSportsLab/repo"
     assert written_payload[HF_BRANCH_KEY] == "main"
+    assert written_payload[HF_SPLIT_KEY] == "test"
     assert result["downloaded_file_count"] == 1
     assert result["hf_source_metadata"]["repo_id"] == "OpenSportsLab/repo"
 
 
-def test_download_dataset_from_hf_dry_run_does_not_write_hf_source_metadata(monkeypatch, tmp_path):
+def test_download_dataset_split_from_hf_json_dry_run_does_not_write_hf_metadata(monkeypatch, tmp_path):
     payload = {
         "data": [
             {
@@ -588,7 +656,7 @@ def test_download_dataset_from_hf_dry_run_does_not_write_hf_source_metadata(monk
             }
         ]
     }
-    json_path = tmp_path / "annotations.json"
+    json_path = tmp_path / "test.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
 
     class _FakeApi:
@@ -601,7 +669,7 @@ def test_download_dataset_from_hf_dry_run_does_not_write_hf_source_metadata(monk
 
     def _fake_hf_hub_download(**kwargs):
         filename = kwargs.get("filename")
-        if filename == "annotations.json":
+        if filename == "test.json":
             return str(json_path)
         raise AssertionError("Unexpected file download in dry-run mode")
 
@@ -610,29 +678,33 @@ def test_download_dataset_from_hf_dry_run_does_not_write_hf_source_metadata(monk
         lambda: (_FakeApi, _fake_hf_hub_download, object()),
     )
 
-    source_url = "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json"
-    result = download_dataset_from_hf(source_url, str(tmp_path), dry_run=True)
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path),
+        download_format="json",
+        dry_run=True,
+    )
 
     written_payload = json.loads(json_path.read_text(encoding="utf-8"))
-    assert HF_SOURCE_URL_KEY not in written_payload
     assert HF_REPO_ID_KEY not in written_payload
     assert HF_BRANCH_KEY not in written_payload
     assert "hf_source_metadata" not in result
 
 
-def test_read_hf_source_metadata_from_dataset_normalizes_and_backfills_from_url():
-    source_url = "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json"
+def test_read_hf_source_metadata_from_dataset_reads_split_keys():
     metadata = read_hf_source_metadata_from_dataset(
         {
-            HF_SOURCE_URL_KEY: source_url,
-            HF_REPO_ID_KEY: "",
-            HF_BRANCH_KEY: "",
+            HF_REPO_ID_KEY: "OpenSportsLab/repo",
+            HF_BRANCH_KEY: "main",
+            HF_SPLIT_KEY: "test",
         }
     )
 
-    assert metadata["source_url"] == source_url
     assert metadata["repo_id"] == "OpenSportsLab/repo"
     assert metadata["branch"] == "main"
+    assert metadata["split"] == "test"
 
 
 def test_write_hf_source_metadata_to_dataset_json_persists_top_level_keys(tmp_path):
@@ -641,14 +713,14 @@ def test_write_hf_source_metadata_to_dataset_json_persists_top_level_keys(tmp_pa
 
     write_hf_source_metadata_to_dataset_json(
         str(json_path),
-        source_url="https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json",
         repo_id="OpenSportsLab/repo",
         branch="main",
+        split="test",
     )
     payload = json.loads(json_path.read_text(encoding="utf-8"))
-    assert payload[HF_SOURCE_URL_KEY] == "https://huggingface.co/datasets/OpenSportsLab/repo/blob/main/annotations.json"
     assert payload[HF_REPO_ID_KEY] == "OpenSportsLab/repo"
     assert payload[HF_BRANCH_KEY] == "main"
+    assert payload[HF_SPLIT_KEY] == "test"
 
 
 def test_upload_dataset_inputs_from_json_to_hf_can_be_cancelled_before_upload(monkeypatch, tmp_path):

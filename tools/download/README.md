@@ -5,8 +5,8 @@ Scripts to download and upload OSL datasets via HuggingFace Hub.
 ## Scripts
 
 - `download_osl_hf.py`
-	- Downloads media referenced by an OSL JSON URL or a folder URL (`tree/...`) from a dataset repo.
-	- Best when you want dataset-input files referenced by OSL metadata.
+	- Downloads an OSL split by repo, revision, and split name.
+	- JSON mode downloads `<split>.json` and all referenced inputs; Parquet mode downloads `<split>/`.
 - `download_hf_repo.py`
 	- Downloads a full HuggingFace repository snapshot for a given repo and revision.
 	- Best when you want the entire repo content for a branch/tag/commit.
@@ -92,9 +92,11 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
 
 ```bash
 python tools/download/download_osl_hf.py \
-	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/test" \
+	--repo-id OpenSportsLab/OSL-XFoul \
+	--revision main-parquet \
+	--split test \
+	--format parquet \
 	--output-dir /path/to/data/OSL-XFoul \
-	--types all
 ```
 
 ## Upload
@@ -104,6 +106,7 @@ python tools/download/download_osl_hf.py \
 python tools/download/upload_osl_hf.py \
 	--repo-id <org/repo> \
 	--json-path <local_dataset.json> \
+	--split test \
 	--format json \
 	--revision main
 
@@ -111,6 +114,7 @@ python tools/download/upload_osl_hf.py \
 python tools/download/upload_osl_hf.py \
 	--repo-id <org/repo> \
 	--json-path <local_dataset.json> \
+	--split test \
 	--format parquet \
 	--shard-size 1GB \
 	--revision main
@@ -147,5 +151,5 @@ python tools/download/upload_osl_hf.py --repo-id OpenSportsLab/OSL-SoccerNet --j
 ## Python API
 
 ```python
-from opensportslib.tools import download_dataset_from_hf, upload_dataset_inputs_from_json_to_hf
+from opensportslib.tools import download_dataset_split_from_hf, upload_dataset_inputs_from_json_to_hf
 ```

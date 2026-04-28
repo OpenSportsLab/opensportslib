@@ -16,25 +16,26 @@ mkdir -p ibex_logs
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate opensportslib
 
-# python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/test" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
 
 # python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/valid" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
-
-# python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/train" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
-
-# python tools/download/download_hf_repo.py \
 # 	--repo-id OpenSportsLab/soccernetpro-localization-snbas \
 # 	--revision 224p-2023 \
+#   --split train \
 # 	--output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023
+
+# python tools/download/download_osl_hf.py \
+# 	--repo-id OpenSportsLab/soccernetpro-localization-snbas \
+# 	--revision 224p-2023 \
+#   --split valid \
+# 	--output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023
+
+# python tools/download/download_osl_hf.py \
+# 	--repo-id OpenSportsLab/soccernetpro-localization-snbas \
+# 	--revision 224p-2023 \
+#   --split test \
+# 	--output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023
+
+
 
 python tools/training/localization.py \
     --config tools/slurm/training/configs/localization.yaml \

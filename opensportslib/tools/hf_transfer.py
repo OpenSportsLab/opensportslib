@@ -4,7 +4,6 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
 
 from .osl_json_to_parquet import DEFAULT_SHARD_SIZE, convert_json_to_parquet, parse_shard_size
 from .parquet_to_osl_json import convert_parquet_to_json
@@ -13,9 +12,9 @@ from .parquet_to_osl_json import convert_parquet_to_json
 ProgressCallback = Callable[[str], None]
 CancelCheck = Callable[[], bool]
 
-HF_SOURCE_URL_KEY = "hf_source_url"
 HF_REPO_ID_KEY = "hf_repo_id"
 HF_BRANCH_KEY = "hf_branch"
+HF_SPLIT_KEY = "hf_split"
 
 
 class HfTransferCancelled(RuntimeError):
@@ -60,78 +59,20 @@ def human_size(num: int) -> str:
     return f"{num:.1f} PB"
 
 
-def fix_hf_url(hf_url: str) -> str:
-    return str(hf_url or "").replace("/blob/", "/resolve/")
-
-
-def is_hf_folder_url(hf_url: str) -> bool:
-    """Return True when the URL points to a folder (contains ``/tree/``)."""
-    return "/tree/" in str(hf_url or "")
-
-
-def parse_hf_folder_url(hf_url: str) -> tuple[str, str, str]:
-    """
-    Parse a HuggingFace folder URL of the form::
-
-        https://huggingface.co/datasets/<owner>/<repo>/tree/<revision>[/<folder_path>]
-
-    Returns ``(repo_id, revision, folder_path)``.
-    ``folder_path`` may be an empty string for the repo root.
-    """
-    parsed = urlparse(str(hf_url or ""))
-    parts = parsed.path.strip("/").split("/")
-
-    if "datasets" in parts:
-        datasets_idx = parts.index("datasets")
-        parts = parts[datasets_idx + 1:]
-
-    if len(parts) < 3 or parts[2] != "tree":
-        raise ValueError(f"URL does not look like a valid HuggingFace dataset folder URL: {hf_url}")
-
-    repo_id = f"{parts[0]}/{parts[1]}"
-    revision = parts[3] if len(parts) > 3 else "main"
-    folder_path = "/".join(parts[4:]) if len(parts) > 4 else ""
-    return repo_id, revision, folder_path
-
-
-def parse_hf_url(hf_url: str) -> tuple[str, str, str]:
-    url = fix_hf_url(hf_url)
-    parsed = urlparse(url)
-    parts = parsed.path.strip("/").split("/")
-
-    if "datasets" in parts:
-        datasets_idx = parts.index("datasets")
-        parts = parts[datasets_idx + 1 :]
-
-    if len(parts) < 5 or parts[2] != "resolve":
-        raise ValueError(f"URL does not look like a valid HuggingFace dataset file URL: {url}")
-
-    repo_id = f"{parts[0]}/{parts[1]}"
-    revision = parts[3]
-    path_in_repo = "/".join(parts[4:])
-    return repo_id, revision, path_in_repo
-
-
 def get_json_repo_folder(path_in_repo: str) -> str:
     folder = os.path.dirname(path_in_repo)
     return folder if folder and folder != "." else ""
 
 
-def parse_types_arg(types_arg: str) -> str | set[str]:
-    normalized = (types_arg or "video").strip().lower()
-    if normalized in ("all", "*"):
-        return "all"
-    return {t.strip() for t in normalized.split(",") if t.strip()}
-
-
-def extract_repo_paths_from_json(osl_json: dict[str, Any], want_types: str | set[str]) -> list[str]:
+def extract_repo_paths_from_json(
+    osl_json: dict[str, Any],
+) -> list[str]:
     repo_paths: list[str] = []
 
     if "videos" in osl_json and isinstance(osl_json.get("videos"), list):
-        if want_types == "all" or ("video" in want_types):
-            for item in osl_json.get("videos", []):
-                if isinstance(item, dict) and item.get("path"):
-                    repo_paths.append(str(item["path"]).lstrip("/"))
+        for item in osl_json.get("videos", []):
+            if isinstance(item, dict) and item.get("path"):
+                repo_paths.append(str(item["path"]).lstrip("/"))
 
     if "data" in osl_json and isinstance(osl_json.get("data"), list):
         for sample in osl_json.get("data", []):
@@ -142,17 +83,10 @@ def extract_repo_paths_from_json(osl_json: dict[str, Any], want_types: str | set
                 path = inp.get("path")
                 if not path:
                     continue
-                inp_type = str(inp.get("type", "")).strip().lower()
-                if want_types == "all" or inp_type in want_types:
-                    repo_paths.append(str(path).lstrip("/"))
+                repo_paths.append(str(path).lstrip("/"))
 
     if not repo_paths:
-        if want_types == "all":
-            raise ValueError("No file paths found in the provided JSON (no inputs with 'path').")
-        raise ValueError(
-            f"No matching file paths found for requested types={sorted(list(want_types))}. "
-            "Check your JSON schema and --types."
-        )
+        raise ValueError("No file paths found in the provided JSON (no inputs with 'path').")
 
     return repo_paths
 
@@ -172,9 +106,9 @@ def _build_allow_patterns(repo_paths: list[str], repo_json_folder: str) -> list[
 def write_hf_source_metadata_to_dataset_json(
     dataset_json_path: str,
     *,
-    source_url: str,
     repo_id: str,
     branch: str,
+    split: str = "",
 ) -> dict[str, str]:
     cleaned_path = os.path.abspath(str(dataset_json_path or "").strip())
     if not cleaned_path:
@@ -188,13 +122,13 @@ def write_hf_source_metadata_to_dataset_json(
         raise ValueError("Invalid dataset JSON: expected root object.")
 
     metadata = {
-        "source_url": str(source_url or "").strip(),
         "repo_id": str(repo_id or "").strip(),
         "branch": str(branch or "").strip(),
+        "split": str(split or "").strip(),
     }
-    payload[HF_SOURCE_URL_KEY] = metadata["source_url"]
     payload[HF_REPO_ID_KEY] = metadata["repo_id"]
     payload[HF_BRANCH_KEY] = metadata["branch"]
+    payload[HF_SPLIT_KEY] = metadata["split"]
 
     with open(cleaned_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
@@ -206,74 +140,70 @@ def write_hf_source_metadata_to_dataset_json(
 def read_hf_source_metadata_from_dataset(dataset_json: dict[str, Any] | None) -> dict[str, str]:
     payload = dataset_json if isinstance(dataset_json, dict) else {}
 
-    source_url = str(payload.get(HF_SOURCE_URL_KEY) or "").strip()
-    repo_id = str(payload.get(HF_REPO_ID_KEY) or "").strip()
-    branch = str(payload.get(HF_BRANCH_KEY) or "").strip()
-
-    if source_url and (not repo_id or not branch):
-        try:
-            parsed_repo_id, parsed_branch, _ = parse_hf_url(source_url)
-            if not repo_id:
-                repo_id = parsed_repo_id
-            if not branch:
-                branch = parsed_branch
-        except ValueError:
-            pass
-
     return {
-        "source_url": source_url,
-        "repo_id": repo_id,
-        "branch": branch,
+        "repo_id": str(payload.get(HF_REPO_ID_KEY) or "").strip(),
+        "branch": str(payload.get(HF_BRANCH_KEY) or "").strip(),
+        "split": str(payload.get(HF_SPLIT_KEY) or "").strip(),
     }
 
 
-def _download_parquet_folder_and_convert(
-    folder_url: str,
+def _clean_hf_split(split: str) -> str:
+    cleaned_split = _normalize_repo_path(split)
+    if not cleaned_split:
+        raise ValueError("split is required.")
+    if cleaned_split.endswith(".json"):
+        cleaned_split = cleaned_split[:-5]
+    return cleaned_split
+
+
+def _download_parquet_split_and_convert(
+    repo_id: str,
+    revision: str,
+    split: str,
     output_dir: str,
     *,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    """
-    Download a Parquet + WebDataset folder from HF and convert it to an OSL JSON file.
-
-    The folder is expected to have been created by
-    :func:`opensportslib.tools.convert_json_to_parquet`.
-    A temporary directory is used for the raw download and removed when done.
-    """
     _, _, snapshot_download = _import_hf_hub()
-
-    repo_id, revision, folder_path = parse_hf_folder_url(folder_url)
-    folder_name = folder_path.rstrip("/").split("/")[-1] if folder_path else repo_id.split("/")[-1]
+    cleaned_repo_id = str(repo_id or "").strip()
+    cleaned_revision = str(revision or "").strip() or "main"
+    cleaned_split = _clean_hf_split(split)
+    if not cleaned_repo_id:
+        raise ValueError("repo_id is required.")
 
     os.makedirs(output_dir, exist_ok=True)
     _ensure_not_cancelled(is_cancelled)
-    _emit_progress(progress_cb, f"Downloading Parquet folder '{folder_path}' from {repo_id}@{revision}...")
-
-    allow_patterns = [f"{folder_path}/*"] if folder_path else ["*"]
+    _emit_progress(progress_cb, f"Downloading Parquet split '{cleaned_split}' from {cleaned_repo_id}@{cleaned_revision}...")
 
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
         snapshot_download(
-            repo_id=repo_id,
+            repo_id=cleaned_repo_id,
             repo_type="dataset",
-            revision=revision,
-            allow_patterns=allow_patterns,
+            revision=cleaned_revision,
+            allow_patterns=[f"{cleaned_split}/*"],
             local_dir=tmp_dir,
             token=token or None,
         )
         _ensure_not_cancelled(is_cancelled)
 
-        parquet_dataset_dir = Path(tmp_dir) / folder_path if folder_path else Path(tmp_dir)
-        output_json_path = Path(output_dir) / f"{folder_name}.json"
+        parquet_dataset_dir = Path(tmp_dir) / cleaned_split
+        output_json_path = Path(output_dir) / f"{cleaned_split}.json"
 
-        _emit_progress(progress_cb, f"Converting Parquet dataset to JSON and extracting media into {output_dir}...")
+        _emit_progress(progress_cb, f"Converting Parquet split to JSON and extracting media into {output_dir}...")
         conversion_result = convert_parquet_to_json(
             dataset_dir=parquet_dataset_dir,
             output_json_path=output_json_path,
             extract_media=True,
             output_media_root=output_dir,
+        )
+        write_hf_source_metadata_to_dataset_json(
+            str(output_json_path),
+            repo_id=cleaned_repo_id,
+            branch=cleaned_revision,
+            split=cleaned_split,
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -286,43 +216,40 @@ def _download_parquet_folder_and_convert(
         ),
     )
     return {
-        "repo_id": repo_id,
-        "revision": revision,
-        "folder_path": folder_path,
+        "repo_id": cleaned_repo_id,
+        "revision": cleaned_revision,
+        "split": cleaned_split,
+        "folder_path": cleaned_split,
         "output_dir": output_dir,
         "json_path": str(output_json_path),
-        "source": "parquet_folder",
+        "source": "parquet_split",
         "download_kind": "parquet",
         "num_samples": int(conversion_result.get("num_samples") or 0),
         "extracted_media": True,
         "extracted_media_count": int(conversion_result.get("extracted_media_files") or 0),
+        "hf_source_metadata": {
+            "repo_id": cleaned_repo_id,
+            "branch": cleaned_revision,
+            "split": cleaned_split,
+        },
     }
 
 
-def download_dataset_from_hf(
-    osl_json_url: str,
+def _download_json_path_from_hf(
+    repo_id: str,
+    revision: str,
+    split: str,
     output_dir: str,
     *,
     dry_run: bool = False,
-    types_arg: str = "video",
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    if is_hf_folder_url(osl_json_url):
-        return _download_parquet_folder_and_convert(
-            osl_json_url,
-            output_dir,
-            token=token,
-            progress_cb=progress_cb,
-            is_cancelled=is_cancelled,
-        )
-
     HfApi, hf_hub_download, _ = _import_hf_hub()
     api = HfApi(token=token or None)
-    want_types = parse_types_arg(types_arg)
-
-    repo_id, revision, path_in_repo = parse_hf_url(osl_json_url)
+    cleaned_split = _clean_hf_split(split)
+    path_in_repo = f"{cleaned_split}.json"
     repo_json_folder = get_json_repo_folder(path_in_repo)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -343,16 +270,16 @@ def download_dataset_from_hf(
     with open(json_path, "r", encoding="utf-8") as handle:
         osl_json = json.load(handle)
 
-    repo_paths = extract_repo_paths_from_json(osl_json, want_types)
+    repo_paths = extract_repo_paths_from_json(osl_json)
     allow_patterns = _build_allow_patterns(repo_paths, repo_json_folder)
 
     result: dict[str, Any] = {
         "repo_id": repo_id,
         "revision": revision,
+        "split": cleaned_split,
         "path_in_repo": path_in_repo,
         "json_path": json_path,
         "output_dir": output_dir,
-        "types": types_arg,
         "dry_run": bool(dry_run),
         "referenced_file_count": len(allow_patterns),
     }
@@ -426,9 +353,9 @@ def download_dataset_from_hf(
     _emit_progress(progress_cb, "Persisting Hugging Face source metadata into downloaded JSON.")
     hf_source_metadata = write_hf_source_metadata_to_dataset_json(
         json_path,
-        source_url=osl_json_url,
         repo_id=repo_id,
         branch=revision,
+        split=cleaned_split,
     )
 
     result["download_kind"] = "json"
@@ -436,6 +363,52 @@ def download_dataset_from_hf(
     result["hf_source_metadata"] = hf_source_metadata
     _emit_progress(progress_cb, "Download completed.")
     return result
+
+
+def download_dataset_split_from_hf(
+    repo_id: str,
+    revision: str,
+    split: str,
+    output_dir: str,
+    *,
+    download_format: str = "parquet",
+    dry_run: bool = False,
+    token: str | None = None,
+    progress_cb: ProgressCallback | None = None,
+    is_cancelled: CancelCheck | None = None,
+) -> dict[str, Any]:
+    cleaned_repo_id = str(repo_id or "").strip()
+    cleaned_revision = str(revision or "").strip() or "main"
+    cleaned_split = _clean_hf_split(split)
+    cleaned_format = str(download_format or "parquet").strip().lower()
+    if cleaned_format not in {"json", "parquet"}:
+        raise ValueError("download_format must be 'json' or 'parquet'.")
+    if not cleaned_repo_id:
+        raise ValueError("repo_id is required.")
+
+    if cleaned_format == "parquet":
+        if dry_run:
+            raise ValueError("dry_run is only supported for JSON split downloads.")
+        return _download_parquet_split_and_convert(
+            cleaned_repo_id,
+            cleaned_revision,
+            cleaned_split,
+            output_dir,
+            token=token,
+            progress_cb=progress_cb,
+            is_cancelled=is_cancelled,
+        )
+
+    return _download_json_path_from_hf(
+        cleaned_repo_id,
+        cleaned_revision,
+        cleaned_split,
+        output_dir,
+        dry_run=dry_run,
+        token=token,
+        progress_cb=progress_cb,
+        is_cancelled=is_cancelled,
+    )
 
 
 def _normalize_repo_path(path: str) -> str:
@@ -500,6 +473,7 @@ def upload_dataset_inputs_from_json_to_hf(
     json_path: str,
     *,
     revision: str | None = "main",
+    split: str | None = None,
     commit_message: str | None = None,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -547,7 +521,8 @@ def upload_dataset_inputs_from_json_to_hf(
             ),
         )
 
-    json_path_in_repo = _normalize_repo_path(os.path.basename(cleaned_json_path))
+    cleaned_split = _clean_hf_split(split) if split else ""
+    json_path_in_repo = f"{cleaned_split}.json" if cleaned_split else _normalize_repo_path(os.path.basename(cleaned_json_path))
     if not json_path_in_repo:
         json_path_in_repo = "dataset.json"
 
@@ -608,6 +583,7 @@ def upload_dataset_inputs_from_json_to_hf(
         "upload_kind": "json",
         "json_path": cleaned_json_path,
         "revision": cleaned_revision,
+        "split": cleaned_split,
         "json_path_in_repo": json_path_in_repo,
         "input_file_count": len(input_upload_entries),
         "unique_input_file_count": len(unique_input_entries),
@@ -670,6 +646,7 @@ def upload_dataset_as_parquet_to_hf(
     json_path: str,
     *,
     revision: str | None = "main",
+    split: str | None = None,
     commit_message: str | None = None,
     shard_mode: str = "size",
     shard_size: int | str = DEFAULT_SHARD_SIZE,
@@ -706,7 +683,8 @@ def upload_dataset_as_parquet_to_hf(
     cleaned_samples_per_shard = int(samples_per_shard or 100)
     if cleaned_samples_per_shard < 1:
         raise ValueError("samples_per_shard must be >= 1.")
-    folder_name = Path(cleaned_json_path).stem
+    cleaned_split = _clean_hf_split(split) if split else ""
+    folder_name = cleaned_split or Path(cleaned_json_path).stem
     media_root = Path(cleaned_json_path).parent
 
     _ensure_not_cancelled(is_cancelled)
@@ -788,6 +766,7 @@ def upload_dataset_as_parquet_to_hf(
     return {
         "repo_id": cleaned_repo_id,
         "revision": cleaned_revision,
+        "split": cleaned_split,
         "upload_kind": "parquet",
         "json_path": cleaned_json_path,
         "folder_name": folder_name,

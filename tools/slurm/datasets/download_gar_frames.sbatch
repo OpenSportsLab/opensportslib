@@ -21,16 +21,22 @@ pwd
 
 # Gated dataset: ensure HF conditions are accepted and auth is available on the node.
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/frames-parquet/test" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision frames-parquet \
+  --split test \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/frames-parquet/valid" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision frames-parquet \
+  --split valid \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/soccernetpro-classification-GAR/tree/frames-parquet/train" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames" \
-  --types all
+  --repo-id OpenSportsLab/soccernetpro-classification-GAR \
+  --revision frames-parquet \
+  --split train \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-GAR-frames"

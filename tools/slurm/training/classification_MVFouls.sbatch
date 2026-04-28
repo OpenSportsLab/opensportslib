@@ -16,21 +16,6 @@ mkdir -p ibex_logs
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate opensportslib
 
-# python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/test" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
-
-# python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/valid" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
-
-# python tools/download/download_osl_hf.py \
-# 	--url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/train" \
-# 	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul/main-parquet \
-# 	--types all
-
 python tools/training/classification.py \
     --config tools/slurm/training/configs/classification.yaml \
     --train-set /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls/annotations_train.json \

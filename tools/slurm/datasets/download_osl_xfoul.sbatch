@@ -20,16 +20,22 @@ conda activate opensportslib
 pwd
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/test" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul" \
-  --types all
+  --repo-id OpenSportsLab/OSL-XFoul \
+  --revision main-parquet \
+  --split test \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/valid" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul" \
-  --types all
+  --repo-id OpenSportsLab/OSL-XFoul \
+  --revision main-parquet \
+  --split valid \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"
 
 python tools/download/download_osl_hf.py \
-  --url "https://huggingface.co/datasets/OpenSportsLab/OSL-XFoul/tree/main-parquet/train" \
-  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul" \
-  --types all
+  --repo-id OpenSportsLab/OSL-XFoul \
+  --revision main-parquet \
+  --split train \
+  --format parquet \
+  --output-dir "/ibex/project/c2134/opensportslab/datasets/OSL-XFoul"

@@ -88,15 +88,21 @@ Both scripts include a commented-out download step. Uncomment and adapt it to pr
 ```bash
 # Classification script
 python tools/download/download_osl_hf.py \
-    --url https://huggingface.co/datasets/OpenSportsLab/mvfouls/... \
-    --dest /ibex/project/c2134/opensportslab/datasets/mvfouls
+    --repo-id OpenSportsLab/soccernetpro-classification-vars \
+    --revision mvfouls \
+    --split annotations_test \
+    --format json \
+    --output-dir /ibex/project/c2134/opensportslab/datasets/mvfouls
 ```
 
 ```bash
 # Localization script
 python tools/download/download_osl_hf.py \
-    --url https://huggingface.co/datasets/OpenSportsLab/soccernetpro-localization-snas/... \
-    --dest /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas
+    --repo-id OpenSportsLab/soccernetpro-localization-snas \
+    --revision 224p \
+    --split annotations-test \
+    --format json \
+    --output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas
 ```
 
 See [tools/download/README.md](../../download/README.md) for full download options.

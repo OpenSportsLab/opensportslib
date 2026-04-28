@@ -147,7 +147,7 @@ OpenSportsLib provides APIs and scripts for downloading and uploading OSL datase
 
 ```python
 from opensportslib.tools import (
-    download_dataset_from_hf,
+    download_dataset_split_from_hf,
     upload_dataset_inputs_from_json_to_hf,
     upload_dataset_as_parquet_to_hf,
 )
@@ -156,8 +156,8 @@ from opensportslib.tools import (
 ### Scripts
 
 ```bash
-python tools/download_osl_hf.py --url <HF_JSON_OR_FOLDER_URL> --output-dir downloaded_data
-python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --revision main
+python tools/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
 
 ---

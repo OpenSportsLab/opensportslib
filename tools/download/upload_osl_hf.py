@@ -19,6 +19,7 @@ from opensportslib.tools.osl_json_to_parquet import DEFAULT_SHARD_SIZE, parse_sh
 def main(
     repo_id: str,
     json_path: str,
+    split: str,
     revision: str = "main",
     commit_message: str | None = None,
     token: str | None = None,
@@ -52,6 +53,7 @@ def main(
             repo_id=repo_id,
             json_path=json_path,
             revision=cleaned_revision,
+            split=split,
             commit_message=commit_message,
             shard_mode=shard_mode,
             shard_size=shard_size,
@@ -64,6 +66,7 @@ def main(
             repo_id=repo_id,
             json_path=json_path,
             revision=cleaned_revision,
+            split=split,
             commit_message=commit_message,
             token=token,
             progress_cb=lambda msg: print(f"[HF] {msg}"),
@@ -74,6 +77,7 @@ def main(
     print(f"Repo: {result['repo_id']}")
     print(f"Branch: {result['revision']}")
     print(f"Dataset JSON: {result['json_path']}")
+    print(f"Split: {result.get('split') or split}")
     if "folder_name" in result:
         print(f"Repo folder: {result['folder_name']}")
     if "num_samples" in result:
@@ -99,6 +103,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--repo-id", required=True, help="Dataset repo id, e.g. OpenSportsLab/OSL-loc-tennis-public")
     parser.add_argument("--json-path", required=True, help="Local dataset JSON path.")
+    parser.add_argument(
+        "--split",
+        required=True,
+        help="Remote split/artifact name. JSON mode uploads <split>.json; parquet mode uploads <split>/.",
+    )
     parser.add_argument(
         "--revision",
         default="main",
@@ -144,6 +153,7 @@ if __name__ == "__main__":
     main(
         repo_id=args.repo_id,
         json_path=args.json_path,
+        split=args.split,
         revision=args.revision,
         commit_message=args.commit_message,
         token=args.token,
