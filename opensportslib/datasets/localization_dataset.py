@@ -1016,7 +1016,10 @@ if DALI_AVAILABLE:
             for pipe in self.pipes:
                 pipe.build()
 
-            super().__init__(self.pipes, output_map, size=self.nb_videos)
+            # Pipeline returns (video, label_idx, frame_num) - label processing
+            # is done post-hoc in get_attr to avoid DALI 2.0 fn.python_function issues
+            internal_output_map = ['data', 'label_idx', 'frame_num']
+            super().__init__(self.pipes, internal_output_map, size=self.nb_videos)
 
             self.device = torch.device(
                 "cuda:{}".format(self.devices[1 if len(self.devices) > 1 else 0])
@@ -1052,8 +1055,19 @@ if DALI_AVAILABLE:
             Returns:
                 dict :{"frames","contains_event","labels"}.
             """
-            batch_labels = batch["label"]
+            batch_label_idx = batch["label_idx"]
+            batch_frame_num = batch["frame_num"]
             batch_images = batch["data"]
+
+            batch_size = batch_label_idx.shape[0]
+            batch_labels = torch.zeros(batch_size, self.clip_len, dtype=torch.int64)
+            for b in range(batch_size):
+                video_idx = int(batch_label_idx[b].item())
+                frame_num = int(batch_frame_num[b].item())
+                batch_labels[b] = torch.from_numpy(
+                    self._compute_labels(video_idx, frame_num)
+                )
+
             sum_labels = torch.sum(
                 batch_labels, dim=1 if len(batch_labels.shape) == 2 else 0
             )
@@ -1229,26 +1243,22 @@ if DALI_AVAILABLE:
                     std=[255, 255, 255],
                     mirror=fn.random.coin_flip(),
                 )
-            label = fn.python_function(
-                label, frame_num, function=self.edit_labels, device="gpu"
-            )
-            return video, label
+            return video, label, frame_num
 
-        def edit_labels(self, label, frame_num):
-            """Construct a list having the same length as the number of frames. The elements of the list are the indexes (starting at 1) of the class where an event occurs, 0 otherwise.
+        def _compute_labels(self, video_idx, frame_num):
+            """Construct a label array for a clip. Each element is the class index
+            (starting at 1) where an event occurs, 0 otherwise.
 
             Args:
-                label :index of the video to get the metadata.
-                frame_num :index of start frame.
+                video_idx (int): Index of the video in self._labels.
+                frame_num (int): Raw start frame number from the reader.
 
             Returns:
-                labels (cupy.array): the list of labels (corresponding to events) corresponding with the extracted frames.
+                labels (np.ndarray): Label array of shape (clip_len,).
             """
-            import cupy
-
-            video_meta = self._labels[label.item()]
-            base_idx = frame_num.item() // self._stride
-            labels = cupy.zeros(self.clip_len, np.int64)
+            video_meta = self._labels[video_idx]
+            base_idx = frame_num // self._stride
+            labels = np.zeros(self.clip_len, np.int64)
 
             for event in video_meta["events"]:
                 event_frame = event["frame"]
@@ -1258,12 +1268,12 @@ if DALI_AVAILABLE:
                     label_idx >= self.dilate_len
                     and label_idx < self.clip_len + self.dilate_len
                 ):
-                    label = self._class_dict[event["label"]]
+                    label_val = self._class_dict[event["label"]]
                     for i in range(
                         max(0, label_idx - self.dilate_len),
                         min(self.clip_len, label_idx + self.dilate_len + 1),
                     ):
-                        labels[i] = label
+                        labels[i] = label_val
             return labels
 
         def print_info(self):

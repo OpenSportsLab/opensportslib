@@ -167,8 +167,12 @@ class LocalizationModel(BaseTaskModel):
 
         start = time.time()
 
-        device = select_device(self.config.SYSTEM)
-        self.model = build_model(self.config, device=device)
+        if effective_weights is not None:
+            if self.model is None or self.last_loaded_weights != effective_weights:
+                self.load_weights(weights=effective_weights)
+        elif self.model is None:
+            device = select_device(self.config.SYSTEM)
+            self.model = build_model(self.config, device=device)
 
         data_obj_train = build_dataset(self.config, split="train")
         dataset_train = data_obj_train.building_dataset(
