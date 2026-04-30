@@ -94,14 +94,14 @@ print("OpenSportsLib imported successfully")
 ```python
 from opensportslib import model
 
-myModel = model.classification(
-    config="/path/to/classification.yaml"
+myModel = model.ClassificationModel(
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
 myModel.train(
     train_set="/path/to/train_annotations.json",
     valid_set="/path/to/valid_annotations.json",
-    pretrained="/path/to/pretrained.pt",  # optional
 )
 ```
 
@@ -111,13 +111,16 @@ myModel.train(
 from opensportslib import model
 
 myModel = model.classification(
-    config="/path/to/classification.yaml"
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
-metrics = myModel.infer(
+predictions = myModel.infer(
     test_set="/path/to/test_annotations.json",
-    pretrained="/path/to/checkpoints/final_model",
-    predictions="/path/to/predictions.json"
+)
+
+metrics = myModel.evaluate(
+    test_set="/path/to/test_annotations.json",
 )
 
 print(metrics)

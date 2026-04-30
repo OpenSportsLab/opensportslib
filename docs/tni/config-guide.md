@@ -367,10 +367,7 @@ config_path = make_temp_config(
     },
 )
 
-m = model.classification(
-    config=config_path,
-    data_dir="/home/vorajv/opensportslib/SoccerNet/mvfouls",
-)
+m = model.ClassificationModel(config=config_path)
 ```
 
 ## Recommended Tuning Order

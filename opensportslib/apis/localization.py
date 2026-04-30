@@ -1,140 +1,195 @@
-from opensportslib.core.utils.config import expand 
-import os
 import logging
+import os
 import time
- 
-class LocalizationAPI:
-    def __init__(self, config=None, data_dir=None, save_dir=None):
-        from opensportslib.core.utils.config import load_config_omega
-        #from ..core.trainer import Trainer
-        import uuid
 
-        if config is None:
-            raise ValueError("config path is required")
+from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.core.utils.config import expand
 
-        # Load config
-        ### load data_dor first then do load config with omega to resolve $paths
-        self.config_path = expand(config)
-        self.config = load_config_omega(self.config_path)
-        # User must control dataset folder
-        self.config.DATA.data_dir = expand(data_dir or self.config.DATA.data_dir)
-        print(self.config.DATA.classes)
-        # User controls model saving location (never use BASE_DIR)
 
-        self.run_id = os.environ.get("RUN_ID") or str(uuid.uuid4())[:8]
-        os.environ["RUN_ID"] = self.run_id
+class LocalizationModel(BaseTaskModel):
+    """Top-level task wrapper for localization / spotting."""
 
-        self.save_dir = expand(
-            save_dir or self.config.SYSTEM.save_dir or "./checkpoints"
+    def _resolve_split_path(self, split: str, override: str | None = None) -> str:
+        if override is not None:
+            return expand(override)
+
+        data_cfg = getattr(self.config, "DATA", None)
+        split_cfg = getattr(data_cfg, split, None)
+        path = getattr(split_cfg, "path", None) if split_cfg is not None else None
+        if path:
+            return expand(path)
+
+        annotations_cfg = getattr(data_cfg, "annotations", None)
+        path = (
+            getattr(annotations_cfg, split, None)
+            if annotations_cfg is not None
+            else None
         )
-        save_filename = os.path.join(self.config.MODEL.backbone.type, self.run_id)
-        self.config.SYSTEM.save_dir = os.path.join(self.save_dir, save_filename)
-        os.makedirs(self.config.SYSTEM.save_dir, exist_ok=True)
+        if path:
+            return expand(path)
 
-        log_dir = expand(self.config.SYSTEM.log_dir or "./log_dir")
-        os.makedirs(os.path.join(self.config.SYSTEM.save_dir, log_dir), exist_ok=True)
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s | %(levelname)s | %(message)s",
-            handlers=[
-                logging.FileHandler(os.path.join(log_dir, "train.log")),
-                logging.StreamHandler(),  # still prints to console
-            ],
+        raise ValueError(
+            f"Could not resolve path for split '{split}'. "
+            f"Expected DATA.{split}.path or DATA.annotations.{split}."
         )
 
-        self.best_checkpoint=None
+    def _set_split_path(self, split: str, value: str) -> str:
+        resolved = expand(value)
+        data_cfg = getattr(self.config, "DATA", None)
+        split_cfg = getattr(data_cfg, split, None)
 
-        logger = logging.getLogger(__name__)
+        if split_cfg is not None and hasattr(split_cfg, "path"):
+            split_cfg.path = resolved
+            return resolved
 
-        print("CONFIG PATH  :", self.config_path)
-        print("DATA DIR     :", self.config.DATA.data_dir)
-        print("SAVEDIR:", self.config.SYSTEM.save_dir)
-        print("Classes :", self.config.DATA.classes)
+        annotations_cfg = getattr(data_cfg, "annotations", None)
+        if annotations_cfg is not None and hasattr(annotations_cfg, split):
+            setattr(annotations_cfg, split, resolved)
+            return resolved
 
-        #self.trainer = Trainer(self.config)
+        raise ValueError(
+            f"Could not set path for split '{split}'. "
+            f"Expected DATA.{split}.path or DATA.annotations.{split}."
+        )
 
+    def load_weights(
+        self,
+        weights: str | None = None,
+        **kwargs,
+    ) -> None:
+        from opensportslib.models.builder import build_model
+        from opensportslib.core.utils.config import is_local_path, select_device
+        from opensportslib.core.utils.checkpoint import (
+            load_checkpoint,
+            localization_remap,
+        )
 
-    def train(self, train_set=None, valid_set=None, pretrained=None, use_ddp=False, use_wandb=True):
+        del kwargs
+        if weights is None:
+            raise ValueError("`weights` must be provided to load_weights().")
+
+        device = select_device(self.config.SYSTEM)
+        if self.model is None:
+            self.model = build_model(self.config, device=device)
+
+        inner_model = getattr(self.model, "_model", None)
+        if inner_model is None:
+            inner_model = getattr(self.model, "model", self.model)
+
+        if is_local_path(weights):
+            self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(weights))
+
+        inner_model, _, _, _ = load_checkpoint(
+            model=inner_model,
+            path=weights,
+            device=device,
+            key_remap_fn=localization_remap,
+        )
+
+        if hasattr(self.model, "_model"):
+            self.model._model = inner_model
+        elif hasattr(self.model, "model"):
+            self.model.model = inner_model
+        else:
+            self.model = inner_model
+
+        self.last_loaded_weights = weights
+        self.best_checkpoint = weights
+
+    def train(
+        self,
+        train_set=None,
+        valid_set=None,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_trainer
-        from opensportslib.core.utils.default_args import get_default_args_trainer, get_default_args_train
-        from opensportslib.core.utils.config import select_device, resolve_config_omega
+        from opensportslib.core.utils.default_args import (
+            get_default_args_train,
+            get_default_args_trainer,
+        )
+        from opensportslib.core.utils.config import resolve_config_omega, select_device
         from opensportslib.core.utils.load_annotations import check_config
         from opensportslib.core.utils.wandb import init_wandb
         import random
         import numpy as np
         import torch
-        # # Load model
-        # if pretrained:
-        #     self.model, self.processor, _ = self.trainer.load(expand(pretrained))
-        # else:
-        #     self.model, self.processor = build_model(self.config, self.trainer.device)
-        # Expand annotation paths (user or config)
-        self.config.DATA.train.path = expand(train_set or self.config.DATA.train.path)
-        self.config.DATA.valid.path = expand(valid_set or self.config.DATA.valid.path)
+
+        del kwargs
+
+        train_set = self._resolve_split_path("train", train_set)
+        valid_set = self._resolve_split_path("valid", valid_set)
+        self._set_split_path("train", train_set)
+        self._set_split_path("valid", valid_set)
 
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="train")
-        init_wandb(self.config_path, self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+        init_wandb(
+            self.config_path,
+            self.config,
+            run_id=os.environ["RUN_ID"],
+            use_wandb=use_wandb,
+        )
+
         logging.info("Configuration:")
         logging.info(self.config)
-        #print(self.config)
 
         def set_seed(seed):
-            random.seed(seed)  # Python random module
-            np.random.seed(seed)  # NumPy
-            torch.manual_seed(seed)  # PyTorch
-            torch.cuda.manual_seed(seed)  # PyTorch CUDA
-            torch.cuda.manual_seed_all(seed)  # Multi-GPU training
-
-            # Ensures deterministic behavior
-            torch.backends.cudnn.deterministic = True  
-            torch.backends.cudnn.benchmark = False  
-
-            # Ensures deterministic behavior for CUDA operations
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
             torch.use_deterministic_algorithms(True, warn_only=True)
 
         set_seed(self.config.SYSTEM.seed)
-        # Start Timing
+
         start = time.time()
 
         device = select_device(self.config.SYSTEM)
         self.model = build_model(self.config, device=device)
-        print(f"model: {self.model}")
 
-
-        # Datasets
-        # Train
         data_obj_train = build_dataset(self.config, split="train")
-        dataset_Train = data_obj_train.building_dataset(
+        dataset_train = data_obj_train.building_dataset(
             cfg=data_obj_train.cfg,
             gpu=self.config.SYSTEM.GPU,
             default_args=data_obj_train.default_args,
         )
-        train_loader = data_obj_train.building_dataloader(dataset_Train, cfg=data_obj_train.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
-        print(len(train_loader))
-        # Valid
-        data_obj_valid = build_dataset(self.config,split="valid")
-        dataset_Valid = data_obj_valid.building_dataset(
+        train_loader = data_obj_train.building_dataloader(
+            dataset_train,
+            cfg=data_obj_train.cfg.dataloader,
+            gpu=self.config.SYSTEM.GPU,
+            dali=self.config.dali,
+        )
+
+        data_obj_valid = build_dataset(self.config, split="valid")
+        dataset_valid = data_obj_valid.building_dataset(
             cfg=data_obj_valid.cfg,
-            gpu= self.config.SYSTEM.GPU,
+            gpu=self.config.SYSTEM.GPU,
             default_args=data_obj_valid.default_args,
         )
-        valid_loader = data_obj_valid.building_dataloader(dataset_Valid, cfg=data_obj_valid.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
-        print(len(valid_loader))
+        valid_loader = data_obj_valid.building_dataloader(
+            dataset_valid,
+            cfg=data_obj_valid.cfg.dataloader,
+            gpu=self.config.SYSTEM.GPU,
+            dali=self.config.dali,
+        )
 
-        # Trainer
-        trainer = build_trainer(
+        self.trainer = build_trainer(
             cfg=self.config,
             model=self.model,
             default_args=get_default_args_trainer(self.config, len(train_loader)),
-            resume_from = pretrained
+            resume_from=weights,
         )
-        # Start training`
+
         logging.info("Start training")
 
-        trainer.train(
+        self.trainer.train(
             **get_default_args_train(
                 self.model,
                 train_loader,
@@ -143,97 +198,136 @@ class LocalizationAPI:
                 self.config.TRAIN.type,
             )
         )
-        self.best_checkpoint = trainer.best_checkpoint_path
+
+        self.best_checkpoint = self.trainer.best_checkpoint_path
+        self.last_loaded_weights = self.best_checkpoint
 
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return self.best_checkpoint
-  
 
-    def infer(self, test_set=None, pretrained=None, predictions=None, use_ddp=False, use_wandb=True):
+    def infer(
+        self,
+        test_set=None,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
+        """Run model inference and return predictions in OSL JSON format."""
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
-        from opensportslib.core.trainer.localization_trainer import build_inferer, build_evaluator
-        from opensportslib.core.utils.config import select_device, resolve_config_omega, is_local_path
-        from opensportslib.core.utils.checkpoint import load_checkpoint, localization_remap
-        from opensportslib.core.utils.load_annotations import check_config, has_localization_events, whether_infer_split
+        from opensportslib.core.trainer.localization_trainer import build_inferer
+        from opensportslib.core.utils.config import resolve_config_omega, select_device
+        from opensportslib.core.utils.load_annotations import (
+            check_config,
+            whether_infer_split,
+        )
         from opensportslib.core.utils.wandb import init_wandb
-        import time
 
-        self.config.DATA.test.path = expand(test_set or self.config.DATA.test.path)
+        del kwargs
+
+        test_set = self._resolve_split_path("test", test_set)
+        self._set_split_path("test", test_set)
+
         self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(self.config.DATA.test)
-        init_wandb(self.config_path, self.config, run_id=os.environ["RUN_ID"], use_wandb=use_wandb)
+
+        init_wandb(
+            self.config_path,
+            self.config,
+            run_id=os.environ["RUN_ID"],
+            use_wandb=use_wandb,
+        )
+
         logging.info("Configuration:")
         logging.info(self.config)
-        # Start Timing
+
         start = time.time()
-        if pretrained is None and predictions is None:
-            if hasattr(self, "best_checkpoint"):
-                pretrained = self.best_checkpoint
-                print(f"Using last trained checkpoint: {pretrained}")
-            else:
-                raise ValueError("No pretrained checkpoint provided and no training run found.")
-            
-        if not predictions:
-            logging.info("No predictions provided, running inference.")
+
+        if weights is not None:
+            self.load_weights(weights=weights)
+        elif self.model is None:
             device = select_device(self.config.SYSTEM)
             self.model = build_model(self.config, device=device)
-            inner_model = getattr(self.model, "_model", None)
-            if inner_model is None:
-                inner_model = getattr(self.model, "model", self.model)
-            print("Model type:", type(self.model))
-            print("Torch model type:", type(inner_model))
-            # Load model
-            if pretrained:
-                #pretrained = expand(pretrained)
-                if is_local_path(pretrained):
-                    self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(pretrained))
-                
-                inner_model, _, _, epoch = load_checkpoint(model=inner_model,
-                                            path=pretrained,
-                                            device=device,
-                                            key_remap_fn=localization_remap)
 
-                if hasattr(self.model, "_model"):
-                    self.model._model = inner_model
-                elif hasattr(self.model, "model"):
-                    self.model.model = inner_model
-                else:
-                    self.model = inner_model
+        data_obj_test = build_dataset(self.config, split="test")
+        dataset_test = data_obj_test.building_dataset(
+            cfg=data_obj_test.cfg,
+            gpu=self.config.SYSTEM.GPU,
+            default_args=data_obj_test.default_args,
+        )
+        test_loader = data_obj_test.building_dataloader(
+            dataset_test,
+            cfg=data_obj_test.cfg.dataloader,
+            gpu=self.config.SYSTEM.GPU,
+            dali=self.config.dali,
+        )
 
-            # Datasets
-            # Test
-            data_obj_test = build_dataset(self.config, split="test")
-            dataset_Test = data_obj_test.building_dataset(
-                cfg=data_obj_test.cfg,
-                gpu=self.config.SYSTEM.GPU,
-                default_args=data_obj_test.default_args,
-            )
-            test_loader = data_obj_test.building_dataloader(dataset_Test, cfg=data_obj_test.cfg.dataloader, gpu=self.config.SYSTEM.GPU, dali=self.config.dali)
-            print(len(test_loader))
+        inferer = build_inferer(cfg=self.config.MODEL, model=self.model)
+        predictions = inferer.infer(
+            cfg=self.config,
+            data=dataset_test,
+            dataloader=test_loader,
+        )
 
-            # # Inference
-            inferer = build_inferer(cfg=self.config.MODEL,
-                                    model=self.model)
-            json_gz_file = inferer.infer(cfg=self.config, data=dataset_Test, dataloader=test_loader)
+        logging.info(f"Total Execution Time is {time.time()-start} seconds")
+        return predictions
 
-        #json_gz_file = self.config.DATA.test.results + ".recall.json.gz"
-        json_gz_file = predictions if predictions else json_gz_file
+    def evaluate(
+        self,
+        test_set=None,
+        weights=None,
+        use_wandb=True,
+        **kwargs,
+    ):
+        from opensportslib.core.trainer.localization_trainer import build_evaluator
+        from opensportslib.core.utils.config import resolve_config_omega
+        from opensportslib.core.utils.load_annotations import (
+            check_config,
+            has_localization_events,
+            whether_infer_split,
+        )
+        from opensportslib.core.utils.wandb import init_wandb
+
+        del kwargs
+
+        test_set = self._resolve_split_path("test", test_set)
+        self._set_split_path("test", test_set)
+
+        self.config.MODEL.multi_gpu = False
+        self.config = resolve_config_omega(self.config)
+        check_config(self.config, split="test")
+        self.config.infer_split = whether_infer_split(self.config.DATA.test)
+
+        init_wandb(
+            self.config_path,
+            self.config,
+            run_id=os.environ["RUN_ID"],
+            use_wandb=use_wandb,
+        )
+
+        predictions = self.infer(
+            test_set=test_set,
+            weights=weights,
+            use_wandb=use_wandb,
+        )
 
         metrics = None
 
         if has_localization_events(self.config.DATA.test.path):
-            logging.info("Ground truth labels detected → running evaluation")
-
+            logging.info("Ground truth labels detected -> running evaluation")
             evaluator = build_evaluator(cfg=self.config)
+            eval_input = (
+                self.config.DATA.test.results
+                if isinstance(predictions, dict)
+                else predictions
+            )
             metrics = evaluator.evaluate(
                 cfg_testset=self.config.DATA.test,
-                json_gz_file=self.config.DATA.test.results if isinstance(json_gz_file, dict) else json_gz_file
+                json_gz_file=eval_input,
             )
         else:
-            logging.info("No labels found in annotation file → skipping evaluation")
+            logging.info("No labels found in annotation file -> skipping evaluation")
 
-        logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return metrics
