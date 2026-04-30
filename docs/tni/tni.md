@@ -484,6 +484,11 @@ predictions = myModel.infer(
 metrics = myModel.evaluate(
     test_set="/path/to/test_annotations.json",
 )
+
+metrics_from_saved_predictions = myModel.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions="/path/to/predictions.json",
+)
 ```
 
 ## Test / Inference on Multiple GPU (DDP)

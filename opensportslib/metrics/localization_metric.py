@@ -796,7 +796,7 @@ def store_eval_files_json(raw_pred, eval_dir, save_v2=True):
             }
 
             out_path = os.path.join(video_out_dir, "results_spotting.json")
-            with open(out_path, "w") as f:
+            with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(out, f, indent=2)
 
         logging.info(f"Stored V2 predictions → {eval_dir}")

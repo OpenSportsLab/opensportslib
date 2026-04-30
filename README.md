@@ -92,14 +92,14 @@ print("OpenSportsLib imported successfully")
 ### Train a classification model
 
 ```python
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
-myModel = model.ClassificationModel(
+my_model = ClassificationModel(
     config="/path/to/classification.yaml",
     weights="/path/to/weights.pt",  # optional
 )
 
-myModel.train(
+my_model.train(
     train_set="/path/to/train_annotations.json",
     valid_set="/path/to/valid_annotations.json",
 )
@@ -108,19 +108,29 @@ myModel.train(
 ### Run inference
 
 ```python
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
-myModel = model.classification(
+my_model = ClassificationModel(
     config="/path/to/classification.yaml",
     weights="/path/to/weights.pt",  # optional
 )
 
-predictions = myModel.infer(
+predictions = my_model.infer(
     test_set="/path/to/test_annotations.json",
 )
 
-metrics = myModel.evaluate(
+saved_predictions = my_model.save_predictions(
+    output_path="/path/to/predictions.json",
+    predictions=predictions,
+)
+
+metrics = my_model.evaluate(
     test_set="/path/to/test_annotations.json",
+)
+
+metrics_from_file = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=saved_predictions,
 )
 
 print(metrics)
@@ -129,10 +139,29 @@ print(metrics)
 ### Localization example
 
 ```python
-from opensportslib import model
+from opensportslib.apis import LocalizationModel
 
-myModel = model.localization(
-    config="/path/to/localization.yaml"
+my_model = LocalizationModel(
+    config="/path/to/localization.yaml",
+    weights="/path/to/weights.pt",  # optional
+)
+
+predictions = my_model.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+saved_predictions = my_model.save_predictions(
+    output_path="/path/to/predictions.json",
+    predictions=predictions,
+)
+
+metrics = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics_from_file = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=saved_predictions,
 )
 ```
 
@@ -170,6 +199,7 @@ Generate text descriptions for sports events and temporal segments.
 Use the README for the fast start, then go deeper through:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
+- High-level API guide: [opensportslib/apis/README.md](opensportslib/apis/README.md)
 - Configuration guide: https://opensportslab.github.io/opensportslib/tni/config-guide/
 - Example configs: [examples/configs/](examples/configs/)
 - Quickstart scripts: [examples/quickstart/](examples/quickstart/)
