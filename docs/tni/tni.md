@@ -388,27 +388,27 @@ Download annotation files from the links below.
 ### 1. Classification (MViT)
 
 **MVFoul Classification (MViT backbone)**  
-https://huggingface.co/jeetv/snpro-classification-mvit/tree/main
+https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2
 
 
 ### 2. Localization (E2E Spotting)
 
 - **2023 Ball Action Spotting (2 classes)**  
-  https://huggingface.co/jeetv/snpro-snbas-2023/tree/main  
+  https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2023-e2e  
 
 - **2024 Ball Action Spotting (12 classes)**  
-  https://huggingface.co/jeetv/snpro-snbas-2024/tree/main  
+  https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e 
 
 Usage:
 ```bash
 ### Load weights from HF ###
 
 #### For Classification ####
-myModel.load_weights(weights="jeetv/snpro-classification-mvit")
+myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")
 
 #### For Localization ####
-weights = "jeetv/snpro-snbas-2023" # SNBAS - 2 classes (E2E spot)
-weights = "jeetv/snpro-snbas-2024" # SNBAS - 12 classes (E2E spot)
+weights = "OpenSportsLab/OSL-loc-snbas-2023-e2e" # SNBAS - 2 classes (E2E spot)
+weights = "OpenSportsLab/OSL-loc-snbas-2025-e2e" # SNBAS - 12 classes (E2E spot)
 myModel.load_weights(weights=weights)
 ```
 
