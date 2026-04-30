@@ -1,6 +1,9 @@
 # CONTRIBUTING.md
 This guide outlines the workflow and standards for developers looking to extend or maintain the OpenSportsLib library.
 
+## AI Agent Contributions
+For AI-agent driven development, follow `AGENTS.md` in the repository root.
+
 ## 1. Development Environment Setup
 To begin contributing, set up a local development environment in "editable" mode so your changes are immediately reflected in the package.
 

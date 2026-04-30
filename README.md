@@ -165,6 +165,32 @@ metrics_from_file = my_model.evaluate(
 )
 ```
 
+
+---
+
+## Hugging Face Dataset Transfer
+
+OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
+
+### Python API
+
+```python
+from opensportslib.tools import (
+    download_dataset_split_from_hf,
+    upload_dataset_inputs_from_json_to_hf,
+    upload_dataset_as_parquet_to_hf,
+)
+```
+
+### Scripts
+
+```bash
+python tools/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
+```
+
+Downloads are placed under `<output-dir>/<revision>/<split>`.
+
 ---
 
 ## What you can do with OpenSportsLib
