@@ -620,29 +620,28 @@ class Inferer:
         pred_file = None
         if cfg.SYSTEM.work_dir is not None:
             pred_file = os.path.join(cfg.SYSTEM.work_dir, cfg.DATA.test.results)
-            mAP = infer_and_process_predictions_e2e(
-                model,
-                getattr(cfg, "dali", False),
-                data,
-                "infer",
-                cfg.DATA.classes,
-                pred_file,
-                True,
-                cfg.DATA.test.dataloader,
-                return_pred=False,
-            )
-            if wandb.run is not None:
-                wandb.log({
-                    "test/Avg_mAP": mAP,
-                })
+
+        predictions = infer_and_process_predictions_e2e(
+            model,
+            getattr(cfg, "dali", False),
+            data,
+            "infer",
+            cfg.DATA.classes,
+            pred_file,
+            True,
+            cfg.DATA.test.dataloader,
+            return_pred=True,
+        )
+
+        if pred_file is not None:
             pred_json_file = os.path.join(pred_file + ".json")
             pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
             logging.info("Predictions saved")
             logging.info(pred_json_file)
             logging.info("High recall predictions saved")
             logging.info(pred_recall_file)
-            #json_gz_file = cfg.DATA.test.results + ".recall.json.gz"
-            return pred_recall_file
+
+        return predictions
 
 
 def build_evaluator(cfg, default_args=None):
@@ -792,7 +791,7 @@ class Evaluator:
         # --------------------------------------------------
         # LOAD GT
         # --------------------------------------------------
-        with open(cfg.path) as f:
+        with open(cfg.path, encoding="utf-8") as f:
             GT_data = json.load(f)
 
         # --------------------------------------------------
@@ -896,7 +895,7 @@ class Evaluator:
                 if not os.path.exists(pred_file):
                     continue
                 
-                with open(pred_file) as f:
+                with open(pred_file, encoding="utf-8") as f:
                     pred_data_local = json.load(f)
 
                 if "data" in pred_data_local:
@@ -1093,4 +1092,3 @@ class Evaluator:
         # logging.info("a_mAP visibility all per class: " +  str( results["a_mAP_per_class"]))
 
         return results
-

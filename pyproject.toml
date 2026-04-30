@@ -21,4 +21,7 @@ opensportslib = "opensportslib.cli:main"
 [tool.setuptools.package-data]
 opensportslib = [ "opensportslib/config/*.yaml",]
 
+[tool.pytest.ini_options]
+pythonpath = [ ".",]
+
 [tool.setuptools.packages.find]

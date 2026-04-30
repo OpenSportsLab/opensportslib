@@ -105,11 +105,11 @@ def expand(path):
 
 
 def load_json(fpath):
-    with open(fpath) as fp:
+    with open(fpath, encoding="utf-8") as fp:
         return json.load(fp)
 
 def load_gz_json(fpath):
-    with gzip.open(fpath, "rt", encoding="ascii") as fp:
+    with gzip.open(fpath, "rt", encoding="utf-8") as fp:
         return json.load(fp)
 
 
@@ -118,12 +118,12 @@ def store_json(fpath, obj, pretty=False):
     if pretty:
         kwargs["indent"] = 4
         kwargs["sort_keys"] = False
-    with open(fpath, "w") as fp:
+    with open(fpath, "w", encoding="utf-8") as fp:
         json.dump(obj, fp, **kwargs)
 
 
 def store_gz_json(fpath, obj):
-    with gzip.open(fpath, "wt", encoding="ascii") as fp:
+    with gzip.open(fpath, "wt", encoding="utf-8") as fp:
         json.dump(obj, fp)
 
 

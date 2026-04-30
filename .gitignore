@@ -24,3 +24,5 @@ wandb/
 
 # OS
 .DS_Store
+ibex_logs
+dcgm
