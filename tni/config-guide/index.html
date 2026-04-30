@@ -1,0 +1,2318 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="OpenSportsLib is the professional library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.">
+      
+      
+      
+      
+        <link rel="prev" href="../tni/">
+      
+      
+        <link rel="next" href="../../api/api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration Guide - OpenSportsLib</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="green" data-md-color-accent="lime">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="OpenSportsLib" class="md-header__button md-logo" aria-label="OpenSportsLib" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            OpenSportsLib
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="green" data-md-color-accent="lime"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="green" data-md-color-accent="lime"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/OpenSportsLab/opensportslib" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenSportsLab/opensportslib
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../tni/" class="md-tabs__link">
+          
+  
+  
+  Training & Inference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="OpenSportsLib" class="md-nav__button md-logo" aria-label="OpenSportsLib" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    OpenSportsLib
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/OpenSportsLab/opensportslib" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenSportsLab/opensportslib
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/project_structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/slurm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SLURM Guide (salloc, srun)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training & Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Training & Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tni/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training & Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#source-config-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source Config Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#base-yaml-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Base YAML Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Base YAML Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TASK
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#train" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRAIN
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SYSTEM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interpolation-and-derived-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpolation and Derived Keys
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-by-key-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key-by-Key Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-keys-across-most-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Keys Across Most Configs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#classification-classificationyaml-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Classification (classification.yaml) Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Classification (classification.yaml) Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA block
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-split-sub-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA split sub-blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-augmentation-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA augmentation keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL block
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#train-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRAIN block
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#localization-localizationyaml-rgb-end-to-end-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Localization (localization.yaml, RGB end-to-end) Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Localization (localization.yaml, RGB end-to-end) Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#additional-global-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional global key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-block_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA block
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-split-specific-keys-for-localization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DATA split-specific keys for localization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-block_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL block
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#train-block_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRAIN block
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#localization-json-feature-configs-localization-json_-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Localization JSON Feature Configs (localization-json_*) Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Localization JSON Feature Configs (localization-json_*) Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-and-model-differences-vs-rgb-e2e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data and model differences vs RGB E2E
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-tuning-points-for-json-feature-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key tuning points for JSON feature configs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sn-gar-config-highlights-sngar-trackingyaml-sngar-framesyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SN-GAR Config Highlights (sngar-tracking.yaml, sngar-frames.yaml)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SN-GAR Config Highlights (sngar-tracking.yaml, sngar-frames.yaml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tracking-config-highlights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracking config highlights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frames-config-highlights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frames config highlights
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-many-experiments-without-creating-new-yaml-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Many Experiments Without Creating New YAML Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-tuning-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Tuning Order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducibility-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducibility Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/OpenSportsLab/opensportslib/edit/master/docs/tni/config-guide.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="configuration-guide">Configuration Guide<a class="headerlink" href="#configuration-guide" title="Permanent link">&para;</a></h1>
+<p>This guide explains how OpenSportsLib YAML configs are structured, what each key does, and how to run many experiments without creating a new YAML file every time.</p>
+<h2 id="source-config-files">Source Config Files<a class="headerlink" href="#source-config-files" title="Permanent link">&para;</a></h2>
+<p>Main config files in the repo:</p>
+<ul>
+<li><code>opensportslib/config/classification.yaml</code></li>
+<li><code>opensportslib/config/localization.yaml</code></li>
+<li><code>opensportslib/config/localization-json_netvlad++_resnetpca512.yaml</code></li>
+<li><code>opensportslib/config/localization-json_calf_resnetpca512.yaml</code></li>
+<li><code>opensportslib/config/sngar-tracking.yaml</code></li>
+<li><code>opensportslib/config/sngar-frames.yaml</code></li>
+</ul>
+<h2 id="base-yaml-overview">Base YAML Overview<a class="headerlink" href="#base-yaml-overview" title="Permanent link">&para;</a></h2>
+<p>Most task configs follow this high-level structure:</p>
+<div class="language-yaml highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">TASK</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">classification | localization</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">DATA</span><span class="p">:</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">MODEL</span><span class="p">:</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nt">TRAIN</span><span class="p">:</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nt">SYSTEM</span><span class="p">:</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+</code></pre></div>
+<h3 id="task"><code>TASK</code><a class="headerlink" href="#task" title="Permanent link">&para;</a></h3>
+<p>Defines which task pipeline is used.</p>
+<ul>
+<li><code>classification</code>: clip-level classification pipeline.</li>
+<li><code>localization</code>: spotting/localization pipeline.</li>
+</ul>
+<p>If <code>TASK</code> does not match the selected API (<code>model.classification</code> / <code>model.localization</code>), behavior can be incorrect or fail.</p>
+<h3 id="data"><code>DATA</code><a class="headerlink" href="#data" title="Permanent link">&para;</a></h3>
+<p>Defines data source, annotation paths, sampling, preprocessing, and dataloader behavior.</p>
+<p>This block usually contains:</p>
+<ul>
+<li>Dataset identity and root path</li>
+<li>Class list or class count</li>
+<li>Split definitions (<code>train</code>, <code>valid</code>, <code>test</code>)</li>
+<li>Temporal sampling settings (<code>num_frames</code>, <code>clip_len</code>, <code>input_fps</code>, <code>extract_fps</code>, etc.)</li>
+<li>Spatial settings (<code>frame_size</code>, <code>target_height</code>, <code>target_width</code>)</li>
+<li>Augmentation switches</li>
+<li>Dataloader options</li>
+</ul>
+<h3 id="model"><code>MODEL</code><a class="headerlink" href="#model" title="Permanent link">&para;</a></h3>
+<p>Defines model family and submodules.</p>
+<p>Typical nested blocks:</p>
+<ul>
+<li><code>backbone</code>: feature extractor</li>
+<li><code>neck</code>: temporal/multi-view aggregation</li>
+<li><code>head</code>: classifier or spotting head</li>
+<li>optional post-processing (<code>post_proc</code>)</li>
+<li>optional checkpoint loading (<code>load_weights</code>, <code>pretrained_model</code>)</li>
+</ul>
+<h3 id="train"><code>TRAIN</code><a class="headerlink" href="#train" title="Permanent link">&para;</a></h3>
+<p>Defines optimization logic.</p>
+<p>Typical nested blocks:</p>
+<ul>
+<li>Monitoring and early-stop criteria</li>
+<li>Epoch controls (<code>epochs</code> or <code>num_epochs</code> or <code>max_epochs</code> depending on trainer)</li>
+<li><code>criterion</code> (loss)</li>
+<li><code>optimizer</code></li>
+<li><code>scheduler</code></li>
+<li>Sampling and weighting controls</li>
+</ul>
+<h3 id="system"><code>SYSTEM</code><a class="headerlink" href="#system" title="Permanent link">&para;</a></h3>
+<p>Defines runtime environment and output paths.</p>
+<p>Typical keys:</p>
+<ul>
+<li><code>log_dir</code>, <code>save_dir</code>, <code>work_dir</code></li>
+<li>seed control</li>
+<li>device/GPU settings</li>
+</ul>
+<h2 id="interpolation-and-derived-keys">Interpolation and Derived Keys<a class="headerlink" href="#interpolation-and-derived-keys" title="Permanent link">&para;</a></h2>
+<p>OpenSportsLib configs use OmegaConf interpolation syntax:</p>
+<ul>
+<li><code>${DATA.data_dir}</code></li>
+<li><code>${TRAIN.num_epochs}</code></li>
+<li><code>${SYSTEM.save_dir}</code></li>
+</ul>
+<p>This avoids duplication and keeps paths consistent.</p>
+<h2 id="key-by-key-reference">Key-by-Key Reference<a class="headerlink" href="#key-by-key-reference" title="Permanent link">&para;</a></h2>
+<h2 id="common-keys-across-most-configs">Common Keys Across Most Configs<a class="headerlink" href="#common-keys-across-most-configs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>What it controls</th>
+<th>Tuning guidance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TASK</code></td>
+<td>string</td>
+<td><code>classification</code></td>
+<td>Chooses pipeline entrypoint</td>
+<td>Keep aligned with model API</td>
+</tr>
+<tr>
+<td><code>SYSTEM.device</code></td>
+<td>string</td>
+<td><code>cuda</code></td>
+<td>Device selection (<code>auto/cuda/cpu</code>)</td>
+<td>Use <code>cpu</code> for smoke/local checks</td>
+</tr>
+<tr>
+<td><code>SYSTEM.gpu_id</code></td>
+<td>int</td>
+<td><code>0</code></td>
+<td>GPU index for single-GPU runs</td>
+<td>Set only if multiple GPUs</td>
+</tr>
+<tr>
+<td><code>SYSTEM.seed</code></td>
+<td>int</td>
+<td><code>42</code></td>
+<td>Random seed value</td>
+<td>Use fixed seed for reproducibility</td>
+</tr>
+<tr>
+<td><code>SYSTEM.log_dir</code></td>
+<td>path</td>
+<td><code>./logs</code></td>
+<td>Training logs location</td>
+<td>Separate per experiment when needed</td>
+</tr>
+<tr>
+<td><code>SYSTEM.save_dir</code></td>
+<td>path</td>
+<td><code>./checkpoints</code></td>
+<td>Checkpoint output root</td>
+<td>Keep enough disk space</td>
+</tr>
+</tbody>
+</table>
+<h2 id="classification-classificationyaml-reference">Classification (<code>classification.yaml</code>) Reference<a class="headerlink" href="#classification-classificationyaml-reference" title="Permanent link">&para;</a></h2>
+<h3 id="data-block">DATA block<a class="headerlink" href="#data-block" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATA.dataset_name</code></td>
+<td>string</td>
+<td><code>mvfouls</code></td>
+<td>Dataset identifier</td>
+</tr>
+<tr>
+<td><code>DATA.data_dir</code></td>
+<td>path</td>
+<td><code>/.../SoccerNet/mvfouls</code></td>
+<td>Dataset root directory</td>
+</tr>
+<tr>
+<td><code>DATA.data_modality</code></td>
+<td>string</td>
+<td><code>video</code></td>
+<td>Input modality for loader</td>
+</tr>
+<tr>
+<td><code>DATA.view_type</code></td>
+<td>string</td>
+<td><code>multi</code></td>
+<td>Single-view or multi-view processing</td>
+</tr>
+<tr>
+<td><code>DATA.num_classes</code></td>
+<td>int</td>
+<td><code>8</code></td>
+<td>Number of target classes</td>
+</tr>
+<tr>
+<td><code>DATA.num_frames</code></td>
+<td>int</td>
+<td><code>16</code></td>
+<td>Number of sampled frames per clip</td>
+</tr>
+<tr>
+<td><code>DATA.input_fps</code></td>
+<td>int</td>
+<td><code>25</code></td>
+<td>Original video FPS</td>
+</tr>
+<tr>
+<td><code>DATA.target_fps</code></td>
+<td>int</td>
+<td><code>17</code></td>
+<td>Downsampled FPS used by loader</td>
+</tr>
+<tr>
+<td><code>DATA.start_frame</code></td>
+<td>int</td>
+<td><code>63</code></td>
+<td>Clip start frame (relative)</td>
+</tr>
+<tr>
+<td><code>DATA.end_frame</code></td>
+<td>int</td>
+<td><code>87</code></td>
+<td>Clip end frame (relative)</td>
+</tr>
+<tr>
+<td><code>DATA.frame_size</code></td>
+<td>list[int,int]</td>
+<td><code>[224, 224]</code></td>
+<td>Spatial resize <code>(H, W)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-split-sub-blocks">DATA split sub-blocks<a class="headerlink" href="#data-split-sub-blocks" title="Permanent link">&para;</a></h3>
+<p>Each split (<code>train</code>, <code>valid</code>, <code>test</code>) has:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATA.&lt;split&gt;.video_path</code></td>
+<td>path</td>
+<td><code>${DATA.data_dir}/train</code></td>
+<td>Video root for split</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.path</code></td>
+<td>path</td>
+<td><code>.../annotations-train.json</code></td>
+<td>Annotation file</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.dataloader.batch_size</code></td>
+<td>int</td>
+<td><code>8</code></td>
+<td>Batch size</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.dataloader.shuffle</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Shuffle data each epoch</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.dataloader.num_workers</code></td>
+<td>int</td>
+<td><code>4</code></td>
+<td>Data loading worker count</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.dataloader.pin_memory</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Host-to-device transfer optimization</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-augmentation-keys">DATA augmentation keys<a class="headerlink" href="#data-augmentation-keys" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>random_affine</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable affine transform</td>
+</tr>
+<tr>
+<td><code>translate</code></td>
+<td>list[float,float]</td>
+<td><code>[0.1, 0.1]</code></td>
+<td>Affine translation range</td>
+</tr>
+<tr>
+<td><code>affine_scale</code></td>
+<td>list[float,float]</td>
+<td><code>[0.9, 1.0]</code></td>
+<td>Affine zoom range</td>
+</tr>
+<tr>
+<td><code>random_perspective</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable perspective distortion</td>
+</tr>
+<tr>
+<td><code>distortion_scale</code></td>
+<td>float</td>
+<td><code>0.3</code></td>
+<td>Strength of perspective distortion</td>
+</tr>
+<tr>
+<td><code>perspective_prob</code></td>
+<td>float</td>
+<td><code>0.5</code></td>
+<td>Probability for perspective augmentation</td>
+</tr>
+<tr>
+<td><code>random_rotation</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable random rotation</td>
+</tr>
+<tr>
+<td><code>rotation_degrees</code></td>
+<td>float/int</td>
+<td><code>5</code></td>
+<td>Rotation limit</td>
+</tr>
+<tr>
+<td><code>color_jitter</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable color jitter</td>
+</tr>
+<tr>
+<td><code>jitter_params</code></td>
+<td>list[float,float,float,float]</td>
+<td><code>[0.2, 0.2, 0.2, 0.1]</code></td>
+<td>Brightness/contrast/saturation/hue</td>
+</tr>
+<tr>
+<td><code>random_horizontal_flip</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable horizontal flip</td>
+</tr>
+<tr>
+<td><code>flip_prob</code></td>
+<td>float</td>
+<td><code>0.5</code></td>
+<td>Horizontal flip probability</td>
+</tr>
+<tr>
+<td><code>random_crop</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Enable random crop</td>
+</tr>
+</tbody>
+</table>
+<h3 id="model-block">MODEL block<a class="headerlink" href="#model-block" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MODEL.type</code></td>
+<td>string</td>
+<td><code>custom</code></td>
+<td>Model family implementation</td>
+</tr>
+<tr>
+<td><code>MODEL.backbone.type</code></td>
+<td>string</td>
+<td><code>mvit_v2_s</code></td>
+<td>Backbone architecture</td>
+</tr>
+<tr>
+<td><code>MODEL.neck.type</code></td>
+<td>string</td>
+<td><code>MV_Aggregate</code></td>
+<td>Feature aggregation module</td>
+</tr>
+<tr>
+<td><code>MODEL.neck.agr_type</code></td>
+<td>string</td>
+<td><code>max</code></td>
+<td>Aggregation mode (<code>max/mean/attention</code>)</td>
+</tr>
+<tr>
+<td><code>MODEL.head.type</code></td>
+<td>string</td>
+<td><code>MV_LinearLayer</code></td>
+<td>Classification head</td>
+</tr>
+<tr>
+<td><code>MODEL.pretrained_model</code></td>
+<td>string</td>
+<td><code>mvit_v2_s</code></td>
+<td>Pretrained source identifier</td>
+</tr>
+<tr>
+<td><code>MODEL.unfreeze_head</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Whether to train head</td>
+</tr>
+<tr>
+<td><code>MODEL.unfreeze_last_n_layers</code></td>
+<td>int</td>
+<td><code>3</code></td>
+<td>Last N backbone layers to unfreeze</td>
+</tr>
+</tbody>
+</table>
+<h3 id="train-block">TRAIN block<a class="headerlink" href="#train-block" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TRAIN.enabled</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable training mode</td>
+</tr>
+<tr>
+<td><code>TRAIN.epochs</code></td>
+<td>int</td>
+<td><code>20</code></td>
+<td>Total epochs</td>
+</tr>
+<tr>
+<td><code>TRAIN.monitor</code></td>
+<td>string</td>
+<td><code>balanced_accuracy</code></td>
+<td>Metric to monitor</td>
+</tr>
+<tr>
+<td><code>TRAIN.mode</code></td>
+<td>string</td>
+<td><code>max</code></td>
+<td>Monitor direction (<code>max/min</code>)</td>
+</tr>
+<tr>
+<td><code>TRAIN.log_interval</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Logging interval</td>
+</tr>
+<tr>
+<td><code>TRAIN.save_every</code></td>
+<td>int</td>
+<td><code>2</code></td>
+<td>Checkpoint interval</td>
+</tr>
+<tr>
+<td><code>TRAIN.use_weighted_sampler</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Class balancing via sampler</td>
+</tr>
+<tr>
+<td><code>TRAIN.use_weighted_loss</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Class balancing via loss weighting</td>
+</tr>
+<tr>
+<td><code>TRAIN.criterion.type</code></td>
+<td>string</td>
+<td><code>CrossEntropyLoss</code></td>
+<td>Loss function</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.type</code></td>
+<td>string</td>
+<td><code>AdamW</code></td>
+<td>Optimizer</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.lr</code></td>
+<td>float</td>
+<td><code>1e-4</code></td>
+<td>Global learning rate</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.backbone_lr</code></td>
+<td>float</td>
+<td><code>5e-5</code></td>
+<td>Backbone learning rate</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.head_lr</code></td>
+<td>float</td>
+<td><code>1e-3</code></td>
+<td>Head learning rate</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.weight_decay</code></td>
+<td>float</td>
+<td><code>1e-3</code></td>
+<td>L2 regularization</td>
+</tr>
+<tr>
+<td><code>TRAIN.scheduler.type</code></td>
+<td>string</td>
+<td><code>StepLR</code></td>
+<td>LR scheduler</td>
+</tr>
+<tr>
+<td><code>TRAIN.scheduler.step_size</code></td>
+<td>int</td>
+<td><code>3</code></td>
+<td>Epoch step before LR decay</td>
+</tr>
+<tr>
+<td><code>TRAIN.scheduler.gamma</code></td>
+<td>float</td>
+<td><code>0.1</code></td>
+<td>LR decay factor</td>
+</tr>
+</tbody>
+</table>
+<h2 id="localization-localizationyaml-rgb-end-to-end-reference">Localization (<code>localization.yaml</code>, RGB end-to-end) Reference<a class="headerlink" href="#localization-localizationyaml-rgb-end-to-end-reference" title="Permanent link">&para;</a></h2>
+<h3 id="additional-global-key">Additional global key<a class="headerlink" href="#additional-global-key" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dali</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Use DALI-based video data pipeline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-block_1">DATA block<a class="headerlink" href="#data-block_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATA.dataset_name</code></td>
+<td>string</td>
+<td><code>SoccerNet</code></td>
+<td>Dataset identity</td>
+</tr>
+<tr>
+<td><code>DATA.data_dir</code></td>
+<td>path</td>
+<td><code>/.../annotations</code></td>
+<td>Data root</td>
+</tr>
+<tr>
+<td><code>DATA.classes</code></td>
+<td>list[string]</td>
+<td><code>PASS, DRIVE, ...</code></td>
+<td>Event class set</td>
+</tr>
+<tr>
+<td><code>DATA.epoch_num_frames</code></td>
+<td>int</td>
+<td><code>500000</code></td>
+<td>Frames sampled per epoch</td>
+</tr>
+<tr>
+<td><code>DATA.mixup</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Mixup augmentation</td>
+</tr>
+<tr>
+<td><code>DATA.modality</code></td>
+<td>string</td>
+<td><code>rgb</code></td>
+<td>Input modality</td>
+</tr>
+<tr>
+<td><code>DATA.crop_dim</code></td>
+<td>int</td>
+<td><code>-1</code></td>
+<td>Crop configuration</td>
+</tr>
+<tr>
+<td><code>DATA.dilate_len</code></td>
+<td>int</td>
+<td><code>0</code></td>
+<td>Label dilation for events</td>
+</tr>
+<tr>
+<td><code>DATA.clip_len</code></td>
+<td>int</td>
+<td><code>100</code></td>
+<td>Temporal clip length</td>
+</tr>
+<tr>
+<td><code>DATA.input_fps</code></td>
+<td>int</td>
+<td><code>25</code></td>
+<td>Source FPS</td>
+</tr>
+<tr>
+<td><code>DATA.extract_fps</code></td>
+<td>int</td>
+<td><code>2</code></td>
+<td>Effective FPS after sampling</td>
+</tr>
+<tr>
+<td><code>DATA.imagenet_mean</code></td>
+<td>list[float]</td>
+<td><code>[0.485, 0.456, 0.406]</code></td>
+<td>Input normalization mean</td>
+</tr>
+<tr>
+<td><code>DATA.imagenet_std</code></td>
+<td>list[float]</td>
+<td><code>[0.229, 0.224, 0.225]</code></td>
+<td>Input normalization std</td>
+</tr>
+<tr>
+<td><code>DATA.target_height</code></td>
+<td>int</td>
+<td><code>224</code></td>
+<td>Resize height</td>
+</tr>
+<tr>
+<td><code>DATA.target_width</code></td>
+<td>int</td>
+<td><code>398</code></td>
+<td>Resize width</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-split-specific-keys-for-localization">DATA split-specific keys for localization<a class="headerlink" href="#data-split-specific-keys-for-localization" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATA.train.type</code></td>
+<td>string</td>
+<td><code>VideoGameWithDali</code></td>
+<td>Training dataset loader class</td>
+</tr>
+<tr>
+<td><code>DATA.valid.type</code></td>
+<td>string</td>
+<td><code>VideoGameWithDali</code></td>
+<td>Validation dataset loader class</td>
+</tr>
+<tr>
+<td><code>DATA.valid_data_frames.type</code></td>
+<td>string</td>
+<td><code>VideoGameWithDaliVideo</code></td>
+<td>Frame-level validation/eval loader</td>
+</tr>
+<tr>
+<td><code>DATA.test.type</code></td>
+<td>string</td>
+<td><code>VideoGameWithDaliVideo</code></td>
+<td>Test loader</td>
+</tr>
+<tr>
+<td><code>DATA.test.results</code></td>
+<td>string</td>
+<td><code>results_spotting_test</code></td>
+<td>Output results folder name</td>
+</tr>
+<tr>
+<td><code>DATA.test.nms_window</code></td>
+<td>int</td>
+<td><code>2</code></td>
+<td>NMS window for postprocessing</td>
+</tr>
+<tr>
+<td><code>DATA.test.metric</code></td>
+<td>string</td>
+<td><code>tight</code></td>
+<td>Spotting metric mode</td>
+</tr>
+<tr>
+<td><code>DATA.&lt;split&gt;.overlap_len</code></td>
+<td>int</td>
+<td><code>0</code> / <code>50</code></td>
+<td>Sliding-window overlap for inference</td>
+</tr>
+<tr>
+<td><code>DATA.challenge.type</code></td>
+<td>string</td>
+<td><code>VideoGameWithDaliVideo</code></td>
+<td>Challenge split loader</td>
+</tr>
+</tbody>
+</table>
+<h3 id="model-block_1">MODEL block<a class="headerlink" href="#model-block_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MODEL.type</code></td>
+<td>string</td>
+<td><code>E2E</code></td>
+<td>End-to-end localization model</td>
+</tr>
+<tr>
+<td><code>MODEL.runner.type</code></td>
+<td>string</td>
+<td><code>runner_e2e</code></td>
+<td>Runner implementation</td>
+</tr>
+<tr>
+<td><code>MODEL.backbone.type</code></td>
+<td>string</td>
+<td><code>rny008_gsm</code></td>
+<td>Backbone network</td>
+</tr>
+<tr>
+<td><code>MODEL.head.type</code></td>
+<td>string</td>
+<td><code>gru</code></td>
+<td>Temporal head</td>
+</tr>
+<tr>
+<td><code>MODEL.multi_gpu</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Distributed/multi-GPU flag</td>
+</tr>
+<tr>
+<td><code>MODEL.load_weights</code></td>
+<td>string/null</td>
+<td><code>null</code></td>
+<td>Optional checkpoint path</td>
+</tr>
+</tbody>
+</table>
+<h3 id="train-block_1">TRAIN block<a class="headerlink" href="#train-block_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TRAIN.type</code></td>
+<td>string</td>
+<td><code>trainer_e2e</code></td>
+<td>Trainer implementation</td>
+</tr>
+<tr>
+<td><code>TRAIN.num_epochs</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Epoch count</td>
+</tr>
+<tr>
+<td><code>TRAIN.acc_grad_iter</code></td>
+<td>int</td>
+<td><code>1</code></td>
+<td>Gradient accumulation steps</td>
+</tr>
+<tr>
+<td><code>TRAIN.base_num_valid_epochs</code></td>
+<td>int</td>
+<td><code>30</code></td>
+<td>Base validation schedule</td>
+</tr>
+<tr>
+<td><code>TRAIN.start_valid_epoch</code></td>
+<td>int</td>
+<td><code>4</code></td>
+<td>First validation epoch</td>
+</tr>
+<tr>
+<td><code>TRAIN.valid_map_every</code></td>
+<td>int</td>
+<td><code>1</code></td>
+<td>mAP validation interval</td>
+</tr>
+<tr>
+<td><code>TRAIN.criterion_valid</code></td>
+<td>string</td>
+<td><code>map</code></td>
+<td>Validation criterion</td>
+</tr>
+<tr>
+<td><code>TRAIN.criterion.type</code></td>
+<td>string</td>
+<td><code>CrossEntropyLoss</code></td>
+<td>Loss function</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.type</code></td>
+<td>string</td>
+<td><code>AdamWithScaler</code></td>
+<td>Optimizer</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.lr</code></td>
+<td>float</td>
+<td><code>0.01</code></td>
+<td>Learning rate</td>
+</tr>
+<tr>
+<td><code>TRAIN.scheduler.type</code></td>
+<td>string</td>
+<td><code>ChainedSchedulerE2E</code></td>
+<td>Scheduler strategy</td>
+</tr>
+<tr>
+<td><code>TRAIN.scheduler.warm_up_epochs</code></td>
+<td>int</td>
+<td><code>3</code></td>
+<td>Warmup duration</td>
+</tr>
+</tbody>
+</table>
+<h2 id="localization-json-feature-configs-localization-json_-reference">Localization JSON Feature Configs (<code>localization-json_*</code>) Reference<a class="headerlink" href="#localization-json-feature-configs-localization-json_-reference" title="Permanent link">&para;</a></h2>
+<p>These configs target pre-extracted feature pipelines (for example ResNET PCA512 features) instead of raw RGB clip ingestion.</p>
+<h3 id="data-and-model-differences-vs-rgb-e2e">Data and model differences vs RGB E2E<a class="headerlink" href="#data-and-model-differences-vs-rgb-e2e" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key family</th>
+<th>NetVLAD++ config</th>
+<th>CALF config</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Train dataset <code>type</code></td>
+<td><code>FeatureClipsfromJSON</code></td>
+<td><code>FeatureClipChunksfromJson</code></td>
+<td>Feature clip/chunk loader</td>
+</tr>
+<tr>
+<td>Test dataset <code>type</code></td>
+<td><code>FeatureVideosfromJSON</code></td>
+<td><code>FeatureVideosChunksfromJson</code></td>
+<td>Feature video/chunked video loader</td>
+</tr>
+<tr>
+<td>Temporal key</td>
+<td><code>window_size</code></td>
+<td><code>chunk_size</code> + <code>receptive_field</code></td>
+<td>Temporal context strategy</td>
+</tr>
+<tr>
+<td>Model <code>type</code></td>
+<td><code>LearnablePooling</code></td>
+<td><code>ContextAware</code></td>
+<td>Localization architecture</td>
+</tr>
+<tr>
+<td>Neck</td>
+<td><code>NetVLAD++</code></td>
+<td><code>CNN++</code></td>
+<td>Feature aggregation style</td>
+</tr>
+<tr>
+<td>Head</td>
+<td><code>LinearLayer</code></td>
+<td><code>SpottingCALF</code></td>
+<td>Event prediction head</td>
+</tr>
+<tr>
+<td>Trainer</td>
+<td><code>trainer_pooling</code></td>
+<td><code>trainer_CALF</code></td>
+<td>Training loop implementation</td>
+</tr>
+<tr>
+<td>Criterion</td>
+<td><code>NLLLoss</code></td>
+<td><code>Combined2x</code> (ContextAwareLoss + SpottingLoss)</td>
+<td>Loss setup</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-tuning-points-for-json-feature-configs">Key tuning points for JSON feature configs<a class="headerlink" href="#key-tuning-points-for-json-feature-configs" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATA.train.dataloader.batch_size</code></td>
+<td>Start high for feature pipelines, reduce if OOM</td>
+</tr>
+<tr>
+<td><code>TRAIN.optimizer.lr</code></td>
+<td>Tune first; often most sensitive parameter</td>
+</tr>
+<tr>
+<td><code>TRAIN.max_epochs</code></td>
+<td>Keep smaller for quick iteration, larger for final runs</td>
+</tr>
+<tr>
+<td><code>MODEL.neck.vocab_size</code> (NetVLAD++)</td>
+<td>Higher can improve capacity but increases compute</td>
+</tr>
+<tr>
+<td><code>DATA.train.chunk_size/window_size</code></td>
+<td>Controls temporal context and memory footprint</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sn-gar-config-highlights-sngar-trackingyaml-sngar-framesyaml">SN-GAR Config Highlights (<code>sngar-tracking.yaml</code>, <code>sngar-frames.yaml</code>)<a class="headerlink" href="#sn-gar-config-highlights-sngar-trackingyaml-sngar-framesyaml" title="Permanent link">&para;</a></h2>
+<p>Use these when working on group activity recognition.</p>
+<h3 id="tracking-config-highlights">Tracking config highlights<a class="headerlink" href="#tracking-config-highlights" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>DATA.data_modality: tracking_parquet</code></li>
+<li>Graph backbone keys:</li>
+<li><code>MODEL.backbone.encoder</code> (<code>gin</code> etc.)</li>
+<li><code>MODEL.edge</code>, <code>MODEL.k</code>, <code>MODEL.r</code> for graph connectivity</li>
+<li>Motion/object normalization keys:</li>
+<li><code>DATA.num_objects</code>, <code>DATA.feature_dim</code>, <code>DATA.max_displacement</code>, <code>DATA.max_ball_height</code></li>
+</ul>
+<h3 id="frames-config-highlights">Frames config highlights<a class="headerlink" href="#frames-config-highlights" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>DATA.data_modality: frames_npy</code></li>
+<li>Video transformer backbone keys:</li>
+<li><code>MODEL.backbone.type: videomae2</code></li>
+<li><code>MODEL.backbone.pretrained_model</code></li>
+<li><code>MODEL.backbone.freeze</code>, <code>MODEL.backbone.unfreeze_last_n_layers</code></li>
+<li>Mixed precision support:</li>
+<li><code>TRAIN.use_amp: true</code></li>
+</ul>
+<h2 id="running-many-experiments-without-creating-new-yaml-files">Running Many Experiments Without Creating New YAML Files<a class="headerlink" href="#running-many-experiments-without-creating-new-yaml-files" title="Permanent link">&para;</a></h2>
+<p>If your API call expects a YAML path, keep one base YAML and generate a temporary YAML per run from Python overrides.</p>
+<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">copy</span><span class="w"> </span><span class="kn">import</span> <span class="n">deepcopy</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opensportslib</span><span class="w"> </span><span class="kn">import</span> <span class="n">model</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opensportslib.core.utils.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_config</span><span class="p">,</span> <span class="n">namespace_to_dict</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="k">def</span><span class="w"> </span><span class="nf">set_nested</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">keys</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">cur</span> <span class="o">=</span> <span class="n">d</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cur</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cur</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid key path: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> (failed at </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="n">cur</span> <span class="o">=</span> <span class="n">cur</span><span class="p">[</span><span class="n">k</span><span class="p">]</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="k">if</span> <span class="n">keys</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cur</span><span class="p">:</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid key path: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> (missing leaf </span><span class="si">{</span><span class="n">keys</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">cur</span><span class="p">[</span><span class="n">keys</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">value</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="k">def</span><span class="w"> </span><span class="nf">make_temp_config</span><span class="p">(</span><span class="n">base_yaml_path</span><span class="p">,</span> <span class="n">overrides</span><span class="p">):</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    <span class="n">cfg_ns</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="n">base_yaml_path</span><span class="p">)</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="n">cfg</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">namespace_to_dict</span><span class="p">(</span><span class="n">cfg_ns</span><span class="p">))</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>    <span class="k">for</span> <span class="n">key_path</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">overrides</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>        <span class="n">set_nested</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">key_path</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>    <span class="n">tmp</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;.yaml&#39;</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    <span class="n">yaml</span><span class="o">.</span><span class="n">safe_dump</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">tmp</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>    <span class="n">tmp</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>    <span class="n">tmp</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>    <span class="k">return</span> <span class="n">tmp</span><span class="o">.</span><span class="n">name</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="n">config_path</span> <span class="o">=</span> <span class="n">make_temp_config</span><span class="p">(</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>    <span class="s2">&quot;/home/vorajv/opensportslib/opensportslib/config/classification.yaml&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>    <span class="p">{</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>        <span class="s2">&quot;TRAIN.optimizer.lr&quot;</span><span class="p">:</span> <span class="mf">1e-4</span><span class="p">,</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>        <span class="s2">&quot;TRAIN.epochs&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a>        <span class="s2">&quot;DATA.train.dataloader.batch_size&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>        <span class="s2">&quot;MODEL.backbone.type&quot;</span><span class="p">:</span> <span class="s2">&quot;mvit_v2_s&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>    <span class="p">},</span>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="p">)</span>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="n">m</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">ClassificationModel</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="n">config_path</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="recommended-tuning-order">Recommended Tuning Order<a class="headerlink" href="#recommended-tuning-order" title="Permanent link">&para;</a></h2>
+<p>When starting a new experiment, tune in this order:</p>
+<ol>
+<li><code>TRAIN.optimizer.lr</code></li>
+<li><code>DATA.train.dataloader.batch_size</code></li>
+<li><code>TRAIN.epochs</code> or <code>TRAIN.num_epochs</code> / <code>TRAIN.max_epochs</code></li>
+<li><code>MODEL.backbone.type</code> and unfreeze settings</li>
+<li>Scheduler settings</li>
+</ol>
+<p>This gives the highest return with minimal config churn.</p>
+<h2 id="reproducibility-checklist">Reproducibility Checklist<a class="headerlink" href="#reproducibility-checklist" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Keep a stable base YAML per task.</li>
+<li>Store all per-run changes in an explicit Python <code>overrides</code> dict.</li>
+<li>Save/log the resolved YAML used for the run.</li>
+<li>Fix seed when comparing experiments (<code>SYSTEM.seed</code>, plus deterministic settings if needed).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "content.tabs.link", "search.highlight", "search.suggest", "toc.integrate", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
