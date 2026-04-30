@@ -29,6 +29,18 @@ def main():
 
     print(metrics)
 
+    saved_predictions = my_model.save_predictions(
+        output_path="/path/to/predictions.json",
+        predictions=predictions,
+    )
+
+    metrics_from_file = my_model.evaluate(
+        test_set="/path/to/test_annotations.json",
+        predictions=saved_predictions,
+    )
+
+    print(metrics_from_file)
+
 
 if __name__ == "__main__":
     main()
