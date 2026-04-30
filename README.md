@@ -92,32 +92,45 @@ print("OpenSportsLib imported successfully")
 ### Train a classification model
 
 ```python
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
-myModel = model.classification(
-    config="/path/to/classification.yaml"
+my_model = ClassificationModel(
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
-myModel.train(
+my_model.train(
     train_set="/path/to/train_annotations.json",
     valid_set="/path/to/valid_annotations.json",
-    pretrained="/path/to/pretrained.pt",  # optional
 )
 ```
 
 ### Run inference
 
 ```python
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
-myModel = model.classification(
-    config="/path/to/classification.yaml"
+my_model = ClassificationModel(
+    config="/path/to/classification.yaml",
+    weights="/path/to/weights.pt",  # optional
 )
 
-metrics = myModel.infer(
+predictions = my_model.infer(
     test_set="/path/to/test_annotations.json",
-    pretrained="/path/to/checkpoints/final_model",
-    predictions="/path/to/predictions.json"
+)
+
+saved_predictions = my_model.save_predictions(
+    output_path="/path/to/predictions.json",
+    predictions=predictions,
+)
+
+metrics = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics_from_file = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=saved_predictions,
 )
 
 print(metrics)
@@ -126,12 +139,57 @@ print(metrics)
 ### Localization example
 
 ```python
-from opensportslib import model
+from opensportslib.apis import LocalizationModel
 
-myModel = model.localization(
-    config="/path/to/localization.yaml"
+my_model = LocalizationModel(
+    config="/path/to/localization.yaml",
+    weights="/path/to/weights.pt",  # optional
+)
+
+predictions = my_model.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+saved_predictions = my_model.save_predictions(
+    output_path="/path/to/predictions.json",
+    predictions=predictions,
+)
+
+metrics = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics_from_file = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=saved_predictions,
 )
 ```
+
+
+---
+
+## Hugging Face Dataset Transfer
+
+OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
+
+### Python API
+
+```python
+from opensportslib.tools import (
+    download_dataset_split_from_hf,
+    upload_dataset_inputs_from_json_to_hf,
+    upload_dataset_as_parquet_to_hf,
+)
+```
+
+### Scripts
+
+```bash
+python tools/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
+```
+
+Downloads are placed under `<output-dir>/<revision>/<split>`.
 
 ---
 
@@ -167,6 +225,7 @@ Generate text descriptions for sports events and temporal segments.
 Use the README for the fast start, then go deeper through:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
+- High-level API guide: [opensportslib/apis/README.md](opensportslib/apis/README.md)
 - Configuration guide: https://opensportslab.github.io/opensportslib/tni/config-guide/
 - Example configs: [examples/configs/](examples/configs/)
 - Quickstart scripts: [examples/quickstart/](examples/quickstart/)

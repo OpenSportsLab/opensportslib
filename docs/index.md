@@ -33,6 +33,7 @@ From action recognition and temporal event spotting to retrieval and automatic c
 
 - [Installation](getting-started/installation.md)
 - [Project Structure](getting-started/project_structure.md)
+- [SLURM Guide (salloc, srun)](getting-started/slurm.md)
 - [Training & Inference](tni/tni.md)
 - [API Reference](api/api.md)
 

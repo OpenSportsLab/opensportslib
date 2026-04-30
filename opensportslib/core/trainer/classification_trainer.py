@@ -124,6 +124,7 @@ class BaseTrainerClassification:
         self.best_metric = None
         self.revert_on_lr_reduction = revert_on_lr_reduction
         self._best_model_state = None
+        self.predictions_payload = None
         
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         
@@ -466,6 +467,7 @@ class BaseTrainerClassification:
                 all_labels = np.concatenate([g[1] for g in gathered])
                 results = [r for g in gathered for r in g[2]]
             else:
+                self.predictions_payload = None
                 return None, None, 0.0, {}
 
         # --- metrics (rank-0 only in DDP) ---
@@ -514,9 +516,10 @@ class BaseTrainerClassification:
                 })
 
             logging.info(f"RESULTS Length: {len(results)}")
-            logging.info(f"Predicitions are stored at : {save_path}")
-            with open(save_path, "w") as f:
+            logging.info(f"Predictions are stored at : {save_path}")
+            with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
+            self.predictions_payload = submission
 
         return all_logits, all_labels, total_loss / max(1, total_batches), metrics
 
@@ -697,7 +700,7 @@ class FramesTrainerClassification(BaseTrainerClassification):
 class Trainer_Classification:
     """high-level trainer that dispatches to the right modality trainer.
 
-    consumed by ClassificationAPI. Responsible for building data
+    consumed by ClassificationModel. Responsible for building data
     loaders, optimizers, schedulers, and samplers, then delegating the
     actual loop to MVTrainerClassification or TrackingTrainerClassification.
 
@@ -713,6 +716,7 @@ class Trainer_Classification:
         self.scheduler = None
         self.epoch = 0
         self.trainer = None
+        self.predictions_payload = None
 
     def compute_metrics(self, pred, mode="logits"):
         """thin wrapper around the metric module.
@@ -982,12 +986,42 @@ class Trainer_Classification:
 
             preds_output = self.hf_trainer.predict(test_dataset)
             logits = preds_output.predictions
-            # if isinstance(logits, tuple):
-            #     logits = logits[0]
+            if isinstance(logits, tuple):
+                logits = logits[0]
 
-            # predictions = np.argmax(logits, axis=-1)
-            labels = preds_output.label_ids
-            metrics = self.compute_metrics((logits, labels))
+            probs = torch.softmax(torch.tensor(logits), dim=-1).cpu().numpy()
+            pred_idx = np.argmax(probs, axis=-1)
+            confs = probs.max(axis=-1)
+
+            class_names = test_dataset.label_map
+            sample_ids = [item.get("id", str(i)) for i, item in enumerate(test_dataset.samples)]
+
+            submission = {
+                "version": "2.0",
+                "task": "action_classification",
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "metadata": {"type": "predictions"},
+                "data": [],
+            }
+
+            for sid, label_idx, conf in zip(sample_ids, pred_idx, confs):
+                submission["data"].append({
+                    "id": sid,
+                    "labels": {
+                        "action": {
+                            "label": class_names[int(label_idx)],
+                            "confidence": float(conf),
+                        }
+                    },
+                })
+
+            out_dir = os.path.join(self.config.SYSTEM.save_dir, "final")
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, "predictions_test_epoch_final.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(submission, f, indent=2)
+            self.predictions_payload = submission
+            return submission
         
         else:
             from opensportslib.core.loss.builder import build_criterion
@@ -1058,20 +1092,29 @@ class Trainer_Classification:
                 revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
                 config=self.config,
             )
-            loss, metrics = self.test_trainer.test(
+            self.test_trainer.test(
                 detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)
             )
-            
-        return metrics
+            self.predictions_payload = getattr(
+                self.test_trainer, "predictions_payload", None
+            )
+            return self.predictions_payload
 
     def evaluate(self, pred_path, gt_path, class_names, exclude_labels=[]):
 
         label_to_idx = {v: k for k, v in class_names.items()}
 
-        with open(pred_path) as f:
-            pred_data = json.load(f)
+        if isinstance(pred_path, dict):
+            pred_data = pred_path
+        elif isinstance(pred_path, str):
+            with open(pred_path, encoding="utf-8") as f:
+                pred_data = json.load(f)
+        else:
+            raise TypeError(
+                f"Unsupported predictions type: {type(pred_path).__name__}. Expected dict or str."
+            )
 
-        with open(gt_path) as f:
+        with open(gt_path, encoding="utf-8") as f:
             gt_data = json.load(f)
 
         gt_dict = {}

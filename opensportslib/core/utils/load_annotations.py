@@ -220,7 +220,7 @@ def annotationstoe2eformat(
 
         for video in tqdm.tqdm(videos):
             # ---- Video path & metadata ----
-            video_path = video["inputs"][0]["path"].replace(" ", "_")
+            video_path = video["inputs"][0]["path"] #.replace(" ", "_")
             #game_dir  = os.path.dirname(video_path)
             #game_name = os.path.basename(video_path)
             full_video_path = os.path.join(video_dir, video_path)

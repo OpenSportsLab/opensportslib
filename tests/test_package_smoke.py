@@ -11,6 +11,7 @@ def test_lazy_attributes_are_exposed():
         "metrics": "opensportslib.metrics",
         "datasets": "opensportslib.datasets",
         "core": "opensportslib.core",
+        "tools": "opensportslib.tools",
     }
     for attr, expected in expected_modules.items():
         module = getattr(opensportslib, attr)
