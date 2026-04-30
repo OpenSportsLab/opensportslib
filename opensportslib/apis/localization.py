@@ -9,6 +9,12 @@ from opensportslib.core.utils.config import expand
 class LocalizationModel(BaseTaskModel):
     """Top-level task wrapper for localization / spotting."""
 
+    def __init__(self, config=None, weights=None):
+        super().__init__(config=config, weights=None)
+        if weights is not None:
+            self.last_loaded_weights = weights
+            self.best_checkpoint = weights
+
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
         if override is not None:
             return expand(override)
@@ -68,6 +74,11 @@ class LocalizationModel(BaseTaskModel):
         if weights is None:
             raise ValueError("`weights` must be provided to load_weights().")
 
+        model_cfg = getattr(self.config, "MODEL", None)
+        original_multi_gpu = getattr(model_cfg, "multi_gpu", None)
+        if model_cfg is not None and original_multi_gpu is not None:
+            model_cfg.multi_gpu = False
+
         device = select_device(self.config.SYSTEM)
         if self.model is None:
             self.model = build_model(self.config, device=device)
@@ -95,6 +106,9 @@ class LocalizationModel(BaseTaskModel):
 
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
+
+        if model_cfg is not None and original_multi_gpu is not None:
+            model_cfg.multi_gpu = original_multi_gpu
 
     def train(
         self,
@@ -136,6 +150,8 @@ class LocalizationModel(BaseTaskModel):
 
         logging.info("Configuration:")
         logging.info(self.config)
+
+        effective_weights = weights if weights is not None else self.last_loaded_weights
 
         def set_seed(seed):
             random.seed(seed)
@@ -184,7 +200,7 @@ class LocalizationModel(BaseTaskModel):
             cfg=self.config,
             model=self.model,
             default_args=get_default_args_trainer(self.config, len(train_loader)),
-            resume_from=weights,
+            resume_from=effective_weights,
         )
 
         logging.info("Start training")
@@ -245,8 +261,11 @@ class LocalizationModel(BaseTaskModel):
 
         start = time.time()
 
-        if weights is not None:
-            self.load_weights(weights=weights)
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+
+        if effective_weights is not None:
+            if self.model is None or self.last_loaded_weights != effective_weights:
+                self.load_weights(weights=effective_weights)
         elif self.model is None:
             device = select_device(self.config.SYSTEM)
             self.model = build_model(self.config, device=device)
@@ -278,6 +297,7 @@ class LocalizationModel(BaseTaskModel):
         self,
         test_set=None,
         weights=None,
+        predictions=None,
         use_wandb=True,
         **kwargs,
     ):
@@ -307,11 +327,12 @@ class LocalizationModel(BaseTaskModel):
             use_wandb=use_wandb,
         )
 
-        predictions = self.infer(
-            test_set=test_set,
-            weights=weights,
-            use_wandb=use_wandb,
-        )
+        if predictions is None:
+            predictions = self.infer(
+                test_set=test_set,
+                weights=weights,
+                use_wandb=use_wandb,
+            )
 
         metrics = None
 

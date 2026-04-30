@@ -179,6 +179,8 @@ class ClassificationModel(BaseTaskModel):
 
         del kwargs
 
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+
         world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
         use_ddp = use_ddp and world_size > 1
 
@@ -198,7 +200,7 @@ class ClassificationModel(BaseTaskModel):
                     train_set,
                     valid_set,
                     None,
-                    weights,
+                    effective_weights,
                     use_wandb,
                 ),
                 nprocs=world_size,
@@ -214,7 +216,7 @@ class ClassificationModel(BaseTaskModel):
                 return_queue=queue,
                 train_set=train_set,
                 valid_set=valid_set,
-                weights=weights,
+                weights=effective_weights,
                 use_wandb=use_wandb,
             )
 
@@ -243,6 +245,8 @@ class ClassificationModel(BaseTaskModel):
         logging.info("Configuration:")
         logging.info(self.config)
 
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+
         world_size = torch.cuda.device_count()
         use_ddp = use_ddp and world_size > 1
 
@@ -261,7 +265,7 @@ class ClassificationModel(BaseTaskModel):
                     None,
                     None,
                     test_set,
-                    weights,
+                    effective_weights,
                     use_wandb,
                 ),
                 nprocs=world_size,
@@ -275,7 +279,7 @@ class ClassificationModel(BaseTaskModel):
                 config=self.config,
                 return_queue=queue,
                 test_set=test_set,
-                weights=weights,
+                weights=effective_weights,
                 use_wandb=use_wandb,
             )
 
@@ -286,6 +290,7 @@ class ClassificationModel(BaseTaskModel):
         self,
         test_set=None,
         weights=None,
+        predictions=None,
         use_ddp=False,
         use_wandb=True,
         **kwargs,
@@ -302,12 +307,13 @@ class ClassificationModel(BaseTaskModel):
         self.config = resolve_config_omega(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
-        predictions = self.infer(
-            test_set=test_set,
-            weights=weights,
-            use_ddp=use_ddp,
-            use_wandb=use_wandb,
-        )
+        if predictions is None:
+            predictions = self.infer(
+                test_set=test_set,
+                weights=weights,
+                use_ddp=use_ddp,
+                use_wandb=use_wandb,
+            )
 
         self.trainer = self.trainer or Trainer_Classification(self.config)
         test_data = build_dataset(self.config, test_set, None, split="test")

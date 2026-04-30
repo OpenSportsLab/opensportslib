@@ -791,7 +791,7 @@ class Evaluator:
         # --------------------------------------------------
         # LOAD GT
         # --------------------------------------------------
-        with open(cfg.path) as f:
+        with open(cfg.path, encoding="utf-8") as f:
             GT_data = json.load(f)
 
         # --------------------------------------------------
@@ -895,7 +895,7 @@ class Evaluator:
                 if not os.path.exists(pred_file):
                     continue
                 
-                with open(pred_file) as f:
+                with open(pred_file, encoding="utf-8") as f:
                     pred_data_local = json.load(f)
 
                 if "data" in pred_data_local:

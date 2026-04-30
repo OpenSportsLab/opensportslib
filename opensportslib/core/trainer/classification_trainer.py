@@ -517,7 +517,7 @@ class BaseTrainerClassification:
 
             logging.info(f"RESULTS Length: {len(results)}")
             logging.info(f"Predictions are stored at : {save_path}")
-            with open(save_path, "w") as f:
+            with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
 
@@ -1018,7 +1018,7 @@ class Trainer_Classification:
             out_dir = os.path.join(self.config.SYSTEM.save_dir, "final")
             os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, "predictions_test_epoch_final.json")
-            with open(out_path, "w") as f:
+            with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
             return submission
@@ -1107,14 +1107,14 @@ class Trainer_Classification:
         if isinstance(pred_path, dict):
             pred_data = pred_path
         elif isinstance(pred_path, str):
-            with open(pred_path) as f:
+            with open(pred_path, encoding="utf-8") as f:
                 pred_data = json.load(f)
         else:
             raise TypeError(
                 f"Unsupported predictions type: {type(pred_path).__name__}. Expected dict or str."
             )
 
-        with open(gt_path) as f:
+        with open(gt_path, encoding="utf-8") as f:
             gt_data = json.load(f)
 
         gt_dict = {}
