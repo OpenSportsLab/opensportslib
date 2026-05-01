@@ -29,7 +29,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 from opensportslib.metrics.localization_metric import *
 from opensportslib.core.optimizer.builder import build_optimizer
-from opensportslib.core.optimizer.builder import build_optimizer
 from opensportslib.core.scheduler.builder import build_scheduler
 from opensportslib.core.utils.config import store_json
 from opensportslib.datasets.builder import build_dataset
@@ -67,20 +66,10 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
         
         # Handle checkpoint loading
         if resume_from is not None:
-            if not os.path.isfile(resume_from):
-                raise ValueError(f"Checkpoint file not found: {resume_from}")
-                
-            logging.info(f"Loading checkpoint from: {resume_from}")
-            checkpoint = torch.load(resume_from)
-            
-            # Load model state
-            model.load(checkpoint['model_state_dict'])
-            logging.info("Model state loaded successfully")
-            
-            # Get current training progress
-            start_epoch = checkpoint['epoch'] + 1
-            logging.info(f"Resuming from epoch {start_epoch}")
-            
+            optimizer = resume_from["optimizer"]
+            scheduler = resume_from["scheduler"]
+            scaler = resume_from["scaler"]
+            start_epoch = resume_from["epoch"] + 1
             # Check if we've already reached target epochs
             if start_epoch >= cfg.TRAIN.num_epochs:
                 logging.error(f"Model already trained for {start_epoch} epochs")
@@ -89,38 +78,18 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
                 raise ValueError("Need to increase num_epochs to continue training")
             
             logging.info(f"Will continue training from epoch {start_epoch} to {cfg.TRAIN.num_epochs}")
-        
-        logging.info("Building optimizer...")
-        optimizer, scaler = build_optimizer(model._get_params(), cfg.TRAIN.optimizer)
-        
-        # Load optimizer state if available in checkpoint
-        if resume_from is not None and 'optimizer_state_dict' in checkpoint:
-            try:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                scaler.load_state_dict(checkpoint['scaler_state_dict'])
-                logging.info("Optimizer and scaler states loaded")
-            except Exception as e:
-                logging.warning(f"Could not load optimizer state: {e}")
-                logging.warning("Will start with fresh optimizer state")
-            
-        logging.info("Building scheduler...")
-        lr_scheduler = build_scheduler(optimizer, cfg.TRAIN.scheduler, default_args)
-        
-        # Load scheduler state if available
-        if resume_from is not None and 'lr_state_dict' in checkpoint:
-            try:
-                lr_scheduler.load_state_dict(checkpoint['lr_state_dict'])
-                logging.info("Scheduler state loaded")
-            except Exception as e:
-                logging.warning(f"Could not load scheduler state: {e}")
-                logging.warning("Will start with fresh scheduler state")
+        else:
+            logging.info("Building optimizer...")
+            optimizer, scaler = build_optimizer(model._get_params(), cfg.TRAIN.optimizer)
+            logging.info("Building scheduler...")
+            scheduler = build_scheduler(optimizer, cfg.TRAIN.scheduler, default_args)
 
         trainer = Trainer_e2e(
             cfg,
             model,
             optimizer,
             scaler,
-            lr_scheduler,
+            scheduler,
             default_args["work_dir"],
             default_args["dali"],
             default_args["repartitions"],
@@ -132,8 +101,8 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
         
         # Load training history if resuming
         if resume_from is not None:
-            trainer.best_epoch = checkpoint.get('best_epoch', 0)
-            trainer.best_criterion_valid = checkpoint.get('best_criterion_valid', 
+            trainer.best_epoch = resume_from.get('best_epoch', 0)
+            trainer.best_criterion_valid = resume_from.get('best_criterion_valid', 
                 0 if cfg.TRAIN.criterion_valid == "map" else float("inf"))
             logging.info(f"Restored best epoch: {trainer.best_epoch}")
     
@@ -441,7 +410,7 @@ class Trainer_e2e(Trainer):
         best_checkpoint_path = os.path.join(
             self.save_dir, f"best_checkpoint.pt"
         )
-        self.model._model, _, _, epoch = load_checkpoint(model=self.model._model,
+        self.model._model, _, _, _, epoch, _ = load_checkpoint(model=self.model._model,
                                         path=best_checkpoint_path,
                                         key_remap_fn=localization_remap)
         logging.info(f"Loaded best model from epoch {self.best_epoch}")

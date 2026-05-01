@@ -15,6 +15,8 @@ class LocalizationModel(BaseTaskModel):
             self.last_loaded_weights = weights
             self.best_checkpoint = weights
 
+        self.train_flag = False  # Flag to indicate whether we're in training mode (affects checkpoint loading behavior)
+
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
         if override is not None:
             return expand(override)
@@ -69,15 +71,18 @@ class LocalizationModel(BaseTaskModel):
             load_checkpoint,
             localization_remap,
         )
-
+        from opensportslib.core.optimizer.builder import build_optimizer
+        from opensportslib.core.scheduler.builder import build_scheduler
+        default_args = kwargs.get("default_args", None)
         del kwargs
         if weights is None:
             raise ValueError("`weights` must be provided to load_weights().")
 
         model_cfg = getattr(self.config, "MODEL", None)
-        original_multi_gpu = getattr(model_cfg, "multi_gpu", None)
-        if model_cfg is not None and original_multi_gpu is not None:
-            model_cfg.multi_gpu = False
+        if not self.train_flag:
+            original_multi_gpu = getattr(model_cfg, "multi_gpu", None)
+            if model_cfg is not None and original_multi_gpu is not None:
+                model_cfg.multi_gpu = False
 
         device = select_device(self.config.SYSTEM)
         if self.model is None:
@@ -90,9 +95,28 @@ class LocalizationModel(BaseTaskModel):
         if is_local_path(weights):
             self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(weights))
 
-        inner_model, _, _, _ = load_checkpoint(
+        if default_args is not None:
+            logging.info("Building optimizer + scaler for checkpoint restore...")
+            optimizer, scaler = build_optimizer(
+                inner_model.parameters(),  # or _get_params() if required
+                self.config.TRAIN.optimizer
+            )
+            
+            logging.info("Building scheduler for checkpoint restore...")
+            scheduler = build_scheduler(
+                optimizer,
+                self.config.TRAIN.scheduler,
+                default_args
+            )
+        else:
+            optimizer = scheduler = scaler = None
+
+        inner_model, optimizer, scheduler, scaler, epoch, checkpoint = load_checkpoint(
             model=inner_model,
             path=weights,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
             device=device,
             key_remap_fn=localization_remap,
         )
@@ -107,8 +131,24 @@ class LocalizationModel(BaseTaskModel):
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
 
-        if model_cfg is not None and original_multi_gpu is not None:
-            model_cfg.multi_gpu = original_multi_gpu
+        best_epoch = checkpoint.get("best_epoch", 0)
+
+        best_criterion_valid = checkpoint.get(
+            "best_criterion_valid",
+            0 if self.config.TRAIN.criterion_valid == "map" else float("inf")
+        )
+        self._resume_state = {
+            "optimizer": optimizer,
+            "scheduler": scheduler,
+            "scaler": scaler,
+            "epoch": epoch if epoch is not None else 0,
+            "best_epoch": best_epoch,
+            "best_criterion_valid": best_criterion_valid,
+        }
+
+        if not self.train_flag:
+            if model_cfg is not None and original_multi_gpu is not None:
+                model_cfg.multi_gpu = original_multi_gpu
 
     def train(
         self,
@@ -167,13 +207,6 @@ class LocalizationModel(BaseTaskModel):
 
         start = time.time()
 
-        if effective_weights is not None:
-            if self.model is None or self.last_loaded_weights != effective_weights:
-                self.load_weights(weights=effective_weights)
-        elif self.model is None:
-            device = select_device(self.config.SYSTEM)
-            self.model = build_model(self.config, device=device)
-
         data_obj_train = build_dataset(self.config, split="train")
         dataset_train = data_obj_train.building_dataset(
             cfg=data_obj_train.cfg,
@@ -200,11 +233,21 @@ class LocalizationModel(BaseTaskModel):
             dali=self.config.dali,
         )
 
+        default_args = get_default_args_trainer(self.config, len(train_loader))
+        
+        self.train_flag = True  # Set flag to indicate training mode for checkpoint loading
+        if effective_weights is not None:
+            if self.model is None or self.last_loaded_weights != effective_weights:
+                self.load_weights(weights=effective_weights, default_args=default_args)
+        elif self.model is None:
+            device = select_device(self.config.SYSTEM)
+            self.model = build_model(self.config, device=device)
+
         self.trainer = build_trainer(
             cfg=self.config,
             model=self.model,
-            default_args=get_default_args_trainer(self.config, len(train_loader)),
-            resume_from=effective_weights,
+            default_args=default_args,
+            resume_from=self._resume_state if hasattr(self, "_resume_state") else None,
         )
 
         logging.info("Start training")

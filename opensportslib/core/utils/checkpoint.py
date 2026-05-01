@@ -76,6 +76,7 @@ def load_checkpoint(
     path,
     optimizer=None,
     scheduler=None,
+    scaler=None,
     device=None,
     key_remap_fn=None,
     hf_filename="model.pth.tar",   # required if loading from HF repo
@@ -164,7 +165,7 @@ def load_checkpoint(
     # --------------------------------------------------
     # Load checkpoint
     # --------------------------------------------------
-    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     # ---------------- MODEL STATE ----------------
     if isinstance(checkpoint, dict):
@@ -201,8 +202,24 @@ def load_checkpoint(
             for k, v in state_dict.items()
         }
 
-    state_dict = strip_prefix(state_dict, "module.")
+    # state_dict = strip_prefix(state_dict, "module.")
+    # state_dict = strip_prefix(state_dict, "model.")
+
+    # First remove known wrappers (safe ones)
     state_dict = strip_prefix(state_dict, "model.")
+    state_dict = strip_prefix(state_dict, "_model.")
+
+    # Now handle module dynamically
+    model_keys = list(model.state_dict().keys())
+    ckpt_keys  = list(state_dict.keys())
+
+    model_has_module = model_keys[0].startswith("module.")
+    ckpt_has_module  = ckpt_keys[0].startswith("module.")
+
+    if model_has_module and not ckpt_has_module:
+        state_dict = {f"module.{k}": v for k, v in state_dict.items()}
+    elif not model_has_module and ckpt_has_module:
+        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
 
     # Optional custom remap
     if key_remap_fn:
@@ -229,15 +246,20 @@ def load_checkpoint(
 
     # ---------------- SCHEDULER ----------------
     if scheduler and isinstance(checkpoint, dict):
-        sch_state = checkpoint.get("scheduler") or checkpoint.get("scheduler_state_dict")
+        sch_state = checkpoint.get("scheduler") or checkpoint.get("scheduler_state_dict") or checkpoint.get("lr_scheduler")  # some use "lr_scheduler"
         if sch_state:
             scheduler.load_state_dict(sch_state)
+
+    if scaler and isinstance(checkpoint, dict):
+        scaler_state = checkpoint.get("scaler") or checkpoint.get("scaler_state_dict")
+        if scaler_state:
+            scaler.load_state_dict(scaler_state)
 
     print(f"[Checkpoint] Loaded from {ckpt_path} | epoch: {epoch}")
     print(f"Missing keys: {len(missing)}")
     print(f"Unexpected keys: {len(unexpected)}")
 
-    return model, optimizer, scheduler, epoch
+    return model, optimizer, scheduler, scaler, epoch, checkpoint
 
 
 
