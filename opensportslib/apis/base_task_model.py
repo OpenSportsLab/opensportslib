@@ -9,7 +9,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
-from opensportslib.core.utils.config import expand, load_config_omega
+from opensportslib.core.utils.config import expand, load_config_omega, fetch_and_merge_config_from_HF
 
 
 class BaseTaskModel(ABC):
@@ -23,6 +23,8 @@ class BaseTaskModel(ABC):
 
         self.config_path = expand(config)
         self.config = load_config_omega(self.config_path)
+        if weights is not None:
+            self.config = fetch_and_merge_config_from_HF(self.config, weights, merge_policy="compatibility")
 
         data_cfg = getattr(self.config, "DATA", None)
         if data_cfg is not None and hasattr(data_cfg, "data_dir"):

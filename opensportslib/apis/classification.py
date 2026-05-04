@@ -8,7 +8,6 @@ import os
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.core.utils.config import expand
 
-
 class ClassificationModel(BaseTaskModel):
     """Top-level task wrapper for classification."""
 
@@ -172,8 +171,8 @@ class ClassificationModel(BaseTaskModel):
 
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
-
-        self.config = resolve_config_omega(self.config)
+        
+        self.config = resolve_config_omega(self.config, weights=weights)
         logging.info("Configuration:")
         logging.info(self.config)
 
@@ -241,7 +240,7 @@ class ClassificationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config)
+        self.config = resolve_config_omega(self.config, weights=weights)
         logging.info("Configuration:")
         logging.info(self.config)
 
@@ -304,7 +303,7 @@ class ClassificationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config)
+        self.config = resolve_config_omega(self.config, weights=weights)
         logging.info("Configuration:")
         logging.info(self.config)
         if predictions is None:

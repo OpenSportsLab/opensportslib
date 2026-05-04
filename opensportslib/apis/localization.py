@@ -178,8 +178,8 @@ class LocalizationModel(BaseTaskModel):
         valid_set = self._resolve_split_path("valid", valid_set)
         self._set_split_path("train", train_set)
         self._set_split_path("valid", valid_set)
-
-        self.config = resolve_config_omega(self.config)
+        
+        self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="train")
         init_wandb(
             self.config_path,
@@ -292,7 +292,7 @@ class LocalizationModel(BaseTaskModel):
         self._set_split_path("test", test_set)
 
         self.config.MODEL.multi_gpu = False
-        self.config = resolve_config_omega(self.config)
+        self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(self.config.DATA.test)
 
@@ -361,9 +361,8 @@ class LocalizationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
-
         self.config.MODEL.multi_gpu = False
-        self.config = resolve_config_omega(self.config)
+        self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(self.config.DATA.test)
 
