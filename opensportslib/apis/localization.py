@@ -9,13 +9,13 @@ from opensportslib.core.utils.config import expand
 class LocalizationModel(BaseTaskModel):
     """Top-level task wrapper for localization / spotting."""
 
-    def __init__(self, config=None, weights=None):
-        super().__init__(config=config, weights=None)
-        if weights is not None:
-            self.last_loaded_weights = weights
-            self.best_checkpoint = weights
+    # def __init__(self, config=None, weights=None):
+    #     super().__init__(config=config, weights=None)
+    #     if weights is not None:
+    #         self.last_loaded_weights = weights
+    #         self.best_checkpoint = weights
 
-        self.train_flag = False  # Flag to indicate whether we're in training mode (affects checkpoint loading behavior)
+    #     self.train_flag = False  # Flag to indicate whether we're in training mode (affects checkpoint loading behavior)
 
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
         if override is not None:

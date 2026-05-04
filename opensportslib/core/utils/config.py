@@ -32,6 +32,13 @@ def namespace_to_dict(ns):
     if ns is None or isinstance(ns, (str, int, float, bool)):
         return ns
 
+    try:
+        from omegaconf import DictConfig, ListConfig, OmegaConf
+        if isinstance(ns, (DictConfig, ListConfig)):
+            ns = OmegaConf.to_container(ns, resolve=True)
+    except ImportError:
+        pass
+
     if isinstance(ns, dict):
         return {str(k): namespace_to_dict(v) for k, v in ns.items()}
 
