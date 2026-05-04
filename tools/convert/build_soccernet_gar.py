@@ -14,19 +14,19 @@ This script combines the two original conversion stages into a single CLI:
 
 Usage:
     # Stage 1a - tracking conversion (.jsonl.bz2 -> .parquet)
-    python build_dataset.py convert --modality tracking \
+    python tools/convert/build_soccernet_gar.py convert --modality tracking \
         --events-dir PFF-FC/RawEventsData \
         --tracking-dir PFF-FC/PlayerPoseTracking \
         --output-dir data/tracking_dataset
 
     # Stage 1b - video copy
-    python build_dataset.py convert --modality video \
+    python tools/convert/build_soccernet_gar.py convert --modality video \
         --events-dir PFF-FC/RawEventsData \
         --video-dir PFF-FC/224p \
         --output-dir data/video_dataset
 
     # Stage 2 - clip extraction (frames, tracking, or both)
-    python build_dataset.py extract --modality both \
+    python tools/convert/build_soccernet_gar.py extract --modality both \
         --video-dir data/video_dataset \
         --tracking-dir data/tracking_dataset \
         --output-dir data/soccernet_gar
@@ -376,9 +376,14 @@ def create_split_manifests(events_dir, file_mapping, output_dir, file_format, fp
     for game_id, split in tqdm(file_mapping.items()):
         file_ext = ".parquet" if file_format == "parquet" else ".mp4"
 
+        # source_fps is the rate of the underlying video/tracking, recorded
+        # per video so that mixed-rate datasets stay well-defined. stage 2
+        # uses this as the reference rate when deriving effective fps from
+        # the target sampling rate.
         video_entry = {
             "path": f"videos/{game_id}{file_ext}",
             "input_type": file_format,
+            "source_fps": fps,
             "gameId": game_id,
         }
 
@@ -395,7 +400,6 @@ def create_split_manifests(events_dir, file_mapping, output_dir, file_format, fp
             split_json = {
                 "version": 1,
                 "format": file_format,
-                "fps": fps,
                 "videos": videos,
                 "labels": LABELS,
             }
@@ -573,15 +577,21 @@ def process_game(args):
     Returns a list of result dicts, one per successfully extracted clip.
     """
     (game_id, video_path, parquet_path, annotations,
-     window_size, frame_interval, modality) = args
+     window_size, frame_interval, modality, source_fps) = args
 
-    # only open the video reader if frames are actually needed.
+    # only open the video reader if frames are actually needed. when frames
+    # are needed we read the video file's fps directly for window indexing
+    # (it's the ground truth for the underlying mp4); when only tracking is
+    # requested we fall back to the manifest's source_fps so the value can
+    # still flow into per-sample metadata.
     cap = None
-    fps = None
     total_video_frames = 0
     if modality in ("frames", "both"):
         cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        # cv2 reports the source video's frame rate; this is the same
+        # quantity the manifest carries as source_fps. we trust cv2 here
+        # because it sees the actual file.
+        source_fps = cap.get(cv2.CAP_PROP_FPS)
         total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # tracking data is always required: it provides the videotimems <-> framenum
@@ -657,7 +667,7 @@ def process_game(args):
         # modes use the same indexing strategy.
         video_window = None
         if modality in ("frames", "both"):
-            center_video_frame = int((position_ms / 1000.0) * fps)
+            center_video_frame = int((position_ms / 1000.0) * source_fps)
             video_start = center_video_frame - half_window * frame_interval
             video_window = [video_start + i * frame_interval for i in range(window_size)]
             for f in video_window:
@@ -721,6 +731,8 @@ def process_game(args):
             "game_time": ann["gameTime"],
             "position_ms": ann["position"],
             "team": ann["team"],
+            "source_fps": source_fps,
+            "frame_interval": frame_interval,
         })
 
     if cap is not None:
@@ -769,16 +781,33 @@ def print_overall_stats(all_stats):
 
 
 def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
-                        window_size, frame_interval, num_workers):
+                        window_size, frame_interval, target_fps, num_workers):
     """
     Stage 2 entry point: iterate over train/valid/test, deduplicate
     annotations from each game's manifest, extract windowed clips in
     parallel, save them to disk, and write per-split annotation files.
+
+    Sampling stride can be specified in one of two ways:
+      - frame_interval: explicit stride in source-frame units.
+      - target_fps: desired effective sampling rate; the stride is derived
+        per game as round(source_fps / target_fps). The achieved effective
+        rate is reported when it differs from the requested rate.
+
+    If neither is given, frame_interval defaults to 9.
     """
+    # exactly one of (frame_interval, target_fps) is honored. mutual
+    # exclusion is enforced upstream by argparse; we just resolve defaults.
+    fixed_default_used = frame_interval is None and target_fps is None
+    if fixed_default_used:
+        frame_interval = 9
+
     print("Clip extraction config:")
     print(f"  modality:       {modality}")
     print(f"  window_size:    {window_size} frames")
-    print(f"  frame_interval: {frame_interval}")
+    if target_fps is not None:
+        print(f"  target_fps:     {target_fps} Hz (frame_interval derived per game)")
+    else:
+        print(f"  frame_interval: {frame_interval}")
     print(f"  num_workers:    {num_workers}")
 
     all_stats = {}
@@ -807,8 +836,9 @@ def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
         with open(manifest_path, "r") as f:
             manifest = json.load(f)
 
-        # carry fps forward from the manifest into the final annotation.
-        manifest_fps = manifest.get("fps")
+        # track which (source_fps, achieved_effective_fps) pairs we've
+        # already reported, so the printout doesn't repeat once per game.
+        reported_rates = set()
 
         # build per-game arg tuples for the worker pool.
         game_args = []
@@ -816,6 +846,36 @@ def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
             game_id = video_data["gameId"]
             video_path = os.path.join(video_dir, split, "videos", f"{game_id}.mp4")
             parquet_path = os.path.join(tracking_dir, split, "videos", f"{game_id}.parquet")
+
+            # source_fps is the underlying video/tracking rate. fall back
+            # to None so missing entries surface as null in the output
+            # rather than silently defaulting to a wrong value.
+            source_fps = video_data.get("source_fps")
+
+            # derive this game's stride from target_fps if requested. each
+            # game uses its own source_fps so mixed-rate datasets resolve
+            # cleanly to the same effective rate across games.
+            if target_fps is not None:
+                if source_fps is None or source_fps <= 0:
+                    print(f"skipping {game_id}: cannot derive stride, source_fps missing or invalid")
+                    continue
+                game_frame_interval = max(1, round(source_fps / target_fps))
+                achieved_fps = source_fps / game_frame_interval
+                key = (source_fps, game_frame_interval)
+                if key not in reported_rates:
+                    reported_rates.add(key)
+                    if abs(achieved_fps - target_fps) > 1e-6:
+                        print(
+                            f"  source_fps={source_fps} Hz, target={target_fps} Hz: "
+                            f"using stride={game_frame_interval} -> effective {achieved_fps:.3f} Hz"
+                        )
+                    else:
+                        print(
+                            f"  source_fps={source_fps} Hz, target={target_fps} Hz: "
+                            f"using stride={game_frame_interval}"
+                        )
+            else:
+                game_frame_interval = frame_interval
 
             if not os.path.exists(parquet_path):
                 print(f"skipping {game_id}: missing parquet (required for alignment)")
@@ -835,7 +895,7 @@ def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
 
             game_args.append((
                 game_id, video_path, parquet_path, annotations,
-                window_size, frame_interval, modality,
+                window_size, game_frame_interval, modality, source_fps,
             ))
 
         # run extraction across the worker pool. executor.map preserves
@@ -873,6 +933,18 @@ def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
                 inputs.append({"type": "frames_npy", "path": f"frames_npy/{split}/{frames_filename}"})
                 inputs.append({"type": "tracking_parquet", "path": f"tracking_parquet/{split}/{tracking_filename}"})
 
+            # effective_fps is the rate the clip was actually sampled at,
+            # independent of the source video's frame rate. consumers
+            # should prefer this over source_fps when interpreting the
+            # clip's temporal axis.
+            sample_source_fps = result["source_fps"]
+            sample_frame_interval = result["frame_interval"]
+            sample_effective_fps = (
+                sample_source_fps / sample_frame_interval
+                if sample_source_fps and sample_frame_interval
+                else None
+            )
+
             data_entries.append({
                 "id": f"{split}_{idx:06d}",
                 "inputs": inputs,
@@ -884,17 +956,21 @@ def run_clip_extraction(video_dir, tracking_dir, output_dir, modality,
                     "game_time": result["game_time"],
                     "position_ms": result["position_ms"],
                     "team": result["team"],
+                    "source_fps": sample_source_fps,
+                    "effective_fps": sample_effective_fps,
+                    "window_size": window_size,
+                    "frame_interval": sample_frame_interval,
                 },
             })
 
-        # write the per-split annotation file.
+        # write the per-split annotation file. source_fps, effective_fps,
+        # window_size, and frame_interval live in each sample's metadata
+        # block (one source of truth per sample) rather than at the top
+        # level.
         annotation = {
             "version": "2.0",
             "date": datetime.now().strftime("%Y-%m-%d"),
             "task": "action_classification",
-            "fps": manifest_fps,
-            "window_size": window_size,
-            "frame_interval": frame_interval,
             "modalities": (
                 ["frames_npy"] if modality == "frames" else
                 ["tracking_parquet"] if modality == "tracking" else
@@ -960,7 +1036,17 @@ def build_parser():
     extract_p.add_argument("--output-dir", default="data/soccernet_gar")
     extract_p.add_argument("--modality", choices=["frames", "tracking", "both"], default="both")
     extract_p.add_argument("--window-size", type=int, default=16)
-    extract_p.add_argument("--frame-interval", type=int, default=9)
+    extract_p.add_argument(
+        "--frame-interval", type=int, default=None,
+        help="Stride between sampled frames in source-frame units. Mutually "
+             "exclusive with --target-fps. Defaults to 9 if neither is given.",
+    )
+    extract_p.add_argument(
+        "--target-fps", type=float, default=None,
+        help="Desired effective sampling rate (Hz). Derives --frame-interval "
+             "as round(source_fps / target_fps). Mutually exclusive with "
+             "--frame-interval.",
+    )
     extract_p.add_argument("--num-workers", type=int, default=24)
 
     return parser
@@ -979,6 +1065,14 @@ def main():
             process_video_modality(args.events_dir, args.video_dir, output_dir, args.fps)
 
     elif args.command == "extract":
+        # validate --target-fps / --frame-interval combination. they're
+        # different ways of saying the same thing, so allowing both opens
+        # the door to silent contradictions.
+        if args.target_fps is not None and args.frame_interval is not None:
+            build_parser().error(
+                "--target-fps and --frame-interval are mutually exclusive; pass one."
+            )
+
         run_clip_extraction(
             video_dir=args.video_dir,
             tracking_dir=args.tracking_dir,
@@ -986,10 +1080,10 @@ def main():
             modality=args.modality,
             window_size=args.window_size,
             frame_interval=args.frame_interval,
+            target_fps=args.target_fps,
             num_workers=args.num_workers,
         )
 
 
 if __name__ == "__main__":
     main()
-    

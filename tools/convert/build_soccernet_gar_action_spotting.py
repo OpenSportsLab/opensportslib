@@ -17,13 +17,13 @@ Tracking mode:
 
 Usage:
     # video dataset
-    python build_soccernet_gar_action_spotting.py --modality video \
+    python tools/convert/build_soccernet_gar_action_spotting.py --modality video \
         --manifest-dir sngar-frames \
         --source-dir /home/karkid/PFF/720p \
         --output-dir data/spotting_video
 
     # tracking dataset
-    python build_soccernet_gar_action_spotting.py --modality tracking \
+    python tools/convert/build_soccernet_gar_action_spotting.py --modality tracking \
         --manifest-dir sngar-frames \
         --source-dir /home/karkid/temporal-localization/data/tracking_dataset \
         --output-dir data/spotting_tracking
