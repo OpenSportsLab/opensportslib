@@ -550,6 +550,13 @@ class BaseTrainerClassification:
         path_aux = os.path.join(epoch_dir, name)
         torch.save(state, path_aux)
         logging.info(f"Saved checkpoint: {path_aux}")
+
+        if self.config is not None:
+            from opensportslib.core.utils.config import save_config
+            config_path = os.path.join(epoch_dir, "config.yaml")
+            save_config(self.config, config_path)
+            logging.info(f"Saved config: {config_path}")
+            
         return path_aux
 
 
@@ -1167,11 +1174,12 @@ class Trainer_Classification:
             from opensportslib.models.builder import build_model
             if self.model is None:
                 self.model, _ = build_model(self.config, self.device)
-            self.model, optimizer, scheduler, epoch = load_checkpoint(
+            self.model, optimizer, scheduler, scaler, epoch, checkpoint = load_checkpoint(
                 self.model, path, optimizer, scheduler, device=self.device
             )
             self.optimizer = optimizer
             self.scheduler = scheduler
+            self.scaler = scaler
             self.epoch = epoch
             logging.info(f"Model loaded from {path}, epoch: {epoch}")
             return self.model, self.optimizer, self.scheduler, self.epoch
