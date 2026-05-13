@@ -138,7 +138,7 @@ Each split (`train`, `valid`, `test`) has:
 
 | Key | Type | Example | Meaning |
 |---|---|---|---|
-| `DATA.<split>.video_path` | path | `${DATA.data_dir}/train` | Video root for split |
+| `DATA.<split>.video_path` | path | `${DATA.data_dir}/train` | Video root for split; relative media paths in annotations are resolved from here |
 | `DATA.<split>.path` | path | `.../annotations-train.json` | Annotation file |
 | `DATA.<split>.dataloader.batch_size` | int | `8` | Batch size |
 | `DATA.<split>.dataloader.shuffle` | bool | `true` | Shuffle data each epoch |
