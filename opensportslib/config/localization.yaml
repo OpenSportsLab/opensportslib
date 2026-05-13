@@ -4,7 +4,7 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
+  data_dir: /home/giancos/datasets/OpenSportsLab/OSL-SNBAS/224p-2024/
   classes:
     - PASS
     - DRIVE
@@ -37,7 +37,7 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/train/
-    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
+    path: ${DATA.train.video_path}/train.json
     dataloader:
       batch_size: 8
       shuffle: true
@@ -49,10 +49,12 @@ DATA:
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
+    path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 8
       shuffle: true
+      num_workers: 4
+      pin_memory: true
 
   valid_data_frames:
     type: VideoGameWithDaliVideo
@@ -64,13 +66,15 @@ DATA:
     dataloader:
       batch_size: 4
       shuffle: false
+      num_workers: 4
+      pin_memory: true
 
   test:
     type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
+    path: ${DATA.test.video_path}/test.json
     results: results_spotting_test
     nms_window: 2 
     metric: tight

@@ -2,7 +2,6 @@ import os
 import torch
 import random
 from torch.utils.data import Dataset
-import tempfile
 import copy
 import math
 import numpy as np
@@ -43,6 +42,36 @@ if DALI_AVAILABLE:
 else:
     def dali_pipeline_def(func):
         return func  # dummy decorator
+
+
+def _build_dali_filenames_and_labels(labels):
+    filenames = [video["video"] for video in labels]
+    label_indices = list(range(len(labels)))
+    return filenames, label_indices
+
+
+def _dali_frame_num_to_local_frame(frame_num, stride):
+    return frame_num // stride + 1
+
+
+def _count_dali_video_samples(num_frames, clip_len, overlap_len):
+    step = clip_len - overlap_len
+    if step <= 0:
+        raise ValueError("`clip_len - overlap_len` must be strictly positive.")
+    return len(range(1, num_frames, step))
+
+
+def _pad_dali_iterator_size(size, batch_size):
+    remainder = size % batch_size
+    if remainder == 0:
+        return size
+    return size + (batch_size - remainder)
+
+
+def _resolve_dali_video_sample(labels, video_idx, frame_num, stride):
+    video_meta = labels[video_idx]
+    start = _dali_frame_num_to_local_frame(frame_num, stride)
+    return video_meta["path"], start
     
 class LocalizationDataset(Dataset):
     def __init__(self, config, annotations_path=None, processor=None, split="train"):
@@ -941,7 +970,6 @@ if DALI_AVAILABLE:
                     "NVIDIA DALI is required for VideoGameWithDali. "
                     "Install it or use another dataset type."
                 )
-            import random
             from opensportslib.core.utils.load_annotations import annotationstoe2eformat
             from opensportslib.core.utils.video_processing import distribute_elements, _get_deferred_rgb_transform, get_stride
 
@@ -975,38 +1003,20 @@ if DALI_AVAILABLE:
             self.TARGET_WIDTH = TARGET_WIDTH
 
             self._stride = get_stride(input_fps, extract_fps)
-
-            if is_eval:
-                nb_clips_per_video = math.ceil(dataset_len / len(self._labels)) * epochs
-            else:
-                nb_clips_per_video = math.ceil(dataset_len / len(self._labels)) * epochs
-
-            if mixup:
-                nb_clips_per_video = nb_clips_per_video * 2
-
-            file_list_txt = ""
-            for index, video in enumerate(self._labels):
-                video_path = video["video"]
-                #print("video_path :", video_path)
-                # video_path = os.path.join(video_dir, video["video"] + extension)
-                for _ in range(nb_clips_per_video):
-                    #print(video["num_frames"], (clip_len + 1))
-                    random_start = random.randint(1, video["num_frames"] - (clip_len + 1))
-                    file_list_txt += f"{video_path} {index} {random_start * self._stride} {(random_start+clip_len) * self._stride}\n"
-
-            tf = tempfile.NamedTemporaryFile()
-            tf.write(str.encode(file_list_txt))
-            tf.flush()
+            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
+                self._labels
+            )
 
             self.pipes = [
                 self.video_pipe(
                     batch_size=self.batch_size_per_pipe[index],
+                    filenames=self._filenames,
+                    labels=self._video_indices,
                     sequence_length=self.clip_len,
                     stride_dali=self._stride,
-                    step=-1,
+                    step=self._stride,
                     num_threads=8,
                     device_id=i,
-                    file_list=tf.name,
                     shard_id=index,
                     num_shards=len(devices),
                 )
@@ -1184,7 +1194,14 @@ if DALI_AVAILABLE:
 
         @dali_pipeline_def
         def video_pipe(
-            self, file_list, sequence_length, stride_dali, step, shard_id, num_shards
+            self,
+            filenames,
+            labels,
+            sequence_length,
+            stride_dali,
+            step,
+            shard_id,
+            num_shards,
         ):
             """Construct the pipeline to process a video. This pipeline process a clip with specified arguments such as stride,step and sequence length.
             The first step returns clip of frames with associated labels (index of the clip in the list of clips) and the index of the first frame.
@@ -1192,7 +1209,8 @@ if DALI_AVAILABLE:
             The last step is to construct the list of labels (corresponding to events) corresponding with the extracted frames.
 
             Args:
-                file_list (string): Path to the file with a list of <file label [start_frame [end_frame]]> values.
+                filenames (List[string]): Video files passed directly to DALI.
+                labels (List[int]): Video indices associated with filenames.
                 sequence_length (int): Frames to load per sequence.
                 stride_dali (int): Distance between consecutive frames in the sequence.
                 step(int): Frame interval between each sequence.
@@ -1206,14 +1224,14 @@ if DALI_AVAILABLE:
             video, label, frame_num = fn.readers.video_resize(
                 device="gpu",
                 size=(self.TARGET_HEIGHT, self.TARGET_WIDTH),
-                file_list=file_list,
+                filenames=filenames,
+                labels=labels,
                 sequence_length=sequence_length,
                 random_shuffle=True,
                 shard_id=shard_id,
                 num_shards=num_shards,
                 image_type=types.RGB,
-                file_list_include_preceding_frame=True,
-                file_list_frame_num=True,
+                file_list_include_preceding_frame=False,
                 enable_frame_num=True,
                 stride=stride_dali,
                 step=step,
@@ -1257,7 +1275,9 @@ if DALI_AVAILABLE:
                 labels (np.ndarray): Label array of shape (clip_len,).
             """
             video_meta = self._labels[video_idx]
-            base_idx = frame_num // self._stride
+            # DALI frame numbers are 0-based, while localization annotations are
+            # normalized to a 1-based extracted-frame axis.
+            base_idx = _dali_frame_num_to_local_frame(frame_num, self._stride)
             labels = np.zeros(self.clip_len, np.int64)
 
             for event in video_meta["events"]:
@@ -1332,9 +1352,8 @@ if DALI_AVAILABLE:
                     "NVIDIA DALI is required for VideoGameWithDali. "
                     "Install it or use another dataset type."
                 )
-            import random
             from opensportslib.core.utils.load_annotations import annotationstoe2eformat, construct_labels
-            from opensportslib.core.utils.video_processing import distribute_elements, _get_deferred_rgb_transform, get_stride, get_remaining
+            from opensportslib.core.utils.video_processing import get_stride
             self._src_file = label_file
             # self.infer = False
             if label_file.endswith(".json"):
@@ -1353,70 +1372,38 @@ if DALI_AVAILABLE:
             self.crop_dim = crop_dim
             stride = 1
             self._stride = stride
+            self._stride_dali = stride_dali
             self._flip = flip
             self._multi_crop = multi_crop
             self.batch_size = batch_size // len(devices)
+            self.global_batch_size = batch_size
             self.devices = devices
-            self._clips = []
             self.IMAGENET_MEAN = IMAGENET_MEAN
             self.IMAGENET_STD = IMAGENET_STD
             self.TARGET_HEIGHT = TARGET_HEIGHT
             self.TARGET_WIDTH = TARGET_WIDTH
-            file_list_txt = ""
-            cmp = 0
-            for l in self._labels:
-                has_clip = False
-                for i in range(
-                    1,
-                    l[
-                        "num_frames"
-                    ],  # Need to ensure that all clips have at least one frame
-                    (clip_len - overlap_len) * self._stride,
-                ):
-                    if i + clip_len > l["num_frames"]:
-                        end = l["num_frames_base"]
-                    else:
-                        end = (i + clip_len) * stride_dali
-                    has_clip = True
-                    self._clips.append((l["path"], l["video"], i))
-                    # if self.infer:
-                    #     video_path = l["video"]
-                    # else:
-                    #     video_path = os.path.join(video_dir, l["video"] + extension)
-                    video_path = l["video"]
-                    file_list_txt += f"{video_path} {cmp} {i * stride_dali} {end}\n"
-                    # if cmp2 <5:
-                    #     print(file_list_txt)
-                    #     cmp2+=1
-                    cmp += 1
-                last_video = l["video"]
-                last_path = l["path"]
-                assert has_clip, l
-
-            x = get_remaining(len(self._clips), batch_size)
-            for _ in range(x):
-                self._clips.append((last_path, last_video, i))
-                # if self.infer:
-                #     video_path = l["video"]
-                # else:
-                #     video_path = os.path.join(video_dir, l["video"] + extension)
-                video_path = l["video"]
-                file_list_txt += f"{video_path} {cmp} {i * stride_dali} {end}\n"
-                cmp += 1
-            # print(file_list_txt)
-            tf = tempfile.NamedTemporaryFile()
-            tf.write(str.encode(file_list_txt))
-            tf.flush()
+            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
+                self._labels
+            )
+            clip_count = 0
+            for video in self._labels:
+                num_clips = _count_dali_video_samples(
+                    video["num_frames"], self._clip_len, overlap_len
+                )
+                assert num_clips > 0, video
+                clip_count += num_clips
+            iterator_size = _pad_dali_iterator_size(clip_count, self.global_batch_size)
 
             self.pipes = [
                 self.video_pipe(
                     batch_size=self.batch_size,
+                    filenames=self._filenames,
+                    labels=self._video_indices,
                     sequence_length=self._clip_len,
                     stride_dali=stride_dali,
-                    step=-1,
+                    step=(self._clip_len - overlap_len) * stride_dali,
                     num_threads=8,
                     device_id=i,
-                    file_list=tf.name,
                     shard_id=index,
                     num_shards=len(devices),
                 )
@@ -1426,21 +1413,25 @@ if DALI_AVAILABLE:
             for pipe in self.pipes:
                 pipe.build()
 
-            size = len(self._clips)
-
-            super().__init__(self.pipes, output_map, size=size)
+            internal_output_map = ["data", "video_idx", "frame_num"]
+            super().__init__(self.pipes, internal_output_map, size=iterator_size)
 
         def __next__(self):
             import cupy
 
             out = super().__next__()
             video_names = []
-            starts = cupy.zeros(len(self.devices) * self.batch_size, np.int64)
+            total_samples = sum(batch["video_idx"].shape[0] for batch in out)
+            starts = cupy.zeros(total_samples, np.int64)
             cmp = 0
             for j in range(len(out)):
-                for i in range(out[j]["label"].shape[0]):
-                    video_path, video_name, start = self._clips[out[j]["label"][i]]
-                    video_names.append(video_path)
+                for i in range(out[j]["video_idx"].shape[0]):
+                    video_idx = int(out[j]["video_idx"][i].item())
+                    frame_num = int(out[j]["frame_num"][i].item())
+                    video_name, start = _resolve_dali_video_sample(
+                        self._labels, video_idx, frame_num, self._stride_dali
+                    )
+                    video_names.append(video_name)
                     starts[cmp] = start
                     cmp += 1
             return {
@@ -1460,14 +1451,22 @@ if DALI_AVAILABLE:
 
         @dali_pipeline_def
         def video_pipe(
-            self, file_list, sequence_length, stride_dali, step, shard_id, num_shards
+            self,
+            filenames,
+            labels,
+            sequence_length,
+            stride_dali,
+            step,
+            shard_id,
+            num_shards,
         ):
             """Construct the pipeline to process a video. This pipeline process a clip with specified arguments such as stride,step and sequence length.
             The first step returns clip of frames with associated labels (index of the clip in the list of clips) and the index of the first frame.
             The second step is the cropping, mirroring (only if non eval) and normalizing the frames.
 
             Args:
-                file_list (string): Path to the file with a list of <file label [start_frame [end_frame]]> values.
+                filenames (List[string]): Video files passed directly to DALI.
+                labels (List[int]): Video indices associated with filenames.
                 sequence_length (int): Frames to load per sequence.
                 stride_dali (int): Distance between consecutive frames in the sequence.
                 step(int): Frame interval between each sequence.
@@ -1478,17 +1477,18 @@ if DALI_AVAILABLE:
                 video (torch.tensor): The frames processed.
                 label : the index of the clip in the list of clips.
             """
-            video, label = fn.readers.video_resize(
+            video, video_idx, frame_num = fn.readers.video_resize(
                 device="gpu",
                 size=(self.TARGET_HEIGHT, self.TARGET_WIDTH),
-                file_list=file_list,
+                filenames=filenames,
+                labels=labels,
                 sequence_length=sequence_length,
                 random_shuffle=False,
                 shard_id=shard_id,
                 num_shards=num_shards,
                 image_type=types.RGB,
-                file_list_include_preceding_frame=True,
-                file_list_frame_num=True,
+                file_list_include_preceding_frame=False,
+                enable_frame_num=True,
                 stride=stride_dali,
                 step=step,
                 pad_sequences=True,
@@ -1505,7 +1505,7 @@ if DALI_AVAILABLE:
                 std=[self.IMAGENET_STD[i] * 255.0 for i in range(len(self.IMAGENET_STD))],
             )
 
-            return video, label
+            return video, video_idx, frame_num
 
         def get_dims(video):
             print(video.shape)
