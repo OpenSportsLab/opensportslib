@@ -73,7 +73,7 @@ class ClassificationDataset(Dataset):
         self.config = config
         self.split = split
         self.exclude_labels = ["Unknown", "Dont know"]
-        self.data_dir = config.DATA.data_dir
+        self.video_path = getattr(config.DATA, split).video_path #config.DATA.data_dir
         self.processor = None
 
         # view_type is optional; only MVFoul uses it as of now
@@ -197,7 +197,7 @@ class VideoDataset(ClassificationDataset):
     """
 
     def __init__(self, config, annotations_path, processor, split="train"):
-        super().__init__(config, annotations_path, split)
+        super().__init__(config, annotations_path, processor, split=split)
 
         self.processor = processor
         self.view_type = getattr(config.DATA, "view_type", "single")
@@ -227,15 +227,13 @@ class VideoDataset(ClassificationDataset):
         """read a video file, temporally sub-sample, and apply transforms.
 
         Args:
-            path: realtive path (under data_dir) to the video file.
+            path: realtive path (under video_path) to the video file.
 
         Returns:
             numpy.ndarray of shape (T, H, W, C).
         """
-        full_path = os.path.join(self.config.DATA.data_dir, path)
-
-        if full_path.endswith(".npy"):
-            frames = np.load(full_path).astype(np.float32) / 255.0
+        if path.endswith(".npy"):
+            frames = np.load(path).astype(np.float32) / 255.0
             if self.transform is not None:
                 frames = self.transform(frames)
             mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -243,7 +241,7 @@ class VideoDataset(ClassificationDataset):
             frames = (frames - mean) / std
             return frames
 
-        v = read_video(os.path.join(self.config.DATA.data_dir, path))
+        v = read_video(os.path.join(self.video_path, path))
 
         v = process_frames(
             v,
@@ -473,7 +471,7 @@ class TrackingDataset(ClassificationDataset):
         """read a single parquet tracking clip.
         
         Args:
-            path: Relative path (under ``data_dir``) to the parquet
+            path: Relative path (under ``video_path``) to the parquet
                 file.
 
         Returns:
@@ -481,7 +479,7 @@ class TrackingDataset(ClassificationDataset):
         """
         import pandas as pd
 
-        full_path = os.path.join(self.data_dir, path)
+        full_path = os.path.join(self.video_path, path)
         return pd.read_parquet(full_path)
     
     def __getitem__(self, idx):
