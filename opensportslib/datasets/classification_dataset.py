@@ -233,7 +233,7 @@ class VideoDataset(ClassificationDataset):
             numpy.ndarray of shape (T, H, W, C).
         """
         if path.endswith(".npy"):
-            frames = np.load(path).astype(np.float32) / 255.0
+            frames = np.load(os.path.join(self.video_path, path)).astype(np.float32) / 255.0
             if self.transform is not None:
                 frames = self.transform(frames)
             mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
