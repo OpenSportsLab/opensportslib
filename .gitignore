@@ -26,3 +26,6 @@ wandb/
 .DS_Store
 ibex_logs
 dcgm
+
+
+checkpoints_tracking/

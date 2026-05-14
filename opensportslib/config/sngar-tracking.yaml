@@ -9,7 +9,7 @@ TASK: classification
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/karkid/opensportslib/tracking-dataset
+  data_dir: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/tracking-parquet
   preload_data: false
   train: 
     type: annotations_train.json
@@ -103,10 +103,10 @@ TRAIN:
     type: CrossEntropyLoss
 
 SYSTEM:
- log_dir: ./logs
- save_dir: ./checkpoints_tracking
- use_seed: true
- seed: 42
- GPU: 4
- device: cuda   # auto | cuda | cpu
- gpu_id: 0
+  log_dir: ./logs
+  save_dir: ./checkpoints_tracking
+  use_seed: true
+  seed: 42
+  GPU: 1
+  device: cuda   # auto | cuda | cpu
+  gpu_id: 0

@@ -8,13 +8,14 @@ TASK: classification
 
 DATA:
   dataset_name: sngar
-  data_dir: /home/spark_user1/opensportslib/sngar-frames
+  data_dir: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/frames-parquet
   data_modality: frames_npy
   # max_samples: 100 # only used for quick testing
   num_frames: 16
   frame_size: [224, 224]
   train:
-    path: ${DATA.data_dir}/annotations_train.json
+    video_path: ${DATA.data_dir}/train
+    path: ${DATA.data_dir}/train.json
     dataloader:
       batch_size: 8 # for frozen backbone, use 64
       # for unfrozen backbone, use 32-16-8 depending on the memory available
@@ -22,13 +23,15 @@ DATA:
       num_workers: 8
       pin_memory: true
   valid:
-    path: ${DATA.data_dir}/annotations_valid.json
+    video_path: ${DATA.data_dir}/valid
+    path: ${DATA.data_dir}/valid.json
     dataloader:
       batch_size: 8
       num_workers: 8
       shuffle: false
   test:
-    path: ${DATA.data_dir}/annotations_test.json
+    video_path: ${DATA.data_dir}/test
+    path: ${DATA.data_dir}/test.json
     dataloader:
       batch_size: 8
       num_workers: 8
