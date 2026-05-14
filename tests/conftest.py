@@ -185,8 +185,11 @@ def localization_integration_assets(tmp_path: Path) -> dict:
                 "video_path": str(data_dir),
                 "dataloader": {
                     "batch_size": 1,
-                    "num_workers": 0,
+                    "num_workers": 4,
                     "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 4
                 },
             },
             "valid": {
@@ -194,8 +197,11 @@ def localization_integration_assets(tmp_path: Path) -> dict:
                 "video_path": str(data_dir),
                 "dataloader": {
                     "batch_size": 1,
-                    "num_workers": 0,
+                    "num_workers": 1,
                     "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 1
                 },
             },
             "test": {
@@ -204,8 +210,11 @@ def localization_integration_assets(tmp_path: Path) -> dict:
                 "results": str(result_path),
                 "dataloader": {
                     "batch_size": 1,
-                    "num_workers": 0,
+                    "num_workers": 1,
                     "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 1
                 },
             },
         },
@@ -323,18 +332,27 @@ def localization_public_dataset_assets(tmp_path: Path) -> dict:
             "train": {
                 "path": train_path,
                 "video_path": str(data_dir / "train"),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 4},
             },
             "valid": {
                 "path": valid_path,
                 "video_path": str(data_dir / "valid"),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 1},
             },
             "test": {
                 "path": test_path,
                 "video_path": str(data_dir / "test"),
                 "results": str(result_path),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
+                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False,
+                    "mp_context": "spawn",
+                    "persistent_workers": True,
+                    "prefetch_factor": 1},
             },
         },
         "MODEL": {"backbone": {"type": "smoke_backbone"}, "multi_gpu": False},

@@ -208,7 +208,7 @@ def test_localization_evaluate_uses_provided_predictions(
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.resolve_config_omega",
-        lambda config: config,
+        lambda config, weights=None: config,
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.load_annotations.check_config",
@@ -304,6 +304,7 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
         self.model = object()
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
+        self._resume_state = {"source_weights": weights}
 
     def fake_build_trainer(cfg, model, default_args, resume_from=None):
         del cfg, model, default_args
@@ -329,7 +330,7 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.resolve_config_omega",
-        lambda config: config,
+        lambda config, weights=None: config,
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.select_device",
@@ -367,9 +368,9 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     train_api = LocalizationModel(config=localization_config_path, weights="default")
     train_api.config = make_config()
     train_api.train(use_wandb=False)
-    assert trainer_resume_from[-1] == "default"
+    assert trainer_resume_from[-1]["source_weights"] == "default"
 
     train_api = LocalizationModel(config=localization_config_path, weights="default")
     train_api.config = make_config()
     train_api.train(weights="override", use_wandb=False)
-    assert trainer_resume_from[-1] == "override"
+    assert trainer_resume_from[-1]["source_weights"] == "override"

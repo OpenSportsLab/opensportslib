@@ -144,6 +144,9 @@ Each split (`train`, `valid`, `test`) has:
 | `DATA.<split>.dataloader.shuffle` | bool | `true` | Shuffle data each epoch |
 | `DATA.<split>.dataloader.num_workers` | int | `4` | Data loading worker count |
 | `DATA.<split>.dataloader.pin_memory` | bool | `true` | Host-to-device transfer optimization |
+| `DATA.<split>.dataloader.persistent_workers` | bool | `true` | Keep worker processes alive between batches when workers are enabled |
+| `DATA.<split>.dataloader.prefetch_factor` | int | `4` | Number of prefetched batches per worker |
+| `DATA.<split>.dataloader.mp_context` | str | `spawn` | Worker start method override; video classification defaults to `spawn` when omitted |
 
 ### DATA augmentation keys
 

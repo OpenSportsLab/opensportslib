@@ -1,35 +1,44 @@
 TASK: classification
 DATA:
   dataset_name: mvfouls
-  data_dir: /home/vorajv/opensportslib/SoccerNet/mvfouls
+  data_dir: /home/giancos/datasets/OpenSportsLab/OSL-XFoul/224p
   data_modality: video
   view_type: multi  # multi or single
   num_classes: 8 # mvfoul
   train: 
     type: annotations_train.json
     video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/annotations-train.json
+    path: ${DATA.train.video_path}/train.json
     dataloader:
       batch_size: 8
       shuffle: true
       num_workers: 4
       pin_memory: true
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4  
   valid:
     type: annotations_valid.json
     video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/annotations-valid.json
+    path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 1
       num_workers: 1
       shuffle: false
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4  
   test:
     type: annotations_test.json
     video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/annotations-test.json
+    path: ${DATA.test.video_path}/test.json
     dataloader:
       batch_size: 1
-      num_workers: 1
+      num_workers: 0
       shuffle: false
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4  
   num_frames: 16               # 8 before + 8 after the foul
   input_fps: 25                # Original FPS of video
   target_fps: 17               # Temporal downsampling to 1s clip (approx)
