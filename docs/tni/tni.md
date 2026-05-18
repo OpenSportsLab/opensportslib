@@ -385,6 +385,9 @@ Download annotation files from the links below.
 
 ## Download Weights from HuggingFace
 
+For a comparison table with datasets, reported scores, and model links, see the
+[Model Zoo](../model-zoo.md).
+
 ### 1. Classification (MViT)
 
 **MVFoul Classification (MViT backbone)**  

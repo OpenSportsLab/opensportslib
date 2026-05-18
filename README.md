@@ -78,6 +78,9 @@ Use it as the main entry point to find:
 - extracted features
 - pretrained models and checkpoints
 
+See the [Model Zoo](docs/model-zoo.md) for available pretrained models,
+reported scores, datasets, and loading snippets.
+
 --
 
 ## Quickstart
