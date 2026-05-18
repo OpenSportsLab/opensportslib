@@ -1,0 +1,151 @@
+TASK: retrieval
+VERSION: 3
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_retrieval
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: video_text_retrieval
+    data_root: /path/to/data
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /path/to/train.json
+        source_path: /path/to/train
+        dataloader:
+          batch_size: 32
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        annotation_path: /path/to/valid.json
+        source_path: /path/to/valid
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+      test:
+        annotation_path: /path/to/test.json
+        source_path: /path/to/test
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 16
+      transform:
+        resize:
+          height: 224
+          width: 224
+      augmentations: {}
+      params: {}
+    text:
+      modality: text
+      representation: raw
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  schema_version: 3
+  task: retrieval
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: huggingface
+        repo_id: MCG-NJU/videomae-base
+      load:
+        pretrained: true
+      params: {}
+      overrides: {}
+    text_encoder:
+      kind: encoder
+      source:
+        provider: huggingface
+        repo_id: sentence-transformers/all-mpnet-base-v2
+      load:
+        pretrained: true
+      params: {}
+      overrides: {}
+    retrieval_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: ContrastiveRetrievalHead
+      params:
+        temperature: 0.07
+      overrides: {}
+  topology:
+    - from: video_encoder
+      to: retrieval_head
+      map:
+        embedding: video_embedding
+    - from: text_encoder
+      to: retrieval_head
+      map:
+        embedding: text_embedding
+
+IO:
+  inputs:
+    video: video_encoder
+    text: text_encoder
+  outputs:
+    video_embedding: retrieval_head
+    text_embedding: retrieval_head
+    similarity: retrieval_head
+
+TRAIN:
+  trainer:
+    type: retrieval
+  epochs: 20
+  criterion:
+    type: ContrastiveLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+  scheduler:
+    type: StepLR
+  execution:
+    enabled: true
+  sampling: {}
+  selection:
+    monitor: retrieval_loss
+    mode: min
+  checkpoint:
+    save_every: 5
+    save_best: true

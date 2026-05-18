@@ -1,0 +1,150 @@
+TASK: localization
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+    work_dir: ${SYSTEM.paths.save_dir}
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: SoccerNet
+    data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
+    classes:
+      - PASS
+      - DRIVE
+      - HEADER
+      - HIGH PASS
+      - OUT
+      - CROSS
+      - THROW IN
+      - SHOT
+      - BALL PLAYER BLOCK
+      - PLAYER SUCCESSFUL TACKLE
+      - FREE KICK
+      - GOAL
+    runtime:
+      loader_backend: dali
+    splits:
+      train:
+        type: VideoGameWithDali
+        annotation_path: ${DATA.common.data_dir}/train/annotations-2024-224p-train.json
+        source_path: ${DATA.common.data_dir}/train/
+        output_map: [data, label]
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        type: VideoGameWithDali
+        annotation_path: ${DATA.common.data_dir}/valid/annotations-2024-224p-valid.json
+        source_path: ${DATA.common.data_dir}/valid/
+        output_map: [data, label]
+        dataloader:
+          batch_size: 8
+          shuffle: true
+      valid_data_frames:
+        type: VideoGameWithDaliVideo
+        annotation_path: ${DATA.common.splits.valid.annotation_path}
+        source_path: ${DATA.common.splits.valid.source_path}
+        output_map: [data, label]
+        overlap_len: 0
+        dataloader:
+          batch_size: 4
+          shuffle: false
+      test:
+        type: VideoGameWithDaliVideo
+        annotation_path: ${DATA.common.data_dir}/test/annotations-2024-224p-test.json
+        source_path: ${DATA.common.data_dir}/test/
+        output_map: [data, label]
+        results: results_spotting_test
+        metric: tight
+        nms_window: 2
+        overlap_len: 50
+        dataloader:
+          batch_size: 4
+          shuffle: false
+      challenge:
+        type: VideoGameWithDaliVideo
+        annotation_path: ${DATA.common.data_dir}/challenge/annotations.json
+        output_map: [data, label]
+        overlap_len: 50
+        dataloader:
+          batch_size: 4
+          shuffle: false
+
+  inputs:
+    - modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        epoch_num_frames: 500000
+        clip_len: 100
+        input_fps: 25
+        extract_fps: 2
+      transform:
+        resize:
+          height: 224
+          width: 398
+        normalization:
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+      params:
+        color_mode: rgb
+        crop_dim: -1
+        mixup: true
+        dilate_len: 0
+
+MODEL:
+  family: e2e
+  runner:
+    type: runner_e2e
+  streams:
+    video:
+      enabled: true
+      backbone:
+        type: rny008_gsm
+      neck: {}
+      preprocessor: {}
+  fusion:
+    type: none
+    params: {}
+  head:
+    type: gru
+  post_proc: {}
+  runtime:
+    multi_gpu: true
+  training:
+    load_weights: null
+
+TRAIN:
+  trainer:
+    type: trainer_e2e
+  epochs: 10
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.01
+  scheduler:
+    type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: ${TRAIN.epochs}
+    warm_up_epochs: 3
+  execution:
+    enabled: true
+    acc_grad_iter: 1
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 1
+    criterion_valid: map

@@ -1,0 +1,136 @@
+TASK: classification
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_video
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: sngar
+    data_dir: /home/spark_user1/opensportslib/sngar-frames
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: ${DATA.common.data_dir}/annotations_train.json
+        source_path: ${DATA.common.data_dir}
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 8
+          pin_memory: true
+      valid:
+        annotation_path: ${DATA.common.data_dir}/annotations_valid.json
+        source_path: ${DATA.common.data_dir}
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 8
+      test:
+        annotation_path: ${DATA.common.data_dir}/annotations_test.json
+        source_path: ${DATA.common.data_dir}
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 8
+
+  inputs:
+    - modality: video
+      representation: frames
+      source:
+        format: npy
+      sampling:
+        num_frames: 16
+      transform:
+        resize:
+          height: 224
+          width: 224
+      augmentations:
+        random_horizontal_flip: true
+        flip_prob: 0.5
+        color_jitter: true
+        jitter_prob: 0.5
+        jitter_params: [0.2, 0.2, 0.2, 0.1]
+      params:
+        data_slicing:
+          enabled: false
+          training_matches: 45
+
+MODEL:
+  family: custom
+  runner:
+    type: classification
+  streams:
+    video:
+      enabled: true
+      backbone:
+        type: videomae2
+        pretrained_model: OpenGVLab/VideoMAEv2-Base
+        hidden_dim: 768
+        freeze: false
+        unfreeze_last_n_layers: 0
+      neck:
+        type: TemporalAggregation
+        agr_type: maxpool
+        hidden_dim: 768
+        dropout: 0.1
+        lstm_dropout: 0.3
+        num_attention_heads: 8
+      preprocessor: {}
+  fusion:
+    type: none
+    params: {}
+  head:
+    type: TrackingClassifier
+    hidden_dim: 64
+    num_classes: 10
+    dropout: 0.1
+  training:
+    pretrained: OpenGVLab/VideoMAEv2-Base
+    unfreeze_last_n_layers: 0
+
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.00005
+    betas: [0.9, 0.999]
+    eps: 0.0000001
+    weight_decay: 0.0001
+    amsgrad: false
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    patience: 5
+    factor: 0.1
+    min_lr: 1e-8
+  execution:
+    enabled: true
+    log_interval: 10
+    use_amp: true
+    mixup_alpha: 0.2
+    detailed_results: true
+  sampling:
+    use_weighted_sampler: true
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: loss
+    mode: min
+    patience: 5
+  checkpoint:
+    save_every: 5
+    save_best: true

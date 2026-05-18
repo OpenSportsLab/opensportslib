@@ -1,0 +1,172 @@
+TASK: classification
+VERSION: 3
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_tracking
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: sngar
+    data_root: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/tracking-parquet
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: annotations_train.json
+        annotation_path: ${DATA.common.splits.train.source_path}/train.json
+        source_path: ${DATA.common.data_root}/train
+        dataloader:
+          batch_size: 32
+          shuffle: true
+          num_workers: 8
+          pin_memory: true
+      valid:
+        type: annotations_valid.json
+        annotation_path: ${DATA.common.splits.valid.source_path}/valid.json
+        source_path: ${DATA.common.data_root}/valid
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+          pin_memory: true
+      test:
+        type: annotations_test.json
+        annotation_path: ${DATA.common.splits.test.source_path}/test.json
+        source_path: ${DATA.common.data_root}/test
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+          pin_memory: true
+  inputs:
+    tracking:
+      modality: tracking
+      representation: raw
+      source:
+        format: parquet
+      sampling:
+        num_frames: 16
+        frame_interval: 9
+      transform:
+        normalize: true
+      augmentations:
+        vertical_flip: true
+        horizontal_flip: true
+        team_flip: true
+      params:
+        preload_data: false
+        objects:
+          num_objects: 23
+          feature_dim: 8
+          pitch_half_length: 85.0
+          pitch_half_width: 50.0
+          max_displacement: 110.0
+          max_ball_height: 30.0
+        data_slicing:
+          enabled: false
+          training_matches: 45
+
+MODEL:
+  schema_version: 3
+  task: classification
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    tracking_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: graph_conv
+      params:
+        encoder: gin
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+        edge_type: positional
+        k: 8
+        radius: 15.0
+      overrides: {}
+    tracking_adapter:
+      kind: adapter
+      source:
+        provider: opensportslib
+        registry: neck
+        name: TemporalAggregation
+      params:
+        agr_type: maxpool
+        hidden_dim: 64
+        dropout: 0.1
+        use_position_encoding: true
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: TrackingClassifier
+      params:
+        hidden_dim: 64
+        dropout: 0.1
+        num_classes: 10
+      overrides: {}
+  topology:
+    - from: tracking_encoder
+      to: tracking_adapter
+    - from: tracking_adapter
+      to: task_head
+
+IO:
+  inputs:
+    tracking: tracking_encoder
+    label: task_head
+  outputs:
+    logits: task_head
+
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: Adam
+    lr: 0.001
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    patience: 10
+    factor: 0.1
+    min_lr: 1e-8
+  execution:
+    enabled: true
+    detailed_results: true
+  sampling:
+    use_weighted_sampler: true
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: loss
+    mode: min
+    patience: 10
+  checkpoint:
+    save_every: 20
+    save_best: true
