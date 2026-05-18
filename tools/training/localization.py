@@ -7,9 +7,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Minimal localization training script.")
     parser.add_argument("--config", required=True, help="Path to the YAML config file.")
     parser.add_argument("--weights", default=None, help="Path to pretrained weights (optional).")
-    parser.add_argument("--train-set", required=True, help="Path to train annotations JSON.")
-    parser.add_argument("--valid-set", required=True, help="Path to validation annotations JSON.")
-    parser.add_argument("--test-set", required=True, help="Path to test annotations JSON.")
+    parser.add_argument("--train-set", default=None, help="Path to train annotations JSON. Defaults to DATA.train.path from the config.")
+    parser.add_argument("--valid-set", default=None, help="Path to validation annotations JSON. Defaults to DATA.valid.path from the config.")
+    parser.add_argument("--test-set", default=None, help="Path to test annotations JSON. Defaults to DATA.test.path from the config.")
     return parser.parse_args()
 
 

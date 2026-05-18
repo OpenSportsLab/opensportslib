@@ -27,6 +27,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Model Zoo: model-zoo.md
 
   - Getting Started:
       - Installation: getting-started/installation.md

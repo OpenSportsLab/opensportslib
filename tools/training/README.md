@@ -6,8 +6,8 @@ Minimal training scripts for each task. Run from the **repository root**.
 
 | Script | Task |
 |---|---|
-| `basic_classification.py` | Action classification |
-| `basic_localization.py` | Action localization |
+| `classification.py` | Action classification |
+| `localization.py` | Action localization |
 
 ## Arguments
 
@@ -16,9 +16,9 @@ Both scripts accept the same CLI arguments:
 | Argument | Required | Description |
 |---|---|---|
 | `--config` | yes | Path to the YAML config file |
-| `--train-set` | yes | Path to train annotations JSON |
-| `--valid-set` | yes | Path to validation annotations JSON |
-| `--test-set` | yes | Path to test annotations JSON |
+| `--train-set` | no | Path to train annotations JSON; defaults to `DATA.train.path` |
+| `--valid-set` | no | Path to validation annotations JSON; defaults to `DATA.valid.path` |
+| `--test-set` | no | Path to test annotations JSON; defaults to `DATA.test.path` |
 | `--weights` | no | Path to pretrained weights |
 
 ## Usage
@@ -26,32 +26,23 @@ Both scripts accept the same CLI arguments:
 ### Classification
 
 ```bash
-python tools/training/basic_classification.py \
-    --config examples/configs/classification_video.yaml \
-    --train-set /path/to/train_annotations.json \
-    --valid-set /path/to/valid_annotations.json \
-    --test-set /path/to/test_annotations.json
+python tools/training/classification.py \
+    --config examples/configs/classification_video.yaml
 ```
 
 With pretrained weights:
 
 ```bash
-python tools/training/basic_classification.py \
+python tools/training/classification.py \
     --config examples/configs/classification_video.yaml \
-    --weights /path/to/weights.pt \
-    --train-set /path/to/train_annotations.json \
-    --valid-set /path/to/valid_annotations.json \
-    --test-set /path/to/test_annotations.json
+    --weights OpenSportsLab/OSL-cls-action-mvitv2
 ```
 
 ### Localization
 
 ```bash
-python tools/training/basic_localization.py \
-    --config examples/configs/localization.yaml \
-    --train-set /path/to/train_annotations.json \
-    --valid-set /path/to/valid_annotations.json \
-    --test-set /path/to/test_annotations.json
+python tools/training/localization.py \
+    --config examples/configs/localization.yaml
 ```
 
 ## Example Configs

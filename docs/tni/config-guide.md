@@ -8,6 +8,7 @@ Main config files in the repo:
 
 - `opensportslib/config/classification.yaml`
 - `opensportslib/config/localization.yaml`
+- `opensportslib/config/localization-e2e-ocv.yaml`
 - `opensportslib/config/localization-json_netvlad++_resnetpca512.yaml`
 - `opensportslib/config/localization-json_calf_resnetpca512.yaml`
 - `opensportslib/config/sngar-tracking.yaml`
@@ -40,7 +41,7 @@ Defines which task pipeline is used.
 - `classification`: clip-level classification pipeline.
 - `localization`: spotting/localization pipeline.
 
-If `TASK` does not match the selected API (`model.classification` / `model.localization`), behavior can be incorrect or fail.
+If `TASK` does not match the selected API (`ClassificationModel` / `LocalizationModel`), behavior can be incorrect or fail.
 
 ### `DATA`
 
@@ -121,7 +122,7 @@ This avoids duplication and keeps paths consistent.
 | Key | Type | Example | Meaning |
 |---|---|---|---|
 | `DATA.dataset_name` | string | `mvfouls` | Dataset identifier |
-| `DATA.data_dir` | path | `/.../SoccerNet/mvfouls` | Dataset root directory |
+| `DATA.data_dir` | path | `/.../OSL-XFoul/224p` | Dataset root directory |
 | `DATA.data_modality` | string | `video` | Input modality for loader |
 | `DATA.view_type` | string | `multi` | Single-view or multi-view processing |
 | `DATA.num_classes` | int | `8` | Number of target classes |
@@ -139,7 +140,7 @@ Each split (`train`, `valid`, `test`) has:
 | Key | Type | Example | Meaning |
 |---|---|---|---|
 | `DATA.<split>.video_path` | path | `${DATA.data_dir}/train` | Video root for split; relative media paths in annotations are resolved from here |
-| `DATA.<split>.path` | path | `.../annotations-train.json` | Annotation file |
+| `DATA.<split>.path` | path | `${DATA.train.video_path}/train.json` | Annotation file |
 | `DATA.<split>.dataloader.batch_size` | int | `8` | Batch size |
 | `DATA.<split>.dataloader.shuffle` | bool | `true` | Shuffle data each epoch |
 | `DATA.<split>.dataloader.num_workers` | int | `4` | Data loading worker count |
@@ -214,7 +215,7 @@ Each split (`train`, `valid`, `test`) has:
 | Key | Type | Example | Meaning |
 |---|---|---|---|
 | `DATA.dataset_name` | string | `SoccerNet` | Dataset identity |
-| `DATA.data_dir` | path | `/.../annotations` | Data root |
+| `DATA.data_dir` | path | `/.../OSL-SNBAS/224p-2024` | Data root |
 | `DATA.classes` | list[string] | `PASS, DRIVE, ...` | Event class set |
 | `DATA.epoch_num_frames` | int | `500000` | Frames sampled per epoch |
 | `DATA.mixup` | bool | `true` | Mixup augmentation |

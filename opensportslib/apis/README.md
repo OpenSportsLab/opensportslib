@@ -45,7 +45,7 @@ from opensportslib.apis import ClassificationModel
 
 m = ClassificationModel(
     config="/path/to/classification.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 best_ckpt = m.train(
@@ -83,7 +83,7 @@ from opensportslib.apis import LocalizationModel
 
 m = LocalizationModel(
     config="/path/to/localization.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 best_ckpt = m.train(
