@@ -14,6 +14,7 @@ import gc
 import json
 import time
 import logging
+import multiprocessing as mp
 
 import torch
 import tqdm
@@ -865,36 +866,53 @@ class Trainer_Classification:
         else:
             val_sampler = None
 
-        num_train_workers = self.config.DATA.train.dataloader.num_workers
-        num_val_workers = self.config.DATA.valid.dataloader.num_workers
+        train_num_workers = getattr(self.config.DATA.train.dataloader, "num_workers", 0)
+        train_pin_memory = getattr(self.config.DATA.train.dataloader, "pin_memory", self.device.type == "cuda")
+        train_mp_context = getattr(self.config.DATA.train.dataloader, "mp_context", None)
+        train_persistent_workers = getattr(self.config.DATA.train.dataloader, "persistent_workers", train_num_workers > 0)
+        train_prefetch_factor = getattr(self.config.DATA.train.dataloader, "prefetch_factor", 4 if train_num_workers > 0 else None)
+        
+        if train_mp_context is not None:
+            train_mp_context = mp.get_context(train_mp_context)
 
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.DATA.train.dataloader.batch_size,
             shuffle=(train_sampler is None and shuffle),
             sampler=train_sampler,
-            num_workers=num_train_workers,
-            pin_memory=True,
+            num_workers=train_num_workers,
+            pin_memory=train_pin_memory,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
             generator=g,
             drop_last=True,
-            persistent_workers=num_train_workers > 0,
-            prefetch_factor=4 if num_train_workers > 0 else None,
+            multiprocessing_context=train_mp_context,
+            persistent_workers=train_persistent_workers,
+            prefetch_factor=train_prefetch_factor,
         )
 
+        valid_num_workers = getattr(self.config.DATA.valid.dataloader, "num_workers", 0)
+        valid_pin_memory = getattr(self.config.DATA.valid.dataloader, "pin_memory", self.device.type == "cuda")
+        valid_mp_context = getattr(self.config.DATA.valid.dataloader, "mp_context", None)
+        valid_persistent_workers = getattr(self.config.DATA.valid.dataloader, "persistent_workers", valid_num_workers > 0)
+        valid_prefetch_factor = getattr(self.config.DATA.valid.dataloader, "prefetch_factor", 4 if valid_num_workers > 0 else None)
+
+        if valid_mp_context is not None:
+            valid_mp_context = mp.get_context(valid_mp_context)
+            
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config.DATA.valid.dataloader.batch_size,
             shuffle=False,
             sampler=val_sampler,   
-            num_workers=num_val_workers,
-            pin_memory=True,
+            num_workers=valid_num_workers,
+            pin_memory=valid_pin_memory,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
             generator=g,
-            persistent_workers=num_val_workers > 0,
-            prefetch_factor=4 if num_val_workers > 0 else None,
+            multiprocessing_context=valid_mp_context,
+            persistent_workers=valid_persistent_workers,
+            prefetch_factor=valid_prefetch_factor,
         )
 
         # select the modality-specific trainer.
