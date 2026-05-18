@@ -9,7 +9,7 @@ def main():
 
     my_model = ClassificationModel(
         config="examples/configs/classification_video.yaml",
-        weights="/path/to/weights.pt",  # optional
+        weights=None,  # optional: path or Hugging Face model ID
     )
 
     my_model.train(

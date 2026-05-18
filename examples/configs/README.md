@@ -18,10 +18,10 @@ Point the OpenSportsLib Python API to one of these configs.
 Example:
 
 ```python
-from opensportslib import model
+from opensportslib.apis import ClassificationModel
 
-my_model = model.classification(
-    config="examples/configs/classification.yaml"
+my_model = ClassificationModel(
+    config="examples/configs/classification_video.yaml"
 )
 ```
 

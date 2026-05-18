@@ -16,6 +16,9 @@ DATA:
       shuffle: true
       num_workers: 4
       pin_memory: true
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4
 
   valid:
     type: annotations_valid.json
@@ -25,6 +28,9 @@ DATA:
       batch_size: 1
       num_workers: 1
       shuffle: false
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4
 
   test:
     type: annotations_test.json
@@ -32,8 +38,11 @@ DATA:
     path: ${DATA.test.video_path}/annotations-test.json
     dataloader:
       batch_size: 1
-      num_workers: 1
+      num_workers: 0
       shuffle: false
+      mp_context: spawn
+      persistent_workers: true
+      prefetch_factor: 4
 
   num_frames: 16               # 8 before + 8 after the foul
   input_fps: 25                # Original FPS of video
@@ -78,7 +87,6 @@ TRAIN:
   use_weighted_sampler: false
   use_weighted_loss: true
   epochs: 20 #20
-  save_dir: ./checkpoints
   log_interval: 10
   save_every: 2 #5
 
@@ -102,6 +110,7 @@ TRAIN:
 
 SYSTEM:
   log_dir: ./logs
+  save_dir: ./checkpoints
   use_seed: false
   seed: 42
   GPU: 4

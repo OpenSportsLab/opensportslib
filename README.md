@@ -99,7 +99,7 @@ from opensportslib.apis import ClassificationModel
 
 my_model = ClassificationModel(
     config="/path/to/classification.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 my_model.train(
@@ -115,7 +115,7 @@ from opensportslib.apis import ClassificationModel
 
 my_model = ClassificationModel(
     config="/path/to/classification.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 predictions = my_model.infer(
@@ -146,7 +146,7 @@ from opensportslib.apis import LocalizationModel
 
 my_model = LocalizationModel(
     config="/path/to/localization.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 predictions = my_model.infer(
