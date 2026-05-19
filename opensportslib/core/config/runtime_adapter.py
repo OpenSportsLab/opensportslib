@@ -61,6 +61,7 @@ def adapt_config_to_runtime(config: Any, *, as_namespace: bool = True) -> Any:
     runtime["DATA"] = _adapt_data(data, payload.get("TASK", ""), io_cfg)
     runtime["MODEL"] = _adapt_model(model, payload.get("TASK", ""))
     runtime["TRAIN"] = _adapt_train(train)
+    runtime["dali"] = _derive_legacy_dali(data)
     runtime["_canonical"] = payload
 
     return maybe_namespace(runtime, as_namespace=as_namespace)
@@ -135,6 +136,30 @@ def _adapt_data(data: dict[str, Any], task: str, io_cfg: dict[str, Any]) -> dict
         runtime["num_classes"] = len(runtime["classes"])
 
     return runtime
+
+
+def _derive_legacy_dali(data: dict[str, Any]) -> bool:
+    common = data.get("common", {})
+    runtime = common.get("runtime", {})
+    loader_backend = runtime.get("loader_backend")
+    if isinstance(loader_backend, str) and loader_backend.strip():
+        backend = loader_backend.strip().lower()
+        if backend == "dali":
+            return True
+        if backend == "opencv":
+            splits = common.get("splits", {})
+            for split_cfg in splits.values():
+                split_type = split_cfg.get("type")
+                if isinstance(split_type, str) and "dali" in split_type.lower():
+                    return True
+            return False
+
+    splits = common.get("splits", {})
+    for split_cfg in splits.values():
+        split_type = split_cfg.get("type")
+        if isinstance(split_type, str) and "dali" in split_type.lower():
+            return True
+    return False
 
 
 def _adapt_model(model: dict[str, Any], task: str) -> dict[str, Any]:

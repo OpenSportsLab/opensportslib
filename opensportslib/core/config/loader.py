@@ -43,7 +43,9 @@ def load_config(
 
         validate_config(canonical)
     if compatibility:
-        return adapt_config_to_runtime(canonical, as_namespace=as_namespace)
+        runtime = adapt_config_to_runtime(canonical, as_namespace=False)
+        runtime = _ensure_legacy_runtime_flags(runtime)
+        return maybe_namespace(runtime, as_namespace=as_namespace)
     return maybe_namespace(canonical, as_namespace=as_namespace)
 
 
@@ -71,7 +73,9 @@ def resolve_config(
     payload = namespace_to_plain_dict(config)
     canonical = migrate_config(payload, as_namespace=False)
     if compatibility:
-        return adapt_config_to_runtime(canonical, as_namespace=as_namespace)
+        runtime = adapt_config_to_runtime(canonical, as_namespace=False)
+        runtime = _ensure_legacy_runtime_flags(runtime)
+        return maybe_namespace(runtime, as_namespace=as_namespace)
     return maybe_namespace(canonical, as_namespace=as_namespace)
 
 
@@ -79,3 +83,9 @@ def save_config(config_obj: Any, path: str | Path) -> None:
     payload = namespace_to_plain_dict(config_obj)
     with open(path, "w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
+
+
+def _ensure_legacy_runtime_flags(runtime: dict[str, Any]) -> dict[str, Any]:
+    if "dali" not in runtime:
+        runtime["dali"] = False
+    return runtime
