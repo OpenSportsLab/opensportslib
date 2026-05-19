@@ -22,6 +22,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 ## Quick links
 
 - **Documentation:** https://opensportslab.github.io/opensportslib/
+- **OSL JSON format:** https://opensportslab.github.io/opensportslib/data/osl-json-format/
 - **PyPI:** https://pypi.org/project/opensportslib/
 - **Issues:** https://github.com/OpenSportsLab/opensportslib/issues
 
@@ -81,7 +82,82 @@ Use it as the main entry point to find:
 See the [Model Zoo](docs/model-zoo.md) for available pretrained models,
 reported scores, datasets, and loading snippets.
 
---
+---
+
+## Dataset format
+
+OpenSportsLib annotation files use the **OSL JSON v2.0** format. A dataset JSON
+contains top-level metadata, a shared `labels` schema, and a `data` array where
+each sample points to one or more inputs.
+
+Minimal classification sample:
+
+```json
+{
+  "labels": {
+    "action": {
+      "type": "single_label",
+      "labels": ["pass", "shot"]
+    }
+  },
+  "data": [
+    {
+      "id": "clip_0001",
+      "inputs": [
+        {
+          "type": "video",
+          "path": "clips/clip_0001.mp4",
+          "fps": 25.0
+        }
+      ],
+      "labels": {
+        "action": {
+          "label": "shot"
+        }
+      }
+    }
+  ]
+}
+```
+
+Minimal localization sample:
+
+```json
+{
+  "labels": {
+    "action": {
+      "type": "single_label",
+      "labels": ["pass", "shot"]
+    }
+  },
+  "data": [
+    {
+      "id": "game_0001",
+      "inputs": [
+        {
+          "type": "video",
+          "path": "games/game_0001.mp4",
+          "fps": 25.0
+        }
+      ],
+      "events": [
+        {
+          "head": "action",
+          "label": "pass",
+          "position_ms": 1240
+        }
+      ]
+    }
+  ]
+}
+```
+
+Relative paths in `inputs[].path` are resolved from the split media root in the
+YAML config, for example `DATA.train.video_path`. See the full
+[OSL JSON format guide](docs/data/osl-json-format.md) for field definitions,
+multi-modal examples, prediction payloads, and conversion notes.
+
+---
 
 ## Quickstart
 
@@ -188,8 +264,8 @@ from opensportslib.tools import (
 ### Scripts
 
 ```bash
-python tools/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
-python tools/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
+python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
 
 Downloads are placed under `<output-dir>/<revision>/<split>`.
@@ -206,9 +282,13 @@ Predict when key events happen in long untrimmed sports videos.
 
 ### Action Retrieval
 Search and retrieve relevant clips or moments from a collection of sports videos.
+This is part of the roadmap and OSL data model, not a first-class OpenSportsLib
+training workflow yet.
 
 ### Action Description / Captioning
 Generate text descriptions for sports events and temporal segments.
+This is part of the roadmap and OSL data model, not a first-class OpenSportsLib
+training workflow yet.
 
 ---
 
@@ -228,6 +308,7 @@ Generate text descriptions for sports events and temporal segments.
 Use the README for the fast start, then go deeper through:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
+- OSL JSON format: [docs/data/osl-json-format.md](docs/data/osl-json-format.md)
 - High-level API guide: [opensportslib/apis/README.md](opensportslib/apis/README.md)
 - Configuration guide: https://opensportslab.github.io/opensportslib/tni/config-guide/
 - Example configs: [examples/configs/](examples/configs/)
