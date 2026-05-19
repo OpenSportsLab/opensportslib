@@ -17,7 +17,7 @@ SYSTEM:
 DATA:
   common:
     dataset_name: SoccerNet
-    data_root: /home/vorajv/opensportslib/SoccerNet/annotations/
+    data_root: /home/vorajv/dataset/BAS
     classes:
       - PASS
       - DRIVE

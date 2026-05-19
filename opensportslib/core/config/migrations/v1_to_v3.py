@@ -11,7 +11,7 @@ def migrate_v1_to_v3(payload: dict[str, Any]) -> dict[str, Any]:
 
     task = _infer_task(cfg)
     system = _migrate_system(cfg.get("SYSTEM", {}))
-    data = _migrate_data(cfg.get("DATA", {}), task)
+    data = _migrate_data(cfg.get("DATA", {}), task, cfg.get("dali"))
     model = _migrate_model(cfg.get("MODEL", {}), data, task)
     train = _migrate_train(cfg.get("TRAIN", {}), task)
     io = _build_io(model, data)
@@ -61,10 +61,15 @@ def _migrate_system(system: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _migrate_data(data: dict[str, Any], task: str) -> dict[str, Any]:
+def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> dict[str, Any]:
     split_names = ["train", "valid", "test", "valid_data_frames", "challenge", "infer"]
     annotations = data.get("annotations", {})
-    runtime = {"loader_backend": "dali" if data.get("dali") else "opencv"}
+    # Legacy configs usually carry `dali` at the top level, but some variants
+    # place it under DATA. Accept both to avoid silent backend drift.
+    dali_flag = legacy_dali
+    if dali_flag is None:
+        dali_flag = data.get("dali")
+    runtime = {"loader_backend": "dali" if bool(dali_flag) else "opencv"}
     splits: dict[str, Any] = {}
     for split in split_names:
         split_cfg = deepcopy(data.get(split, {}))

@@ -17,7 +17,7 @@ SYSTEM:
 DATA:
   common:
     dataset_name: SoccerNet
-    data_root: /home/vorajv/opensportslib/SoccerNet/
+    data_root: /home/vorajv/dataset/SNAS-ResNET_PCA512
     classes:
       - Penalty
       - Kick-off

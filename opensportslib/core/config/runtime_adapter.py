@@ -59,7 +59,7 @@ def adapt_config_to_runtime(config: Any, *, as_namespace: bool = True) -> Any:
 
     runtime["SYSTEM"] = _adapt_system(system)
     runtime["DATA"] = _adapt_data(data, payload.get("TASK", ""), io_cfg)
-    runtime["MODEL"] = _adapt_model(model, payload.get("TASK", ""))
+    runtime["MODEL"] = _adapt_model(model, train, data, payload.get("TASK", ""))
     runtime["TRAIN"] = _adapt_train(train)
     runtime["dali"] = _derive_legacy_dali(data)
     runtime["_canonical"] = payload
@@ -96,6 +96,9 @@ def _adapt_data(data: dict[str, Any], task: str, io_cfg: dict[str, Any]) -> dict
     runtime["annotations"] = {}
     for split_name, split_cfg in splits.items():
         legacy_split = deepcopy(split_cfg)
+        if "classes" not in legacy_split and runtime.get("classes") is not None:
+            # Preserve legacy expectation: split config exposes `classes`.
+            legacy_split["classes"] = deepcopy(runtime.get("classes"))
         if "annotation_path" in split_cfg:
             legacy_split["path"] = split_cfg["annotation_path"]
             runtime["annotations"][split_name] = split_cfg["annotation_path"]
@@ -132,10 +135,40 @@ def _adapt_data(data: dict[str, Any], task: str, io_cfg: dict[str, Any]) -> dict
     runtime.update(deepcopy(primary_input.get("augmentations", {})))
     runtime.update(deepcopy(primary_input.get("params", {})))
 
+    _inject_legacy_split_defaults(runtime, primary_input)
+
     if task == "classification" and "num_classes" not in runtime and runtime.get("classes"):
         runtime["num_classes"] = len(runtime["classes"])
 
     return runtime
+
+
+def _inject_legacy_split_defaults(runtime: dict[str, Any], primary_input: dict[str, Any]) -> None:
+    """Backfill split-level legacy fields expected by older dataset builders."""
+    split_defaults: dict[str, Any] = {}
+    split_defaults.update(deepcopy(primary_input.get("sampling", {})))
+    split_defaults.update(deepcopy(primary_input.get("params", {})))
+    split_defaults.update(deepcopy(primary_input.get("augmentations", {})))
+
+    for key in (
+        "modality",
+        "data_modality",
+        "target_height",
+        "target_width",
+        "frame_size",
+        "imagenet_mean",
+        "imagenet_std",
+    ):
+        if key in runtime:
+            split_defaults[key] = deepcopy(runtime[key])
+
+    for split_name, split_cfg in list(runtime.items()):
+        if split_name in {"common", "inputs", "annotations"}:
+            continue
+        if not isinstance(split_cfg, dict):
+            continue
+        for key, value in split_defaults.items():
+            split_cfg.setdefault(key, deepcopy(value))
 
 
 def _derive_legacy_dali(data: dict[str, Any]) -> bool:
@@ -162,7 +195,12 @@ def _derive_legacy_dali(data: dict[str, Any]) -> bool:
     return False
 
 
-def _adapt_model(model: dict[str, Any], task: str) -> dict[str, Any]:
+def _adapt_model(
+    model: dict[str, Any],
+    train: dict[str, Any],
+    data: dict[str, Any],
+    task: str,
+) -> dict[str, Any]:
     components = deepcopy(model.get("components", {}))
     metadata = deepcopy(model.get("metadata", {}))
     runtime = deepcopy(model)
@@ -190,8 +228,9 @@ def _adapt_model(model: dict[str, Any], task: str) -> dict[str, Any]:
     runtime["multi_gpu"] = bool(
         model.get("runtime", {}).get("multi_gpu", False)
         or model.get("runtime", {}).get("device") == "ddp"
+        or train.get("execution", {}).get("multi_gpu", False)
     )
-    runtime["runner"] = metadata.get("runner", {}) or {"type": _infer_runner_type(runtime, task)}
+    runtime["runner"] = metadata.get("runner", {}) or {"type": _infer_runner_type(runtime, data, task)}
     runtime["type"] = metadata.get("legacy_type") or _infer_model_type(runtime, task)
     return runtime
 
@@ -273,9 +312,19 @@ def _infer_model_type(model: dict[str, Any], task: str) -> str:
     return "E2E"
 
 
-def _infer_runner_type(model: dict[str, Any], task: str) -> str:
+def _infer_runner_type(model: dict[str, Any], data: dict[str, Any], task: str) -> str:
     if task == "classification":
         return "runner_classification"
+
+    test_split_type = (
+        data.get("common", {})
+        .get("splits", {})
+        .get("test", {})
+        .get("type")
+    )
+    if test_split_type in {"FeatureVideosfromJSON", "FeatureVideosChunksfromJson"}:
+        return "runner_JSON"
+
     model_type = _infer_model_type(model, task)
     if model_type == "E2E":
         return "runner_e2e"

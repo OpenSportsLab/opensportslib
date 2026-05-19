@@ -829,7 +829,7 @@ class Evaluator:
         # LOOP
         # ==================================================
         for game in tqdm.tqdm(videos):
-
+            
             # ---------------- GT ----------------
             if gt_is_v2:
                 video_path = game["inputs"][0]["path"]
@@ -874,7 +874,7 @@ class Evaluator:
             else:
                 # ===== FOLDER MODE =====
                 pred_file = os.path.join(results, os.path.splitext(video_path)[0], "results_spotting.json")
-                
+
                 if not os.path.exists(pred_file):
                     continue
                 

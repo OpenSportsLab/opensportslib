@@ -86,6 +86,36 @@ def test_builder_exposes_version_neutral_dispatcher():
     assert callable(build_model_from_config)
 
 
+def test_v1_top_level_dali_migrates_to_v3_loader_backend():
+    runtime = load_config(
+        "opensportslib/config/localization.yaml",
+        compatibility=True,
+        as_namespace=False,
+    )
+
+    assert runtime["dali"] is True
+    assert runtime["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
+
+
+def test_v1_data_level_dali_migrates_to_v3_loader_backend():
+    legacy = {
+        "TASK": "localization",
+        "DATA": {
+            "dali": True,
+            "data_dir": "/tmp/data",
+            "classes": ["PASS", "SHOT"],
+            "train": {"path": "/tmp/train.json", "video_path": "/tmp"},
+        },
+        "MODEL": {"backbone": {"type": "rny008_gsm"}, "head": {"type": "gru"}},
+        "TRAIN": {"type": "trainer_e2e"},
+        "SYSTEM": {"GPU": 1, "device": "cuda"},
+    }
+    runtime = adapt_config_to_runtime(migrate_config(legacy, as_namespace=False), as_namespace=False)
+
+    assert runtime["dali"] is True
+    assert runtime["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
+
+
 def test_runtime_adapter_sets_dali_true_for_v3_dali_backend():
     canonical = load_config(
         "opensportslib/configs/localization/video/localization-dali.yaml",
@@ -106,11 +136,15 @@ def test_runtime_adapter_sets_dali_false_for_non_dali_or_missing_backend():
 
     non_dali = deepcopy(canonical)
     non_dali["DATA"]["common"]["runtime"]["loader_backend"] = "opencv"
+    for split_cfg in non_dali["DATA"]["common"]["splits"].values():
+        split_cfg["type"] = str(split_cfg.get("type", "")).replace("Dali", "Opencv")
     runtime_non_dali = adapt_config_to_runtime(non_dali, as_namespace=False)
     assert runtime_non_dali["dali"] is False
 
     missing_runtime = deepcopy(canonical)
     missing_runtime["DATA"]["common"].pop("runtime", None)
+    for split_cfg in missing_runtime["DATA"]["common"]["splits"].values():
+        split_cfg["type"] = str(split_cfg.get("type", "")).replace("Dali", "Opencv")
     runtime_missing = adapt_config_to_runtime(missing_runtime, as_namespace=False)
     assert runtime_missing["dali"] is False
 
