@@ -107,7 +107,7 @@ def _adapt_data(data: dict[str, Any], task: str, io_cfg: dict[str, Any]) -> dict
 
     primary_name = _select_primary_input(inputs, io_cfg)
     primary_input = inputs[primary_name]
-    runtime["data_modality"] = primary_input.get("representation", primary_input.get("modality"))
+    runtime["data_modality"] = _infer_legacy_data_modality(primary_input)
     runtime["modality"] = primary_input.get("params", {}).get("color_mode", primary_input.get("modality"))
 
     runtime.update(deepcopy(primary_input.get("sampling", {})))
@@ -119,12 +119,15 @@ def _adapt_data(data: dict[str, Any], task: str, io_cfg: dict[str, Any]) -> dict
         runtime["target_height"] = resize["height"]
     if "width" in resize:
         runtime["target_width"] = resize["width"]
+    if "height" in resize and "width" in resize:
+        runtime["frame_size"] = [resize["height"], resize["width"]]
     if normalization:
         if "mean" in normalization:
             runtime["imagenet_mean"] = normalization["mean"]
         if "std" in normalization:
             runtime["imagenet_std"] = normalization["std"]
 
+    runtime["augmentations"] = deepcopy(primary_input.get("augmentations", {}))
     runtime.update(deepcopy(primary_input.get("augmentations", {})))
     runtime.update(deepcopy(primary_input.get("params", {})))
 
@@ -154,6 +157,11 @@ def _adapt_model(model: dict[str, Any], task: str) -> dict[str, Any]:
         runtime["post_proc"] = _legacy_component_config(components[post_id])
 
     runtime["load_weights"] = model.get("load", {}).get("checkpoint_path")
+    if "backbone" in runtime:
+        runtime["pretrained_model"] = runtime["backbone"].get(
+            "pretrained_model",
+            runtime["backbone"].get("type"),
+        )
     runtime["multi_gpu"] = bool(
         model.get("runtime", {}).get("multi_gpu", False)
         or model.get("runtime", {}).get("device") == "ddp"
@@ -204,6 +212,20 @@ def _select_primary_input(inputs: dict[str, Any], io_cfg: dict[str, Any]) -> str
         if public_name in io_inputs and public_name in inputs:
             return public_name
     return next(iter(inputs))
+
+
+def _infer_legacy_data_modality(primary_input: dict[str, Any]) -> str:
+    modality = primary_input.get("modality")
+    representation = primary_input.get("representation")
+    source_format = primary_input.get("source", {}).get("format")
+
+    if representation == "frames_npy":
+        return "frames_npy"
+    if modality == "tracking":
+        return "tracking_parquet" if source_format == "parquet" else "tracking"
+    if representation == "features":
+        return "features"
+    return modality or representation
 
 
 def _first_component(components: dict[str, Any], kind: str) -> str | None:
