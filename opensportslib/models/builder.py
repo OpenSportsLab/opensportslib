@@ -1,8 +1,8 @@
 # opensportslib/models/builder.py
 
-def build_model(config, device):
+def build_model_legacy(config, device):
     """
-    Dispatch model builder based on cfg.MODEL.task
+    Dispatch model builder for the current legacy runtime shape.
     """
     task = config.TASK.lower()
     
@@ -64,3 +64,24 @@ def build_model(config, device):
         return model
     else:
         raise ValueError(f"Unsupported model type: {config.MODEL.backbone} for task: {task}")
+
+
+def build_model_canonical(config, device):
+    """Build from canonical config by adapting to the current runtime."""
+    from opensportslib.core.config import adapt_config_to_runtime
+
+    runtime_config = adapt_config_to_runtime(config, as_namespace=True)
+    return build_model_legacy(runtime_config, device)
+
+
+def build_model_from_config(config, device):
+    """Version-neutral public dispatcher for model construction."""
+    model_cfg = getattr(config, "MODEL", None)
+    if getattr(config, "VERSION", None) == 3 and hasattr(model_cfg, "components"):
+        return build_model_canonical(config, device)
+    return build_model_legacy(config, device)
+
+
+def build_model(config, device):
+    """Backward-compatible alias for the public dispatcher."""
+    return build_model_from_config(config, device)

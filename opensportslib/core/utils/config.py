@@ -1,9 +1,17 @@
-
 import os
 import re
 import json
 import gzip
 import yaml
+
+from opensportslib.core.config import (
+    adapt_config_to_runtime,
+    load_config as _load_config,
+    load_config_omega as _load_config_omega,
+    migrate_config,
+    resolve_config as _resolve_config,
+    validate_config,
+)
 
 def dict_to_namespace(d, skip_keys=("classes",)):
     """
@@ -73,41 +81,17 @@ def load_config(config_path):
     """
     Loading configurations
     """
-    print(config_path)
-    if config_path.endswith(".yaml") or config_path.endswith(".yml"):
-        with open(config_path, "r") as f:
-            cfg_dict = yaml.safe_load(f)
-    elif config_path.endswith(".json"):
-        with open(config_path, "r") as f:
-            cfg_dict = json.load(f)
-    else:
-        raise ValueError("Unsupported config format. Use YAML or JSON.")
-    return dict_to_namespace(cfg_dict)
+    return _load_config(config_path, validate=True, compatibility=True, as_namespace=True)
 
 
 
 def load_config_omega(path):
-    
-    from omegaconf import OmegaConf
-    cfg = OmegaConf.load(path)
-    # OmegaConf.resolve(cfg)
-    # cfg = OmegaConf.to_container(cfg, resolve=True)
-    return dict_to_namespace(cfg)
+    return _load_config_omega(path, validate=True, compatibility=True, as_namespace=True)
 
 def resolve_config_omega(cfg, weights=None):
-    from omegaconf import OmegaConf, DictConfig
-    #cfg = namespace_to_omegaconf(cfg)
-    #cfg = namespace_to_dict(cfg)
-    #print(type(cfg))
-    #cfg = OmegaConf.create(cfg)
     if weights is not None:
         cfg = fetch_and_merge_config_from_HF(cfg, weights, merge_policy="compatibility")
-
-    if not isinstance(cfg, DictConfig):
-        return cfg 
-    OmegaConf.resolve(cfg)
-    cfg = dict_to_namespace(OmegaConf.to_container(cfg, resolve=True))
-    return cfg
+    return _resolve_config(cfg, compatibility=True, as_namespace=True)
 
 
 def expand(path):
@@ -346,9 +330,8 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
 
 def save_config(config_obj, path):
     """Save the configuration object to a YAML file."""
-    from omegaconf import OmegaConf, DictConfig
-    import yaml
-    
+    from omegaconf import DictConfig, OmegaConf
+
     if isinstance(config_obj, DictConfig):
         cfg_dict = OmegaConf.to_container(config_obj, resolve=True)
     else:
