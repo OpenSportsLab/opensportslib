@@ -19,7 +19,10 @@ test = [ "pytest", "pytest-cov",]
 opensportslib = "opensportslib.cli:main"
 
 [tool.setuptools.package-data]
-opensportslib = [ "opensportslib/config/*.yaml",]
+opensportslib = [
+    "config/*.yaml",
+    "configs/**/*.yaml",
+]
 
 [tool.pytest.ini_options]
 pythonpath = [ ".",]
