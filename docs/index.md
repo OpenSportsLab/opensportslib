@@ -32,6 +32,7 @@ From action recognition and temporal event spotting to retrieval and automatic c
 ## Quick links
 
 - [Installation](getting-started/installation.md)
+- [OSL JSON Format](data/osl-json-format.md)
 - [Project Structure](getting-started/project_structure.md)
 - [SLURM Guide (salloc, srun)](getting-started/slurm.md)
 - [Training & Inference](tni/tni.md)

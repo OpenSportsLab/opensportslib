@@ -38,6 +38,32 @@ High-level entry points for training and inference.
 - **`localization.py`**  
   API for temporal action spotting tasks.
 
+#### Public task wrapper contract
+
+Use the high-level wrappers from `opensportslib.apis`:
+
+```python
+from opensportslib.apis import ClassificationModel, LocalizationModel
+```
+
+Both wrappers inherit the shared `BaseTaskModel` contract:
+
+| Method | Purpose | Return value |
+| --- | --- | --- |
+| `load_weights(weights=...)` | Load a local checkpoint or Hugging Face model ID. | `None` |
+| `train(train_set=..., valid_set=...)` | Train on OSL JSON split files. | Best checkpoint path or `None` |
+| `infer(test_set=...)` | Run prediction on an OSL JSON split file. | In-memory OSL JSON-style prediction dict |
+| `evaluate(test_set=...)` | Compute task metrics against ground truth. | Metrics dict |
+| `evaluate(test_set=..., predictions=...)` | Evaluate an existing prediction dict or prediction file. | Metrics dict |
+| `save_predictions(output_path=..., predictions=...)` | Persist a prediction dict returned by `infer()`. | Saved file path |
+
+`infer()` is prediction-focused and returns a payload to the caller. Use
+`save_predictions(...)` when a workflow needs an explicit prediction file. Do
+not rely on task-specific trainer artifacts as the public persistence API.
+
+Annotation and prediction payloads follow the OSL JSON data model. See
+[OSL JSON Format](../data/osl-json-format.md) for the user-facing schema.
+
 ---
 
 ### `core/`
