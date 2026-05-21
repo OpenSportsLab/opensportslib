@@ -38,6 +38,13 @@ nav:
       - Training & Inference: tni/tni.md
       - Configuration Guide: tni/config-guide.md
 
+  - Data Formats:
+      - OSL JSON Format: data/osl-json-format.md
+
+  - Tools:
+      - Dataset Conversion: tools/dataset-conversion.md
+      - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
+
   - API Reference:
       - API: api/api.md
   

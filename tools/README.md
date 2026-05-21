@@ -35,6 +35,7 @@ tools/
 
 ## Folder guides
 
+- See [docs/data/osl-json-format.md](../docs/data/osl-json-format.md) for the OSL JSON schema used by dataset tools.
 - See [tools/convert/README.md](convert/README.md) for conversion scripts and examples.
 - See [tools/download/README.md](download/README.md) for HuggingFace download/upload scripts.
 - See [tools/slurm/README.md](slurm/README.md) for Ibex SLURM workflows (`salloc`, `srun`, `sbatch`).
