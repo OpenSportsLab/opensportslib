@@ -3,6 +3,18 @@ import os
 import time
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.core.config.accessors import (
+    get_data_classes,
+    get_loader_backend,
+    get_system_gpu_count,
+    get_system_seed,
+    set_system_path,
+    get_train_trainer_type,
+    get_train_execution,
+    get_split_annotation_path,
+    get_split_cfg,
+    set_split_annotation_path,
+)
 from opensportslib.core.utils.config import expand
 
 
@@ -21,44 +33,19 @@ class LocalizationModel(BaseTaskModel):
         if override is not None:
             return expand(override)
 
-        data_cfg = getattr(self.config, "DATA", None)
-        split_cfg = getattr(data_cfg, split, None)
-        path = getattr(split_cfg, "path", None) if split_cfg is not None else None
-        if path:
-            return expand(path)
-
-        annotations_cfg = getattr(data_cfg, "annotations", None)
-        path = (
-            getattr(annotations_cfg, split, None)
-            if annotations_cfg is not None
-            else None
-        )
+        path = get_split_annotation_path(self.config, split)
         if path:
             return expand(path)
 
         raise ValueError(
             f"Could not resolve path for split '{split}'. "
-            f"Expected DATA.{split}.path or DATA.annotations.{split}."
+            f"Expected DATA.common.splits.{split}.annotation_path."
         )
 
     def _set_split_path(self, split: str, value: str) -> str:
         resolved = expand(value)
-        data_cfg = getattr(self.config, "DATA", None)
-        split_cfg = getattr(data_cfg, split, None)
-
-        if split_cfg is not None and hasattr(split_cfg, "path"):
-            split_cfg.path = resolved
-            return resolved
-
-        annotations_cfg = getattr(data_cfg, "annotations", None)
-        if annotations_cfg is not None and hasattr(annotations_cfg, split):
-            setattr(annotations_cfg, split, resolved)
-            return resolved
-
-        raise ValueError(
-            f"Could not set path for split '{split}'. "
-            f"Expected DATA.{split}.path or DATA.annotations.{split}."
-        )
+        set_split_annotation_path(self.config, split, resolved)
+        return resolved
 
     def load_weights(
         self,
@@ -78,12 +65,6 @@ class LocalizationModel(BaseTaskModel):
         if weights is None:
             raise ValueError("`weights` must be provided to load_weights().")
 
-        model_cfg = getattr(self.config, "MODEL", None)
-        if not self.train_flag:
-            original_multi_gpu = getattr(model_cfg, "multi_gpu", None)
-            if model_cfg is not None and original_multi_gpu is not None:
-                model_cfg.multi_gpu = False
-
         device = select_device(self.config.SYSTEM)
         if self.model is None:
             self.model = build_model(self.config, device=device)
@@ -93,7 +74,11 @@ class LocalizationModel(BaseTaskModel):
             inner_model = getattr(self.model, "model", self.model)
 
         if is_local_path(weights):
-            self.config.SYSTEM.work_dir = os.path.dirname(os.path.abspath(weights))
+            set_system_path(
+                self.config,
+                "work_dir",
+                os.path.dirname(os.path.abspath(weights)),
+            )
 
         if default_args is not None:
             logging.info("Building optimizer + scaler for checkpoint restore...")
@@ -135,7 +120,7 @@ class LocalizationModel(BaseTaskModel):
 
         best_criterion_valid = checkpoint.get(
             "best_criterion_valid",
-            0 if self.config.TRAIN.criterion_valid == "map" else float("inf")
+            0 if get_train_execution(self.config).get("criterion_valid") == "map" else float("inf")
         )
         self._resume_state = {
             "optimizer": optimizer,
@@ -145,10 +130,6 @@ class LocalizationModel(BaseTaskModel):
             "best_epoch": best_epoch,
             "best_criterion_valid": best_criterion_valid,
         }
-
-        if not self.train_flag:
-            if model_cfg is not None and original_multi_gpu is not None:
-                model_cfg.multi_gpu = original_multi_gpu
 
     def train(
         self,
@@ -203,34 +184,34 @@ class LocalizationModel(BaseTaskModel):
             torch.backends.cudnn.benchmark = False
             torch.use_deterministic_algorithms(True, warn_only=True)
 
-        set_seed(self.config.SYSTEM.seed)
+        set_seed(get_system_seed(self.config))
 
         start = time.time()
 
         data_obj_train = build_dataset(self.config, split="train")
         dataset_train = data_obj_train.building_dataset(
             cfg=data_obj_train.cfg,
-            gpu=self.config.SYSTEM.GPU,
+            gpu=get_system_gpu_count(self.config),
             default_args=data_obj_train.default_args,
         )
         train_loader = data_obj_train.building_dataloader(
             dataset_train,
             cfg=data_obj_train.cfg.dataloader,
-            gpu=self.config.SYSTEM.GPU,
-            dali=self.config.dali,
+            gpu=get_system_gpu_count(self.config),
+            dali=(get_loader_backend(self.config) == "dali"),
         )
 
         data_obj_valid = build_dataset(self.config, split="valid")
         dataset_valid = data_obj_valid.building_dataset(
             cfg=data_obj_valid.cfg,
-            gpu=self.config.SYSTEM.GPU,
+            gpu=get_system_gpu_count(self.config),
             default_args=data_obj_valid.default_args,
         )
         valid_loader = data_obj_valid.building_dataloader(
             dataset_valid,
             cfg=data_obj_valid.cfg.dataloader,
-            gpu=self.config.SYSTEM.GPU,
-            dali=self.config.dali,
+            gpu=get_system_gpu_count(self.config),
+            dali=(get_loader_backend(self.config) == "dali"),
         )
 
         default_args = get_default_args_trainer(self.config, len(train_loader))
@@ -257,8 +238,8 @@ class LocalizationModel(BaseTaskModel):
                 self.model,
                 train_loader,
                 valid_loader,
-                self.config.DATA.classes,
-                self.config.TRAIN.type,
+                get_data_classes(self.config),
+                get_train_trainer_type(self.config),
             )
         )
 
@@ -291,10 +272,9 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
 
-        self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="test")
-        self.config.infer_split = whether_infer_split(self.config.DATA.test)
+        self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 
         init_wandb(
             self.config_path,
@@ -320,17 +300,17 @@ class LocalizationModel(BaseTaskModel):
         data_obj_test = build_dataset(self.config, split="test")
         dataset_test = data_obj_test.building_dataset(
             cfg=data_obj_test.cfg,
-            gpu=self.config.SYSTEM.GPU,
+            gpu=get_system_gpu_count(self.config),
             default_args=data_obj_test.default_args,
         )
         test_loader = data_obj_test.building_dataloader(
             dataset_test,
             cfg=data_obj_test.cfg.dataloader,
-            gpu=self.config.SYSTEM.GPU,
-            dali=self.config.dali,
+            gpu=get_system_gpu_count(self.config),
+            dali=(get_loader_backend(self.config) == "dali"),
         )
 
-        inferer = build_inferer(cfg=self.config.MODEL, model=self.model)
+        inferer = build_inferer(cfg=self.config, model=self.model)
         predictions = inferer.infer(
             cfg=self.config,
             data=dataset_test,
@@ -361,10 +341,9 @@ class LocalizationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
-        self.config.MODEL.multi_gpu = False
         self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="test")
-        self.config.infer_split = whether_infer_split(self.config.DATA.test)
+        self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 
         init_wandb(
             self.config_path,
@@ -382,16 +361,17 @@ class LocalizationModel(BaseTaskModel):
 
         metrics = None
 
-        if has_localization_events(self.config.DATA.test.path):
+        test_path = get_split_annotation_path(self.config, "test")
+        if has_localization_events(test_path):
             logging.info("Ground truth labels detected -> running evaluation")
             evaluator = build_evaluator(cfg=self.config)
             eval_input = (
-                self.config.DATA.test.results
+                getattr(get_split_cfg(self.config, "test"), "results")
                 if isinstance(predictions, dict)
                 else predictions
             )
             metrics = evaluator.evaluate(
-                cfg_testset=self.config.DATA.test,
+                cfg_testset=get_split_cfg(self.config, "test"),
                 json_gz_file=eval_input,
             )
         else:

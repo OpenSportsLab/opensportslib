@@ -474,13 +474,25 @@ def check_config(cfg, split="train"):
         cfg (dict): Config dictionnary.
 
     """
+    from opensportslib.core.config.accessors import (
+        get_component_name_by_kind,
+        get_input_cfg,
+        get_data_modality,
+        get_data_params,
+        get_loader_backend,
+        get_runner_type,
+        get_split_annotation_path,
+        get_train_epochs,
+    )
     from opensportslib.core.utils.config import load_json, load_classes
     from omegaconf import ListConfig
-    if cfg.MODEL.runner.type == "runner_e2e":
-        if cfg.dali == True:
-            cfg.TRAIN.repartitions = get_repartition_gpu(cfg.SYSTEM.GPU)
-        assert cfg.DATA.modality in ["rgb"]
-        assert cfg.MODEL.backbone.type in [
+    if get_runner_type(cfg) == "runner_e2e":
+        if get_loader_backend(cfg) == "dali":
+            cfg.TRAIN.execution.repartitions = get_repartition_gpu(cfg.SYSTEM.gpu.count)
+        primary_modality = get_data_modality(cfg)
+        assert primary_modality in ["rgb", "video"]
+        backbone_type = get_component_name_by_kind(cfg, "encoder")
+        assert backbone_type in [
             # From torchvision
             "rn18",
             "rn18_tsm",
@@ -500,28 +512,35 @@ def check_config(cfg, split="train"):
             "convnextt_tsm",
             "convnextt_gsm",
         ]
-        assert cfg.MODEL.head.type in ["", "gru", "deeper_gru", "mstcn", "asformer"]
+        head_type = get_component_name_by_kind(cfg, "head")
+        assert head_type in ["", "gru", "deeper_gru", "mstcn", "asformer"]
         # assert cfg.dataset.batch_size % cfg.training.acc_grad_iter == 0
-        assert cfg.DATA.train.dataloader.batch_size % cfg.TRAIN.acc_grad_iter == 0
-        assert cfg.TRAIN.criterion_valid in ["map", "loss"]
-        assert cfg.TRAIN.num_epochs == cfg.TRAIN.scheduler.num_epochs
-        assert cfg.TRAIN.acc_grad_iter == cfg.TRAIN.scheduler.acc_grad_iter
+        train_bs = cfg.DATA.common.splits.train.dataloader.batch_size
+        assert train_bs % cfg.TRAIN.execution.acc_grad_iter == 0
+        assert cfg.TRAIN.execution.criterion_valid in ["map", "loss"]
+        assert get_train_epochs(cfg) == cfg.TRAIN.scheduler.num_epochs
+        assert cfg.TRAIN.execution.acc_grad_iter == cfg.TRAIN.scheduler.acc_grad_iter
 
         if split=="train":
-            data_path = cfg.DATA.train.path
+            data_path = get_split_annotation_path(cfg, "train")
         elif split=="valid":
-            data_path = cfg.DATA.valid.path
+            data_path = get_split_annotation_path(cfg, "valid")
         elif split=="test":
-            data_path = cfg.DATA.test.path
+            data_path = get_split_annotation_path(cfg, "test")
         else:
             raise ValueError(f"Unknown split {split}")
         
-        if cfg.TRAIN.start_valid_epoch is None:
-            cfg.TRAIN.start_valid_epoch = (
-                cfg.TRAIN.num_epochs - cfg.TRAIN.base_num_valid_epochs
+        if cfg.TRAIN.execution.start_valid_epoch is None:
+            cfg.TRAIN.execution.start_valid_epoch = (
+                get_train_epochs(cfg) - cfg.TRAIN.execution.base_num_valid_epochs
             )
-        if cfg.DATA.crop_dim is None or cfg.DATA.crop_dim <= 0:
-            cfg.DATA.crop_dim = None
+        data_params = get_data_params(cfg)
+        crop_dim = data_params.get("crop_dim")
+        if crop_dim is None or crop_dim <= 0:
+            input_cfg = get_input_cfg(cfg)
+            params = input_cfg.get("params")
+            if isinstance(params, dict):
+                params["crop_dim"] = None
         if (
             data_path != None
             and os.path.isfile(data_path)
@@ -530,13 +549,12 @@ def check_config(cfg, split="train"):
         ):
             for task_name, task_data in load_json(data_path)["labels"].items():
                 classes = task_data.get("labels", {})
-            #classes = load_json(cfg.DATA.test.path)["labels"]["action"]["labels"]
         else:
-            assert isinstance(cfg.DATA.classes, (list, ListConfig))
-            classes = cfg.DATA.classes
+            assert isinstance(cfg.DATA.common.classes, (list, ListConfig))
+            classes = cfg.DATA.common.classes
         
         #print(classes)
-        cfg.DATA.classes = load_classes(classes)
+        cfg.DATA.common.classes = load_classes(classes)
 
 
 def whether_infer_split(cfg):
@@ -548,22 +566,26 @@ def whether_infer_split(cfg):
     Returns:
         bool : True if we infer split, false otherwise. Raises an error if the input is not expected.
     """
-    if cfg.type == "SoccerNetGames" or cfg.type == "SoccerNetClipsTestingCALF":
-        if cfg.split == None:
+    split_type = getattr(cfg, "type", None)
+    split_name = getattr(cfg, "split", None)
+    annotation_path = getattr(cfg, "annotation_path", getattr(cfg, "path", None))
+
+    if split_type == "SoccerNetGames" or split_type == "SoccerNetClipsTestingCALF":
+        if split_name is None:
             return False
         else:
             return True
     elif (
-        cfg.type == "FeatureVideosfromJSON" or cfg.type == "FeatureVideosChunksfromJson"
+        split_type == "FeatureVideosfromJSON" or split_type == "FeatureVideosChunksfromJson"
     ):
-        if cfg.path.endswith(".json"):
+        if annotation_path and annotation_path.endswith(".json"):
             return True
         else:
             return False
-    elif cfg.type == "VideoGameWithOpencvVideo" or cfg.type == "VideoGameWithDaliVideo":
-        if cfg.path.endswith(".json"):
+    elif split_type == "VideoGameWithOpencvVideo" or split_type == "VideoGameWithDaliVideo":
+        if annotation_path and annotation_path.endswith(".json"):
             return True
         else:
             return False
     else:
-        raise ValueError(f"Unknown dataset type {cfg.type}")
+        raise ValueError(f"Unknown dataset type {split_type}")

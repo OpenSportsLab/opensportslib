@@ -23,6 +23,7 @@ from opensportslib.models.utils.utils import (
 from opensportslib.models.heads.builder import build_head
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
+from opensportslib.core.config.accessors import get_split_result_name, get_system_path
 
 
 class ContextAwareModel(nn.Module):
@@ -167,15 +168,17 @@ class LiteContextAwareModel(LiteBaseModel):
     def on_predict_start(self):
         """Operations to make before starting to infer."""
         self.stop_predict = False
+        work_dir = get_system_path(self.cfg, "work_dir")
+        result_name = get_split_result_name(self.cfg, "test")
 
         if self.infer_split:
             self.output_folder, self.output_results, self.stop_predict = (
                 check_if_should_predict(
-                    self.cfg.DATA.test.results, self.cfg.SYSTEM.work_dir, self.overwrite
+                    result_name, work_dir, self.overwrite
                 )
             )
             if self.runner == "runner_JSON":
-                self.target_dir = os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder)
+                self.target_dir = os.path.join(work_dir, self.output_folder)
             else:
                 self.target_dir = self.output_results
 
@@ -190,6 +193,8 @@ class LiteContextAwareModel(LiteBaseModel):
         The process is different whether the data come from json or from the SoccerNet dataset in the way we will store the jsons containing the predictions.
         """
         if not self.stop_predict:
+            work_dir = get_system_path(self.cfg, "work_dir")
+            result_name = get_split_result_name(self.cfg, "test")
             # Transformation to numpy for evaluation
             targets_numpy = list()
             closests_numpy = list()
@@ -225,19 +230,19 @@ class LiteContextAwareModel(LiteBaseModel):
                     if self.infer_split:
                         os.makedirs(
                             os.path.join(
-                                self.cfg.SYSTEM.work_dir, self.output_folder, list_game[index]
+                                work_dir, self.output_folder, list_game[index]
                             ),
                             exist_ok=True,
                         )
                         output_file = os.path.join(
-                            self.cfg.SYSTEM.work_dir,
+                            work_dir,
                             self.output_folder,
                             list_game[index],
                             "results_spotting.json",
                         )
                     else:
                         output_file = os.path.join(
-                            self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                            work_dir, f"{result_name}.json"
                         )
                     json_data = predictions2json(
                         detections_numpy[index * 2],
@@ -257,18 +262,18 @@ class LiteContextAwareModel(LiteBaseModel):
                     if self.infer_split:
                         video = os.path.splitext(video)[0]
                         os.makedirs(
-                            os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, video),
+                            os.path.join(work_dir, self.output_folder, video),
                             exist_ok=True,
                         )
                         output_file = os.path.join(
-                            self.cfg.SYSTEM.work_dir,
+                            work_dir,
                             self.output_folder,
                             video,
                             "results_spotting.json",
                         )
                     else:
                         output_file = os.path.join(
-                            self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                            work_dir, f"{result_name}.json"
                         )
 
                     json_data = get_json_data(video)
@@ -283,13 +288,13 @@ class LiteContextAwareModel(LiteBaseModel):
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,
-                    target_dir=os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder),
+                    target_dir=os.path.join(work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.SYSTEM.work_dir,
+                        work_dir,
                         self.output_folder,
                     )
                 )
@@ -299,7 +304,7 @@ class LiteContextAwareModel(LiteBaseModel):
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                        work_dir, f"{result_name}.json"
                     )
                 )
 

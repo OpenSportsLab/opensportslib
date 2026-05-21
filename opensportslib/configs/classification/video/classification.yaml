@@ -87,6 +87,7 @@ DATA:
         flip_prob: 0.5
         random_crop: false
       params:
+        color_mode: rgb
         view_type: multi
         num_classes: 8
 

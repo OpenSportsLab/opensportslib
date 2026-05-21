@@ -44,28 +44,64 @@ def _make_config(mp_context=None):
 
     return OmegaConf.create(
         {
+            "TASK": "classification",
+            "VERSION": 3,
             "DATA": {
-                "data_modality": "video",
-                "train": {"dataloader": dict(dataloader)},
-                "valid": {"dataloader": dict(dataloader)},
+                "common": {
+                    "dataset_name": "smoke",
+                    "data_root": ".",
+                    "classes": ["PASS"],
+                    "runtime": {"loader_backend": "opencv"},
+                    "splits": {
+                        "train": {"dataloader": dict(dataloader)},
+                        "valid": {"dataloader": dict(dataloader)},
+                    },
+                },
+                "inputs": {
+                    "video": {
+                        "modality": "video",
+                        "representation": "raw",
+                        "source": {"format": "mp4"},
+                        "sampling": {},
+                        "transform": {},
+                        "augmentations": {},
+                        "params": {},
+                    }
+                },
             },
             "MODEL": {
-                "type": "custom",
-                "backbone": {"type": "smoke_backbone"},
+                "schema_version": 3,
+                "task": "classification",
+                "components": {
+                    "video_encoder": {
+                        "kind": "encoder",
+                        "source": {
+                            "provider": "opensportslib",
+                            "registry": "backbone",
+                            "name": "smoke_backbone",
+                        },
+                        "params": {},
+                        "overrides": {},
+                    }
+                },
+                "topology": [],
             },
             "TRAIN": {
-                "use_weighted_loss": False,
-                "use_weighted_sampler": False,
+                "trainer": {"type": "classification"},
                 "optimizer": {"type": "SGD", "lr": 0.1},
                 "scheduler": {"type": "StepLR", "step_size": 1, "gamma": 0.1},
                 "criterion": {"type": "CrossEntropyLoss"},
                 "epochs": 1,
-                "save_every": 1,
+                "sampling": {
+                    "use_weighted_loss": False,
+                    "use_weighted_sampler": False,
+                },
+                "checkpoint": {"save_every": 1},
             },
             "SYSTEM": {
-                "seed": 0,
+                "reproducibility": {"seed": 0, "use_seed": False},
                 "device": "cpu",
-                "save_dir": ".",
+                "paths": {"save_dir": "."},
             },
         }
     )

@@ -24,6 +24,8 @@ from opensportslib.models.neck.builder import build_neck
 
 import os
 
+from opensportslib.core.config.accessors import get_split_result_name, get_system_path
+
 
 class LearnablePoolingModel(nn.Module):
     """
@@ -118,6 +120,8 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         super().__init__(cfg.TRAIN)
 
         self.model = LearnablePoolingModel(weights, backbone, neck, head, post_proc)
+        self.backbone_cfg = backbone
+        self.post_proc_cfg = post_proc
 
         self.confidence_threshold = 0.0
 
@@ -157,15 +161,17 @@ class LiteLearnablePoolingModel(LiteBaseModel):
     def on_predict_start(self):
         """Operations to make before starting to infer."""
         self.stop_predict = False
+        work_dir = get_system_path(self.cfg, "work_dir")
+        result_name = get_split_result_name(self.cfg, "test")
         if self.infer_split:
             self.output_folder, self.output_results, self.stop_predict = (
                 check_if_should_predict(
-                    self.cfg.DATA.test.results, self.cfg.SYSTEM.work_dir, self.overwrite
+                    result_name, work_dir, self.overwrite
                 )
             )
 
             if self.runner == "runner_JSON":
-                self.target_dir = os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder)
+                self.target_dir = os.path.join(work_dir, self.output_folder)
             else:
                 self.target_dir = self.output_results
 
@@ -175,16 +181,18 @@ class LiteLearnablePoolingModel(LiteBaseModel):
     def on_predict_end(self):
         """Operations to make after inference."""
         if not self.stop_predict:
+            work_dir = get_system_path(self.cfg, "work_dir")
+            result_name = get_split_result_name(self.cfg, "test")
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,
-                    target_dir=os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder),
+                    target_dir=os.path.join(work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.SYSTEM.work_dir,
+                        work_dir,
                         self.output_folder,
                     )
                 )
@@ -194,7 +202,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 logging.info("Predictions saved")
                 logging.info(
                     os.path.join(
-                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                        work_dir, f"{result_name}.json"
                     )
                 )
 
@@ -206,6 +214,8 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         One step process either features of a game or features of a video and and predictions are stored in a json format.
         """
         if not self.stop_predict:
+            work_dir = get_system_path(self.cfg, "work_dir")
+            result_name = get_split_result_name(self.cfg, "test")
             if self.runner == "runner_pooling":
                 game_ID, feat_half1, feat_half2, label_half1, label_half2 = batch
 
@@ -237,9 +247,9 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                     ):
                         spots = get_spot(
                             timestamp_long[:, l],
-                            window=self.cfg.MODEL.post_proc.NMS_window
-                            * self.cfg.MODEL.backbone.framerate,
-                            thresh=self.cfg.MODEL.post_proc.NMS_threshold,
+                            window=self.post_proc_cfg.NMS_window
+                            * self.backbone_cfg.framerate,
+                            thresh=self.post_proc_cfg.NMS_threshold,
                         )
                         for spot in spots:
                             frame_index = int(spot[0])
@@ -270,18 +280,18 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 #     game_ID = game_ID[1:]
                 if self.infer_split:
                     os.makedirs(
-                        os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, game_ID),
+                        os.path.join(work_dir, self.output_folder, game_ID),
                         exist_ok=True,
                     )
                     output_file = os.path.join(
-                        self.cfg.SYSTEM.work_dir,
+                        work_dir,
                         self.output_folder,
                         game_ID,
                         "results_spotting.json",
                     )
                 else:
                     output_file = os.path.join(
-                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                        work_dir, f"{result_name}.json"
                     )
                 with open(output_file, "w") as output_file:
                     json.dump(json_data, output_file, indent=4)
@@ -310,9 +320,9 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 for l in range(self.trainer.predict_dataloaders.dataset.num_classes):
                     spots = get_spot(
                         timestamp_long[:, l],
-                        window=self.cfg.MODEL.post_proc.NMS_window
-                        * self.cfg.MODEL.backbone.framerate,
-                        thresh=self.cfg.MODEL.post_proc.NMS_threshold,
+                        window=self.post_proc_cfg.NMS_window
+                        * self.backbone_cfg.framerate,
+                        thresh=self.post_proc_cfg.NMS_threshold,
                     )
                     for spot in spots:
                         frame_index = int(spot[0])
@@ -342,18 +352,18 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                 #     video = video[1:]
                 if self.infer_split:
                     os.makedirs(
-                        os.path.join(self.cfg.SYSTEM.work_dir, self.output_folder, video),
+                        os.path.join(work_dir, self.output_folder, video),
                         exist_ok=True,
                     )
                     output_file = os.path.join(
-                        self.cfg.SYSTEM.work_dir,
+                        work_dir,
                         self.output_folder,
                         video,
                         "results_spotting.json",
                     )
                 else:
                     output_file = os.path.join(
-                        self.cfg.SYSTEM.work_dir, f"{self.cfg.DATA.test.results}.json"
+                        work_dir, f"{result_name}.json"
                     )
                 with open(output_file, "w") as output_file:
                     json.dump(json_data, output_file, indent=4)

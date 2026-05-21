@@ -7,7 +7,8 @@ from typing import Any
 
 from .loader import load_raw_config
 from .migrate import migrate_config
-from .schemas.schema_v3 import is_schema_v3
+from .conflicts import assert_no_legacy_aliases
+from .schemas.schema_canonical import is_canonical_schema
 
 
 def validate_config(config_or_path: str | dict[str, Any]) -> dict[str, Any]:
@@ -27,14 +28,15 @@ def _validate_canonical(cfg: dict[str, Any]) -> None:
     if missing:
         raise ValueError(f"Config missing required sections: {missing}")
 
-    if not is_schema_v3(cfg):
-        raise ValueError("Canonical config must resolve to VERSION: 3")
+    if not is_canonical_schema(cfg):
+        raise ValueError("Config must resolve to canonical schema.")
+    assert_no_legacy_aliases(cfg)
 
     model = cfg["MODEL"]
     if model.get("schema_version") != 3:
         raise ValueError("MODEL.schema_version must be 3")
-    if str(model.get("task", "")).lower() != str(cfg["TASK"]).lower():
-        raise ValueError("MODEL.task must match TASK")
+    # if str(model.get("task", "")).lower() != str(cfg["TASK"]).lower():
+    #     raise ValueError("MODEL.task must match TASK")
 
     components = model.get("components", {})
     if not isinstance(components, dict) or not components:

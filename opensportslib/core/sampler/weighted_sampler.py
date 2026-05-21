@@ -2,6 +2,8 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from transformers import Trainer as HFTrainer
 import torch
 
+from opensportslib.core.config.accessors import get_component_params_by_kind
+
 class WeightedTrainer(HFTrainer):
     def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -41,18 +43,19 @@ class WeightedTrainer(HFTrainer):
             return self.optimizer
 
         model = self.model
+        encoder_cfg = get_component_params_by_kind(self.config, "encoder")
 
         optimizer_grouped_parameters = []
         print("Weighted trainer ", self.config.TRAIN.optimizer.head_lr, self.config.TRAIN.optimizer.backbone_lr)
         # ---- Classifier head ----
-        if self.config.MODEL.unfreeze_head:
+        if encoder_cfg.get("unfreeze_head", False):
             optimizer_grouped_parameters.append({
                 "params": model.classifier.parameters(),
                 "lr": self.config.TRAIN.optimizer.head_lr,
             })
 
         # ---- Backbone (last N layers) ----
-        n = self.config.MODEL.unfreeze_last_n_layers
+        n = encoder_cfg.get("unfreeze_last_n_layers", 0)
         if n > 0:
             optimizer_grouped_parameters.append({
                 "params": model.videomae.encoder.layer[-n:].parameters(),
@@ -77,18 +80,19 @@ class VideoMAETrainer(HFTrainer):
             return self.optimizer
 
         model = self.model
+        encoder_cfg = get_component_params_by_kind(self.config, "encoder")
 
         optimizer_grouped_parameters = []
         print(type(self.config.TRAIN.optimizer.head_lr), type(self.config.TRAIN.optimizer.backbone_lr))
         # ---- Classifier head ----
-        if self.config.MODEL.unfreeze_head:
+        if encoder_cfg.get("unfreeze_head", False):
             optimizer_grouped_parameters.append({
                 "params": model.classifier.parameters(),
                 "lr": self.config.TRAIN.optimizer.head_lr,
             })
 
         # ---- Backbone (last N layers) ----
-        n = self.config.MODEL.unfreeze_last_n_layers
+        n = encoder_cfg.get("unfreeze_last_n_layers", 0)
         if n > 0:
             optimizer_grouped_parameters.append({
                 "params": model.videomae.encoder.layer[-n:].parameters(),
@@ -101,4 +105,3 @@ class VideoMAETrainer(HFTrainer):
         )
 
         return self.optimizer
-

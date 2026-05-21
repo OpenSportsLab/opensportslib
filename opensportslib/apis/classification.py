@@ -6,6 +6,13 @@ import logging
 import os
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.core.config.accessors import (
+    get_component_provider_by_kind,
+    get_split_annotation_path,
+    get_system_gpu_count,
+    get_system_seed,
+    get_system_use_seed,
+)
 from opensportslib.core.utils.config import expand
 
 class ClassificationModel(BaseTaskModel):
@@ -15,24 +22,13 @@ class ClassificationModel(BaseTaskModel):
         if override is not None:
             return expand(override)
 
-        data_cfg = getattr(self.config, "DATA", None)
-        split_cfg = getattr(data_cfg, split, None)
-        path = getattr(split_cfg, "path", None) if split_cfg is not None else None
-        if path:
-            return expand(path)
-
-        annotations_cfg = getattr(data_cfg, "annotations", None)
-        path = (
-            getattr(annotations_cfg, split, None)
-            if annotations_cfg is not None
-            else None
-        )
+        path = get_split_annotation_path(self.config, split)
         if path:
             return expand(path)
 
         raise ValueError(
             f"Could not resolve path for split '{split}'. "
-            f"Expected DATA.{split}.path or DATA.annotations.{split}."
+            f"Expected DATA.common.splits.{split}.annotation_path."
         )
 
     # -----------------------------------------------------------------
@@ -77,8 +73,8 @@ class ClassificationModel(BaseTaskModel):
                 use_wandb=use_wandb,
             )
 
-        if getattr(config.SYSTEM, "use_seed", False):
-            set_reproducibility(config.SYSTEM.seed)
+        if get_system_use_seed(config):
+            set_reproducibility(get_system_seed(config))
 
         is_ddp = world_size > 1
         if is_ddp:
@@ -142,7 +138,7 @@ class ClassificationModel(BaseTaskModel):
         loaded = self.trainer.load(weights)
         self.model = loaded[0]
 
-        if getattr(self.config.MODEL, "type", "custom") == "huggingface":
+        if get_component_provider_by_kind(self.config, "encoder") == "huggingface":
             self.processor = loaded[1]
 
         self.last_loaded_weights = weights
@@ -180,7 +176,7 @@ class ClassificationModel(BaseTaskModel):
 
         effective_weights = weights if weights is not None else self.last_loaded_weights
 
-        world_size = torch.cuda.device_count() or self.config.SYSTEM.GPU
+        world_size = torch.cuda.device_count() or get_system_gpu_count(self.config)
         use_ddp = use_ddp and world_size > 1
 
         ctx = mp.get_context("spawn")

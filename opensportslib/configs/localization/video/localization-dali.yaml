@@ -108,7 +108,10 @@ DATA:
 
 MODEL:
   schema_version: 3
-  task: localization
+  metadata: 
+    family: E2E
+    runner: 
+      type: runner_e2e
   runtime:
     dtype: fp32
     device: auto

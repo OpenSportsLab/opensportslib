@@ -1,110 +1,172 @@
 TASK: classification
+VERSION: 3
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_tracking
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
 
 DATA:
-  dataset_name: sngar
-  data_dir: /path/to/dataset
-  data_modality: tracking_parquet
-  preload_data: false
-
-  train: 
-    type: annotations_train.json
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 32
-      shuffle: true
-      num_workers: 8
-      pin_memory: true
-
-  valid:
-    type: annotations_valid.json
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 32
-      num_workers: 8
-      shuffle: false
-
-  test:
-    type: annotations_test.json
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    dataloader:
-      batch_size: 32
-      num_workers: 8
-      shuffle: false
-      
-  num_frames: 16
-  frame_interval: 9
-  augmentations:
-    vertical_flip: true
-    horizontal_flip: true
-    team_flip: true
-  normalize: true
-  num_objects: 23
-  feature_dim: 8
-  pitch_half_length: 85.0
-  pitch_half_width: 50.0
-  max_displacement: 110.0
-  max_ball_height: 30.0
-  data_slicing: # only used for data scaling experiments
-    enabled: false
-    training_matches: 45  # default: all 45 training matches
+  common:
+    dataset_name: sngar
+    data_root: /path/to/dataset
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: annotations_train.json
+        annotation_path: ${DATA.common.data_root}/train/train.json
+        source_path: ${DATA.common.data_root}/train
+        dataloader:
+          batch_size: 32
+          shuffle: true
+          num_workers: 8
+          pin_memory: true
+      valid:
+        type: annotations_valid.json
+        annotation_path: ${DATA.common.data_root}/valid/valid.json
+        source_path: ${DATA.common.data_root}/valid
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+          pin_memory: true
+      test:
+        type: annotations_test.json
+        annotation_path: ${DATA.common.data_root}/test/test.json
+        source_path: ${DATA.common.data_root}/test
+        dataloader:
+          batch_size: 32
+          shuffle: false
+          num_workers: 8
+          pin_memory: true
+  inputs:
+    tracking:
+      modality: tracking
+      representation: raw
+      source:
+        format: parquet
+      sampling:
+        num_frames: 16
+        frame_interval: 9
+      transform:
+        normalize: true
+      augmentations:
+        vertical_flip: true
+        horizontal_flip: true
+        team_flip: true
+      params:
+        preload_data: false
+        objects:
+          num_objects: 23
+          feature_dim: 8
+          pitch_half_length: 85.0
+          pitch_half_width: 50.0
+          max_displacement: 110.0
+          max_ball_height: 30.0
+        data_slicing:
+          enabled: false
+          training_matches: 45
 
 MODEL:
-  type: custom
-  backbone:
-    type: graph_conv
-    encoder: gin
-    hidden_dim: 64
-    num_layers: 20
-    dropout: 0.1
-  neck:
-    type: TemporalAggregation
-    agr_type: maxpool
-    hidden_dim: 64
-    dropout: 0.1
-    use_position_encoding: true
-  head:
-    type: TrackingClassifier
-    hidden_dim: 64
-    dropout: 0.1
-    num_classes: 10
-  edge: positional
-  k: 8
-  r: 15.0
+  schema_version: 3
+  task: classification
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    tracking_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: graph_conv
+      params:
+        encoder: gin
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+        edge_type: positional
+        k: 8
+        radius: 15.0
+      overrides: {}
+    tracking_adapter:
+      kind: adapter
+      source:
+        provider: opensportslib
+        registry: neck
+        name: TemporalAggregation
+      params:
+        agr_type: maxpool
+        hidden_dim: 64
+        dropout: 0.1
+        use_position_encoding: true
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: TrackingClassifier
+      params:
+        hidden_dim: 64
+        dropout: 0.1
+        num_classes: 10
+      overrides: {}
+  topology:
+    - from: tracking_encoder
+      to: tracking_adapter
+    - from: tracking_adapter
+      to: task_head
+
+IO:
+  inputs:
+    tracking: tracking_encoder
+    label: task_head
+  outputs:
+    logits: task_head
 
 TRAIN:
-  monitor: loss # balanced_accuracy, loss
-  mode: min # max or min
-  enabled: true
-  use_weighted_sampler: true
-  use_weighted_loss: false
-  samples_per_class: 4000
+  trainer:
+    type: classification
   epochs: 100
-  patience: 10
-  save_every: 20
-  detailed_results: true
-
+  criterion:
+    type: CrossEntropyLoss
   optimizer:
     type: Adam
     lr: 0.001
-
   scheduler:
     type: ReduceLROnPlateau
-    mode: ${TRAIN.mode}
+    mode: min
     patience: 10
     factor: 0.1
     min_lr: 1e-8
-  
-  criterion:
-    type: CrossEntropyLoss
-
-SYSTEM:
-  log_dir: ./logs
-  save_dir: ./checkpoints_tracking
-  use_seed: true
-  seed: 42
-  GPU: 1
-  device: cuda   # auto | cuda | cpu
-  gpu_id: 0
+  execution:
+    enabled: true
+    detailed_results: true
+  sampling:
+    use_weighted_sampler: true
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: loss
+    mode: min
+    patience: 10
+  checkpoint:
+    save_every: 20
+    save_best: true

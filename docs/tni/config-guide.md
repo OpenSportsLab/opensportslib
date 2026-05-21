@@ -1,394 +1,557 @@
-# Configuration Guide
+# OpenSportsLib Canonical Config Guide
 
-This guide explains how OpenSportsLib YAML configs are structured, what each key does, and how to run many experiments without creating a new YAML file every time.
+This guide is the single source of truth for canonical config authoring.
 
-## Source Config Files
+## 1) Canonical Contract
 
-Main config files in the repo:
+- Runtime consumes canonical config only.
+- Legacy config is accepted only at ingestion and migrated once.
+- Canonical payloads containing legacy aliases are rejected.
 
-- `opensportslib/config/classification.yaml`
-- `opensportslib/config/localization.yaml`
-- `opensportslib/config/localization-e2e-ocv.yaml`
-- `opensportslib/config/localization-json_netvlad++_resnetpca512.yaml`
-- `opensportslib/config/localization-json_calf_resnetpca512.yaml`
-- `opensportslib/config/sngar-tracking.yaml`
-- `opensportslib/config/sngar-frames.yaml`
-
-## Base YAML Overview
-
-Most task configs follow this high-level structure:
+## 2) Top-Level Schema
 
 ```yaml
-TASK: classification | localization
+TASK: <classification|localization|retrieval|captioning|reasoning>
+VERSION: 3
 
+SYSTEM: <SystemSchema>
+DATA: <DataSchema>
+MODEL: <ModelSchema>
+TRAIN: <TrainSchema>
+IO: <IoSchema>
+```
+
+### Required top-level keys
+- `TASK`, `VERSION`, `SYSTEM`, `DATA`, `MODEL`, `TRAIN`
+
+### Optional top-level keys
+- `IO`
+
+## 3) SYSTEM Schema
+
+```yaml
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+    work_dir: ./checkpoints
+  device: auto
+  gpu:
+    count: 0
+    id: 0
+  reproducibility:
+    use_seed: false
+    seed: 42
+```
+
+| Key | Type | Allowed values | Default | Notes |
+|---|---|---|---|---|
+| `SYSTEM.paths.log_dir` | string | any path | `./logs` | logs/artifacts |
+| `SYSTEM.paths.save_dir` | string | any path | `./checkpoints` | checkpoints |
+| `SYSTEM.paths.work_dir` | string | any path | `save_dir` | eval outputs/temp |
+| `SYSTEM.device` | string | `auto`, `cpu`, `cuda` | `auto` | runtime device mode |
+| `SYSTEM.gpu.count` | int | `>=0` | `0` | device count hint |
+| `SYSTEM.gpu.id` | int | `>=0` | `0` | single-device index |
+| `SYSTEM.reproducibility.use_seed` | bool | `true/false` | `false` | deterministic mode |
+| `SYSTEM.reproducibility.seed` | int | any int | `42` | seed value |
+
+## 4) DATA Schema
+
+```yaml
 DATA:
-  ...
+  common:
+    dataset_name: <string>
+    data_root: <path|null>
+    classes: [<label>, ...]
+    runtime:
+      loader_backend: <opencv|dali>
+    splits:
+      train:
+        annotation_path: <path>
+        source_path: <path>
+      valid:
+        annotation_path: <path>
+        source_path: <path>
+      test:
+        annotation_path: <path>
+        source_path: <path>
 
+  inputs:
+    <input_name>:
+      modality: <video|tracking|text|audio|custom>
+      representation: <raw|features|frames_npy|graph|custom>
+      source:
+        format: <mp4|npy|parquet|json|custom>
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+```
+
+### 4.1 `DATA.common`
+
+| Key | Type | Allowed values | Required | Notes |
+|---|---|---|---|---|
+| `dataset_name` | string | any | yes | logical dataset id |
+| `data_root` | string/null | path or null | no | optional global root |
+| `classes` | list[string] | label names | no | classification/localization labels |
+| `runtime.loader_backend` | string | `opencv`, `dali` | yes | loader implementation |
+
+### 4.2 `DATA.common.splits.<split>`
+
+| Key | Type | Required | Notes |
+|---|---|---|---|
+| `annotation_path` | string | no | split annotation source |
+| `source_path` | string | no | split media/feature base path |
+| `type` | string | no | dataset-class selector for legacy dataset builders |
+| `dataloader` | object | no | split dataloader config |
+| `results` | string | no | output name for inference/evaluation |
+| `metric` | string | no | eval mode (task-specific) |
+| `nms_window` | int | no | localization-specific |
+| `overlap_len` | int | no | clip overlap for inference |
+
+### 4.3 `DATA.inputs.<input_name>`
+
+| Key | Type | Allowed values | Required | Notes |
+|---|---|---|---|---|
+| `modality` | string | `video`, `tracking`, `text`, ... | yes | semantic modality |
+| `representation` | string | `raw`, `features`, `frames_npy`, `graph`, ... | yes | storage/feature style |
+| `source.format` | string | `mp4`, `npy`, `parquet`, ... | yes | file payload format |
+| `sampling` | object | free-form numeric fields | no | temporal sampling knobs |
+| `transform` | object | resize/norm etc | no | deterministic transforms |
+| `augmentations` | object | augmentation toggles/params | no | train-time aug |
+| `params` | object | task-specific | no | extra input metadata |
+
+### 4.4 Common sampling keys (convention)
+
+| Key | Type | Typical range |
+|---|---|---|
+| `num_frames` | int | 1..512 |
+| `clip_len` | int | 1..512 |
+| `input_fps` | int/float | >0 |
+| `target_fps` | int/float | >0 |
+| `extract_fps` | int/float | >0 |
+| `window_size` | int | >0 |
+| `chunk_size` | int | >0 |
+| `receptive_field` | int | >=0 |
+| `start_frame` | int | >=0 |
+| `end_frame` | int | > start_frame |
+| `overlap_len` | int | 0..clip_len-1 |
+
+### 4.5 Common transform keys
+
+```yaml
+transform:
+  resize:
+    height: 224
+    width: 224
+  normalization:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+```
+
+### 4.6 Common dataloader keys (split-level)
+
+```yaml
+dataloader:
+  batch_size: 8
+  shuffle: true
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  mp_context: spawn
+```
+
+## 5) MODEL Schema
+
+```yaml
 MODEL:
-  ...
+  schema_version: 3
+  task: <same as TASK>
 
+  runtime:
+    dtype: <fp32|fp16|bf16>
+    device: <auto|cpu|cuda|ddp>
+    compile: <bool>
+    freeze: <bool>
+    multi_gpu: <bool>   # compatibility marker; policy owner is TRAIN.execution.multi_gpu
+
+  load:
+    checkpoint_path: <path|null>
+    pretrained: <bool>
+    strict: <bool>
+    map_location: <cpu|cuda|null>
+    format: <auto|custom>
+
+  components:
+    <component_id>:
+      kind: <encoder|decoder|fusion|adapter|projector|head|postprocessor|custom>
+      source:
+        provider: <opensportslib|huggingface|torchvision|timm|torch|custom>
+        registry: <optional-string>
+        name: <optional-string>
+        repo_id: <optional-string>
+        revision: <optional-string>
+        entrypoint: <optional-string>
+      params: {}
+      overrides: {}
+
+  topology:
+    - from: <component_id>
+      to: <component_id>
+      map: {<src_key>: <dst_key>}   # optional
+      merge: <none|concat|sum|cross_attn|custom>   # optional
+
+  policies: {}
+  metadata: {}
+```
+
+### 5.1 Component naming
+- `component_id` should be lowercase snake_case.
+- Prefer semantic IDs: `video_encoder`, `task_head`, `event_postprocessor`.
+- Do not encode vendor/model names in `component_id`.
+
+### 5.2 `kind` values
+- `encoder`, `decoder`, `fusion`, `adapter`, `projector`, `head`, `postprocessor`, `custom`
+
+### 5.3 Provider rules
+- `huggingface`: require at least one of `repo_id` or `name`.
+- `custom`: require `entrypoint`.
+- `opensportslib`: prefer `registry + name`.
+- `torchvision` / `timm` / `torch`: require `name`.
+
+### 5.4 Topology rules
+- Every `from`/`to` node must exist in `components`.
+- Graph must be acyclic.
+- For multi-root or ambiguous routing, define `IO` explicitly.
+
+## 6) TRAIN Schema
+
+```yaml
 TRAIN:
-  ...
+  trainer:
+    type: <classification|trainer_e2e|trainer_pooling|trainer_calf|custom>
+
+  epochs: 20
+
+  criterion:
+    type: CrossEntropyLoss
+
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+
+  scheduler:
+    type: StepLR
+    step_size: 3
+    gamma: 0.1
+
+  execution:
+    multi_gpu: false
+    log_interval: 10
+    acc_grad_iter: 1
+    evaluation_frequency: 1
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 1
+    criterion_valid: loss
+
+  sampling:
+    batch_size: 8
+    use_weighted_sampler: false
+    use_weighted_loss: false
+
+  selection:
+    monitor: loss
+    mode: min
+
+  checkpoint:
+    save_every: 2
+    save_best: true
+```
+
+### Important ownership
+- `TRAIN.execution.multi_gpu` is the canonical execution owner.
+
+### Key options
+| Key | Type | Common values |
+|---|---|---|
+| `trainer.type` | string | `classification`, `trainer_e2e`, `trainer_pooling`, `trainer_CALF` |
+| `selection.monitor` | string | `loss`, `balanced_accuracy`, `map` |
+| `selection.mode` | string | `min`, `max` |
+| `criterion_valid` | string | `loss`, `map` |
+
+## 7) IO Schema
+
+```yaml
+IO:
+  inputs:
+    video: video_encoder
+    text: text_encoder
+  outputs:
+    logits: task_head
+    events: event_postprocessor
+```
+
+Use `IO` when:
+- there are multiple roots,
+- multiple exposed outputs,
+- custom component signatures require explicit routing.
+
+## 8) Validation and Rejection Rules
+
+Canonical validation enforces:
+- required sections exist,
+- `MODEL.task` equals `TASK`,
+- component graph validity,
+- no legacy aliases in canonical payload.
+
+Forbidden in canonical payload (examples):
+- top-level `dali`
+- `DATA.annotations.*`
+- `DATA.<split>.path` / `video_path`
+- `MODEL.backbone` / `neck` / `head` / `post_proc`
+- `TRAIN.num_epochs` / `TRAIN.max_epochs`
+
+## 9) Migration Mapping Quick Reference
+
+| Legacy | Canonical |
+|---|---|
+| `dali` | `DATA.common.runtime.loader_backend` |
+| `DATA.<split>.path` | `DATA.common.splits.<split>.annotation_path` |
+| `DATA.<split>.video_path` | `DATA.common.splits.<split>.source_path` |
+| `MODEL.backbone` | `MODEL.components.*(kind=encoder)` |
+| `MODEL.neck` | `MODEL.components.*(kind=adapter)` |
+| `MODEL.head` | `MODEL.components.*(kind=head)` |
+| `MODEL.post_proc` | `MODEL.components.*(kind=postprocessor)` |
+| `TRAIN.num_epochs` / `TRAIN.max_epochs` | `TRAIN.epochs` |
+
+## 10) Practical Templates
+
+### Classification (minimal)
+
+```yaml
+TASK: classification
+VERSION: 3
 
 SYSTEM:
-  ...
+  paths: {log_dir: ./logs, save_dir: ./checkpoints, work_dir: ./checkpoints}
+  device: auto
+  gpu: {count: 1, id: 0}
+  reproducibility: {use_seed: true, seed: 42}
+
+DATA:
+  common:
+    dataset_name: mvfouls
+    data_root: /data
+    classes: [A, B]
+    runtime: {loader_backend: opencv}
+    splits:
+      train: {annotation_path: /data/train.json, source_path: /data/train}
+      valid: {annotation_path: /data/valid.json, source_path: /data/valid}
+      test: {annotation_path: /data/test.json, source_path: /data/test}
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source: {format: mp4}
+      sampling: {num_frames: 16, input_fps: 25, target_fps: 17}
+      transform:
+        resize: {height: 224, width: 224}
+
+MODEL:
+  schema_version: 3
+  task: classification
+  runtime: {dtype: fp32, device: auto, compile: false, freeze: false, multi_gpu: false}
+  load: {checkpoint_path: null, pretrained: false, strict: true, map_location: null, format: auto}
+  components:
+    video_encoder:
+      kind: encoder
+      source: {provider: opensportslib, registry: backbone, name: mvit_v2_s}
+      params: {}
+      overrides: {}
+    task_head:
+      kind: head
+      source: {provider: opensportslib, registry: head, name: MV_LinearLayer}
+      params: {num_classes: 2}
+      overrides: {}
+  topology:
+    - {from: video_encoder, to: task_head}
+  policies: {}
+  metadata: {family: custom, runner: {type: classification}}
+
+TRAIN:
+  trainer: {type: classification}
+  epochs: 20
+  criterion: {type: CrossEntropyLoss}
+  optimizer: {type: AdamW, lr: 0.0001}
+  scheduler: {type: StepLR, step_size: 3, gamma: 0.1}
+  execution: {multi_gpu: false, acc_grad_iter: 1, log_interval: 10, criterion_valid: loss}
+  sampling: {batch_size: 8, use_weighted_sampler: false, use_weighted_loss: false}
+  selection: {monitor: balanced_accuracy, mode: max}
+  checkpoint: {save_every: 2, save_best: true}
 ```
 
-### `TASK`
+### Localization (feature/video spotting)
 
-Defines which task pipeline is used.
+Use same top-level structure with:
+- `DATA.common.runtime.loader_backend: dali|opencv`
+- split-level fields such as `results`, `metric`, `nms_window`, `overlap_len`
+- `MODEL` components including optional `postprocessor`
+- `TRAIN.trainer.type` aligned with localization pipeline (`trainer_e2e`, `trainer_pooling`, etc.)
 
-- `classification`: clip-level classification pipeline.
-- `localization`: spotting/localization pipeline.
+## 11) Authoring Checklist
 
-If `TASK` does not match the selected API (`ClassificationModel` / `LocalizationModel`), behavior can be incorrect or fail.
+Before running:
+1. `TASK` matches `MODEL.task`.
+2. `TRAIN.epochs` is set (no `num_epochs`/`max_epochs`).
+3. Split paths are canonical (`annotation_path`, `source_path`).
+4. Model graph (`components` + `topology`) is valid.
+5. `TRAIN.execution.multi_gpu` is set as needed.
+6. No forbidden legacy keys in canonical files.
 
-### `DATA`
+## 12) Supported Type Catalogs (Concrete)
 
-Defines data source, annotation paths, sampling, preprocessing, and dataloader behavior.
+This section lists concrete `type` values currently wired in the codebase.
 
-This block usually contains:
+### 12.1 Runner Types (`MODEL.metadata.runner.type`)
 
-- Dataset identity and root path
-- Class list or class count
-- Split definitions (`train`, `valid`, `test`)
-- Temporal sampling settings (`num_frames`, `clip_len`, `input_fps`, `extract_fps`, etc.)
-- Spatial settings (`frame_size`, `target_height`, `target_width`)
-- Augmentation switches
-- Dataloader options
+Used mainly by localization trainer/inference routing.
 
-### `MODEL`
-
-Defines model family and submodules.
-
-Typical nested blocks:
-
-- `backbone`: feature extractor
-- `neck`: temporal/multi-view aggregation
-- `head`: classifier or spotting head
-- optional post-processing (`post_proc`)
-- optional checkpoint loading (`load_weights`, `pretrained_model`)
-
-### `TRAIN`
-
-Defines optimization logic.
-
-Typical nested blocks:
-
-- Monitoring and early-stop criteria
-- Epoch controls (`epochs` or `num_epochs` or `max_epochs` depending on trainer)
-- `criterion` (loss)
-- `optimizer`
-- `scheduler`
-- Sampling and weighting controls
-
-### `SYSTEM`
-
-Defines runtime environment and output paths.
-
-Typical keys:
-
-- `log_dir`, `save_dir`, `work_dir`
-- seed control
-- device/GPU settings
-
-## Interpolation and Derived Keys
-
-OpenSportsLib configs use OmegaConf interpolation syntax:
-
-- `${DATA.data_dir}`
-- `${TRAIN.num_epochs}`
-- `${SYSTEM.save_dir}`
-
-This avoids duplication and keeps paths consistent.
-
-## Key-by-Key Reference
-
-## Common Keys Across Most Configs
-
-| Key | Type | Example | What it controls | Tuning guidance |
-|---|---|---|---|---|
-| `TASK` | string | `classification` | Chooses pipeline entrypoint | Keep aligned with model API |
-| `SYSTEM.device` | string | `cuda` | Device selection (`auto/cuda/cpu`) | Use `cpu` for smoke/local checks |
-| `SYSTEM.gpu_id` | int | `0` | GPU index for single-GPU runs | Set only if multiple GPUs |
-| `SYSTEM.seed` | int | `42` | Random seed value | Use fixed seed for reproducibility |
-| `SYSTEM.log_dir` | path | `./logs` | Training logs location | Separate per experiment when needed |
-| `SYSTEM.save_dir` | path | `./checkpoints` | Checkpoint output root | Keep enough disk space |
-
-## Classification (`classification.yaml`) Reference
-
-### DATA block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `DATA.dataset_name` | string | `mvfouls` | Dataset identifier |
-| `DATA.data_dir` | path | `/.../OSL-XFoul/224p` | Dataset root directory |
-| `DATA.data_modality` | string | `video` | Input modality for loader |
-| `DATA.view_type` | string | `multi` | Single-view or multi-view processing |
-| `DATA.num_classes` | int | `8` | Number of target classes |
-| `DATA.num_frames` | int | `16` | Number of sampled frames per clip |
-| `DATA.input_fps` | int | `25` | Original video FPS |
-| `DATA.target_fps` | int | `17` | Downsampled FPS used by loader |
-| `DATA.start_frame` | int | `63` | Clip start frame (relative) |
-| `DATA.end_frame` | int | `87` | Clip end frame (relative) |
-| `DATA.frame_size` | list[int,int] | `[224, 224]` | Spatial resize `(H, W)` |
-
-### DATA split sub-blocks
-
-Each split (`train`, `valid`, `test`) has:
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `DATA.<split>.video_path` | path | `${DATA.data_dir}/train` | Video root for split; relative media paths in annotations are resolved from here |
-| `DATA.<split>.path` | path | `${DATA.train.video_path}/train.json` | Annotation file |
-| `DATA.<split>.dataloader.batch_size` | int | `8` | Batch size |
-| `DATA.<split>.dataloader.shuffle` | bool | `true` | Shuffle data each epoch |
-| `DATA.<split>.dataloader.num_workers` | int | `4` | Data loading worker count |
-| `DATA.<split>.dataloader.pin_memory` | bool | `true` | Host-to-device transfer optimization |
-| `DATA.<split>.dataloader.persistent_workers` | bool | `true` | Keep worker processes alive between batches when workers are enabled |
-| `DATA.<split>.dataloader.prefetch_factor` | int | `4` | Number of prefetched batches per worker |
-| `DATA.<split>.dataloader.mp_context` | str | `spawn` | Worker start method override; video classification defaults to `spawn` when omitted |
-
-### DATA augmentation keys
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `random_affine` | bool | `true` | Enable affine transform |
-| `translate` | list[float,float] | `[0.1, 0.1]` | Affine translation range |
-| `affine_scale` | list[float,float] | `[0.9, 1.0]` | Affine zoom range |
-| `random_perspective` | bool | `true` | Enable perspective distortion |
-| `distortion_scale` | float | `0.3` | Strength of perspective distortion |
-| `perspective_prob` | float | `0.5` | Probability for perspective augmentation |
-| `random_rotation` | bool | `true` | Enable random rotation |
-| `rotation_degrees` | float/int | `5` | Rotation limit |
-| `color_jitter` | bool | `true` | Enable color jitter |
-| `jitter_params` | list[float,float,float,float] | `[0.2, 0.2, 0.2, 0.1]` | Brightness/contrast/saturation/hue |
-| `random_horizontal_flip` | bool | `true` | Enable horizontal flip |
-| `flip_prob` | float | `0.5` | Horizontal flip probability |
-| `random_crop` | bool | `false` | Enable random crop |
-
-### MODEL block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `MODEL.type` | string | `custom` | Model family implementation |
-| `MODEL.backbone.type` | string | `mvit_v2_s` | Backbone architecture |
-| `MODEL.neck.type` | string | `MV_Aggregate` | Feature aggregation module |
-| `MODEL.neck.agr_type` | string | `max` | Aggregation mode (`max/mean/attention`) |
-| `MODEL.head.type` | string | `MV_LinearLayer` | Classification head |
-| `MODEL.pretrained_model` | string | `mvit_v2_s` | Pretrained source identifier |
-| `MODEL.unfreeze_head` | bool | `true` | Whether to train head |
-| `MODEL.unfreeze_last_n_layers` | int | `3` | Last N backbone layers to unfreeze |
-
-### TRAIN block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `TRAIN.enabled` | bool | `true` | Enable training mode |
-| `TRAIN.epochs` | int | `20` | Total epochs |
-| `TRAIN.monitor` | string | `balanced_accuracy` | Metric to monitor |
-| `TRAIN.mode` | string | `max` | Monitor direction (`max/min`) |
-| `TRAIN.log_interval` | int | `10` | Logging interval |
-| `TRAIN.save_every` | int | `2` | Checkpoint interval |
-| `TRAIN.use_weighted_sampler` | bool | `false` | Class balancing via sampler |
-| `TRAIN.use_weighted_loss` | bool | `true` | Class balancing via loss weighting |
-| `TRAIN.criterion.type` | string | `CrossEntropyLoss` | Loss function |
-| `TRAIN.optimizer.type` | string | `AdamW` | Optimizer |
-| `TRAIN.optimizer.lr` | float | `1e-4` | Global learning rate |
-| `TRAIN.optimizer.backbone_lr` | float | `5e-5` | Backbone learning rate |
-| `TRAIN.optimizer.head_lr` | float | `1e-3` | Head learning rate |
-| `TRAIN.optimizer.weight_decay` | float | `1e-3` | L2 regularization |
-| `TRAIN.scheduler.type` | string | `StepLR` | LR scheduler |
-| `TRAIN.scheduler.step_size` | int | `3` | Epoch step before LR decay |
-| `TRAIN.scheduler.gamma` | float | `0.1` | LR decay factor |
-
-## Localization (`localization.yaml`, RGB end-to-end) Reference
-
-### Additional global key
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `dali` | bool | `true` | Use DALI-based video data pipeline |
-
-### DATA block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `DATA.dataset_name` | string | `SoccerNet` | Dataset identity |
-| `DATA.data_dir` | path | `/.../OSL-SNBAS/224p-2024` | Data root |
-| `DATA.classes` | list[string] | `PASS, DRIVE, ...` | Event class set |
-| `DATA.epoch_num_frames` | int | `500000` | Frames sampled per epoch |
-| `DATA.mixup` | bool | `true` | Mixup augmentation |
-| `DATA.modality` | string | `rgb` | Input modality |
-| `DATA.crop_dim` | int | `-1` | Crop configuration |
-| `DATA.dilate_len` | int | `0` | Label dilation for events |
-| `DATA.clip_len` | int | `100` | Temporal clip length |
-| `DATA.input_fps` | int | `25` | Source FPS |
-| `DATA.extract_fps` | int | `2` | Effective FPS after sampling |
-| `DATA.imagenet_mean` | list[float] | `[0.485, 0.456, 0.406]` | Input normalization mean |
-| `DATA.imagenet_std` | list[float] | `[0.229, 0.224, 0.225]` | Input normalization std |
-| `DATA.target_height` | int | `224` | Resize height |
-| `DATA.target_width` | int | `398` | Resize width |
-
-### DATA split-specific keys for localization
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `DATA.train.type` | string | `VideoGameWithDali` | Training dataset loader class |
-| `DATA.valid.type` | string | `VideoGameWithDali` | Validation dataset loader class |
-| `DATA.valid_data_frames.type` | string | `VideoGameWithDaliVideo` | Frame-level validation/eval loader |
-| `DATA.test.type` | string | `VideoGameWithDaliVideo` | Test loader |
-| `DATA.test.results` | string | `results_spotting_test` | Output results folder name |
-| `DATA.test.nms_window` | int | `2` | NMS window for postprocessing |
-| `DATA.test.metric` | string | `tight` | Spotting metric mode |
-| `DATA.<split>.overlap_len` | int | `0` / `50` | Sliding-window overlap for inference |
-| `DATA.challenge.type` | string | `VideoGameWithDaliVideo` | Challenge split loader |
-
-### MODEL block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `MODEL.type` | string | `E2E` | End-to-end localization model |
-| `MODEL.runner.type` | string | `runner_e2e` | Runner implementation |
-| `MODEL.backbone.type` | string | `rny008_gsm` | Backbone network |
-| `MODEL.head.type` | string | `gru` | Temporal head |
-| `MODEL.multi_gpu` | bool | `true` | Distributed/multi-GPU flag |
-| `MODEL.load_weights` | string/null | `null` | Optional checkpoint path |
-
-### TRAIN block
-
-| Key | Type | Example | Meaning |
-|---|---|---|---|
-| `TRAIN.type` | string | `trainer_e2e` | Trainer implementation |
-| `TRAIN.num_epochs` | int | `10` | Epoch count |
-| `TRAIN.acc_grad_iter` | int | `1` | Gradient accumulation steps |
-| `TRAIN.base_num_valid_epochs` | int | `30` | Base validation schedule |
-| `TRAIN.start_valid_epoch` | int | `4` | First validation epoch |
-| `TRAIN.valid_map_every` | int | `1` | mAP validation interval |
-| `TRAIN.criterion_valid` | string | `map` | Validation criterion |
-| `TRAIN.criterion.type` | string | `CrossEntropyLoss` | Loss function |
-| `TRAIN.optimizer.type` | string | `AdamWithScaler` | Optimizer |
-| `TRAIN.optimizer.lr` | float | `0.01` | Learning rate |
-| `TRAIN.scheduler.type` | string | `ChainedSchedulerE2E` | Scheduler strategy |
-| `TRAIN.scheduler.warm_up_epochs` | int | `3` | Warmup duration |
-
-## Localization JSON Feature Configs (`localization-json_*`) Reference
-
-These configs target pre-extracted feature pipelines (for example ResNET PCA512 features) instead of raw RGB clip ingestion.
-
-### Data and model differences vs RGB E2E
-
-| Key family | NetVLAD++ config | CALF config | Meaning |
-|---|---|---|---|
-| Train dataset `type` | `FeatureClipsfromJSON` | `FeatureClipChunksfromJson` | Feature clip/chunk loader |
-| Test dataset `type` | `FeatureVideosfromJSON` | `FeatureVideosChunksfromJson` | Feature video/chunked video loader |
-| Temporal key | `window_size` | `chunk_size` + `receptive_field` | Temporal context strategy |
-| Model `type` | `LearnablePooling` | `ContextAware` | Localization architecture |
-| Neck | `NetVLAD++` | `CNN++` | Feature aggregation style |
-| Head | `LinearLayer` | `SpottingCALF` | Event prediction head |
-| Trainer | `trainer_pooling` | `trainer_CALF` | Training loop implementation |
-| Criterion | `NLLLoss` | `Combined2x` (ContextAwareLoss + SpottingLoss) | Loss setup |
-
-### Key tuning points for JSON feature configs
-
-| Key | Recommendation |
+| Runner type | Primary behavior |
 |---|---|
-| `DATA.train.dataloader.batch_size` | Start high for feature pipelines, reduce if OOM |
-| `TRAIN.optimizer.lr` | Tune first; often most sensitive parameter |
-| `TRAIN.max_epochs` | Keep smaller for quick iteration, larger for final runs |
-| `MODEL.neck.vocab_size` (NetVLAD++) | Higher can improve capacity but increases compute |
-| `DATA.train.chunk_size/window_size` | Controls temporal context and memory footprint |
+| `runner_classification` | Classification pipeline |
+| `runner_JSON` | Localization from JSON feature/video sources |
+| `runner_e2e` | End-to-end localization pipeline |
+| `runner_CALF` | CALF-style localization pipeline |
+| `runner_pooling` | Learnable pooling localization pipeline |
 
-## SN-GAR Config Highlights (`sngar-tracking.yaml`, `sngar-frames.yaml`)
+### 12.2 Dataset Split `type` Values (Localization)
 
-Use these when working on group activity recognition.
+Configured under `DATA.common.splits.<split>.type`.
 
-### Tracking config highlights
+| Dataset type | Typical use |
+|---|---|
+| `SoccerNetClips` | SoccerNet clip training |
+| `SoccerNetGames` | SoccerNet game-level features/infer |
+| `SoccerNetClipsCALF` | CALF training |
+| `SoccerNetClipsTestingCALF` | CALF testing |
+| `FeatureClipsfromJSON` | Feature clips from JSON |
+| `FeatureVideosfromJSON` | Feature videos from JSON |
+| `FeatureClipChunksfromJson` | Chunked feature clips |
+| `FeatureVideosChunksfromJson` | Chunked feature videos |
+| `VideoGameWithOpencv` | Video pipeline using OpenCV |
+| `VideoGameWithOpencvVideo` | Video inference/eval using OpenCV |
+| `VideoGameWithDali` | Video pipeline using NVIDIA DALI |
+| `VideoGameWithDaliVideo` | Video inference/eval using NVIDIA DALI |
 
-- `DATA.data_modality: tracking_parquet`
-- Graph backbone keys:
-  - `MODEL.backbone.encoder` (`gin` etc.)
-  - `MODEL.edge`, `MODEL.k`, `MODEL.r` for graph connectivity
-- Motion/object normalization keys:
-  - `DATA.num_objects`, `DATA.feature_dim`, `DATA.max_displacement`, `DATA.max_ball_height`
+### 12.3 Backbone Types (`MODEL.components.* kind=encoder`)
 
-### Frames config highlights
+Use as `source.name` for OpenSportsLib backbones (with component params as needed).
 
-- `DATA.data_modality: frames_npy`
-- Video transformer backbone keys:
-  - `MODEL.backbone.type: videomae2`
-  - `MODEL.backbone.pretrained_model`
-  - `MODEL.backbone.freeze`, `MODEL.backbone.unfreeze_last_n_layers`
-- Mixed precision support:
-  - `TRAIN.use_amp: true`
+| Backbone type | Family |
+|---|---|
+| `graph_conv` | Tracking/graph encoder |
+| `PreExtactedFeatures` | Pre-extracted feature passthrough |
+| `rn18`, `rn18_tsm`, `rn18_gsm`, `rn50`, `rn50_tsm`, `rn50_gsm` | ResNet family |
+| `rny002`, `rny002_tsm`, `rny002_gsm`, `rny008`, `rny008_tsm`, `rny008_gsm` | RegNetY family |
+| `convnextt`, `convnextt_tsm`, `convnextt_gsm` | ConvNeXt-Tiny family |
+| `r3d_18`, `mc3_18`, `r2plus1d_18`, `s3d`, `mvit_v2_s` | Torchvision video models |
+| `dinov3`, `clip`, `videomae`, `videomae2` | Feature-extractor wrappers |
+| `video_mae` | HuggingFace VideoMAE classification builder |
 
-## Running Many Experiments Without Creating New YAML Files
+### 12.4 Neck Types (`MODEL.components.* kind=adapter`)
 
-If your API call expects a YAML path, keep one base YAML and generate a temporary YAML per run from Python overrides.
+| Neck type | Purpose |
+|---|---|
+| `MV_Aggregate` | Multi-view aggregation |
+| `TemporalAggregation` | Temporal aggregation (max/avg/attention/lstm/tcn) |
+| `MaxPool`, `MaxPool++` | Pooling adapters |
+| `AvgPool`, `AvgPool++` | Pooling adapters |
+| `NetRVLAD`, `NetRVLAD++` | Learnable pooling |
+| `NetVLAD`, `NetVLAD++` | Learnable pooling |
+| `CNN++` | CALF-style temporal module |
 
-```python
-import tempfile
-import yaml
-from copy import deepcopy
+### 12.5 Head Types (`MODEL.components.* kind=head`)
 
-from opensportslib import model
-from opensportslib.core.utils.config import load_config, namespace_to_dict
+| Head type | Purpose |
+|---|---|
+| `TrackingClassifier` | Tracking classification head |
+| `LinearLayer` | Linear spotting/classification head |
+| `SpottingCALF` | CALF spotting head |
+| `MV_LinearLayer` | Multi-view classification head |
+| `gru`, `deeper_gru`, `mstcn`, `asformer`, `` (empty) | Temporal E2E head variants |
 
+### 12.6 Postprocessor Types (`MODEL.components.* kind=postprocessor`)
 
-def set_nested(d, path, value):
-    keys = path.split('.')
-    cur = d
-    for k in keys[:-1]:
-        if k not in cur or not isinstance(cur[k], dict):
-            raise KeyError(f"Invalid key path: {path} (failed at {k})")
-        cur = cur[k]
-    if keys[-1] not in cur:
-        raise KeyError(f"Invalid key path: {path} (missing leaf {keys[-1]})")
-    cur[keys[-1]] = value
+| Type | Purpose |
+|---|---|
+| `NMS` | Non-maximum suppression for spotting events |
 
+## 13) Type-Specific Parameter Hints
 
-def make_temp_config(base_yaml_path, overrides):
-    cfg_ns = load_config(base_yaml_path)
-    cfg = deepcopy(namespace_to_dict(cfg_ns))
+### 13.1 `TemporalAggregation` params
+- `agr_type`: `maxpool`, `avgpool`, `attention`, `bilstm`, `tcn`
+- `hidden_dim`: int
+- `dropout`: float
+- `use_position_encoding`: bool
+- `num_attention_heads`: int (attention mode)
+- `lstm_dropout`: float (bilstm mode)
 
-    for key_path, value in overrides.items():
-        set_nested(cfg, key_path, value)
+### 13.2 `graph_conv` params
+- `encoder`: graph conv variant (commonly `gin`)
+- `hidden_dim`: int
+- `num_layers`: int
+- `dropout`: float
+- graph extras often provided via params: `edge_type`, `k`, `r`
 
-    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
-    yaml.safe_dump(cfg, tmp, sort_keys=False)
-    tmp.flush()
-    tmp.close()
-    return tmp.name
+### 13.3 `SpottingCALF` params
+- `dim_capsule`: int
+- `num_detections`: int
+- `chunk_size`: int
+- `num_classes`: int
 
+### 13.4 `NMS` postprocessing params
+- `NMS_window`: int
+- `NMS_threshold`: float
 
-config_path = make_temp_config(
-    "/home/vorajv/opensportslib/opensportslib/config/classification.yaml",
-    {
-        "TRAIN.optimizer.lr": 1e-4,
-        "TRAIN.epochs": 30,
-        "DATA.train.dataloader.batch_size": 4,
-        "MODEL.backbone.type": "mvit_v2_s",
-    },
-)
+## 14) Recommended Authoring Pattern for Type Fields
 
-m = model.ClassificationModel(config=config_path)
+In canonical authoring:
+- put implementation choice in `MODEL.components.<id>.source.name`
+- keep component role in `kind`
+- keep algorithm hyperparameters under `params`
+- keep runtime toggles under `MODEL.runtime` or `TRAIN.execution`
+
+Example:
+
+```yaml
+MODEL:
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: mvit_v2_s
+      params: {}
+    video_adapter:
+      kind: adapter
+      source:
+        provider: opensportslib
+        registry: neck
+        name: TemporalAggregation
+      params:
+        agr_type: attention
+        hidden_dim: 768
+        num_attention_heads: 8
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: MV_LinearLayer
+      params:
+        num_classes: 8
 ```
-
-## Recommended Tuning Order
-
-When starting a new experiment, tune in this order:
-
-1. `TRAIN.optimizer.lr`
-2. `DATA.train.dataloader.batch_size`
-3. `TRAIN.epochs` or `TRAIN.num_epochs` / `TRAIN.max_epochs`
-4. `MODEL.backbone.type` and unfreeze settings
-5. Scheduler settings
-
-This gives the highest return with minimal config churn.
-
-## Reproducibility Checklist
-
-- Keep a stable base YAML per task.
-- Store all per-run changes in an explicit Python `overrides` dict.
-- Save/log the resolved YAML used for the run.
-- Fix seed when comparing experiments (`SYSTEM.seed`, plus deterministic settings if needed).

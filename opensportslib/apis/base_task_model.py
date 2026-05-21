@@ -9,6 +9,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
+from opensportslib.core.config.accessors import get_component_name_by_kind
 from opensportslib.core.utils.config import expand, load_config_omega, fetch_and_merge_config_from_HF
 
 
@@ -41,15 +42,23 @@ class BaseTaskModel(ABC):
 
         system_cfg = getattr(self.config, "SYSTEM", None)
         if system_cfg is not None:
-            base_save_dir = expand(getattr(system_cfg, "save_dir", None) or "./checkpoints")
-            model_cfg = getattr(self.config, "MODEL", None)
-            backbone_cfg = getattr(model_cfg, "backbone", None)
-            model_name = getattr(backbone_cfg, "type", None) or "model"
+            system_paths = getattr(system_cfg, "paths", None)
+            base_save_dir = expand(
+                getattr(system_paths, "save_dir", None)
+                or getattr(system_cfg, "save_dir", None)
+                or "./checkpoints"
+            )
+            model_name = get_component_name_by_kind(self.config, "encoder") or "model"
             run_save_dir = os.path.join(base_save_dir, model_name, self.run_id)
             self.save_dir = run_save_dir
-            system_cfg.save_dir = run_save_dir
-            if hasattr(system_cfg, "work_dir"):
-                system_cfg.work_dir = run_save_dir
+            if system_paths is not None:
+                system_paths.save_dir = run_save_dir
+                if hasattr(system_paths, "work_dir"):
+                    system_paths.work_dir = run_save_dir
+            else:
+                system_cfg.save_dir = run_save_dir
+                if hasattr(system_cfg, "work_dir"):
+                    system_cfg.work_dir = run_save_dir
             os.makedirs(run_save_dir, exist_ok=True)
         else:
             self.save_dir = expand("./checkpoints")

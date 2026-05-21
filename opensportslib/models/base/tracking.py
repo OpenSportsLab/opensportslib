@@ -5,6 +5,7 @@ from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
 from opensportslib.models.heads.builder import build_head
 from opensportslib.datasets.utils.tracking import FEATURE_DIM
+from opensportslib.core.config.accessors import get_component_params_by_kind, get_data_sampling
 
 
 class TrackingModel(nn.Module):
@@ -18,23 +19,24 @@ class TrackingModel(nn.Module):
         print("Building TrackingModel")
         
         self.device = device
-        self.num_frames = config.DATA.num_frames
+        sampling = get_data_sampling(config)
+        self.num_frames = sampling.get("num_frames")
         
         # backbone: graph encoder
         self.backbone = build_backbone(
-            config.MODEL.backbone,
+            get_component_params_by_kind(config, "encoder"),
             default_args={"input_dim": FEATURE_DIM}
         )
         
         # neck: temporal aggregation
         self.neck = build_neck(
-            config.MODEL.neck,
+            get_component_params_by_kind(config, "adapter"),
             default_args={"window_size": self.num_frames}
         )
         
         # head: classifier
         self.head = build_head(
-            config.MODEL.head,
+            get_component_params_by_kind(config, "head"),
             default_args={"input_dim": self.neck.feat_dim}
         )
     

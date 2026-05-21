@@ -1,13 +1,16 @@
-"""Migration from released v1 configs into the canonical schema."""
+"""Migration from legacy configs into the canonical schema."""
 
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
+from ..conflicts import detect_legacy_conflicts, emit_conflict_warnings
 
-def migrate_v1_to_v3(payload: dict[str, Any]) -> dict[str, Any]:
+
+def migrate_legacy_to_canonical(payload: dict[str, Any]) -> dict[str, Any]:
     cfg = deepcopy(payload or {})
+    emit_conflict_warnings(detect_legacy_conflicts(cfg))
 
     task = _infer_task(cfg)
     system = _migrate_system(cfg.get("SYSTEM", {}))
@@ -25,8 +28,6 @@ def migrate_v1_to_v3(payload: dict[str, Any]) -> dict[str, Any]:
         "TRAIN": train,
         "IO": io,
     }
-    if "dali" in cfg:
-        migrated["dali"] = cfg["dali"]
     return migrated
 
 
@@ -78,7 +79,7 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
         if annotation_path is None and source_path is None and not split_cfg:
             continue
 
-        migrated = dict(split_cfg)
+        migrated = {k: deepcopy(v) for k, v in split_cfg.items() if k not in {"path", "video_path"}}
         if annotation_path is not None:
             migrated["annotation_path"] = annotation_path
         if source_path is not None:
@@ -144,11 +145,12 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
             "crop_dim",
             "mixup",
             "dilate_len",
-            "modality",
-            "data_modality",
             "max_samples",
         ),
     }
+    color_mode = _infer_color_mode(data, input_name)
+    if color_mode is not None:
+        input_cfg["params"]["color_mode"] = color_mode
 
     _drop_nones(input_cfg["transform"]["normalization"])
     _drop_empty(input_cfg["transform"])
@@ -168,6 +170,13 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
 def _migrate_model(model: dict[str, Any], data: dict[str, Any], task: str) -> dict[str, Any]:
     components: dict[str, Any] = {}
     topology: list[dict[str, Any]] = []
+    input_cfgs = data.get("inputs", {})
+    primary_input = next(iter(input_cfgs.values()), {})
+    primary_input_params = primary_input.get("params", {})
+    common_classes = data.get("common", {}).get("classes", [])
+    inferred_num_classes = primary_input_params.get("num_classes") or (
+        len(common_classes) if common_classes else None
+    )
 
     encoder_name = _infer_encoder_component_name(model, data, task)
     backbone = deepcopy(model.get("backbone", {}))
@@ -202,6 +211,8 @@ def _migrate_model(model: dict[str, Any], data: dict[str, Any], task: str) -> di
 
     head = deepcopy(model.get("head", {}))
     if head:
+        if task == "classification" and head.get("num_classes") is None and inferred_num_classes is not None:
+            head["num_classes"] = inferred_num_classes
         components["task_head"] = {
             "kind": "head",
             "source": {
@@ -331,7 +342,19 @@ def _infer_input_name(data: dict[str, Any], task: str) -> str:
 def _infer_input_modality(data: dict[str, Any], input_name: str) -> str:
     if input_name == "tracking":
         return "tracking"
+    legacy_modality = str(data.get("modality", data.get("data_modality", "video"))).lower()
+    if legacy_modality in {"rgb", "flow", "bw"}:
+        return "video"
     return str(data.get("modality", data.get("data_modality", "video")))
+
+
+def _infer_color_mode(data: dict[str, Any], input_name: str) -> str | None:
+    if input_name != "video":
+        return None
+    legacy_modality = str(data.get("modality", "")).lower()
+    if legacy_modality in {"rgb", "flow", "bw"}:
+        return legacy_modality
+    return None
 
 
 def _infer_representation(data: dict[str, Any], task: str) -> str:

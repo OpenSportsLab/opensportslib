@@ -21,6 +21,19 @@ from tqdm import tqdm
 
 from opensportslib.core.utils.load_annotations import load_annotations
 from opensportslib.core.utils.video_processing import *
+from opensportslib.core.config.accessors import (
+    get_component_name_by_kind,
+    get_component_params_by_kind,
+    get_component_provider_by_kind,
+    get_data_classes,
+    get_data_modality,
+    get_data_augmentations,
+    get_data_params,
+    get_data_sampling,
+    set_data_classes,
+    get_data_transform,
+    get_split_source_path,
+)
 
 
 # -------------------------------------------------------------
@@ -42,7 +55,7 @@ def build(config, annotations_path, processor=None, split="train"):
     Raises:
         ValueError: if the data_modality is not recognized.
     """
-    modality = config.DATA.data_modality.lower()
+    modality = get_data_modality(config).lower()
 
     if modality == "tracking_parquet":
         return TrackingDataset(config, annotations_path, split)
@@ -73,11 +86,12 @@ class ClassificationDataset(Dataset):
         self.config = config
         self.split = split
         self.exclude_labels = ["Unknown", "Dont know"]
-        self.video_path = getattr(config.DATA, split).video_path #config.DATA.data_dir
+        self.video_path = get_split_source_path(config, split)
         self.processor = None
 
         # view_type is optional; only MVFoul uses it as of now
-        is_multiview = getattr(config.DATA, "view_type", None) == "multi"
+        data_params = get_data_params(config)
+        is_multiview = data_params.get("view_type") == "multi"
 
         allow_missing_labels = split in ["test", "infer"]
 
@@ -91,15 +105,15 @@ class ClassificationDataset(Dataset):
         #     training_matches: <number of games to include in the training set>
         # we will refer to this as "data slicing" in the rest of the code.
         max_games = None
-        slicing_cfg = getattr(config.DATA, "data_slicing", None)
-        if slicing_cfg and getattr(slicing_cfg, "enabled", False) and split == "train":
-            max_games = getattr(slicing_cfg, "training_matches", None)
+        slicing_cfg = data_params.get("data_slicing", {})
+        if slicing_cfg and slicing_cfg.get("enabled", False) and split == "train":
+            max_games = slicing_cfg.get("training_matches")
 
         self.samples, self.label_map = load_annotations(
             annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
-            input_type=config.DATA.data_modality,
+            input_type=get_data_modality(config),
             allow_missing_labels=allow_missing_labels,
             max_games=max_games
         )
@@ -110,17 +124,16 @@ class ClassificationDataset(Dataset):
         # to use this, you need to add the following to the config:
         # DATA:
         #   max_samples: <number of samples to include in the training set>
-        max_samples = getattr(config.DATA, 'max_samples', None)
+        max_samples = data_params.get("max_samples")
         if max_samples:
             self.samples = self.samples[:max_samples]
 
         # invert to id -> name and propagate into the config so
         # downstream components (metrics, logging) can look it up.
         self.label_map = {v: k for k, v in self.label_map.items()}
-        self.config.DATA.classes = list(self.label_map.values())
-        self.config.DATA.num_classes = len(self.label_map)
+        set_data_classes(self.config, list(self.label_map.values()))
 
-        print(self.config.DATA.num_classes, "classes:", self.config.DATA.classes)
+        print(len(get_data_classes(self.config)), "classes:", get_data_classes(self.config))
         print("Label Map : ", self.label_map)
 
         self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
@@ -200,9 +213,10 @@ class VideoDataset(ClassificationDataset):
         super().__init__(config, annotations_path, processor, split=split)
 
         self.processor = processor
-        self.view_type = getattr(config.DATA, "view_type", "single")
-        self.num_frames = getattr(config.DATA, "num_frames", None)
-        self.input_fps = getattr(config.DATA, "input_fps", None)
+        self.view_type = get_data_params(config).get("view_type", "single")
+        sampling_cfg = get_data_sampling(config)
+        self.num_frames = sampling_cfg.get("num_frames")
+        self.input_fps = sampling_cfg.get("input_fps")
         self.transform = build_transform(config, mode=self.split)
 
     def _select_views(self, video_paths):
@@ -247,9 +261,9 @@ class VideoDataset(ClassificationDataset):
             v,
             self.num_frames,
             self.input_fps,
-            self.config.DATA.target_fps,
-            start_frame=self.config.DATA.start_frame,
-            end_frame=self.config.DATA.end_frame
+            get_data_sampling(self.config).get("target_fps"),
+            start_frame=get_data_sampling(self.config).get("start_frame"),
+            end_frame=get_data_sampling(self.config).get("end_frame"),
         )
 
         if isinstance(v, list):
@@ -275,7 +289,7 @@ class VideoDataset(ClassificationDataset):
         selected_paths = self._select_views(video_paths)
         
         # --- Load and process frames for selected clips ---
-        if self.config.MODEL.type == "huggingface":
+        if get_component_provider_by_kind(self.config, "encoder") == "huggingface":
             path = selected_paths[0]
             v = self._load_and_sample_clip(path)
             # convert clip -> list of frames
@@ -301,7 +315,11 @@ class VideoDataset(ClassificationDataset):
                 else:
                     # existing raw video path: apply torchvision model transforms
                     v = torch.from_numpy(v).permute(0, 3, 1, 2)  # (T, C, H, W)
-                    v = get_transforms_model(self.config.MODEL.pretrained_model)(v)  # (C, T, H, W)
+                    encoder_name = get_component_params_by_kind(self.config, "encoder").get(
+                        "pretrained_model",
+                        get_component_name_by_kind(self.config, "encoder"),
+                    )
+                    v = get_transforms_model(encoder_name)(v)  # (C, T, H, W)
 
                 view_tensors.append(v)
 
@@ -355,12 +373,17 @@ class TrackingDataset(ClassificationDataset):
         self._FEATURE_DIM = FEATURE_DIM
         self._build_edge_index = build_edge_index
 
-        self.num_frames = config.DATA.num_frames
-        self.normalize = config.DATA.normalize
-        self.edge_type = config.MODEL.edge
-        self.k = config.MODEL.k
-        self.r = config.MODEL.r
-        self.preload_data = config.DATA.preload_data
+        sampling_cfg = get_data_sampling(config)
+        transform_cfg = get_data_transform(config)
+        params_cfg = get_data_params(config)
+        encoder_cfg = get_component_params_by_kind(config, "encoder")
+
+        self.num_frames = sampling_cfg.get("num_frames")
+        self.normalize = transform_cfg.get("normalize", False)
+        self.edge_type = encoder_cfg.get("edge_type")
+        self.k = encoder_cfg.get("k")
+        self.r = encoder_cfg.get("radius", encoder_cfg.get("r"))
+        self.preload_data = params_cfg.get("preload_data", False)
         
         self.transforms = self._build_transforms(
             config, split, HorizontalFlip, VerticalFlip, TeamFlip
@@ -389,16 +412,16 @@ class TrackingDataset(ClassificationDataset):
             return []
         
         transforms = []
-        aug_config = config.DATA.augmentations
+        aug_config = get_data_augmentations(config)
 
         # augmentation flags are optional in the config; default to off.
-        if getattr(aug_config, "horizontal_flip", False):
+        if aug_config.get("horizontal_flip", False):
             transforms.append(HorizontalFlip(probability=0.5))
         
-        if getattr(aug_config, "vertical_flip", False):
+        if aug_config.get("vertical_flip", False):
             transforms.append(VerticalFlip(probability=0.5))
         
-        if getattr(aug_config, "team_flip", False):
+        if aug_config.get("team_flip", False):
             transforms.append(TeamFlip(probability=0.5))
         
         return transforms

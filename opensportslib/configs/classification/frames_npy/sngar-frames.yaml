@@ -63,6 +63,7 @@ DATA:
         jitter_prob: 0.5
         jitter_params: [0.2, 0.2, 0.2, 0.1]
       params:
+        color_mode: rgb
         data_slicing:
           enabled: false
           training_matches: 45

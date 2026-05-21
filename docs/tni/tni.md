@@ -12,26 +12,26 @@ For full key-by-key config documentation and Python-only override workflow, see 
 ---
 ## Configuration Sample (.yaml) file
 
-The examples below are included directly from the latest YAML files in
-`opensportslib/config/`, so the documentation stays aligned with the runnable
+The examples below are included directly from the latest canonical YAML files in
+`opensportslib/configs/`, so the documentation stays aligned with the runnable
 configs.
 
 ### 1. Classification
 
 ```yaml
---8<-- "opensportslib/config/classification.yaml"
+--8<-- "opensportslib/configs/classification/video/classification.yaml"
 ```
 
 ### 2. Classification (Tracking)
 
 ```yaml
---8<-- "opensportslib/config/sngar-tracking.yaml"
+--8<-- "opensportslib/configs/classification/tracking/sngar-tracking.yaml"
 ```
 
 ### 3. Localization
 
 ```yaml
---8<-- "opensportslib/config/localization.yaml"
+--8<-- "opensportslib/configs/localization/video/localization-ocv.yaml"
 ```
 
 ## Annotations (train/valid/test) (.json) Format

@@ -8,9 +8,22 @@ import numpy as np
 import json
 import logging
 import tqdm
+from types import SimpleNamespace
 from opensportslib.core.utils.default_args import get_default_args_dataset
 from opensportslib.core.utils.load_annotations import get_repartition_gpu
 from opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts
+from opensportslib.core.config.accessors import (
+    get_component_params_by_kind,
+    get_data_classes,
+    get_data_modality,
+    get_data_params,
+    get_data_sampling,
+    get_data_transform,
+    get_split_cfg,
+    get_split_dataloader_cfg,
+    get_system_gpu_count,
+    get_train_execution,
+)
 from SoccerNet.Downloader import getListGames
 from SoccerNet.Downloader import SoccerNetDownloader
 from SoccerNet.Evaluation.utils import (
@@ -42,6 +55,12 @@ if DALI_AVAILABLE:
 else:
     def dali_pipeline_def(func):
         return func  # dummy decorator
+
+
+def _normalize_class_dict(classes):
+    if isinstance(classes, dict):
+        return classes
+    return {label: idx + 1 for idx, label in enumerate(classes or [])}
 
 
 def _build_dali_filenames_and_labels(labels):
@@ -77,28 +96,125 @@ class LocalizationDataset(Dataset):
     def __init__(self, config, annotations_path=None, processor=None, split="train"):
         self.config = config
         self.split = split
-        self.config.TRAIN.repartitions = get_repartition_gpu(self.config.SYSTEM.GPU)
+        self.gpu_count = get_system_gpu_count(self.config)
+
+        execution_cfg = getattr(getattr(self.config, "TRAIN", None), "execution", None)
+        repartitions = get_repartition_gpu(self.gpu_count)
+        if execution_cfg is not None:
+            if isinstance(execution_cfg, dict):
+                execution_cfg["repartitions"] = repartitions
+            else:
+                execution_cfg.repartitions = repartitions
+
+        sampling = get_data_sampling(self.config)
+        transform = get_data_transform(self.config)
+        normalization = transform.get("normalization", {})
+        resize = transform.get("resize", {})
+        params = get_data_params(self.config)
+        encoder_params = get_component_params_by_kind(self.config, "encoder")
+        adapter_params = get_component_params_by_kind(self.config, "adapter")
+        split_cfg = get_split_cfg(self.config, split)
+        split_dataloader = get_split_dataloader_cfg(self.config, split)
+        self.data_cfg = SimpleNamespace(
+            modality=get_data_modality(self.config),
+            epoch_num_frames=sampling.get("epoch_num_frames"),
+            clip_len=sampling.get("clip_len"),
+            input_fps=sampling.get("input_fps"),
+            extract_fps=sampling.get("extract_fps"),
+            crop_dim=params.get("crop_dim"),
+            dilate_len=params.get("dilate_len"),
+            mixup=params.get("mixup"),
+            imagenet_mean=normalization.get("mean"),
+            imagenet_std=normalization.get("std"),
+            target_height=resize.get("height"),
+            target_width=resize.get("width"),
+        )
+        annotation_path = annotations_path or getattr(
+            split_cfg, "annotation_path", getattr(split_cfg, "path", None)
+        )
+        source_path = getattr(split_cfg, "source_path", getattr(split_cfg, "video_path", None))
+        dataset_type = getattr(split_cfg, "type", None)
+        dataset_split = getattr(split_cfg, "split", None)
+        output_map = getattr(split_cfg, "output_map", ["data", "label"])
+        overlap_len = getattr(split_cfg, "overlap_len", 0)
+        feature_name = getattr(split_cfg, "features", encoder_params.get("encoder"))
+        framerate = getattr(
+            split_cfg,
+            "framerate",
+            sampling.get("framerate", self.data_cfg.extract_fps),
+        )
+        window_size = getattr(
+            split_cfg,
+            "window_size",
+            sampling.get("window_size", encoder_params.get("window_size")),
+        )
+        chunk_size = getattr(
+            split_cfg,
+            "chunk_size",
+            sampling.get("chunk_size", adapter_params.get("chunk_size")),
+        )
+        receptive_field = getattr(
+            split_cfg,
+            "receptive_field",
+            sampling.get("receptive_field", adapter_params.get("receptive_field")),
+        )
+        chunks_per_epoch = getattr(
+            split_cfg,
+            "chunks_per_epoch",
+            sampling.get("chunks_per_epoch", 6000),
+        )
+
+        # Keep a normalized split spec so runtime logic can stay canonical-first.
+        self.cfg = SimpleNamespace(
+            split_name=split,
+            dataset_type=dataset_type,
+            dataset_split=dataset_split,
+            annotation_path=annotation_path,
+            source_path=source_path,
+            classes=getattr(split_cfg, "classes", get_data_classes(self.config)),
+            dataloader=split_dataloader,
+            output_map=output_map,
+            overlap_len=overlap_len,
+            features=feature_name,
+            version=getattr(split_cfg, "version", 2),
+            framerate=framerate,
+            window_size=window_size,
+            chunk_size=chunk_size,
+            receptive_field=receptive_field,
+            chunks_per_epoch=chunks_per_epoch,
+            results=getattr(split_cfg, "results", None),
+            metric=getattr(split_cfg, "metric", None),
+            nms_window=getattr(split_cfg, "nms_window", None),
+            infer_split=getattr(split_cfg, "infer_split", None),
+            challenge=getattr(split_cfg, "challenge", None),
+            path=annotation_path,
+            video_path=source_path,
+            type=dataset_type,
+            split=dataset_split,
+        )
+
         if split == "train":
-            self.cfg = self.config.DATA.train
             self.default_args = get_default_args_dataset("train", self.config)
         elif split == "valid":
-            self.cfg = self.config.DATA.valid
             self.default_args = get_default_args_dataset("valid", self.config)
         elif split == "test":
-            self.cfg = self.config.DATA.test
             self.default_args = get_default_args_dataset("test", self.config)
         elif split == "valid_data_frames":
-            self.cfg = self.config.DATA.valid_data_frames
             self.default_args = get_default_args_dataset("valid_data_frames", self.config)
         #self.built_dataset = self.building_dataset(cfg=cfg, default_args=default_args)
         #self.data_loader = self.building_dataloader(self.built_dataset, cfg=cfg.dataloader, gpu=0, dali=True)
 
     
     def building_dataset(self, cfg, gpu=None, default_args=None):
-        if cfg.type == "SoccerNetClips" or cfg.type == "SoccerNetGames":
-            if cfg.split == None:
+        dataset_type = getattr(cfg, "dataset_type", getattr(cfg, "type", None))
+        dataset_split = getattr(cfg, "dataset_split", getattr(cfg, "split", None))
+        annotation_path = getattr(cfg, "annotation_path", getattr(cfg, "path", None))
+        source_path = getattr(cfg, "source_path", getattr(cfg, "video_path", None))
+
+        if dataset_type == "SoccerNetClips" or dataset_type == "SoccerNetGames":
+            if dataset_split is None:
                 dataset = SoccerNetGameClips(
-                    path=cfg.video_path,
+                    path=source_path,
                     features=cfg.features,
                     version=cfg.version,
                     framerate=cfg.framerate,
@@ -106,18 +222,18 @@ class LocalizationDataset(Dataset):
                 )
             else:
                 dataset = SoccerNetClips(
-                    path=cfg.video_path,
+                    path=source_path,
                     features=cfg.features,
-                    split=cfg.split,
+                    split=dataset_split,
                     version=cfg.version,
                     framerate=cfg.framerate,
                     window_size=cfg.window_size,
-                    train=True if cfg.type == "SoccerNetClips" else False,
+                    train=True if dataset_type == "SoccerNetClips" else False,
                 )
-        elif cfg.type == "SoccerNetClipsCALF" or cfg.type == "SoccerNetClipsTestingCALF":
-            if cfg.split == None:
+        elif dataset_type == "SoccerNetClipsCALF" or dataset_type == "SoccerNetClipsTestingCALF":
+            if dataset_split is None:
                 dataset = SoccerNetGameClipsChunks(
-                    path=cfg.video_path,
+                    path=source_path,
                     features=cfg.features,
                     framerate=cfg.framerate,
                     chunk_size=cfg.chunk_size,
@@ -125,40 +241,40 @@ class LocalizationDataset(Dataset):
                 )
             else:
                 dataset = SoccerNetClipsChunks(
-                    path=cfg.video_path,
+                    path=source_path,
                     features=cfg.features,
-                    split=cfg.split,
+                    split=dataset_split,
                     framerate=cfg.framerate,
                     chunk_size=cfg.chunk_size,
                     receptive_field=cfg.receptive_field,
                     chunks_per_epoch=cfg.chunks_per_epoch,
                     gpu=gpu,
-                    train=True if cfg.type == "SoccerNetClipsCALF" else False,
+                    train=True if dataset_type == "SoccerNetClipsCALF" else False,
                 )
-        elif cfg.type == "FeatureClipsfromJSON":
+        elif dataset_type == "FeatureClipsfromJSON":
             dataset = FeatureClipsfromJSON(
-                path=cfg.path,
-                features_dir=cfg.video_path,
+                path=annotation_path,
+                features_dir=source_path,
                 classes=cfg.classes,
                 framerate=cfg.framerate,
                 window_size=cfg.window_size,
             )
-        elif cfg.type == "FeatureVideosfromJSON":
+        elif dataset_type == "FeatureVideosfromJSON":
             dataset = FeatureClipsfromJSON(
-                path=cfg.path,
-                features_dir=cfg.video_path,
+                path=annotation_path,
+                features_dir=source_path,
                 classes=cfg.classes,
                 framerate=cfg.framerate,
                 window_size=cfg.window_size,
                 train=False,
             )
-            # dataset = FeatureVideosfromJSON(path=cfg.path,
+            # dataset = FeatureVideosfromJSON(path=annotation_path,
             #     framerate=cfg.framerate,
             #     window_size=cfg.window_size)
-        elif cfg.type == "FeatureClipChunksfromJson":
+        elif dataset_type == "FeatureClipChunksfromJson":
             dataset = FeatureClipChunksfromJson(
-                path=cfg.path,
-                features_dir=cfg.video_path,
+                path=annotation_path,
+                features_dir=source_path,
                 classes=cfg.classes,
                 framerate=cfg.framerate,
                 chunk_size=cfg.chunk_size,
@@ -166,10 +282,10 @@ class LocalizationDataset(Dataset):
                 chunks_per_epoch=cfg.chunks_per_epoch,
                 gpu=gpu,
             )
-        elif cfg.type == "FeatureVideosChunksfromJson":
+        elif dataset_type == "FeatureVideosChunksfromJson":
             dataset = FeatureClipChunksfromJson(
-                path=cfg.path,
-                features_dir=cfg.video_path,
+                path=annotation_path,
+                features_dir=source_path,
                 classes=cfg.classes,
                 framerate=cfg.framerate,
                 chunk_size=cfg.chunk_size,
@@ -178,101 +294,119 @@ class LocalizationDataset(Dataset):
                 gpu=gpu,
                 train=False,
             )
-        elif cfg.type == "VideoGameWithOpencv":
-            dataset_len = self.config.DATA.epoch_num_frames // self.config.DATA.clip_len
+        elif dataset_type == "VideoGameWithOpencv":
+            dataset_len = self.data_cfg.epoch_num_frames // self.data_cfg.clip_len
             dataset = ActionSpotDataset(
                 default_args["classes"],
-                cfg.path,
-                cfg.video_path,
-                self.config.DATA.modality,
-                self.config.DATA.clip_len,
-                self.config.DATA.input_fps,
-                self.config.DATA.extract_fps,
+                annotation_path,
+                source_path,
+                self.data_cfg.modality,
+                self.data_cfg.clip_len,
+                self.data_cfg.input_fps,
+                self.data_cfg.extract_fps,
                 dataset_len if default_args["train"] else dataset_len // 4,
                 is_eval=not default_args["train"],
-                crop_dim=self.config.DATA.crop_dim,
-                dilate_len=self.config.DATA.dilate_len,
-                mixup=self.config.DATA.mixup,
-                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
-                IMAGENET_STD=self.config.DATA.imagenet_std,
-                TARGET_HEIGHT=self.config.DATA.target_height,
-                TARGET_WIDTH=self.config.DATA.target_width,
+                crop_dim=self.data_cfg.crop_dim,
+                dilate_len=self.data_cfg.dilate_len,
+                mixup=self.data_cfg.mixup,
+                IMAGENET_MEAN=self.data_cfg.imagenet_mean,
+                IMAGENET_STD=self.data_cfg.imagenet_std,
+                TARGET_HEIGHT=self.data_cfg.target_height,
+                TARGET_WIDTH=self.data_cfg.target_width,
             )
-        elif cfg.type == "VideoGameWithOpencvVideo":
+        elif dataset_type == "VideoGameWithOpencvVideo":
             dataset = ActionSpotVideoDataset(
                 default_args["classes"],
-                cfg.path,
-                cfg.video_path,
-                self.config.DATA.modality,
-                self.config.DATA.clip_len,
-                self.config.DATA.input_fps,
-                self.config.DATA.extract_fps,
-                crop_dim=self.config.DATA.crop_dim,
-                overlap_len=getattr(cfg, "overlap_len", self.config.DATA.clip_len // 2),
-                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
-                IMAGENET_STD=self.config.DATA.imagenet_std,
-                TARGET_HEIGHT=self.config.DATA.target_height,
-                TARGET_WIDTH=self.config.DATA.target_width,
+                annotation_path,
+                source_path,
+                self.data_cfg.modality,
+                self.data_cfg.clip_len,
+                self.data_cfg.input_fps,
+                self.data_cfg.extract_fps,
+                crop_dim=self.data_cfg.crop_dim,
+                overlap_len=getattr(cfg, "overlap_len", self.data_cfg.clip_len // 2),
+                IMAGENET_MEAN=self.data_cfg.imagenet_mean,
+                IMAGENET_STD=self.data_cfg.imagenet_std,
+                TARGET_HEIGHT=self.data_cfg.target_height,
+                TARGET_WIDTH=self.data_cfg.target_width,
             )
-        elif cfg.type == "VideoGameWithDali":
+        elif dataset_type == "VideoGameWithDali":
             if not DALI_AVAILABLE:
                 raise ImportError(
                     "NVIDIA DALI is required. "
                     "Install it or use another dataset type."
                 )
-            loader_batch_size = cfg.dataloader.batch_size // default_args["acc_grad_iter"]
-            dataset_len = self.config.DATA.epoch_num_frames // self.config.DATA.clip_len
+            default_args = default_args or {}
+            acc_grad_iter = default_args.get(
+                "acc_grad_iter",
+                getattr(getattr(self.config.TRAIN, "execution", None), "acc_grad_iter", 1),
+            )
+            num_epochs = default_args.get("num_epochs", getattr(self.config.TRAIN, "epochs", 1))
+            repartitions = default_args.get(
+                "repartitions",
+                getattr(getattr(self.config.TRAIN, "execution", None), "repartitions", ([], [])),
+            )
+            classes = default_args.get("classes", get_data_classes(self.config))
+            is_train = default_args.get("train", self.split == "train")
+            loader_batch_size = cfg.dataloader.batch_size // acc_grad_iter
+            dataset_len = self.data_cfg.epoch_num_frames // self.data_cfg.clip_len
             dataset = DaliDataSet(
-                epochs=default_args["num_epochs"],
+                epochs=num_epochs,
                 batch_size=loader_batch_size,
                 output_map=cfg.output_map,
                 devices=(
-                    default_args["repartitions"][0]
-                    if default_args["train"]
-                    else default_args["repartitions"][1]
+                    repartitions[0]
+                    if is_train
+                    else repartitions[1]
                 ),
                 #devices=list(range(gpu)),
-                classes=default_args["classes"],
-                label_file=cfg.path,
-                modality=self.config.DATA.modality,
-                clip_len=self.config.DATA.clip_len,
-                dataset_len=dataset_len if default_args["train"] else dataset_len // 4,
-                video_dir=cfg.video_path,
-                input_fps=self.config.DATA.input_fps,
-                extract_fps=self.config.DATA.extract_fps,
-                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
-                IMAGENET_STD=self.config.DATA.imagenet_std,
-                TARGET_HEIGHT=self.config.DATA.target_height,
-                TARGET_WIDTH=self.config.DATA.target_width,
-                is_eval=False if default_args["train"] else True,
-                crop_dim=self.config.DATA.crop_dim,
-                dilate_len=self.config.DATA.dilate_len,
-                mixup=self.config.DATA.mixup,
+                classes=classes,
+                label_file=annotation_path,
+                modality=self.data_cfg.modality,
+                clip_len=self.data_cfg.clip_len,
+                dataset_len=dataset_len if is_train else dataset_len // 4,
+                video_dir=source_path,
+                input_fps=self.data_cfg.input_fps,
+                extract_fps=self.data_cfg.extract_fps,
+                IMAGENET_MEAN=self.data_cfg.imagenet_mean,
+                IMAGENET_STD=self.data_cfg.imagenet_std,
+                TARGET_HEIGHT=self.data_cfg.target_height,
+                TARGET_WIDTH=self.data_cfg.target_width,
+                is_eval=not is_train,
+                crop_dim=self.data_cfg.crop_dim,
+                dilate_len=self.data_cfg.dilate_len,
+                mixup=self.data_cfg.mixup,
             )
-        elif cfg.type == "VideoGameWithDaliVideo":
+        elif dataset_type == "VideoGameWithDaliVideo":
             if not DALI_AVAILABLE:
                 raise ImportError(
                     "NVIDIA DALI is required. "
                     "Install it or use another dataset type."
                 )
+            default_args = default_args or {}
+            repartitions = default_args.get(
+                "repartitions",
+                getattr(getattr(self.config.TRAIN, "execution", None), "repartitions", ([], [])),
+            )
+            classes = default_args.get("classes", get_data_classes(self.config))
             dataset = DaliDataSetVideo(
                 batch_size=cfg.dataloader.batch_size,
                 output_map=cfg.output_map,
                 #devices=list(range(gpu)),
-                devices=default_args["repartitions"][1],
-                classes=default_args["classes"],
-                label_file=cfg.path,
-                modality=self.config.DATA.modality,
-                clip_len=self.config.DATA.clip_len,
-                video_dir=cfg.video_path,
-                input_fps=self.config.DATA.input_fps,
-                extract_fps=self.config.DATA.extract_fps,
-                IMAGENET_MEAN=self.config.DATA.imagenet_mean,
-                IMAGENET_STD=self.config.DATA.imagenet_std,
-                TARGET_HEIGHT=self.config.DATA.target_height,
-                TARGET_WIDTH=self.config.DATA.target_width,
+                devices=repartitions[1],
+                classes=classes,
+                label_file=annotation_path,
+                modality=self.data_cfg.modality,
+                clip_len=self.data_cfg.clip_len,
+                video_dir=source_path,
+                input_fps=self.data_cfg.input_fps,
+                extract_fps=self.data_cfg.extract_fps,
+                IMAGENET_MEAN=self.data_cfg.imagenet_mean,
+                IMAGENET_STD=self.data_cfg.imagenet_std,
+                TARGET_HEIGHT=self.data_cfg.target_height,
+                TARGET_WIDTH=self.data_cfg.target_width,
                 overlap_len=cfg.overlap_len,
-                crop_dim=self.config.DATA.crop_dim,
+                crop_dim=self.data_cfg.crop_dim,
             )
         else:
             dataset = None
@@ -516,7 +650,7 @@ class ActionSpotDataset(Dataset):
             label_file, video_dir, input_fps, extract_fps, False
         )
         # self._labels = load_json(label_file)
-        self._class_dict = classes
+        self._class_dict = _normalize_class_dict(classes)
         self._video_idxs = {x["video"]: i for i, x in enumerate(self._labels)}
         # Sample videos weighted by their length
         num_frames = [v["num_frames"] for v in self._labels]
@@ -833,7 +967,7 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
         else:
             self._labels, _ = construct_labels(label_file, extract_fps)
         # self._labels = load_json(label_file)
-        self._class_dict = classes
+        self._class_dict = _normalize_class_dict(classes)
         self._video_idxs = {x["path"]: i for i, x in enumerate(self._labels)}
         self._clip_len = clip_len
         stride = 1
@@ -978,7 +1112,7 @@ if DALI_AVAILABLE:
             self._labels, self.task_name = annotationstoe2eformat(
                 label_file, video_dir, input_fps, extract_fps, True
             )
-            self._class_dict = classes
+            self._class_dict = _normalize_class_dict(classes)
             self.original_batch_size = batch_size
 
             if mixup:
@@ -1366,7 +1500,7 @@ if DALI_AVAILABLE:
                 # self.infer = True
                 self._labels, stride_dali = construct_labels(label_file, extract_fps)
             # self._labels = self._labels[:3]
-            self._class_dict = classes
+            self._class_dict = _normalize_class_dict(classes)
             self._video_idxs = {x["path"]: i for i, x in enumerate(self._labels)}
             self._clip_len = clip_len
             self.crop_dim = crop_dim
@@ -2754,4 +2888,4 @@ class SoccerNetClipsChunks(SoccerNet):
         return self.label_half1, self.label_half2
     
 if __name__ == "__main__":
-    LocalizationDataset(config="/home/vorajv/opensportslib-ml/opensportslib/opensportslib/config/localization.yaml")
+    LocalizationDataset(config="opensportslib/configs/localization/default.yaml")

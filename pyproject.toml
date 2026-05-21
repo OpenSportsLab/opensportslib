@@ -20,7 +20,7 @@ opensportslib = "opensportslib.cli:main"
 
 [tool.setuptools.package-data]
 opensportslib = [
-    "config/*.yaml",
+    "legacy_config/*.yaml",
     "configs/**/*.yaml",
 ]
 

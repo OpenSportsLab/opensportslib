@@ -4,18 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from .migrations.v1_to_v3 import migrate_v1_to_v3
+from .migrations.legacy_to_canonical import migrate_legacy_to_canonical
 from .runtime_adapter import maybe_namespace, namespace_to_plain_dict
-from .schemas.schema_v1 import is_schema_v1
-from .schemas.schema_v3 import is_schema_v3
+from .schemas.schema_canonical import is_canonical_schema
+from .schemas.schema_legacy import is_legacy_schema
 
 
 def migrate_config(config: Any, *, as_namespace: bool = False) -> Any:
     payload = namespace_to_plain_dict(config)
-    if is_schema_v3(payload):
+    if is_canonical_schema(payload):
         migrated = payload
-    elif is_schema_v1(payload):
-        migrated = migrate_v1_to_v3(payload)
+    elif is_legacy_schema(payload):
+        migrated = migrate_legacy_to_canonical(payload)
     else:
-        raise ValueError("Unsupported config version. Only v1 input and canonical VERSION: 3 are supported.")
+        raise ValueError("Unsupported config schema. Only legacy input and canonical schema are supported.")
     return maybe_namespace(migrated, as_namespace=as_namespace)
+
