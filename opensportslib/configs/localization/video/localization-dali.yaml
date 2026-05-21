@@ -1,5 +1,5 @@
 TASK: localization
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -36,7 +36,7 @@ DATA:
     splits:
       train:
         type: VideoGameWithDali
-        annotation_path: ${DATA.common.data_root}/train/annotations-2024-224p-train.json
+        annotation_path: ${DATA.common.data_root}/train/annotations-train.json
         source_path: ${DATA.common.data_root}/train/
         output_map: [data, label]
         dataloader:
@@ -46,7 +46,7 @@ DATA:
           pin_memory: true
       valid:
         type: VideoGameWithDali
-        annotation_path: ${DATA.common.data_root}/valid/annotations-2024-224p-valid.json
+        annotation_path: ${DATA.common.data_root}/valid/annotations-valid.json
         source_path: ${DATA.common.data_root}/valid/
         output_map: [data, label]
         dataloader:
@@ -63,7 +63,7 @@ DATA:
           shuffle: false
       test:
         type: VideoGameWithDaliVideo
-        annotation_path: ${DATA.common.data_root}/test/annotations-2024-224p-test.json
+        annotation_path: ${DATA.common.data_root}/test/an-test.json
         source_path: ${DATA.common.data_root}/test/
         output_map: [data, label]
         results: results_spotting_test
@@ -107,7 +107,6 @@ DATA:
         dilate_len: 0
 
 MODEL:
-  schema_version: 3
   metadata: 
     family: E2E
     runner: 

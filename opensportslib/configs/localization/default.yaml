@@ -1,5 +1,5 @@
 TASK: localization
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -74,8 +74,6 @@ DATA:
         dilate_len: 0
 
 MODEL:
-  schema_version: 3
-  task: localization
   runtime:
     dtype: fp32
     device: auto

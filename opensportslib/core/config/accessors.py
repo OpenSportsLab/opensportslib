@@ -30,6 +30,25 @@ def _as_dict(obj: Any) -> dict[str, Any]:
     return {}
 
 
+def _ensure_child(container: Any, key: str) -> Any:
+    """Ensure a nested child container exists and return it.
+
+    Supports dict and namespace-like objects.
+    """
+    if isinstance(container, dict):
+        child = container.get(key)
+        if child is None:
+            child = {}
+            container[key] = child
+        return child
+
+    child = getattr(container, key, None)
+    if child is None:
+        child = SimpleNamespace()
+        setattr(container, key, child)
+    return child
+
+
 def get_loader_backend(cfg: Any) -> str:
     data = _as_dict(getattr(cfg, "DATA", None))
     common = _as_dict(data.get("common"))
@@ -69,12 +88,16 @@ def get_system_use_seed(cfg: Any, default: bool = False) -> bool:
 
 
 def set_system_path(cfg: Any, key: str, value: str) -> None:
-    system = _as_dict(getattr(cfg, "SYSTEM", None))
-    paths = _as_dict(system.get("paths"))
-    if paths:
+    system = getattr(cfg, "SYSTEM", None)
+    if system is None:
+        system = SimpleNamespace()
+        setattr(cfg, "SYSTEM", system)
+
+    paths = _ensure_child(system, "paths")
+    if isinstance(paths, dict):
         paths[key] = value
-        return
-    system[key] = value
+    else:
+        setattr(paths, key, value)
 
 
 def is_dali_backend(cfg: Any) -> bool:
@@ -114,12 +137,19 @@ def get_split_result_name(cfg: Any, split: str) -> str | None:
 
 
 def set_split_annotation_path(cfg: Any, split: str, path: str) -> None:
-    data = _as_dict(getattr(cfg, "DATA", None))
-    common = _as_dict(data.get("common"))
-    splits = _as_dict(common.get("splits"))
-    if split not in splits or not isinstance(splits.get(split), dict):
-        splits[split] = {}
-    splits[split]["annotation_path"] = path
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    splits = _ensure_child(common, "splits")
+    split_cfg = _ensure_child(splits, split)
+
+    if isinstance(split_cfg, dict):
+        split_cfg["annotation_path"] = path
+    else:
+        setattr(split_cfg, "annotation_path", path)
 
 
 def get_split_source_path(cfg: Any, split: str) -> str | None:
@@ -159,9 +189,16 @@ def get_data_num_classes(cfg: Any, default: int = 0) -> int:
 
 
 def set_data_classes(cfg: Any, classes: list[str]) -> None:
-    data = _as_dict(getattr(cfg, "DATA", None))
-    common = _as_dict(data.get("common"))
-    common["classes"] = list(classes)
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    if isinstance(common, dict):
+        common["classes"] = list(classes)
+    else:
+        setattr(common, "classes", list(classes))
 
 
 def get_input_cfg(cfg: Any, input_name: str | None = None) -> dict[str, Any]:
@@ -324,9 +361,7 @@ def get_runner_type(cfg: Any) -> str:
     metadata = _as_dict(model.get("metadata"))
     runner = _as_dict(metadata.get("runner"))
     runner_type = runner.get("type")
-    print(runner_type)
     if runner_type:
-        print(runner_type)
         return str(runner_type)
 
     trainer_type = get_train_trainer_type(cfg).lower()

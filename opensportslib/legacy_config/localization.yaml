@@ -4,7 +4,7 @@ dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/giancos/datasets/OpenSportsLab/OSL-SNBAS/224p-2024/
+  data_dir: /home/vorajv/dataset/BAS
   classes:
     - PASS
     - DRIVE
@@ -36,7 +36,7 @@ DATA:
     type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/train/
+    video_path: ${DATA.data_dir}/train
     path: ${DATA.train.video_path}/train.json
     dataloader:
       batch_size: 8
@@ -48,7 +48,7 @@ DATA:
     type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/valid/
+    video_path: ${DATA.data_dir}/valid
     path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 8
@@ -73,7 +73,7 @@ DATA:
     type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
-    video_path: ${DATA.data_dir}/test/
+    video_path: ${DATA.data_dir}/test
     path: ${DATA.test.video_path}/test.json
     results: results_spotting_test
     nms_window: 2 
@@ -100,8 +100,8 @@ MODEL:
       type: rny008_gsm
     head:
       type: gru
-    multi_gpu: true
     load_weights: null
+    multi_gpu: true
 
 TRAIN:
   type: trainer_e2e
@@ -133,4 +133,3 @@ SYSTEM:
   GPU: 4         # number of gpus to use
   device: cuda   # auto | cuda | cpu
   gpu_id: 0      # device id for single gpu training
-

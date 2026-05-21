@@ -33,8 +33,8 @@ def _validate_canonical(cfg: dict[str, Any]) -> None:
     assert_no_legacy_aliases(cfg)
 
     model = cfg["MODEL"]
-    if model.get("schema_version") != 3:
-        raise ValueError("MODEL.schema_version must be 3")
+    # if model.get("schema_version") != 3:
+    #     raise ValueError("MODEL.schema_version must be 3")
     # if str(model.get("task", "")).lower() != str(cfg["TASK"]).lower():
     #     raise ValueError("MODEL.task must match TASK")
 

@@ -4,7 +4,7 @@ dali: false
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/opensportslib/SoccerNet/
+  data_dir: /home/vorajv/dataset/SNAS-ResNET_PCA512
   classes:
     - Penalty
     - Kick-off

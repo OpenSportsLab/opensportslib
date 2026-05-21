@@ -782,13 +782,16 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
-        if cfg.path is None:
+        gt_path = getattr(cfg, "annotation_path", None)
+        if gt_path is None:
+            gt_path = getattr(cfg, "path", None)
+        if gt_path is None:
             return
 
         # --------------------------------------------------
         # LOAD GT
         # --------------------------------------------------
-        with open(cfg.path, encoding="utf-8") as f:
+        with open(gt_path, encoding="utf-8") as f:
             GT_data = json.load(f)
 
         # --------------------------------------------------

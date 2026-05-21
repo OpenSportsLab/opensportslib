@@ -4,7 +4,7 @@ dali: false
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
+  data_dir: /home/vorajv/dataset/BAS
   classes:
     - PASS
     - DRIVE

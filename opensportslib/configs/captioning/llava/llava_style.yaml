@@ -1,5 +1,5 @@
 TASK: captioning
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -68,8 +68,6 @@ DATA:
       params: {}
 
 MODEL:
-  schema_version: 3
-  task: captioning
   runtime:
     dtype: bf16
     device: auto

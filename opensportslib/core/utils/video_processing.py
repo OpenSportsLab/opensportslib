@@ -232,7 +232,8 @@ def _get_img_transforms(
     import torch.nn as nn
 
     crop_transform = None
-    if crop_dim is not None:
+    # Legacy configs often use -1 to disable cropping.
+    if crop_dim is not None and crop_dim > 0:
         if multi_crop:
             assert is_eval
             crop_transform = ThreeCrop(crop_dim)
@@ -906,4 +907,3 @@ def batch2long(output_segmentation, video_size, chunk_size, receptive_field):
 #         T.Resize(frame_size),
 #         T.Normalize(mean, std),
 #     ])
-

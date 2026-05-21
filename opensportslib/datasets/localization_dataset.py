@@ -15,8 +15,8 @@ from opensportslib.core.utils.video_processing import feats2clip, getChunks_anch
 from opensportslib.core.config.accessors import (
     get_component_params_by_kind,
     get_data_classes,
-    get_data_modality,
     get_data_params,
+    get_runtime_modality,
     get_data_sampling,
     get_data_transform,
     get_split_cfg,
@@ -116,7 +116,7 @@ class LocalizationDataset(Dataset):
         split_cfg = get_split_cfg(self.config, split)
         split_dataloader = get_split_dataloader_cfg(self.config, split)
         self.data_cfg = SimpleNamespace(
-            modality=get_data_modality(self.config),
+            modality=get_runtime_modality(self.config),
             epoch_num_frames=sampling.get("epoch_num_frames"),
             clip_len=sampling.get("clip_len"),
             input_fps=sampling.get("input_fps"),
@@ -1377,7 +1377,9 @@ if DALI_AVAILABLE:
                     video,
                     dtype=types.FLOAT,
                     # crop = self.crop_dim,
-                    crop=(self.crop_dim, self.crop_dim) if self.crop_dim != None else None,
+                    crop=(self.crop_dim, self.crop_dim)
+                    if self.crop_dim is not None and self.crop_dim > 0
+                    else None,
                     out_of_bounds_policy="trim_to_shape",
                     output_layout="FCHW",
                     mean=[self.IMAGENET_MEAN[i] * 255.0 for i in range(len(self.IMAGENET_MEAN))],
@@ -1389,7 +1391,9 @@ if DALI_AVAILABLE:
                     dtype=types.FLOAT,
                     output_layout="FCHW",
                     # crop = self.crop_dim,
-                    crop=(self.crop_dim, self.crop_dim) if self.crop_dim != None else None,
+                    crop=(self.crop_dim, self.crop_dim)
+                    if self.crop_dim is not None and self.crop_dim > 0
+                    else None,
                     out_of_bounds_policy="trim_to_shape",
                     # crop_w=self.crop_dim, crop_h=self.crop_dim,
                     std=[255, 255, 255],
@@ -1633,7 +1637,9 @@ if DALI_AVAILABLE:
                 video,
                 dtype=types.FLOAT,
                 output_layout="FCHW",
-                crop=(self.crop_dim, self.crop_dim) if self.crop_dim != None else None,
+                crop=(self.crop_dim, self.crop_dim)
+                if self.crop_dim is not None and self.crop_dim > 0
+                else None,
                 out_of_bounds_policy="trim_to_shape",
                 mean=[self.IMAGENET_MEAN[i] * 255.0 for i in range(len(self.IMAGENET_MEAN))],
                 std=[self.IMAGENET_STD[i] * 255.0 for i in range(len(self.IMAGENET_STD))],

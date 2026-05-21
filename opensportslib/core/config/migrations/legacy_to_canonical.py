@@ -16,7 +16,7 @@ def migrate_legacy_to_canonical(payload: dict[str, Any]) -> dict[str, Any]:
     system = _migrate_system(cfg.get("SYSTEM", {}))
     data = _migrate_data(cfg.get("DATA", {}), task, cfg.get("dali"))
     model = _migrate_model(cfg.get("MODEL", {}), data, task)
-    train = _migrate_train(cfg.get("TRAIN", {}), task)
+    train = _migrate_train(cfg.get("TRAIN", {}), task, cfg.get("MODEL", {}))
     io = _build_io(model, data)
 
     migrated = {
@@ -274,26 +274,32 @@ def _migrate_model(model: dict[str, Any], data: dict[str, Any], task: str) -> di
     }
 
 
-def _migrate_train(train: dict[str, Any], task: str) -> dict[str, Any]:
+def _migrate_train(
+    train: dict[str, Any], task: str, model: dict[str, Any] | None = None
+) -> dict[str, Any]:
     epochs = train.get("epochs", train.get("num_epochs", train.get("max_epochs", 1)))
+    execution = _pick_keys(
+        train,
+        "enabled",
+        "log_interval",
+        "multi_gpu",
+        "acc_grad_iter",
+        "evaluation_frequency",
+        "base_num_valid_epochs",
+        "start_valid_epoch",
+        "valid_map_every",
+        "criterion_valid",
+    )
+    if "multi_gpu" not in execution and isinstance(model, dict) and "multi_gpu" in model:
+        execution["multi_gpu"] = bool(model.get("multi_gpu"))
+
     return {
         "trainer": {"type": train.get("type", task)},
         "epochs": epochs,
         "criterion": deepcopy(train.get("criterion", {"type": "CrossEntropyLoss"})),
         "optimizer": deepcopy(train.get("optimizer", {})),
         "scheduler": deepcopy(train.get("scheduler", {})),
-        "execution": _pick_keys(
-            train,
-            "enabled",
-            "log_interval",
-            "multi_gpu",
-            "acc_grad_iter",
-            "evaluation_frequency",
-            "base_num_valid_epochs",
-            "start_valid_epoch",
-            "valid_map_every",
-            "criterion_valid",
-        ),
+        "execution": execution,
         "sampling": _pick_keys(train, "use_weighted_sampler", "use_weighted_loss", "batch_size"),
         "selection": {
             "monitor": train.get("criterion_valid", "loss"),

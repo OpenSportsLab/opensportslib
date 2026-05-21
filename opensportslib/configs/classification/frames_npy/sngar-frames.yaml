@@ -1,5 +1,5 @@
 TASK: classification
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -69,8 +69,6 @@ DATA:
           training_matches: 45
 
 MODEL:
-  schema_version: 3
-  task: classification
   runtime:
     dtype: fp32
     device: auto

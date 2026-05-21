@@ -1,5 +1,5 @@
 TASK: retrieval
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -70,8 +70,6 @@ DATA:
       params: {}
 
 MODEL:
-  schema_version: 3
-  task: retrieval
   runtime:
     dtype: fp32
     device: auto

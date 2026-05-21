@@ -1,5 +1,5 @@
 TASK: localization
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -87,8 +87,10 @@ DATA:
       params: {}
 
 MODEL:
-  schema_version: 3
-  task: localization
+  metadata: 
+    family: ContextAware
+    runner: 
+      type: runner_JSON
   runtime:
     dtype: fp32
     device: auto

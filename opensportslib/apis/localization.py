@@ -159,6 +159,9 @@ class LocalizationModel(BaseTaskModel):
         valid_set = self._resolve_split_path("valid", valid_set)
         self._set_split_path("train", train_set)
         self._set_split_path("valid", valid_set)
+        # E2E validation mAP uses the `valid_data_frames` split; keep it in sync
+        # with explicit valid annotation overrides.
+        self._set_split_path("valid_data_frames", valid_set)
         
         self.config = resolve_config_omega(self.config, weights=weights)
         check_config(self.config, split="train")

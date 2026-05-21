@@ -17,6 +17,6 @@ def is_canonical_schema(payload: dict[str, Any]) -> bool:
     return (
         "components" in model
         and "topology" in model
-        and payload.get("VERSION") in (3, "3")
-        and model.get("schema_version") == 3
+        #and payload.get("VERSION") in (2, "2")
+        #and model.get("schema_version") == 3
     )

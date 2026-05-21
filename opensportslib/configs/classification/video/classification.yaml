@@ -1,5 +1,5 @@
 TASK: classification
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -92,8 +92,6 @@ DATA:
         num_classes: 8
 
 MODEL:
-  schema_version: 3
-  task: classification
   runtime:
     dtype: fp32
     device: auto
