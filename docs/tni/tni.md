@@ -12,22 +12,13 @@ For full key-by-key config documentation and Python-only override workflow, see 
 ---
 ## Configuration Sample (.yaml) file
 
-<<<<<<< HEAD
-The examples below are included directly from the latest canonical YAML files in
-`opensportslib/configs/`, so the documentation stays aligned with the runnable
-configs.
-=======
 The snippets below show the main structure of the runnable configs in
 `opensportslib/config/`. Use the source files when you need the complete
 experiment defaults.
->>>>>>> dev
 
 ### 1. Classification
 
 ```yaml
-<<<<<<< HEAD
---8<-- "opensportslib/configs/classification/video/classification.yaml"
-=======
 TASK: classification
 
 DATA:
@@ -83,15 +74,11 @@ SYSTEM:
   save_dir: ./checkpoints
   device: cuda
   GPU: 4
->>>>>>> dev
 ```
 
 ### 2. Classification (Tracking)
 
 ```yaml
-<<<<<<< HEAD
---8<-- "opensportslib/configs/classification/tracking/sngar-tracking.yaml"
-=======
 TASK: classification
 
 DATA:
@@ -151,15 +138,11 @@ SYSTEM:
   save_dir: ./checkpoints_tracking
   device: cuda
   GPU: 1
->>>>>>> dev
 ```
 
 ### 3. Localization
 
 ```yaml
-<<<<<<< HEAD
---8<-- "opensportslib/configs/localization/video/localization-ocv.yaml"
-=======
 TASK: localization
 dali: true
 
@@ -233,7 +216,6 @@ SYSTEM:
   work_dir: ${SYSTEM.save_dir}
   device: cuda
   GPU: 4
->>>>>>> dev
 ```
 
 ## Annotations (train/valid/test) JSON Format
