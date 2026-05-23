@@ -314,10 +314,17 @@ class BaseTrainerClassification:
 
             # ---------------- CHECKPOINT ----------------
             current = val_loss if monitor == "loss" else val_metrics.get(monitor, 0)
+            if dist.is_initialized():
+                current_tensor = torch.tensor(
+                    [float(current if self.rank == 0 else 0.0)],
+                    device=self.device,
+                )
+                dist.broadcast(current_tensor, src=0)
+                current = current_tensor.item()
 
             is_better = current > best_metric if mode == "max" else current < best_metric
 
-            if is_better and self.rank == 0:
+            if is_better:
                 best_metric = current
                 self.best_metric = best_metric
 
@@ -327,13 +334,14 @@ class BaseTrainerClassification:
                         for k, v in self.model.state_dict().items()
                     }
 
-                best_path = self._save_checkpoint("best", epoch + 1, tag="best")
-                self.best_checkpoint_path = best_path
+                if self.rank == 0:
+                    best_path = self._save_checkpoint("best", epoch + 1, tag="best")
+                    self.best_checkpoint_path = best_path
 
-                if wandb.run is not None:
-                    artifact = wandb.Artifact("model-checkpoint", type="model")
-                    artifact.add_file(best_path)
-                    wandb.log_artifact(artifact)
+                    if wandb.run is not None:
+                        artifact = wandb.Artifact("model-checkpoint", type="model")
+                        artifact.add_file(best_path)
+                        wandb.log_artifact(artifact)
             
         if self.rank == 0:
             logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
@@ -469,8 +477,20 @@ class BaseTrainerClassification:
         else:
             all_labels = np.zeros((0,))
 
+        avg_loss = total_loss / max(1, total_batches)
+
         # --- DDP gather (handles uneven shard sizes) ---
         if dist.is_initialized():
+            loss_stats = torch.tensor(
+                [total_loss, total_batches],
+                dtype=torch.float64,
+                device=self.device,
+            )
+            dist.all_reduce(loss_stats, op=dist.ReduceOp.SUM)
+            avg_loss = (
+                loss_stats[0] / torch.clamp(loss_stats[1], min=1.0)
+            ).item()
+
             gathered = [None for _ in range(dist.get_world_size())]
             dist.all_gather_object(gathered, (all_logits, all_labels, results))
 
@@ -480,7 +500,7 @@ class BaseTrainerClassification:
                 results = [r for g in gathered for r in g[2]]
             else:
                 self.predictions_payload = None
-                return None, None, 0.0, {}
+                return None, None, avg_loss, {}
 
         # --- metrics (rank-0 only in DDP) ---
         if len(all_labels) > 0:
@@ -533,7 +553,7 @@ class BaseTrainerClassification:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
 
-        return all_logits, all_labels, total_loss / max(1, total_batches), metrics
+        return all_logits, all_labels, avg_loss, metrics
 
 
     # -- checkpoint saving ---------------------------------------

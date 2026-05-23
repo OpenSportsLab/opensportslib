@@ -57,7 +57,7 @@ def build(config, annotations_path, processor=None, split="train"):
     """
     modality = get_data_modality(config).lower()
 
-    if modality == "tracking_parquet":
+    if modality in ("tracking", "tracking_parquet"):
         return TrackingDataset(config, annotations_path, split)
     elif modality in ("video", "frames_npy"):
         return VideoDataset(config, annotations_path, processor, split)

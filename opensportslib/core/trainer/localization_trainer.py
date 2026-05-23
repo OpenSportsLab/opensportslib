@@ -448,8 +448,13 @@ class Trainer_e2e(Trainer):
             # elif split == "challenge":
             #     cfg_tmp = self.cfg_challenge
 
-            split_path = os.path.join(cfg_tmp.path)
-            if not os.path.exists(split_path):
+            if cfg_tmp is None:
+                continue
+
+            split_path = getattr(cfg_tmp, "path", None)
+            if split_path is None:
+                split_path = getattr(cfg_tmp, "annotation_path", None)
+            if split_path is None or not os.path.exists(split_path):
                 continue
 
             data_obj = build_dataset(self.config, split=split)

@@ -7,7 +7,7 @@ SYSTEM:
     save_dir: ./checkpoints_tracking
   device: cuda
   gpu:
-    count: 1
+    count: 4
     id: 0
   reproducibility:
     use_seed: true
@@ -16,14 +16,14 @@ SYSTEM:
 DATA:
   common:
     dataset_name: sngar
-    data_root: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/tracking-parquet
+    data_root: /home/vorajv/dataset/sngar-tracking
     runtime:
       loader_backend: opencv
     splits:
       train:
         type: annotations_train.json
         annotation_path: ${DATA.common.splits.train.source_path}/train.json
-        source_path: ${DATA.common.data_root}/train
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: true
@@ -32,7 +32,7 @@ DATA:
       valid:
         type: annotations_valid.json
         annotation_path: ${DATA.common.splits.valid.source_path}/valid.json
-        source_path: ${DATA.common.data_root}/valid
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: false
@@ -41,7 +41,7 @@ DATA:
       test:
         type: annotations_test.json
         annotation_path: ${DATA.common.splits.test.source_path}/test.json
-        source_path: ${DATA.common.data_root}/test
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: false
@@ -49,7 +49,7 @@ DATA:
           pin_memory: true
   inputs:
     tracking:
-      modality: tracking
+      modality: tracking_parquet
       representation: raw
       source:
         format: parquet
