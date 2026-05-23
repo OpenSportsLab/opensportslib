@@ -8,6 +8,7 @@ import os
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.core.config.accessors import (
     get_component_provider_by_kind,
+    get_data_modality,
     get_split_annotation_path,
     get_system_gpu_count,
     get_system_seed,
@@ -96,32 +97,42 @@ class ClassificationModel(BaseTaskModel):
 
         trainer.model = model
 
-        if mode == "train":
-            train_data = build_dataset(config, train_set, processor, split="train")
-            valid_data = build_dataset(config, valid_set, processor, split="valid")
-            best_ckpt = trainer.train(
-                model,
-                train_data,
-                valid_data,
-                rank=rank,
-                world_size=world_size,
-            )
-            if rank == 0 and return_queue is not None:
-                best_ckpt = best_ckpt or getattr(trainer.trainer, "best_checkpoint_path", None)
-                return_queue.put(best_ckpt)
+        modality = get_data_modality(config)
+        use_tracking_collate = modality in {"tracking", "tracking_parquet"}
+        logging.info(
+            "Worker setup | mode=%s | modality=%s | tracking_collate=%s",
+            mode,
+            modality,
+            use_tracking_collate,
+        )
 
-        elif mode == "infer":
-            test_data = build_dataset(config, test_set, processor, split="test")
-            predictions = trainer.infer(
-                test_data,
-                rank=rank,
-                world_size=world_size,
-            )
-            if rank == 0 and return_queue is not None:
-                return_queue.put(predictions)
+        try:
+            if mode == "train":
+                train_data = build_dataset(config, train_set, processor, split="train")
+                valid_data = build_dataset(config, valid_set, processor, split="valid")
+                best_ckpt = trainer.train(
+                    model,
+                    train_data,
+                    valid_data,
+                    rank=rank,
+                    world_size=world_size,
+                )
+                if rank == 0 and return_queue is not None:
+                    best_ckpt = best_ckpt or getattr(trainer.trainer, "best_checkpoint_path", None)
+                    return_queue.put(best_ckpt)
 
-        if is_ddp:
-            ddp_cleanup()
+            elif mode == "infer":
+                test_data = build_dataset(config, test_set, processor, split="test")
+                predictions = trainer.infer(
+                    test_data,
+                    rank=rank,
+                    world_size=world_size,
+                )
+                if rank == 0 and return_queue is not None:
+                    return_queue.put(predictions)
+        finally:
+            if is_ddp:
+                ddp_cleanup()
 
     def load_weights(
         self,

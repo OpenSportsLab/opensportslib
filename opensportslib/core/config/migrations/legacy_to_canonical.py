@@ -180,6 +180,22 @@ def _migrate_model(model: dict[str, Any], data: dict[str, Any], task: str) -> di
 
     encoder_name = _infer_encoder_component_name(model, data, task)
     backbone = deepcopy(model.get("backbone", {}))
+
+    # Legacy tracking configs often store graph edge settings at MODEL level
+    # (edge/k/r) rather than inside MODEL.backbone. Preserve those values by
+    # projecting them into encoder params during migration.
+    if encoder_name == "tracking_encoder":
+        if backbone.get("edge_type") is None and model.get("edge") is not None:
+            backbone["edge_type"] = model.get("edge")
+        if backbone.get("k") is None and model.get("k") is not None:
+            backbone["k"] = model.get("k")
+        if (
+            backbone.get("radius") is None
+            and backbone.get("r") is None
+            and model.get("r") is not None
+        ):
+            backbone["radius"] = model.get("r")
+
     if backbone:
         components[encoder_name] = {
             "kind": "encoder",
@@ -385,6 +401,17 @@ def _infer_source_format(data: dict[str, Any], input_name: str) -> str:
 
 
 def _infer_encoder_component_name(model: dict[str, Any], data: dict[str, Any], task: str) -> str:
+    # When called from _migrate_model, `data` is already canonical and carries
+    # modality under DATA.inputs. Handle that shape first.
+    inputs = data.get("inputs", {})
+    if isinstance(inputs, dict):
+        if "tracking" in inputs:
+            return "tracking_encoder"
+        if "features" in inputs:
+            return "feature_encoder"
+        if inputs:
+            return "video_encoder"
+
     input_name = _infer_input_name(data, task)
     if input_name == "tracking":
         return "tracking_encoder"

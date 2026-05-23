@@ -7,7 +7,7 @@ SYSTEM:
     save_dir: ./checkpoints_video
   device: cuda
   gpu:
-    count: 1
+    count: 4
     id: 0
   reproducibility:
     use_seed: true
@@ -16,13 +16,13 @@ SYSTEM:
 DATA:
   common:
     dataset_name: sngar
-    data_root: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/frames-parquet
+    data_root: /home/vorajv/dataset/sngar-frames
     runtime:
       loader_backend: opencv
     splits:
       train:
         annotation_path: ${DATA.common.data_root}/train.json
-        source_path: ${DATA.common.data_root}/train
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 8
           shuffle: true
@@ -30,7 +30,7 @@ DATA:
           pin_memory: true
       valid:
         annotation_path: ${DATA.common.data_root}/valid.json
-        source_path: ${DATA.common.data_root}/valid
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 8
           shuffle: false
@@ -38,7 +38,7 @@ DATA:
           pin_memory: true
       test:
         annotation_path: ${DATA.common.data_root}/test.json
-        source_path: ${DATA.common.data_root}/test
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 8
           shuffle: false

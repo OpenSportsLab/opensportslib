@@ -109,11 +109,15 @@ class ClassificationDataset(Dataset):
         if slicing_cfg and slicing_cfg.get("enabled", False) and split == "train":
             max_games = slicing_cfg.get("training_matches")
 
+        annotation_input_type = get_data_modality(config)
+        if str(annotation_input_type).lower() == "tracking":
+            annotation_input_type = "tracking_parquet"
+
         self.samples, self.label_map = load_annotations(
             annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
-            input_type=get_data_modality(config),
+            input_type=annotation_input_type,
             allow_missing_labels=allow_missing_labels,
             max_games=max_games
         )
@@ -139,6 +143,44 @@ class ClassificationDataset(Dataset):
         self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
 
     # -- Sampling / loss weights ------------------------------------------
+
+    def _normalized_label_tensor(self):
+        """Return labels as validated torch.long class ids."""
+        normalized_labels = []
+
+        for idx, item in enumerate(self.samples):
+            if "label" not in item or item["label"] is None:
+                raise ValueError(
+                    f"Missing label for sample index {idx}; cannot compute class weights."
+                )
+
+            label = item["label"]
+
+            if isinstance(label, torch.Tensor):
+                if label.numel() != 1:
+                    raise ValueError(
+                        f"Expected scalar label at sample index {idx}, got shape {tuple(label.shape)}."
+                    )
+                label = label.item()
+
+            try:
+                label_float = float(label)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Label at sample index {idx} is not numeric: {label!r}."
+                ) from exc
+
+            if not label_float.is_integer():
+                raise ValueError(
+                    f"Label at sample index {idx} must be an integer class id, got {label!r}."
+                )
+
+            normalized_labels.append(int(label_float))
+
+        if not normalized_labels:
+            raise ValueError("Cannot compute class weights from an empty dataset.")
+
+        return torch.tensor(normalized_labels, dtype=torch.long)
     
     def get_sample_weights(self):
         """per-sample inverse-frequency weights for WeightedRandomSampler.
@@ -146,9 +188,9 @@ class ClassificationDataset(Dataset):
         Returns:
             torch.Tensor of length len(self) with one weight per sample.
         """
-        labels = [item["label"] for item in self.samples]
+        labels = self._normalized_label_tensor()
 
-        class_counts = torch.bincount(torch.tensor(labels))
+        class_counts = torch.bincount(labels)
         class_weights = 1.0 / class_counts.float()
         sample_weights = torch.tensor(
             [class_weights[label] for label in labels], 
@@ -169,7 +211,7 @@ class ClassificationDataset(Dataset):
         Returns:
             torch.Tensor of shape (num_classes,).
         """
-        labels = torch.tensor([item["label"] for item in self.samples])
+        labels = self._normalized_label_tensor()
 
         if num_classes is None:
             num_classes = int(labels.max().item() + 1)

@@ -797,6 +797,7 @@ class Trainer_Classification:
 
         is_ddp = world_size > 1
         modality = get_data_modality(self.config)
+        is_tracking_modality = modality in {"tracking", "tracking_parquet"}
         seed = get_system_seed(self.config)
 
         g = torch.Generator()
@@ -837,7 +838,7 @@ class Trainer_Classification:
 
         # tracking modality needs a customm collate that merges PyG
         # Data objects into a single batched graph per timestamp.
-        collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+        collate_fn = tracking_collate_fn if is_tracking_modality else None
 
         # --- train sampler ---
         if train_sampling.get("use_weighted_sampler", False):
@@ -948,7 +949,7 @@ class Trainer_Classification:
         )
 
         # select the modality-specific trainer.
-        if modality == "tracking_parquet":
+        if is_tracking_modality:
             TrainerClass = TrackingTrainerClassification
         elif modality == "frames_npy":
             TrainerClass = FramesTrainerClassification
@@ -973,7 +974,7 @@ class Trainer_Classification:
             patience=train_selection.get("patience", 0),
             monitor=train_selection.get("monitor", "balanced_accuracy"),
             mode=train_selection.get("mode", "max"),
-            revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+            revert_on_lr_reduction=(is_tracking_modality or modality == "frames_npy"),
             config=self.config,
         )
 
@@ -1107,7 +1108,8 @@ class Trainer_Classification:
                 test_sampler = None
 
             modality = get_data_modality(self.config)
-            collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+            is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+            collate_fn = tracking_collate_fn if is_tracking_modality else None
             test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
 
             test_loader = DataLoader(
@@ -1126,7 +1128,7 @@ class Trainer_Classification:
             criterion = build_criterion(self.config.TRAIN.criterion)
 
             # Select trainer class based on modality
-            if modality == "tracking_parquet":
+            if is_tracking_modality:
                 TrainerClass = TrackingTrainerClassification
             elif modality == "frames_npy":
                 TrainerClass = FramesTrainerClassification
@@ -1150,7 +1152,7 @@ class Trainer_Classification:
                 top_k=2,
                 monitor=get_train_selection(self.config).get("monitor", "balanced_accuracy"),
                 mode=get_train_selection(self.config).get("mode", "max"),
-                revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+                revert_on_lr_reduction=(is_tracking_modality or modality == "frames_npy"),
                 config=self.config,
             )
             self.test_trainer.test(
