@@ -28,6 +28,12 @@ def migrate_legacy_to_canonical(payload: dict[str, Any]) -> dict[str, Any]:
         "TRAIN": train,
         "IO": io,
     }
+    # Preserve any unknown top-level legacy keys so migration is lossless.
+    top_level_unmapped = _pick_unmapped_keys(
+        cfg, {"TASK", "VERSION", "SYSTEM", "DATA", "MODEL", "TRAIN", "IO", "dali"}
+    )
+    if top_level_unmapped:
+        migrated["LEGACY_UNMAPPED"] = top_level_unmapped
     return migrated
 
 
@@ -44,7 +50,7 @@ def _infer_task(cfg: dict[str, Any]) -> str:
 
 
 def _migrate_system(system: dict[str, Any]) -> dict[str, Any]:
-    return {
+    migrated = {
         "paths": {
             "log_dir": system.get("log_dir", "./logs"),
             "save_dir": system.get("save_dir", "./checkpoints"),
@@ -60,6 +66,12 @@ def _migrate_system(system: dict[str, Any]) -> dict[str, Any]:
             "seed": system.get("seed", 42),
         },
     }
+    unmapped = _pick_unmapped_keys(
+        system, {"log_dir", "save_dir", "work_dir", "device", "GPU", "gpu_id", "use_seed", "seed"}
+    )
+    if unmapped:
+        migrated["legacy_unmapped"] = unmapped
+    return migrated
 
 
 def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> dict[str, Any]:
@@ -117,6 +129,9 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
                     "frame_width": "width",
                 },
             ),
+            # Legacy tracking configs commonly use a boolean `normalize` flag.
+            # Preserve it so inference/training preprocessing remains identical.
+            "normalize": data.get("normalize"),
             "normalization": {
                 "mean": data.get("imagenet_mean"),
                 "std": data.get("imagenet_std"),
@@ -137,6 +152,10 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
             "random_horizontal_flip",
             "flip_prob",
             "random_crop",
+            # Legacy tracking augmentation flags.
+            "horizontal_flip",
+            "vertical_flip",
+            "team_flip",
         ),
         "params": _pick_keys(
             data,
@@ -146,8 +165,32 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
             "mixup",
             "dilate_len",
             "max_samples",
+            "preload_data",
         ),
     }
+    # Legacy tracking geometry/object params -> canonical params.objects.
+    objects_cfg = _pick_keys(
+        data,
+        "num_objects",
+        "feature_dim",
+        "pitch_half_length",
+        "pitch_half_width",
+        "max_displacement",
+        "max_ball_height",
+    )
+    if objects_cfg:
+        input_cfg["params"]["objects"] = objects_cfg
+
+    # Legacy data slicing knob -> canonical params.data_slicing.
+    if isinstance(data.get("data_slicing"), dict):
+        input_cfg["params"]["data_slicing"] = deepcopy(data["data_slicing"])
+
+    # Preserve full legacy augmentations payload when present.
+    if isinstance(data.get("augmentations"), dict):
+        aug = deepcopy(data["augmentations"])
+        aug.update(input_cfg["augmentations"])
+        input_cfg["augmentations"] = aug
+
     color_mode = _infer_color_mode(data, input_name)
     if color_mode is not None:
         input_cfg["params"]["color_mode"] = color_mode
@@ -164,6 +207,76 @@ def _migrate_data(data: dict[str, Any], task: str, legacy_dali: Any = None) -> d
         "runtime": runtime,
         "splits": splits,
     }
+    consumed_data_keys = {
+        "annotations",
+        "dali",
+        "dataset_name",
+        "type",
+        "data_dir",
+        "classes",
+        "data_modality",
+        "modality",
+        "normalize",
+        "imagenet_mean",
+        "imagenet_std",
+        "augmentations",
+        "data_slicing",
+        "train",
+        "valid",
+        "test",
+        "valid_data_frames",
+        "challenge",
+        "infer",
+        "num_frames",
+        "clip_len",
+        "input_fps",
+        "target_fps",
+        "extract_fps",
+        "framerate",
+        "window_size",
+        "chunk_size",
+        "receptive_field",
+        "epoch_num_frames",
+        "start_frame",
+        "end_frame",
+        "overlap_len",
+        "target_height",
+        "target_width",
+        "frame_height",
+        "frame_width",
+        "random_affine",
+        "translate",
+        "affine_scale",
+        "random_perspective",
+        "distortion_scale",
+        "perspective_prob",
+        "random_rotation",
+        "rotation_degrees",
+        "color_jitter",
+        "jitter_params",
+        "random_horizontal_flip",
+        "flip_prob",
+        "random_crop",
+        "horizontal_flip",
+        "vertical_flip",
+        "team_flip",
+        "view_type",
+        "num_classes",
+        "crop_dim",
+        "mixup",
+        "dilate_len",
+        "max_samples",
+        "preload_data",
+        "num_objects",
+        "feature_dim",
+        "pitch_half_length",
+        "pitch_half_width",
+        "max_displacement",
+        "max_ball_height",
+    }
+    data_unmapped = _pick_unmapped_keys(data, consumed_data_keys)
+    if data_unmapped:
+        common["legacy_unmapped"] = data_unmapped
     return {"common": common, "inputs": {input_name: input_cfg}}
 
 
@@ -277,6 +390,25 @@ def _migrate_model(model: dict[str, Any], data: dict[str, Any], task: str) -> di
         "runner": deepcopy(model.get("runner", {})),
         "legacy_type": model.get("type"),
     }
+    model_unmapped = _pick_unmapped_keys(
+        model,
+        {
+            "type",
+            "runner",
+            "backbone",
+            "neck",
+            "head",
+            "post_proc",
+            "edge",
+            "k",
+            "r",
+            "load_weights",
+            "pretrained",
+            "multi_gpu",
+        },
+    )
+    if model_unmapped:
+        metadata["legacy_unmapped"] = model_unmapped
 
     return {
         "schema_version": 3,
@@ -309,7 +441,7 @@ def _migrate_train(
     if "multi_gpu" not in execution and isinstance(model, dict) and "multi_gpu" in model:
         execution["multi_gpu"] = bool(model.get("multi_gpu"))
 
-    return {
+    migrated = {
         "trainer": {"type": train.get("type", task)},
         "epochs": epochs,
         "criterion": deepcopy(train.get("criterion", {"type": "CrossEntropyLoss"})),
@@ -323,6 +455,35 @@ def _migrate_train(
         },
         "checkpoint": _pick_keys(train, "save_every", "save_best"),
     }
+    train_unmapped = _pick_unmapped_keys(
+        train,
+        {
+            "type",
+            "epochs",
+            "num_epochs",
+            "max_epochs",
+            "criterion",
+            "optimizer",
+            "scheduler",
+            "enabled",
+            "log_interval",
+            "multi_gpu",
+            "acc_grad_iter",
+            "evaluation_frequency",
+            "base_num_valid_epochs",
+            "start_valid_epoch",
+            "valid_map_every",
+            "criterion_valid",
+            "use_weighted_sampler",
+            "use_weighted_loss",
+            "batch_size",
+            "save_every",
+            "save_best",
+        },
+    )
+    if train_unmapped:
+        migrated["legacy_unmapped"] = train_unmapped
+    return migrated
 
 
 def _build_io(model: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -443,3 +604,11 @@ def _drop_empty(target: dict[str, Any]) -> None:
         value = target[key]
         if value in ({}, [], None):
             target.pop(key)
+
+
+def _pick_unmapped_keys(source: dict[str, Any], consumed_keys: set[str]) -> dict[str, Any]:
+    return {
+        key: deepcopy(value)
+        for key, value in source.items()
+        if key not in consumed_keys
+    }
