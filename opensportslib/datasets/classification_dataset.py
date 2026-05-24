@@ -404,8 +404,6 @@ class TrackingDataset(ClassificationDataset):
         super().__init__(config, annotations_path, processor=None, split=split)
 
         from opensportslib.datasets.utils.tracking import (
-            FEATURE_DIM,
-            NUM_OBJECTS,
             HorizontalFlip,
             TeamFlip,
             VerticalFlip,
@@ -413,8 +411,6 @@ class TrackingDataset(ClassificationDataset):
         )
 
         # storing references for the constants without repeating the import.
-        self._NUM_OBJECTS = NUM_OBJECTS
-        self._FEATURE_DIM = FEATURE_DIM
         self._build_edge_index = build_edge_index
 
         sampling_cfg = get_data_sampling(config)
@@ -428,6 +424,13 @@ class TrackingDataset(ClassificationDataset):
         self.k = encoder_cfg.get("k")
         self.r = encoder_cfg.get("radius", encoder_cfg.get("r"))
         self.preload_data = params_cfg.get("preload_data", False)
+        objects_cfg = params_cfg.get("objects", {}) or {}
+        self._NUM_OBJECTS = int(objects_cfg.get("num_objects", self._NUM_OBJECTS))
+        self._FEATURE_DIM = int(objects_cfg.get("feature_dim", self._FEATURE_DIM))
+        self._pitch_half_length = float(objects_cfg.get("pitch_half_length", 85.0))
+        self._pitch_half_width = float(objects_cfg.get("pitch_half_width", 50.0))
+        self._max_displacement = float(objects_cfg.get("max_displacement", 110.0))
+        self._max_ball_height = float(objects_cfg.get("max_ball_height", 30.0))
         
         self.transforms = self._build_transforms(
             config, split, HorizontalFlip, VerticalFlip, TeamFlip
@@ -504,11 +507,18 @@ class TrackingDataset(ClassificationDataset):
             all_positions = []
             
             for t, (_, row) in enumerate(df.iterrows()):
-                features, positions = parse_frame(row)
+                features, positions = parse_frame(
+                    row,
+                    num_objects=self._NUM_OBJECTS,
+                    feature_dim=self._FEATURE_DIM,
+                )
                 all_features[t] = features
                 all_positions.append(positions)
             
-            all_features = compute_deltas(all_features)
+            all_features = compute_deltas(
+                all_features,
+                num_objects=self._NUM_OBJECTS,
+            )
 
             # build edge indices on raw features (before any augmentation
             # or normalization) so the graph topology stays consistent
@@ -579,7 +589,13 @@ class TrackingDataset(ClassificationDataset):
             features = transform(features)
         
         if self.normalize:
-            features = normalize_features(features)
+            features = normalize_features(
+                features,
+                pitch_half_length=self._pitch_half_length,
+                pitch_half_width=self._pitch_half_width,
+                max_displacement=self._max_displacement,
+                max_ball_height=self._max_ball_height,
+            )
         
         # build one PyG Data object per frame. The downstream collate function
         # (tracking_collate) uses PyG Batch.from_data_list to merge these across
@@ -638,11 +654,18 @@ class TrackingDataset(ClassificationDataset):
         all_positions = []
         
         for t, (_, row) in enumerate(df.iterrows()):
-            features, positions = parse_frame(row)
+            features, positions = parse_frame(
+                row,
+                num_objects=self._NUM_OBJECTS,
+                feature_dim=self._FEATURE_DIM,
+            )
             all_features[t] = features
             all_positions.append(positions)
         
-        all_features = compute_deltas(all_features)
+        all_features = compute_deltas(
+            all_features,
+            num_objects=self._NUM_OBJECTS,
+        )
         
         # edge indices are built on raw features (before any augmentation /
         # normalization) so the graph structure is augmentation-invariant.
@@ -661,7 +684,13 @@ class TrackingDataset(ClassificationDataset):
             all_features = transform(all_features)
         
         if self.normalize:
-            all_features = normalize_features(all_features)
+            all_features = normalize_features(
+                all_features,
+                pitch_half_length=self._pitch_half_length,
+                pitch_half_width=self._pitch_half_width,
+                max_displacement=self._max_displacement,
+                max_ball_height=self._max_ball_height,
+            )
         
         graphs = []
         for t in range(num_frames):

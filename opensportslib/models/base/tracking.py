@@ -4,10 +4,10 @@ import torch.nn as nn
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
 from opensportslib.models.heads.builder import build_head
-from opensportslib.datasets.utils.tracking import FEATURE_DIM
 from opensportslib.core.config.accessors import (
     get_component_name_by_kind,
     get_component_params_by_kind,
+    get_data_params,
     get_data_sampling,
 )
 from opensportslib.core.utils.config_normalize import normalize_builder_cfg
@@ -25,6 +25,9 @@ class TrackingModel(nn.Module):
         
         self.device = device
         sampling = get_data_sampling(config)
+        params = get_data_params(config)
+        objects_cfg = params.get("objects", {}) if isinstance(params, dict) else {}
+        feature_dim = int(objects_cfg.get("feature_dim", 8))
         self.num_frames = sampling.get("num_frames")
 
         def _component_cfg(kind):
@@ -35,7 +38,7 @@ class TrackingModel(nn.Module):
         # backbone: graph encoder
         self.backbone = build_backbone(
             _component_cfg("encoder"),
-            default_args={"input_dim": FEATURE_DIM}
+            default_args={"input_dim": feature_dim}
         )
 
         # neck: temporal aggregation
