@@ -51,7 +51,23 @@ from opensportslib.core.config.accessors import (
     get_train_execution,
     get_train_sampling,
     get_train_selection,
+    get_input_cfg,
 )
+
+
+def _is_frames_npy_modality(config, modality=None):
+    """Return True when runtime should use the frames_npy training path."""
+    modality = str(modality or get_data_modality(config)).lower()
+    if modality in {"frames", "frames_npy"}:
+        return True
+    if modality != "video":
+        return False
+
+    input_cfg = get_input_cfg(config)
+    source_cfg = input_cfg.get("source", {}) if isinstance(input_cfg, dict) else {}
+    source_format = str(source_cfg.get("format", "")).lower()
+    representation = str(input_cfg.get("representation", "")).lower()
+    return source_format == "npy" or representation == "frames"
 
 # -------------------------------------------------------------------
 # base classification trainer
@@ -137,6 +153,7 @@ class BaseTrainerClassification:
         self.revert_on_lr_reduction = revert_on_lr_reduction
         self._best_model_state = None
         self.predictions_payload = None
+        self.predictions_path = None
         
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         
@@ -552,6 +569,7 @@ class BaseTrainerClassification:
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
+            self.predictions_path = save_path
 
         return all_logits, all_labels, avg_loss, metrics
 
@@ -798,6 +816,7 @@ class Trainer_Classification:
         is_ddp = world_size > 1
         modality = get_data_modality(self.config)
         is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+        is_frames_modality = _is_frames_npy_modality(self.config, modality)
         seed = get_system_seed(self.config)
 
         g = torch.Generator()
@@ -951,7 +970,7 @@ class Trainer_Classification:
         # select the modality-specific trainer.
         if is_tracking_modality:
             TrainerClass = TrackingTrainerClassification
-        elif modality == "frames_npy":
+        elif is_frames_modality:
             TrainerClass = FramesTrainerClassification
         else:
             TrainerClass = MVTrainerClassification
@@ -974,7 +993,7 @@ class Trainer_Classification:
             patience=train_selection.get("patience", 0),
             monitor=train_selection.get("monitor", "balanced_accuracy"),
             mode=train_selection.get("mode", "max"),
-            revert_on_lr_reduction=(is_tracking_modality or modality == "frames_npy"),
+            revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
             config=self.config,
         )
 
@@ -1081,6 +1100,7 @@ class Trainer_Classification:
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
+            self.predictions_path = out_path
             return submission
         
         else:
@@ -1109,6 +1129,7 @@ class Trainer_Classification:
 
             modality = get_data_modality(self.config)
             is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+            is_frames_modality = _is_frames_npy_modality(self.config, modality)
             collate_fn = tracking_collate_fn if is_tracking_modality else None
             test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
 
@@ -1130,7 +1151,7 @@ class Trainer_Classification:
             # Select trainer class based on modality
             if is_tracking_modality:
                 TrainerClass = TrackingTrainerClassification
-            elif modality == "frames_npy":
+            elif is_frames_modality:
                 TrainerClass = FramesTrainerClassification
             else:
                 TrainerClass = MVTrainerClassification
@@ -1152,7 +1173,7 @@ class Trainer_Classification:
                 top_k=2,
                 monitor=get_train_selection(self.config).get("monitor", "balanced_accuracy"),
                 mode=get_train_selection(self.config).get("mode", "max"),
-                revert_on_lr_reduction=(is_tracking_modality or modality == "frames_npy"),
+                revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
                 config=self.config,
             )
             self.test_trainer.test(
@@ -1160,6 +1181,9 @@ class Trainer_Classification:
             )
             self.predictions_payload = getattr(
                 self.test_trainer, "predictions_payload", None
+            )
+            self.predictions_path = getattr(
+                self.test_trainer, "predictions_path", None
             )
             return self.predictions_payload
 

@@ -1,4 +1,5 @@
 import torch
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 def build_optimizer(parameters, cfg, default_args=None):
@@ -12,6 +13,9 @@ def build_optimizer(parameters, cfg, default_args=None):
     Returns:
         optimizer: The constructed optimizer.
     """
+    del default_args
+    cfg = normalize_builder_cfg(cfg, kind="optimizer")
+
     if cfg.type == "Adam":
         optimizer = torch.optim.Adam(
             parameters,

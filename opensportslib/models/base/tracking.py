@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from types import SimpleNamespace
 
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
@@ -11,6 +10,7 @@ from opensportslib.core.config.accessors import (
     get_component_params_by_kind,
     get_data_sampling,
 )
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 class TrackingModel(nn.Module):
@@ -30,7 +30,7 @@ class TrackingModel(nn.Module):
         def _component_cfg(kind):
             params = dict(get_component_params_by_kind(config, kind) or {})
             params.setdefault("type", get_component_name_by_kind(config, kind))
-            return SimpleNamespace(**params)
+            return normalize_builder_cfg(params, kind=kind)
 
         # backbone: graph encoder
         self.backbone = build_backbone(

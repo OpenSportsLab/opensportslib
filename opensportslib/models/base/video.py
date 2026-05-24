@@ -27,6 +27,7 @@ from opensportslib.core.config.accessors import (
     get_data_sampling,
     get_data_num_classes,
 )
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 # -----------------------------------------------------------------------
@@ -117,17 +118,28 @@ class VideoModel(nn.Module):
         self.num_frames = sampling.get("num_frames")
 
         # backbone: pure feature extractor
-        self.backbone = build_backbone(get_component_params_by_kind(config, "encoder"))
+        self.backbone = build_backbone(
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "encoder"),
+                kind="encoder",
+            )
+        )
 
         # neck: temporal aggregation over the frame sequence
         self.neck = build_neck(
-            get_component_params_by_kind(config, "adapter"),
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "adapter"),
+                kind="adapter",
+            ),
             default_args={"window_size": self.num_frames}
         )
 
         # head: linear classifier
         self.head = build_head(
-            get_component_params_by_kind(config, "head"),
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "head"),
+                kind="head",
+            ),
             default_args={"input_dim": self.neck.feat_dim}
         )
 

@@ -1,5 +1,4 @@
 """Model builder entrypoints."""
-from types import SimpleNamespace
 
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
@@ -14,10 +13,14 @@ from opensportslib.core.config.accessors import (
     get_model_load,
     get_runner_type,
 )
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg, to_namespace
 
 
-def _to_ns(d):
-    return SimpleNamespace(**d)
+def _component_cfg(config, kind: str, required: bool = True):
+    params = get_component_params_by_kind(config, kind)
+    if not required and not params:
+        return to_namespace({})
+    return normalize_builder_cfg(params, kind=kind)
 
 
 def build_model_canonical(config, device):
@@ -25,20 +28,19 @@ def build_model_canonical(config, device):
     task = config.TASK.lower()
 
     encoder_type = get_component_name_by_kind(config, "encoder")
-    backbone = _to_ns(get_component_params_by_kind(config, "encoder"))
-    neck = _to_ns(get_component_params_by_kind(config, "adapter"))
-    head = _to_ns(get_component_params_by_kind(config, "head"))
-    post_proc = _to_ns(get_component_params_by_kind(config, "postprocessor"))
     sampling = get_data_sampling(config)
     model_family = get_model_family(config)
 
     if task == "classification":
+        backbone = _component_cfg(config, "encoder")
+        head = _component_cfg(config, "head")
         if encoder_type == "video_mae":
             from opensportslib.models.base.video import build_video_mae_backbone
             return build_video_mae_backbone(config, device)
 
         elif encoder_type in ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]:
             from opensportslib.models.base.vars import MVNetwork
+            neck = _component_cfg(config, "adapter")
             return MVNetwork(config, backbone, neck, head), None
 
         elif encoder_type == "graph_conv":
@@ -57,6 +59,8 @@ def build_model_canonical(config, device):
         from opensportslib.models.base.contextaware import LiteContextAwareModel
         from opensportslib.models.base.learnablepooling import LiteLearnablePoolingModel
 
+        backbone = _component_cfg(config, "encoder")
+        head = _component_cfg(config, "head")
         model_weights = (
             get_model_load(config).get("checkpoint_path")
             or get_component_load_by_kind(config, "encoder").get("weights_path")
@@ -65,6 +69,8 @@ def build_model_canonical(config, device):
         normalized_family = str(model_family or "").strip().lower()
 
         if normalized_family == "learnablepooling":
+            neck = _component_cfg(config, "adapter")
+            post_proc = _component_cfg(config, "postprocessor", required=False)
             return LiteLearnablePoolingModel(
                 cfg=config,
                 weights=model_weights,
@@ -75,6 +81,7 @@ def build_model_canonical(config, device):
                 runner=runner,
             )
         if normalized_family == "contextaware":
+            neck = _component_cfg(config, "adapter")
             return LiteContextAwareModel(
                 cfg=config,
                 weights=model_weights,

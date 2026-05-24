@@ -2,6 +2,7 @@ from opensportslib.core.loss.ce import CELoss
 from .nll import NLLLoss
 from .calf import ContextAwareLoss, SpottingLoss
 from .combine import Combined2x
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 def build_criterion(cfg, default_args=None):
@@ -15,6 +16,9 @@ def build_criterion(cfg, default_args=None):
     Returns:
         criterion: The constructed criterion.
     """
+    del default_args
+    cfg = normalize_builder_cfg(cfg, kind="criterion")
+
     if cfg.type == "NLLLoss":
         criterion = NLLLoss()
     elif cfg.type == "ContextAwareLoss":
@@ -29,8 +33,8 @@ def build_criterion(cfg, default_args=None):
             lambda_coord=cfg.lambda_coord, lambda_noobj=cfg.lambda_noobj
         )
     elif cfg.type == "Combined2x":
-        c_1 = build_criterion(cfg.loss_1)
-        c_2 = build_criterion(cfg.loss_2)
+        c_1 = build_criterion(normalize_builder_cfg(cfg.loss_1, kind="criterion.loss_1"))
+        c_2 = build_criterion(normalize_builder_cfg(cfg.loss_2, kind="criterion.loss_2"))
         criterion = Combined2x(c_1, c_2, cfg.w_1, cfg.w_2)
 
     elif cfg.type == "CrossEntropyLoss":

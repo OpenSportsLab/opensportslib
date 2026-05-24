@@ -59,7 +59,7 @@ def build(config, annotations_path, processor=None, split="train"):
 
     if modality in ("tracking", "tracking_parquet"):
         return TrackingDataset(config, annotations_path, split)
-    elif modality in ("video", "frames_npy"):
+    elif modality in ("video", "frames_npy", "frames"):
         return VideoDataset(config, annotations_path, processor, split)
     else:
         raise ValueError(f"Unknown data_modality: {modality}")
@@ -109,9 +109,11 @@ class ClassificationDataset(Dataset):
         if slicing_cfg and slicing_cfg.get("enabled", False) and split == "train":
             max_games = slicing_cfg.get("training_matches")
 
-        annotation_input_type = get_data_modality(config)
-        if str(annotation_input_type).lower() == "tracking":
+        annotation_input_type = str(get_data_modality(config)).lower()
+        if annotation_input_type == "tracking":
             annotation_input_type = "tracking_parquet"
+        elif annotation_input_type in {"frames", "frames_npy"}:
+            annotation_input_type = "frames_npy"
 
         self.samples, self.label_map = load_annotations(
             annotations_path, 

@@ -4,6 +4,7 @@
 
 import logging
 import os
+import json
 
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.core.config.accessors import (
@@ -51,6 +52,7 @@ class ClassificationModel(BaseTaskModel):
     ):
         """Execute one training/inference job on a single process."""
         import torch
+        import wandb
         from opensportslib.core.trainer.classification_trainer import Trainer_Classification
         from opensportslib.core.utils.ddp import ddp_cleanup, ddp_setup
         from opensportslib.core.utils.wandb import init_wandb
@@ -123,14 +125,22 @@ class ClassificationModel(BaseTaskModel):
 
             elif mode == "infer":
                 test_data = build_dataset(config, test_set, processor, split="test")
-                predictions = trainer.infer(
+                _ = trainer.infer(
                     test_data,
                     rank=rank,
                     world_size=world_size,
                 )
                 if rank == 0 and return_queue is not None:
-                    return_queue.put(predictions)
+                    if world_size > 1:
+                        return_queue.put(getattr(trainer, "predictions_path", None))
+                    else:
+                        return_queue.put(getattr(trainer, "predictions_payload", None))
         finally:
+            if rank == 0 and use_wandb and getattr(wandb, "run", None) is not None:
+                try:
+                    wandb.finish(quiet=True)
+                except Exception:
+                    pass
             if is_ddp:
                 ddp_cleanup()
 
@@ -191,7 +201,7 @@ class ClassificationModel(BaseTaskModel):
         use_ddp = use_ddp and world_size > 1
 
         ctx = mp.get_context("spawn")
-        queue = ctx.Queue()
+        queue = ctx.SimpleQueue()
 
         if use_ddp:
             logging.info(f"Launching DDP on {world_size} GPUs")
@@ -290,6 +300,9 @@ class ClassificationModel(BaseTaskModel):
             )
 
         predictions = queue.get()
+        if use_ddp and isinstance(predictions, str):
+            with open(predictions, encoding="utf-8") as f:
+                predictions = json.load(f)
         return predictions
 
     def evaluate(

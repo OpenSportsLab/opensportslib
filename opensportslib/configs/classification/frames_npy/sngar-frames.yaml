@@ -46,8 +46,8 @@ DATA:
           pin_memory: true
   inputs:
     video:
-      modality: video
-      representation: frames
+      modality: frames_npy
+      representation: frames_npy
       source:
         format: npy
       sampling:
