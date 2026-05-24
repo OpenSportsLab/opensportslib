@@ -21,7 +21,7 @@ def migrate_legacy_to_canonical(payload: dict[str, Any]) -> dict[str, Any]:
 
     migrated = {
         "TASK": task,
-        "VERSION": 3,
+        "VERSION": 2,
         "SYSTEM": system,
         "DATA": data,
         "MODEL": model,
