@@ -24,6 +24,8 @@ class BaseTaskModel(ABC):
 
         self.config_path = expand(config)
         self.config = load_config_omega(self.config_path)
+        self.last_loaded_weights = None
+        self.best_checkpoint = None
 
         if weights is not None:
             self.config = fetch_and_merge_config_from_HF(self.config, weights, merge_policy="compatibility")
@@ -69,8 +71,6 @@ class BaseTaskModel(ABC):
         self.model = None
         self.processor = None
         self.trainer = None
-        self.best_checkpoint = None
-        self.last_loaded_weights = None
 
         if weights is not None:
             self.load_weights(weights=weights)
