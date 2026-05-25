@@ -153,7 +153,7 @@ Minimal localization sample:
 ```
 
 Relative paths in `inputs[].path` are resolved from the split media root in the
-YAML config, for example `DATA.train.video_path`. See the full
+YAML config, for example `DATA.common.splits.train.source_path`. See the full
 [OSL JSON format guide](docs/data/osl-json-format.md) for field definitions,
 multi-modal examples, prediction payloads, and conversion notes.
 
@@ -310,7 +310,7 @@ Use the README for the fast start, then go deeper through:
 - Full documentation: https://opensportslab.github.io/opensportslib/
 - OSL JSON format: [docs/data/osl-json-format.md](docs/data/osl-json-format.md)
 - High-level API guide: [opensportslib/apis/README.md](opensportslib/apis/README.md)
-- Configuration guide: https://opensportslab.github.io/opensportslib/tni/config-guide/
+- Configuration guide: https://opensportslab.github.io/opensportslib/config/configuration-guide/
 - Example configs: [examples/configs/](examples/configs/)
 - Quickstart scripts: [examples/quickstart/](examples/quickstart/)
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -7,7 +7,7 @@ This section explains how to:
 - Run inference
 - Use pretrained weights from HuggingFace
 
-For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](config-guide.md).
+For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](../config/configuration-guide.md).
 
 ---
 ## Configuration Sample (.yaml) file
@@ -20,202 +20,210 @@ experiment defaults.
 
 ```yaml
 TASK: classification
+VERSION: 3
+
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints
+    work_dir: ./checkpoints
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
 
 DATA:
-  dataset_name: mvfouls
-  data_dir: /path/to/OSL-XFoul/224p
-  data_modality: video
-  view_type: multi
-  train:
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-      num_workers: 4
-  valid:
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 1
-      shuffle: false
-  test:
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    dataloader:
-      batch_size: 1
-      shuffle: false
-  num_frames: 16
-  input_fps: 25
-  target_fps: 17
-  frame_size: [224, 224]
+  common:
+    dataset_name: mvfouls
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        source_path: /path/to/OSL-XFoul/224p/train
+        annotation_path: /path/to/OSL-XFoul/224p/train/train.json
+        dataloader: {batch_size: 8, shuffle: true, num_workers: 4}
+      valid:
+        source_path: /path/to/OSL-XFoul/224p/valid
+        annotation_path: /path/to/OSL-XFoul/224p/valid/valid.json
+      test:
+        source_path: /path/to/OSL-XFoul/224p/test
+        annotation_path: /path/to/OSL-XFoul/224p/test/test.json
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source: {format: mp4}
+      sampling: {num_frames: 16, input_fps: 25, target_fps: 17}
+      transform:
+        resize: {height: 224, width: 224}
 
 MODEL:
-  type: custom
-  backbone:
-    type: mvit_v2_s
-  neck:
-    type: MV_Aggregate
-    agr_type: max
-  head:
-    type: MV_LinearLayer
+  schema_version: 3
+  task: classification
+  components:
+    video_encoder:
+      kind: encoder
+      source: {provider: opensportslib, name: mvit_v2_s}
+      params: {}
+    task_head:
+      kind: head
+      source: {provider: opensportslib, name: MV_LinearLayer}
+      params: {}
+  topology:
+    - from: video_encoder
+      to: task_head
 
 TRAIN:
-  monitor: balanced_accuracy
-  mode: max
   epochs: 20
   criterion:
     type: CrossEntropyLoss
   optimizer:
     type: AdamW
     lr: 0.0001
-
-SYSTEM:
-  save_dir: ./checkpoints
-  device: cuda
-  GPU: 4
+  selection:
+    monitor: balanced_accuracy
+    mode: max
 ```
 
 ### 2. Classification (Tracking)
 
 ```yaml
 TASK: classification
+VERSION: 3
+
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints_tracking
+    work_dir: ./checkpoints_tracking
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
 
 DATA:
-  dataset_name: sngar
-  data_modality: tracking_parquet
-  data_dir: /path/to/soccernetpro-classification-GAR/tracking-parquet
-  train:
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 32
-      shuffle: true
-  valid:
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 32
-      shuffle: false
-  test:
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    dataloader:
-      batch_size: 32
-      shuffle: false
-  num_frames: 16
-  frame_interval: 9
-  normalize: true
-  num_objects: 23
-  feature_dim: 8
+  common:
+    dataset_name: sngar
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        source_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/train
+        annotation_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/train/train.json
+      valid:
+        source_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/valid
+        annotation_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/valid/valid.json
+      test:
+        source_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/test
+        annotation_path: /path/to/soccernetpro-classification-GAR/tracking-parquet/test/test.json
+  inputs:
+    tracking:
+      modality: tracking
+      representation: features
+      source: {format: parquet}
+      sampling: {num_frames: 16}
+      params:
+        normalize: true
+        feature_dim: 8
 
 MODEL:
-  type: custom
-  backbone:
-    type: graph_conv
-    encoder: gin
-    hidden_dim: 64
-    num_layers: 20
-  neck:
-    type: TemporalAggregation
-    agr_type: maxpool
-  head:
-    type: TrackingClassifier
-    num_classes: 10
-  edge: positional
-  k: 8
-  r: 15.0
+  schema_version: 3
+  task: classification
+  components:
+    tracking_encoder:
+      kind: encoder
+      source: {provider: opensportslib, name: graph_conv}
+      params: {encoder: gin, hidden_dim: 64, num_layers: 20, edge: positional, k: 8, r: 15.0}
+    task_head:
+      kind: head
+      source: {provider: opensportslib, name: TrackingClassifier}
+      params: {num_classes: 10}
+  topology:
+    - from: tracking_encoder
+      to: task_head
 
 TRAIN:
-  monitor: loss
-  mode: min
   epochs: 100
   optimizer:
     type: Adam
     lr: 0.001
-
-SYSTEM:
-  save_dir: ./checkpoints_tracking
-  device: cuda
-  GPU: 1
+  selection:
+    monitor: loss
+    mode: min
 ```
 
 ### 3. Localization
 
 ```yaml
 TASK: localization
-dali: true
+VERSION: 3
+
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints
+    work_dir: ./checkpoints
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
 
 DATA:
-  dataset_name: SoccerNet
-  data_dir: /path/to/OSL-SNBAS/224p-2024
-  classes:
-    - PASS
-    - DRIVE
-    - HEADER
-    - HIGH PASS
-    - OUT
-    - CROSS
-    - THROW IN
-    - SHOT
-    - BALL PLAYER BLOCK
-    - PLAYER SUCCESSFUL TACKLE
-    - FREE KICK
-    - GOAL
-  modality: rgb
-  clip_len: 100
-  input_fps: 25
-  extract_fps: 2
-  target_height: 224
-  target_width: 398
-  train:
-    type: VideoGameWithDali
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-  valid:
-    type: VideoGameWithDali
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-  test:
-    type: VideoGameWithDaliVideo
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    results: results_spotting_test
-    nms_window: 2
-    metric: tight
-    overlap_len: 50
+  common:
+    dataset_name: SoccerNet
+    runtime:
+      loader_backend: dali
+    splits:
+      train:
+        annotation_path: /path/to/OSL-SNBAS/224p-2024/train/train.json
+        source_path: /path/to/OSL-SNBAS/224p-2024/train
+        type: VideoGameWithDali
+      valid:
+        annotation_path: /path/to/OSL-SNBAS/224p-2024/valid/valid.json
+        source_path: /path/to/OSL-SNBAS/224p-2024/valid
+        type: VideoGameWithDali
+      test:
+        annotation_path: /path/to/OSL-SNBAS/224p-2024/test/test.json
+        source_path: /path/to/OSL-SNBAS/224p-2024/test
+        type: VideoGameWithDaliVideo
+        results: results_spotting_test
+        nms_window: 2
+        metric: tight
+        overlap_len: 50
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source: {format: mp4}
+      sampling: {clip_len: 100, input_fps: 25, extract_fps: 2}
+      transform:
+        resize: {height: 224, width: 398}
 
 MODEL:
-  type: E2E
-  runner:
-    type: runner_e2e
-  backbone:
-    type: rny008_gsm
-  head:
-    type: gru
-  multi_gpu: true
+  schema_version: 3
+  task: localization
+  components:
+    video_encoder:
+      kind: encoder
+      source: {provider: opensportslib, name: rny008_gsm}
+      params: {}
+    task_head:
+      kind: head
+      source: {provider: opensportslib, name: gru}
+      params: {}
+  topology:
+    - from: video_encoder
+      to: task_head
 
 TRAIN:
-  type: trainer_e2e
-  num_epochs: 10
-  criterion_valid: map
+  trainer:
+    type: trainer_e2e
+  epochs: 10
   criterion:
     type: CrossEntropyLoss
   optimizer:
     type: AdamWithScaler
     lr: 0.01
-
-SYSTEM:
-  save_dir: ./checkpoints
-  work_dir: ${SYSTEM.save_dir}
-  device: cuda
-  GPU: 4
+  execution:
+    multi_gpu: true
+    criterion_valid: map
 ```
 
 ## Annotations (train/valid/test) JSON Format
@@ -261,9 +269,9 @@ must be present in the root `labels.action.labels` list.
 ```
 
 For video classification, `inputs[].path` is resolved from the split media root
-in the YAML config, such as `DATA.train.video_path`. For tracking
-classification, use `type: tracking_parquet` and set
-`DATA.data_modality: tracking_parquet`.
+in the YAML config, such as `DATA.common.splits.train.source_path`. For tracking
+classification, use a tracking input block under `DATA.inputs` with
+`source.format: parquet`.
 
 ### Localization annotations
 

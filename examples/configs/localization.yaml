@@ -170,7 +170,6 @@ TRAIN:
     enabled: true
     multi_gpu: true
     acc_grad_iter: 1
-    base_num_valid_epochs: 30
     start_valid_epoch: 4
     valid_map_every: 1
     criterion_valid: map
