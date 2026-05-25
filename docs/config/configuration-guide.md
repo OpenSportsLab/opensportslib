@@ -37,7 +37,7 @@ IO: <IoSchema>
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |
 |---|---|---|---|---|---|---|
 | `TASK` | string | yes | none | `classification`, `localization`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
-| `VERSION` | int | yes | none | currently canonical payloads use `3` | config policy | Required section by validator; compatibility marker retained. |
+| `VERSION` | int | yes | none | currently canonical payloads use `2` | config policy | Required section by validator; compatibility marker retained. |
 | `SYSTEM` | object | yes | none | see SYSTEM section | platform/runtime | Required section by validator. |
 | `DATA` | object | yes | none | see DATA section | data pipeline | Required section by validator. |
 | `MODEL` | object | yes | none | see MODEL section | model/runtime | Required section; `MODEL.components` must be non-empty. |
@@ -184,9 +184,6 @@ dataloader:
 
 ```yaml
 MODEL:
-  schema_version: 2
-  task: <same as TASK>
-
   runtime:
     dtype: <fp32|fp16|bf16>
     device: <auto|cpu|cuda|ddp>
@@ -229,8 +226,6 @@ MODEL:
 
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |
 |---|---|---|---|---|---|---|
-| `schema_version` | int | no | `3` | `3` (canonical expectation) | config policy | Compatibility marker; not strictly enforced in validator yet. |
-| `task` | string | recommended | same semantic as `TASK` | task values from section 2 | model owner | Policy: should match `TASK`. |
 | `runtime.dtype` | string | no | `fp32` | `fp32`, `fp16`, `bf16` | runtime/model | Runtime precision hint. |
 | `runtime.device` | string | no | `auto` | `auto`, `cpu`, `cuda`, `ddp` | runtime/model | Device override hint. |
 | `runtime.compile` | bool | no | `false` | `true`, `false` | runtime/model | Compile toggle hint. |
