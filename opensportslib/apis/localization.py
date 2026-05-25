@@ -47,6 +47,20 @@ class LocalizationModel(BaseTaskModel):
         set_split_annotation_path(self.config, split, resolved)
         return resolved
 
+    def _gate_multi_gpu_by_device(self, device) -> None:
+        """Disable TRAIN.execution.multi_gpu when effective device is CPU."""
+        execution = getattr(getattr(self.config, "TRAIN", None), "execution", None)
+        if execution is None:
+            return
+
+        multi_gpu = bool(getattr(execution, "multi_gpu", False))
+        if device.type == "cpu" and multi_gpu:
+            execution.multi_gpu = False
+            logging.warning(
+                "Detected SYSTEM.device=%s; forcing TRAIN.execution.multi_gpu=false for localization runtime.",
+                device,
+            )
+
     def load_weights(
         self,
         weights: str | None = None,
@@ -66,6 +80,7 @@ class LocalizationModel(BaseTaskModel):
             raise ValueError("`weights` must be provided to load_weights().")
 
         device = select_device(self.config.SYSTEM)
+        self._gate_multi_gpu_by_device(device)
         if self.model is None:
             self.model = build_model(self.config, device=device)
 
@@ -225,6 +240,7 @@ class LocalizationModel(BaseTaskModel):
                 self.load_weights(weights=effective_weights, default_args=default_args)
         elif self.model is None:
             device = select_device(self.config.SYSTEM)
+            self._gate_multi_gpu_by_device(device)
             self.model = build_model(self.config, device=device)
 
         self.trainer = build_trainer(
@@ -298,6 +314,7 @@ class LocalizationModel(BaseTaskModel):
                 self.load_weights(weights=effective_weights)
         elif self.model is None:
             device = select_device(self.config.SYSTEM)
+            self._gate_multi_gpu_by_device(device)
             self.model = build_model(self.config, device=device)
 
         data_obj_test = build_dataset(self.config, split="test")

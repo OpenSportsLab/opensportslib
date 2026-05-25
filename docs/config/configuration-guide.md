@@ -342,6 +342,10 @@ TRAIN:
 | `valid_map_every` | int | task-dependent | `>=1` | Localization mAP evaluation cadence. |
 | `criterion_valid` | string | `loss` | `loss`, `map` | Validation criterion selector. |
 
+CPU behavior note:
+`TRAIN.execution.multi_gpu` requires CUDA. If effective runtime device is CPU,
+localization runtime automatically forces `multi_gpu=false`.
+
 ### 6.3 `TRAIN.selection.mode` values
 
 | Value | Meaning |
