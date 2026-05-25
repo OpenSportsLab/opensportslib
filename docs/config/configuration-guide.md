@@ -23,7 +23,7 @@ Use production-ready canonical templates from:
 
 ```yaml
 TASK: <classification|localization|retrieval|captioning|reasoning>
-VERSION: 3
+VERSION: 2
 
 SYSTEM: <SystemSchema>
 DATA: <DataSchema>
@@ -184,7 +184,7 @@ dataloader:
 
 ```yaml
 MODEL:
-  schema_version: 3
+  schema_version: 2
   task: <same as TASK>
 
   runtime:
@@ -420,7 +420,7 @@ Use `IO` when:
 
 ```yaml
 TASK: classification
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths: {log_dir: ./logs, save_dir: ./checkpoints, work_dir: ./checkpoints}
@@ -448,8 +448,6 @@ DATA:
         resize: {height: 224, width: 224}
 
 MODEL:
-  schema_version: 3
-  task: classification
   runtime: {dtype: fp32, device: auto, compile: false, freeze: false, multi_gpu: false}
   load: {checkpoint_path: null, pretrained: false, strict: true, map_location: null, format: auto}
   components:
@@ -484,7 +482,7 @@ TRAIN:
 
 ```yaml
 TASK: localization
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths: {log_dir: ./logs, save_dir: ./checkpoints, work_dir: ./checkpoints}
@@ -525,8 +523,6 @@ DATA:
       transform: {resize: {height: 224, width: 398}}
 
 MODEL:
-  schema_version: 3
-  task: localization
   runtime: {dtype: fp32, device: cuda, compile: false, freeze: false, multi_gpu: true}
   load: {checkpoint_path: null, pretrained: false, strict: true, map_location: null, format: auto}
   components:
