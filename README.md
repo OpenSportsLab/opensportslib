@@ -1,4 +1,5 @@
 # OpenSportsLib
+<img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.
 
