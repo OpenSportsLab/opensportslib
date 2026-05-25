@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import json
 
 import torch
 import torch.nn as nn
@@ -195,6 +196,7 @@ class LiteContextAwareModel(LiteBaseModel):
         if not self.stop_predict:
             work_dir = get_system_path(self.cfg, "work_dir")
             result_name = get_split_result_name(self.cfg, "test")
+            combined_json = {"data": []} if self.runner == "runner_JSON" else None
             # Transformation to numpy for evaluation
             targets_numpy = list()
             closests_numpy = list()
@@ -284,7 +286,19 @@ class LiteContextAwareModel(LiteBaseModel):
                         self.framerate,
                         inverse_event_dictionary=self.trainer.predict_dataloaders.dataset.inverse_event_dictionary,
                     )
-                    self.json_data = json_data
+                    combined_json["data"].append(json_data["data"][0])
+
+            if self.runner == "runner_JSON":
+                self.json_data = combined_json
+                if work_dir is not None:
+                    combined_output_file = os.path.join(
+                        work_dir,
+                        f"{result_name or 'results_spotting'}-combined.json",
+                    )
+                    with open(combined_output_file, "w") as output_file:
+                        json.dump(self.json_data, output_file, indent=4)
+                    logging.info("Combined predictions saved")
+                    logging.info(combined_output_file)
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,

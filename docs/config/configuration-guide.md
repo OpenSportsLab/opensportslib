@@ -359,8 +359,8 @@ localization runtime automatically forces `multi_gpu=false`.
 |---|---|
 | `classification` | `runner_classification` |
 | `trainer_e2e` | `runner_e2e` |
-| `trainer_calf` | `runner_CALF` |
-| `trainer_pooling` | `runner_pooling` |
+| `trainer_calf` | `runner_JSON` |
+| `trainer_pooling` | `runner_JSON` |
 | `custom` | `runner_classification` (unless `MODEL.metadata.runner.type` is explicitly set) |
 
 ## 7) IO Schema
