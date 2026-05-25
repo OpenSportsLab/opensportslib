@@ -1,5 +1,5 @@
 TASK: localization
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -17,7 +17,7 @@ SYSTEM:
 DATA:
   common:
     dataset_name: SoccerNet
-    data_root: /path/to/OSL-SNBAS/224p-2024
+    data_root: /home/vorajv/dataset/BAS
     classes:
       - PASS
       - DRIVE
@@ -36,7 +36,7 @@ DATA:
     splits:
       train:
         type: VideoGameWithDali
-        annotation_path: ${DATA.common.data_root}/train/train.json
+        annotation_path: ${DATA.common.data_root}/train/annotations-train.json
         source_path: ${DATA.common.data_root}/train/
         output_map: [data, label]
         dataloader:
@@ -46,14 +46,12 @@ DATA:
           pin_memory: true
       valid:
         type: VideoGameWithDali
-        annotation_path: ${DATA.common.data_root}/valid/valid.json
+        annotation_path: ${DATA.common.data_root}/valid/annotations-valid.json
         source_path: ${DATA.common.data_root}/valid/
         output_map: [data, label]
         dataloader:
           batch_size: 8
           shuffle: true
-          num_workers: 4
-          pin_memory: true
       valid_data_frames:
         type: VideoGameWithDaliVideo
         annotation_path: ${DATA.common.splits.valid.annotation_path}
@@ -63,11 +61,9 @@ DATA:
         dataloader:
           batch_size: 4
           shuffle: false
-          num_workers: 4
-          pin_memory: true
       test:
         type: VideoGameWithDaliVideo
-        annotation_path: ${DATA.common.data_root}/test/test.json
+        annotation_path: ${DATA.common.data_root}/test/an-test.json
         source_path: ${DATA.common.data_root}/test/
         output_map: [data, label]
         results: results_spotting_test
@@ -111,8 +107,10 @@ DATA:
         dilate_len: 0
 
 MODEL:
-  schema_version: 3
-  task: localization
+  metadata: 
+    family: E2E
+    runner: 
+      type: runner_e2e
   runtime:
     dtype: fp32
     device: auto
@@ -170,6 +168,7 @@ TRAIN:
     enabled: true
     multi_gpu: true
     acc_grad_iter: 1
+    base_num_valid_epochs: 30
     start_valid_epoch: 4
     valid_map_every: 1
     criterion_valid: map

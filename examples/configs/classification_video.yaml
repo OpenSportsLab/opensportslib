@@ -1,5 +1,5 @@
 TASK: classification
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -15,24 +15,15 @@ SYSTEM:
 
 DATA:
   common:
-    dataset_name: my_dataset
-    data_root: /path/to/dataset
-    classes:
-      - Class0
-      - Class1
-      - Class2
-      - Class3
-      - Class4
-      - Class5
-      - Class6
-      - Class7
+    dataset_name: mvfouls
+    data_root: /home/vorajv/dataset/OSL-XFoul
     runtime:
       loader_backend: opencv
     splits:
       train:
         type: annotations_train.json
-        annotation_path: ${DATA.common.data_root}/train/annotations-train.json
-        source_path: ${DATA.common.data_root}/train
+        annotation_path: ${DATA.common.splits.train.source_path}/train.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 8
           shuffle: true
@@ -43,8 +34,8 @@ DATA:
           prefetch_factor: 4
       valid:
         type: annotations_valid.json
-        annotation_path: ${DATA.common.data_root}/valid/annotations-valid.json
-        source_path: ${DATA.common.data_root}/valid
+        annotation_path: ${DATA.common.splits.valid.source_path}/valid.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 1
           shuffle: false
@@ -55,8 +46,8 @@ DATA:
           prefetch_factor: 4
       test:
         type: annotations_test.json
-        annotation_path: ${DATA.common.data_root}/test/annotations-test.json
-        source_path: ${DATA.common.data_root}/test
+        annotation_path: ${DATA.common.splits.test.source_path}/test.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 1
           shuffle: false
@@ -96,12 +87,11 @@ DATA:
         flip_prob: 0.5
         random_crop: false
       params:
-        view_type: single
+        color_mode: rgb
+        view_type: multi
         num_classes: 8
 
 MODEL:
-  schema_version: 3
-  task: classification
   runtime:
     dtype: fp32
     device: auto

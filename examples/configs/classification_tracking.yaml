@@ -1,5 +1,5 @@
 TASK: classification
-VERSION: 3
+VERSION: 2
 
 SYSTEM:
   paths:
@@ -7,7 +7,7 @@ SYSTEM:
     save_dir: ./checkpoints_tracking
   device: cuda
   gpu:
-    count: 1
+    count: 4
     id: 0
   reproducibility:
     use_seed: true
@@ -16,14 +16,14 @@ SYSTEM:
 DATA:
   common:
     dataset_name: sngar
-    data_root: /path/to/dataset
+    data_root: /home/vorajv/dataset/sngar-tracking
     runtime:
       loader_backend: opencv
     splits:
       train:
         type: annotations_train.json
-        annotation_path: ${DATA.common.data_root}/train/train.json
-        source_path: ${DATA.common.data_root}/train
+        annotation_path: ${DATA.common.splits.train.source_path}/train.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: true
@@ -31,8 +31,8 @@ DATA:
           pin_memory: true
       valid:
         type: annotations_valid.json
-        annotation_path: ${DATA.common.data_root}/valid/valid.json
-        source_path: ${DATA.common.data_root}/valid
+        annotation_path: ${DATA.common.splits.valid.source_path}/valid.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: false
@@ -40,8 +40,8 @@ DATA:
           pin_memory: true
       test:
         type: annotations_test.json
-        annotation_path: ${DATA.common.data_root}/test/test.json
-        source_path: ${DATA.common.data_root}/test
+        annotation_path: ${DATA.common.splits.test.source_path}/test.json
+        source_path: ${DATA.common.data_root}
         dataloader:
           batch_size: 32
           shuffle: false
@@ -49,7 +49,7 @@ DATA:
           pin_memory: true
   inputs:
     tracking:
-      modality: tracking
+      modality: tracking_parquet
       representation: raw
       source:
         format: parquet
@@ -76,8 +76,6 @@ DATA:
           training_matches: 45
 
 MODEL:
-  schema_version: 3
-  task: classification
   runtime:
     dtype: fp32
     device: auto

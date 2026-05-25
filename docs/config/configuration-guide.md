@@ -6,6 +6,13 @@ See also:
 - [Legacy to Canonical Mapping](legacy-to-canonical-mapping.md)
 - [Configuration Developer Guide](developer-guide.md)
 
+## Canonical Config Examples
+
+Use production-ready canonical templates from:
+- [opensportslib/configs/](../../opensportslib/configs/)
+- [opensportslib/configs/classification/](../../opensportslib/configs/classification/)
+- [opensportslib/configs/localization/](../../opensportslib/configs/localization/)
+
 ## 1) Canonical Contract
 
 - Runtime consumes canonical config only.
