@@ -637,8 +637,8 @@ class Inferer:
         if pred_file is not None:
             pred_json_file = os.path.join(pred_file + ".json")
             pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
-            logging.info("Predictions saved")
-            logging.info(pred_json_file)
+            #logging.info("Predictions saved")
+            #logging.info(pred_json_file)
             logging.info("High recall predictions saved")
             logging.info(pred_recall_file)
 
@@ -787,6 +787,13 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
+        def _normalize_pred_key(path_value):
+            if path_value is None:
+                return "", ""
+            raw = str(path_value).strip().replace("\\", "/")
+            no_ext = os.path.splitext(raw)[0]
+            return raw, no_ext
+
         gt_path = getattr(cfg, "annotation_path", None)
         if gt_path is None:
             gt_path = getattr(cfg, "path", None)
@@ -841,7 +848,11 @@ class Evaluator:
         if pred_is_v2:
             for item in pred_data["data"]:
                 video_path = item["inputs"][0]["path"]
-                pred_lookup[video_path] = item
+                raw_key, no_ext_key = _normalize_pred_key(video_path)
+                if raw_key:
+                    pred_lookup[raw_key] = item
+                if no_ext_key:
+                    pred_lookup[no_ext_key] = item
 
         targets_numpy = []
         detections_numpy = []
@@ -865,13 +876,13 @@ class Evaluator:
 
             # ---------------- PRED ----------------
             if pred_path_is_file:
-
                 # ===== V2 PRED =====
                 if pred_is_v2:
-                    if video_path not in pred_lookup:
+                    raw_key, no_ext_key = _normalize_pred_key(video_path)
+                    item = pred_lookup.get(raw_key) or pred_lookup.get(no_ext_key)
+                    if item is None:
                         continue
 
-                    item = pred_lookup[video_path]
                     fps = item["inputs"][0].get("fps", self.extract_fps)
 
                     predictions = [
@@ -932,7 +943,6 @@ class Evaluator:
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,
             )
-
             targets_numpy.append(dense_labels)
             detections_numpy.append(dense_predictions)
 

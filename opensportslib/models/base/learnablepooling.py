@@ -161,6 +161,7 @@ class LiteLearnablePoolingModel(LiteBaseModel):
     def on_predict_start(self):
         """Operations to make before starting to infer."""
         self.stop_predict = False
+        self.combined_json = {"data": []} if self.runner == "runner_JSON" else None
         work_dir = get_system_path(self.cfg, "work_dir")
         result_name = get_split_result_name(self.cfg, "test")
         if self.infer_split:
@@ -183,23 +184,33 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         if not self.stop_predict:
             work_dir = get_system_path(self.cfg, "work_dir")
             result_name = get_split_result_name(self.cfg, "test")
+            if self.runner == "runner_JSON" and self.combined_json is not None and work_dir is not None:
+                self.json_data = self.combined_json
+                combined_output_file = os.path.join(
+                    work_dir,
+                    f"{result_name or 'results_spotting'}-combined.json",
+                )
+                with open(combined_output_file, "w") as output_file:
+                    json.dump(self.json_data, output_file, indent=4)
+                logging.info("Predictions Saved here:")
+                logging.info(combined_output_file)
             if self.infer_split:
                 zipResults(
                     zip_path=self.output_results,
                     target_dir=os.path.join(work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
-                logging.info("Predictions saved")
+                logging.info("Additional Saved Folder")
                 logging.info(
                     os.path.join(
                         work_dir,
                         self.output_folder,
                     )
                 )
-                logging.info("Predictions saved")
-                logging.info(self.output_results)
+                #logging.info("Predictions saved")
+                #logging.info(self.output_results)
             else:
-                logging.info("Predictions saved")
+                logging.info("Additional Saved file")
                 logging.info(
                     os.path.join(
                         work_dir, f"{result_name}.json"
@@ -216,7 +227,6 @@ class LiteLearnablePoolingModel(LiteBaseModel):
         if not self.stop_predict:
             work_dir = get_system_path(self.cfg, "work_dir")
             result_name = get_split_result_name(self.cfg, "test")
-            combined_json = {"data": []} if self.runner == "runner_JSON" else None
             if self.runner == "runner_pooling":
                 game_ID, feat_half1, feat_half2, label_half1, label_half2 = batch
 
@@ -368,16 +378,5 @@ class LiteLearnablePoolingModel(LiteBaseModel):
                     )
                 with open(output_file, "w") as output_file:
                     json.dump(json_data, output_file, indent=4)
-                combined_json["data"].append(json_data["data"][0])
-
-            if self.runner == "runner_JSON":
-                self.json_data = combined_json
-                if work_dir is not None:
-                    combined_output_file = os.path.join(
-                        work_dir,
-                        f"{result_name or 'results_spotting'}-combined.json",
-                    )
-                    with open(combined_output_file, "w") as output_file:
-                        json.dump(self.json_data, output_file, indent=4)
-                    logging.info("Combined predictions saved")
-                    logging.info(combined_output_file)
+                if self.combined_json is not None:
+                    self.combined_json["data"].append(json_data["data"][0])

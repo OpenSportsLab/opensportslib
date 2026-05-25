@@ -297,7 +297,7 @@ class LiteContextAwareModel(LiteBaseModel):
                     )
                     with open(combined_output_file, "w") as output_file:
                         json.dump(self.json_data, output_file, indent=4)
-                    logging.info("Combined predictions saved")
+                    logging.info("Predicitons Saved here:")
                     logging.info(combined_output_file)
             if self.infer_split:
                 zipResults(
@@ -305,17 +305,17 @@ class LiteContextAwareModel(LiteBaseModel):
                     target_dir=os.path.join(work_dir, self.output_folder),
                     filename="results_spotting.json",
                 )
-                logging.info("Predictions saved")
+                logging.info("Additional Saved Folder")
                 logging.info(
                     os.path.join(
                         work_dir,
                         self.output_folder,
                     )
                 )
-                logging.info("Predictions saved")
-                logging.info(self.output_results)
+                #logging.info("Predictions saved")
+                #logging.info(self.output_results)
             else:
-                logging.info("Predictions saved")
+                logging.info("Additional Saved file")
                 logging.info(
                     os.path.join(
                         work_dir, f"{result_name}.json"
