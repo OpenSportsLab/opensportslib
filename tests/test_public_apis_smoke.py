@@ -5,6 +5,7 @@ from opensportslib.apis import (
     BaseTaskModel,
     ClassificationModel,
     LocalizationModel,
+    VQAModel,
 )
 
 def test_classification_model_initializes(classification_config_path):
@@ -36,3 +37,17 @@ def test_localization_model_initializes(localization_config_path):
 def test_model_namespace_exposes_model_classes():
     assert callable(model.ClassificationModel)
     assert callable(model.LocalizationModel)
+    assert callable(model.VQAModel)
+
+
+def test_vqa_model_initializes(vqa_config_path):
+    api = VQAModel(config=vqa_config_path)
+
+    assert isinstance(api, BaseTaskModel)
+    assert isinstance(api, VQAModel)
+    assert Path(api.config.DATA.common.data_root).is_absolute()
+    assert Path(api.config.SYSTEM.paths.save_dir).exists()
+    assert callable(api.load_weights)
+    assert callable(api.train)
+    assert callable(api.infer)
+    assert callable(api.evaluate)

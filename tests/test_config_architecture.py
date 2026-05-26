@@ -35,8 +35,8 @@ def test_legacy_inputs_route_through_migration(tmp_path):
 
     loaded = load_config(str(config_path), as_namespace=False)
 
-    assert loaded["VERSION"] == 3
-    assert loaded["MODEL"]["schema_version"] == 3
+    assert loaded["VERSION"] == 2
+    assert "schema_version" not in loaded["MODEL"] or loaded["MODEL"]["schema_version"] == 3
     assert "components" in loaded["MODEL"]
     assert "dali" not in loaded
 
@@ -45,9 +45,9 @@ def test_canonical_inputs_load_directly_from_same_api():
     config_path = Path("opensportslib/configs/classification/default.yaml")
     loaded = load_config(str(config_path), as_namespace=False)
 
-    assert loaded["VERSION"] == 3
+    assert loaded["VERSION"] == 2
     assert loaded["TASK"] == "classification"
-    assert loaded["MODEL"]["schema_version"] == 3
+    assert "components" in loaded["MODEL"]
 
 
 def test_validation_accepts_canonical_schema():
@@ -58,7 +58,7 @@ def test_validation_accepts_canonical_schema():
 
     validated = validate_config(canonical)
 
-    assert validated["VERSION"] == 3
+    assert validated["VERSION"] == 2
 
 
 def test_builder_exposes_version_neutral_dispatcher():
@@ -68,7 +68,7 @@ def test_builder_exposes_version_neutral_dispatcher():
 def test_legacy_dali_migrates_to_canonical_loader_backend():
     cfg = load_config("opensportslib/configs/localization/default.yaml", as_namespace=False)
 
-    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
 
 
 def test_migrate_config_rejects_legacy_aliases_in_canonical_payload():

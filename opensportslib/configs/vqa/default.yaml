@@ -1,0 +1,159 @@
+TASK: VQA
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_vqa
+    work_dir: ./checkpoints_vqa
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: OSL-XFoul
+    data_root: /home/vorajv/dataset/OSL-XFoul
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/train.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 4
+          shuffle: true
+          num_workers: 0
+          pin_memory: false
+      valid:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/valid.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 4
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+      test:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/test.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 4
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        start_frame: 63
+        end_frame: 87
+        input_fps: 25
+        target_fps: 17
+        temporal_tokens: 44
+      transform: {}
+      augmentations: {}
+      params: {}
+    question:
+      modality: text
+      representation: raw
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+    priors:
+      modality: text
+      representation: structured
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: vqa_video_encoder
+      params: {}
+      overrides: {}
+    mm_projector:
+      kind: projector
+      source:
+        provider: opensportslib
+        registry: adapter
+        name: linear_projector
+      params: {}
+      overrides: {}
+    llm_decoder:
+      kind: decoder
+      source:
+        provider: opensportslib
+        registry: head
+        name: vqa_decoder
+      params: {}
+      overrides: {}
+  topology:
+    - from: video_encoder
+      to: mm_projector
+    - from: mm_projector
+      to: llm_decoder
+
+IO:
+  inputs:
+    video: video_encoder
+    question: llm_decoder
+  outputs:
+    answer_text: llm_decoder
+    explanation_text: llm_decoder
+
+TRAIN:
+  trainer:
+    type: vqa
+  epochs: 1
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+  scheduler:
+    type: StepLR
+  execution:
+    enabled: true
+    prompt:
+      style: short
+      include_priors: true
+      prior_fields: [action, offence, contact, bodypart]
+    generation:
+      max_new_tokens: 128
+      temperature: 0.2
+  sampling: {}
+  selection:
+    monitor: loss
+    mode: min
+  checkpoint:
+    save_every: 1
+    save_best: true

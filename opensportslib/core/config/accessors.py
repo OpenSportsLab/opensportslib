@@ -371,4 +371,32 @@ def get_runner_type(cfg: Any) -> str:
         return "runner_CALF"
     if trainer_type == "trainer_pooling":
         return "runner_pooling"
+    if trainer_type == "vqa":
+        return "runner_vqa"
     return "runner_classification"
+
+
+def get_vqa_prompt_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    prompt = execution.get("prompt", {})
+    return _as_dict(prompt)
+
+
+def get_vqa_generation_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    generation = execution.get("generation", {})
+    return _as_dict(generation)
+
+
+def get_vqa_backend(cfg: Any) -> str:
+    model = _as_dict(getattr(cfg, "MODEL", None))
+    metadata = _as_dict(model.get("metadata"))
+    backend = metadata.get("backend")
+    if backend:
+        return str(backend).lower()
+
+    execution = get_train_execution(cfg)
+    backend = execution.get("backend")
+    if backend:
+        return str(backend).lower()
+    return "baseline"

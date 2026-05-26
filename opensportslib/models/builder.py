@@ -3,7 +3,9 @@
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_name_by_kind,
+    get_component_provider_by_kind,
     get_component_params_by_kind,
+    get_vqa_backend,
     get_data_classes,
     get_data_num_classes,
     get_data_modality,
@@ -107,6 +109,29 @@ def build_model_canonical(config, device):
             f"Unsupported localization model family: {model_family!r}. "
             "Expected one of: E2E, ContextAware, LearnablePooling."
         )
+    if task == "vqa":
+        backend = get_vqa_backend(config)
+        decoder_provider = (get_component_provider_by_kind(config, "decoder") or "").lower()
+        decoder_name = get_component_name_by_kind(config, "decoder") or ""
+
+        if backend == "xvars_hf" or decoder_provider == "huggingface":
+            from opensportslib.models.base.vqa import MultimodalHFVQAModel
+
+            decoder_params = get_component_params_by_kind(config, "decoder")
+            projector_params = get_component_params_by_kind(config, "projector")
+            model_id = (
+                decoder_params.get("repo_id")
+                or decoder_name
+                or "distilgpt2"
+            )
+            return MultimodalHFVQAModel(
+                config,
+                model_id=model_id,
+                projector_params=projector_params,
+            ), None
+
+        from opensportslib.models.base.vqa import VQABaselineModel
+        return VQABaselineModel(config), None
     else:
         raise ValueError(f"Unsupported model family for task: {task}")
 
@@ -143,3 +168,7 @@ def _resolve_model_route(payload):
         if not model.get("metadata", {}).get("family"):
             # Family inference fallback remains in runtime adapter.
             return
+    if task == "vqa":
+        decoders = [c for c in components.values() if c.get("kind") in {"decoder", "head"}]
+        if not decoders:
+            raise ValueError("Canonical VQA config must define a decoder or head component.")

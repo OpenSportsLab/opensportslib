@@ -375,6 +375,60 @@ def make_localization_config(tmp_path: Path) -> str:
     return _write_config(tmp_path / "localization.yaml", payload)
 
 
+def make_vqa_config(tmp_path: Path) -> str:
+    data_dir = tmp_path / "vqa_data"
+    save_dir = tmp_path / "vqa_save"
+    log_dir = tmp_path / "vqa_logs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    annotation = _write_vqa_annotation(tmp_path / "vqa-test.json")
+    payload = {
+        "TASK": "VQA",
+        "VERSION": 2,
+        "SYSTEM": _system_block(save_dir, log_dir),
+        "DATA": {
+            "common": {
+                "dataset_name": "OSL-XFoul-mini",
+                "data_root": str(data_dir),
+                "runtime": {"loader_backend": "opencv"},
+                "splits": {
+                    "train": {"annotation_path": annotation, "source_path": str(data_dir), "dataloader": {"batch_size": 1, "shuffle": True, "num_workers": 0, "pin_memory": False}},
+                    "valid": {"annotation_path": annotation, "source_path": str(data_dir), "dataloader": {"batch_size": 1, "shuffle": False, "num_workers": 0, "pin_memory": False}},
+                    "test": {"annotation_path": annotation, "source_path": str(data_dir), "dataloader": {"batch_size": 1, "shuffle": False, "num_workers": 0, "pin_memory": False}},
+                },
+            },
+            "inputs": {
+                "video": {"modality": "video", "representation": "raw", "source": {"format": "mp4"}, "sampling": {}, "transform": {}, "augmentations": {}, "params": {}},
+                "question": {"modality": "text", "representation": "raw", "source": {"format": "json"}, "sampling": {}, "transform": {}, "augmentations": {}, "params": {}},
+            },
+        },
+        "MODEL": {
+            "runtime": {"dtype": "fp32", "device": "auto", "compile": False, "freeze": False},
+            "load": {"checkpoint_path": None, "pretrained": False, "strict": True, "map_location": None, "format": "auto"},
+            "components": {
+                "video_encoder": {"kind": "encoder", "source": {"provider": "opensportslib", "registry": "backbone", "name": "vqa_video_encoder"}, "params": {}, "overrides": {}},
+                "llm_decoder": {"kind": "decoder", "source": {"provider": "opensportslib", "registry": "head", "name": "vqa_decoder"}, "params": {}, "overrides": {}},
+            },
+            "topology": [{"from": "video_encoder", "to": "llm_decoder"}],
+        },
+        "IO": {"inputs": {"video": "video_encoder", "question": "llm_decoder"}, "outputs": {"answer_text": "llm_decoder"}},
+        "TRAIN": {
+            "trainer": {"type": "vqa"},
+            "epochs": 1,
+            "criterion": {"type": "CrossEntropyLoss"},
+            "optimizer": {"type": "AdamW", "lr": 0.0001},
+            "scheduler": {"type": "StepLR"},
+            "execution": {"enabled": True, "prompt": {"style": "short"}},
+            "sampling": {},
+            "selection": {"monitor": "loss", "mode": "min"},
+            "checkpoint": {"save_every": 1, "save_best": True},
+        },
+    }
+    return _write_config(tmp_path / "vqa.yaml", payload)
+
+
 @pytest.fixture
 def classification_config_path(tmp_path: Path) -> str:
     return make_classification_config(tmp_path)
@@ -383,6 +437,11 @@ def classification_config_path(tmp_path: Path) -> str:
 @pytest.fixture
 def localization_config_path(tmp_path: Path) -> str:
     return make_localization_config(tmp_path)
+
+
+@pytest.fixture
+def vqa_config_path(tmp_path: Path) -> str:
+    return make_vqa_config(tmp_path)
 
 
 def _write_annotation(path: Path, num_samples: int = 2) -> str:
@@ -429,6 +488,32 @@ def _write_annotation(path: Path, num_samples: int = 2) -> str:
             "foul_type": {"labels": classes},
         },
         "data": items,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    return str(path)
+
+
+def _write_vqa_annotation(path: Path) -> str:
+    payload = {
+        "labels": {"action": {"labels": ["Challenge"]}},
+        "data": [
+            {
+                "id": "action_0",
+                "inputs": [{"type": "video", "path": "train/action_0/clip_0.mp4"}],
+                "labels": {
+                    "action": {"label": "Challenge"},
+                    "offence": {"label": "Offence: No card"},
+                },
+                "answers": [
+                    {
+                        "question": "What card would you give? Why?",
+                        "answers": ["No card, because this is a low-intensity challenge."],
+                    }
+                ],
+            }
+        ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:

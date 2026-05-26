@@ -1,17 +1,19 @@
 import inspect
 from types import SimpleNamespace
 
-from opensportslib.apis import ClassificationModel, LocalizationModel
+from opensportslib.apis import ClassificationModel, LocalizationModel, VQAModel
 
 
 def test_method_signatures_expose_weights_and_no_pretrained_in_signature(
     classification_config_path,
     localization_config_path,
+    vqa_config_path,
 ):
     cls_api = ClassificationModel(config=classification_config_path)
     loc_api = LocalizationModel(config=localization_config_path)
+    vqa_api = VQAModel(config=vqa_config_path)
 
-    for api in (cls_api, loc_api):
+    for api in (cls_api, loc_api, vqa_api):
         for method_name in ("load_weights", "train", "infer", "evaluate"):
             sig = inspect.signature(getattr(api, method_name))
             assert "weights" in sig.parameters
@@ -60,18 +62,23 @@ def test_save_predictions_writes_dict_payload(classification_config_path, tmp_pa
 def test_constructor_is_minimal_and_sets_run_id(
     classification_config_path,
     localization_config_path,
+    vqa_config_path,
 ):
     cls_sig = inspect.signature(ClassificationModel)
     loc_sig = inspect.signature(LocalizationModel)
+    vqa_sig = inspect.signature(VQAModel)
 
     assert list(cls_sig.parameters.keys()) == ["config", "weights"]
     assert list(loc_sig.parameters.keys()) == ["config", "weights"]
+    assert list(vqa_sig.parameters.keys()) == ["config", "weights"]
 
     cls_api = ClassificationModel(config=classification_config_path)
     loc_api = LocalizationModel(config=localization_config_path)
+    vqa_api = VQAModel(config=vqa_config_path)
 
     assert cls_api.run_id
     assert loc_api.run_id
+    assert vqa_api.run_id
 
 
 def test_classification_constructor_weights_are_default_for_train_and_infer(
