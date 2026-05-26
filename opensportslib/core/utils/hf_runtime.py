@@ -3,11 +3,37 @@
 from __future__ import annotations
 
 import logging
+import os
+import inspect
+from contextlib import contextmanager
 from typing import Any
 
 import torch
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def hf_offline_if_requested(enabled: bool):
+    """Temporarily force HF libraries into offline mode for local-only loads."""
+    if not enabled:
+        yield
+        return
+
+    previous = {
+        "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"),
+        "TRANSFORMERS_OFFLINE": os.environ.get("TRANSFORMERS_OFFLINE"),
+    }
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class OptionalDependencyError(ImportError):
@@ -24,6 +50,15 @@ def require_optional_package(package: str, install_hint: str | None = None):
             f"Optional dependency '{package}' is required for this training backend. "
             f"Install it with: {hint}"
         ) from exc
+
+
+def optional_package_available(package: str) -> bool:
+    """Return whether an optional dependency can be imported."""
+    try:
+        __import__(package)
+        return True
+    except ImportError:
+        return False
 
 
 def build_bitsandbytes_config(quantization_cfg: dict[str, Any] | None = None):
@@ -71,15 +106,16 @@ def load_hf_causal_lm_for_training(
 
     device = "cuda" if prefer_cuda and torch.cuda.is_available() else "cpu"
     bnb_config = build_bitsandbytes_config(quantization_cfg)
-    tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    with hf_offline_if_requested(local_files_only):
+        tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
-    model_kwargs = {"local_files_only": local_files_only}
-    if bnb_config is not None:
-        model_kwargs["quantization_config"] = bnb_config
-        model_kwargs["device_map"] = "auto" if device == "cuda" else None
-    model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+        model_kwargs = {"local_files_only": local_files_only}
+        if bnb_config is not None:
+            model_kwargs["quantization_config"] = bnb_config
+            model_kwargs["device_map"] = "auto" if device == "cuda" else None
+        model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
     if bnb_config is None:
         model = model.to(device)
     return tokenizer, model, device
@@ -106,6 +142,88 @@ def apply_lora_for_causal_lm(model, lora_cfg: dict[str, Any] | None = None):
     return get_peft_model(model, peft_config)
 
 
+def has_peft_adapter_artifacts(adapter_path: str | None) -> bool:
+    """Detect whether a directory contains PEFT adapter files."""
+    if not adapter_path or not os.path.isdir(adapter_path):
+        return False
+    return any(
+        os.path.exists(os.path.join(adapter_path, name))
+        for name in ("adapter_config.json", "adapter_model.bin", "adapter_model.safetensors")
+    )
+
+
+def load_peft_adapter_if_available(model, adapter_path: str | None):
+    """Load a PEFT adapter into a model when real adapter artifacts exist."""
+    if not has_peft_adapter_artifacts(adapter_path):
+        return model, "not_found"
+    if not optional_package_available("peft"):
+        logger.warning(
+            "PEFT adapter artifacts found but optional dependency 'peft' is not installed; "
+            "continuing with base decoder."
+        )
+        return model, "missing_peft"
+
+    from peft import PeftModel
+
+    return PeftModel.from_pretrained(model, adapter_path), "loaded"
+
+
+def build_trl_sft_trainer(
+    *,
+    model,
+    tokenizer,
+    train_dataset,
+    eval_dataset,
+    args,
+    dataset_text_field: str = "text",
+    max_seq_length: int = 512,
+):
+    """Construct TRL SFTTrainer across common TRL API versions."""
+    require_optional_package("trl", "pip install trl")
+    from trl import SFTTrainer
+
+    kwargs = {
+        "model": model,
+        "train_dataset": train_dataset,
+        "eval_dataset": eval_dataset,
+    }
+    params = inspect.signature(SFTTrainer.__init__).parameters
+    if "processing_class" in params and "dataset_text_field" not in params:
+        try:
+            from trl import SFTConfig
+
+            if not isinstance(args, SFTConfig):
+                args = SFTConfig(
+                    output_dir=getattr(args, "output_dir", "./checkpoints"),
+                    per_device_train_batch_size=getattr(args, "per_device_train_batch_size", 1),
+                    per_device_eval_batch_size=getattr(args, "per_device_eval_batch_size", 1),
+                    gradient_accumulation_steps=getattr(args, "gradient_accumulation_steps", 1),
+                    num_train_epochs=getattr(args, "num_train_epochs", 1),
+                    learning_rate=getattr(args, "learning_rate", 2e-4),
+                    logging_steps=getattr(args, "logging_steps", 1),
+                    save_strategy=getattr(args, "save_strategy", "epoch"),
+                    report_to=[],
+                    dataset_text_field=dataset_text_field,
+                    max_length=max_seq_length,
+                    gradient_checkpointing=False,
+                    bf16=False,
+                    fp16=False,
+                    use_cpu=bool(getattr(args, "use_cpu", False)),
+                )
+        except ImportError:
+            pass
+    kwargs["args"] = args
+    if "tokenizer" in params:
+        kwargs["tokenizer"] = tokenizer
+    elif "processing_class" in params:
+        kwargs["processing_class"] = tokenizer
+    if "dataset_text_field" in params:
+        kwargs["dataset_text_field"] = dataset_text_field
+    if "max_seq_length" in params:
+        kwargs["max_seq_length"] = max_seq_length
+    return SFTTrainer(**kwargs)
+
+
 class HFCausalDecoderRuntime:
     """Reusable HF causal decoder wrapper with robust readiness/fallback signals."""
 
@@ -117,11 +235,14 @@ class HFCausalDecoderRuntime:
         temperature: float = 0.2,
         local_files_only: bool = False,
         prefer_cuda: bool = True,
+        adapter_path: str | None = None,
     ):
         self.model_id = model_id
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.local_files_only = local_files_only
+        self.adapter_path = adapter_path
+        self.adapter_status = "not_requested"
         self.device = "cuda" if prefer_cuda and torch.cuda.is_available() else "cpu"
 
         self._ready = False
@@ -138,8 +259,11 @@ class HFCausalDecoderRuntime:
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
-            self._tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only)
-            self._model = AutoModelForCausalLM.from_pretrained(model_id, local_files_only=local_files_only)
+            with hf_offline_if_requested(local_files_only):
+                self._tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only)
+                self._model = AutoModelForCausalLM.from_pretrained(model_id, local_files_only=local_files_only)
+            if adapter_path:
+                self._model, self.adapter_status = load_peft_adapter_if_available(self._model, adapter_path)
             self._model = self._model.to(self.device)
             self._model.eval()
             self._ready = True

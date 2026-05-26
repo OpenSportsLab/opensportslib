@@ -15,7 +15,9 @@ from opensportslib.core.utils.config import save_config
 from opensportslib.core.utils.hf_runtime import (
     OptionalDependencyError,
     apply_lora_for_causal_lm,
+    build_trl_sft_trainer,
     load_hf_causal_lm_for_training,
+    optional_package_available,
     require_optional_package,
 )
 from opensportslib.metrics.vqa_metric import compute_vqa_metrics
@@ -71,7 +73,12 @@ def build_vqa_sft_text(
         prompt_parts.append(video_token)
     prompt_parts.append("ASSISTANT:")
     prompt = "\n".join(prompt_parts)
-    return {"prompt": prompt, "answer": answer, "text": f"{prompt} {answer}".strip()}
+    return {
+        "prompt": prompt,
+        "answer": answer,
+        "completion": answer,
+        "text": f"{prompt} {answer}".strip(),
+    }
 
 
 class VQALoraSFTDataset:
@@ -115,17 +122,24 @@ class VQALoraTrainer:
 
         metadata = {
             "backend": "xvars_lora",
+            "model_id": str(hf_cfg.get("model_id", "distilgpt2")),
             "num_train_samples": len(train_sft),
             "num_valid_samples": len(valid_sft) if valid_sft is not None else 0,
             "status": "metadata_only",
+            "optional_dependencies": {
+                "trl": optional_package_available("trl"),
+                "peft": optional_package_available("peft"),
+                "bitsandbytes": optional_package_available("bitsandbytes"),
+            },
         }
 
         if bool(execution.get("dry_run", False)):
             return self._write_artifacts(output_dir, metadata)
 
         require_optional_package("trl", "pip install trl")
+        require_optional_package("datasets", "pip install datasets")
+        from datasets import Dataset
         from transformers import TrainingArguments
-        from trl import SFTTrainer
 
         model_id = str(hf_cfg.get("model_id", "distilgpt2"))
         tokenizer, model, _device = load_hf_causal_lm_for_training(
@@ -135,6 +149,8 @@ class VQALoraTrainer:
             quantization_cfg=quant_cfg,
         )
         model = apply_lora_for_causal_lm(model, lora_cfg)
+        hf_train_sft = Dataset.from_list(train_sft.rows)
+        hf_valid_sft = Dataset.from_list(valid_sft.rows) if valid_sft is not None else None
 
         args = TrainingArguments(
             output_dir=output_dir,
@@ -146,11 +162,14 @@ class VQALoraTrainer:
             logging_steps=int(sft_cfg.get("logging_steps", 1)),
             save_strategy=str(sft_cfg.get("save_strategy", "epoch")),
             report_to=[],
+            fp16=bool(sft_cfg.get("fp16", False)),
+            bf16=bool(sft_cfg.get("bf16", False)),
+            use_cpu=not bool(hf_cfg.get("prefer_cuda", True)),
         )
-        trainer = SFTTrainer(
+        trainer = build_trl_sft_trainer(
             model=model,
-            train_dataset=train_sft,
-            eval_dataset=valid_sft,
+            train_dataset=hf_train_sft,
+            eval_dataset=hf_valid_sft,
             tokenizer=tokenizer,
             args=args,
             dataset_text_field="text",

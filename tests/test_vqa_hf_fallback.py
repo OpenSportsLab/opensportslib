@@ -35,3 +35,30 @@ def test_hf_backend_falls_back_to_baseline(monkeypatch):
     out = model.generate_answer(sample, prompt_cfg={"style": "short"}, generation_cfg={})
     assert isinstance(out, str)
     assert out
+
+
+def test_hf_backend_receives_adapter_checkpoint_path(monkeypatch, tmp_path):
+    import opensportslib.models.base.vqa as mm
+
+    captured = {}
+
+    class DummyDecoder:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+            self._ready = False
+            self._error = "offline"
+
+        @property
+        def is_ready(self):
+            return self._ready
+
+        @property
+        def error(self):
+            return self._error
+
+    cfg = _cfg()
+    cfg.MODEL = SimpleNamespace(load=SimpleNamespace(checkpoint_path=str(tmp_path)))
+    monkeypatch.setattr(mm, "HFCausalDecoderRuntime", DummyDecoder)
+
+    mm.MultimodalHFVQAModel(cfg, model_id="distilgpt2", projector_params={"input_dim": 270, "output_dim": 8})
+    assert captured["adapter_path"] == str(tmp_path)

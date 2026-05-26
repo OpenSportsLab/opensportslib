@@ -8,7 +8,7 @@ SYSTEM:
     work_dir: ./checkpoints_vqa_lora
   device: cuda
   gpu:
-    count: 1
+    count: 4
     id: 0
   reproducibility:
     use_seed: true
@@ -105,9 +105,9 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: distilgpt2
+        name: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
       params:
-        repo_id: distilgpt2
+        repo_id: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
       overrides: {}
   topology:
     - from: video_encoder
@@ -140,35 +140,37 @@ TRAIN:
     enabled: true
     backend: xvars_hf
     training_backend: xvars_lora
-    dry_run: true
+    dry_run: false
     prompt:
       style: detailed
       system_prompt: You are an artificial intelligence assistant for visual football referee questions. Give short and helpful answers.
       include_priors: true
       prior_fields: [action, offence, contact, bodypart]
     sft:
-      max_seq_length: 512
+      max_seq_length: 96
       answer_field: references
-      include_video_tokens: true
-      video_token_len: 300
+      include_video_tokens: false
+      video_token_len: 0
       per_device_train_batch_size: 1
       per_device_eval_batch_size: 1
       gradient_accumulation_steps: 1
       num_train_epochs: 1
-      learning_rate: 0.0002
+      learning_rate: 0.0001
       logging_steps: 1
-      save_strategy: epoch
+      save_strategy: "no"
+      fp16: false
+      bf16: false
     hf:
-      model_id: distilgpt2
+      model_id: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
       local_files_only: true
-      prefer_cuda: true
+      prefer_cuda: false
     lora:
-      r: 16
-      alpha: 32
-      dropout: 0.05
+      r: 2
+      alpha: 4
+      dropout: 0.0
       bias: none
       prepare_kbit: false
-      target_modules: [q_proj, v_proj]
+      target_modules: [c_attn]
     quantization:
       enabled: false
       load_in_4bit: true

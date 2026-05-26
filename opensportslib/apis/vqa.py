@@ -7,6 +7,24 @@ from opensportslib.core.config.accessors import get_split_annotation_path
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
 
+def _set_model_checkpoint_path(config, weights: str | None) -> None:
+    if weights is None:
+        return
+    model = getattr(config, "MODEL", None)
+    if model is None:
+        return
+    load = getattr(model, "load", None)
+    if load is None:
+        from types import SimpleNamespace
+
+        load = SimpleNamespace()
+        setattr(model, "load", load)
+    if isinstance(load, dict):
+        load["checkpoint_path"] = weights
+    else:
+        setattr(load, "checkpoint_path", weights)
+
+
 class VQAModel(BaseTaskModel):
     """Top-level task wrapper for VQA."""
 
@@ -27,6 +45,7 @@ class VQAModel(BaseTaskModel):
             raise ValueError("`weights` must be provided to load_weights().")
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
 
+        _set_model_checkpoint_path(self.config, weights)
         self.trainer = Trainer_VQA(self.config)
         self.trainer.load(weights)
         self.last_loaded_weights = weights
@@ -43,15 +62,20 @@ class VQAModel(BaseTaskModel):
         del use_wandb, kwargs
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
-        from opensportslib.models.builder import build_model
-        from opensportslib.core.utils.config import select_device
+        from opensportslib.core.config.accessors import get_train_execution
 
         self.config = resolve_config_omega(self.config, weights=weights)
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
-        device = select_device(self.config.SYSTEM)
+        execution = get_train_execution(self.config)
+        backend = str(execution.get("training_backend", "placeholder")).lower()
+        model = None
+        if backend != "xvars_lora":
+            from opensportslib.models.builder import build_model
+            from opensportslib.core.utils.config import select_device
 
-        model, _ = build_model(self.config, device)
+            device = select_device(self.config.SYSTEM)
+            model, _ = build_model(self.config, device)
         train_data = build_dataset(self.config, train_set, None, split="train")
         valid_data = build_dataset(self.config, valid_set, None, split="valid")
         self.trainer = Trainer_VQA(self.config)
@@ -75,6 +99,7 @@ class VQAModel(BaseTaskModel):
 
         self.config = resolve_config_omega(self.config, weights=weights)
         effective_weights = weights if weights is not None else self.last_loaded_weights
+        _set_model_checkpoint_path(self.config, effective_weights)
         test_set = self._resolve_split_path("test", test_set)
         device = select_device(self.config.SYSTEM)
         model, _ = build_model(self.config, device)

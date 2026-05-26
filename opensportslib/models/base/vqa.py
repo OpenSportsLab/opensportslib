@@ -7,7 +7,7 @@ from typing import Any
 
 import torch.nn as nn
 
-from opensportslib.core.config.accessors import get_data_sampling
+from opensportslib.core.config.accessors import get_data_sampling, get_model_load
 from opensportslib.core.utils.hf_runtime import HFCausalDecoderRuntime
 from opensportslib.models.utils.vqa_prompting import build_prior_text
 from opensportslib.models.utils.vqa_xvars_features import NumericProjector, XVarsVideoEncoder
@@ -98,10 +98,12 @@ class MultimodalHFVQAModel(nn.Module):
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        adapter_path = get_model_load(config).get("checkpoint_path")
         self.decoder = HFCausalDecoderRuntime(
             model_id=model_id,
             local_files_only=local_files_only,
             prefer_cuda=prefer_cuda,
+            adapter_path=adapter_path,
         )
 
     def _build_prompt(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None = None) -> str:

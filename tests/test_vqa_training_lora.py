@@ -9,6 +9,7 @@ from opensportslib.core.trainer.vqa_trainer import (
     VQALoraTrainer,
     build_vqa_sft_text,
 )
+from opensportslib.core.utils.hf_runtime import has_peft_adapter_artifacts
 
 
 def _sample():
@@ -52,6 +53,7 @@ def test_build_vqa_sft_text_uses_priors_and_video_tokens():
     assert "action=Challenge" in row["prompt"]
     assert "<vid_start><vid_patch><vid_patch><vid_end>" in row["prompt"]
     assert row["answer"] == "No card, because contact was low intensity."
+    assert row["completion"] == row["answer"]
     assert row["text"].endswith(row["answer"])
 
 
@@ -75,6 +77,15 @@ def test_lora_trainer_missing_optional_dependency_is_actionable(tmp_path, monkey
     )
     with pytest.raises(OptionalDependencyError, match="pip install trl"):
         VQALoraTrainer(_cfg(tmp_path, dry_run=False)).train([_sample()], [_sample()])
+
+
+def test_peft_adapter_artifact_detection(tmp_path):
+    ckpt = tmp_path / "adapter"
+    ckpt.mkdir()
+    assert not has_peft_adapter_artifacts(str(ckpt))
+
+    (ckpt / "adapter_config.json").write_text("{}", encoding="utf-8")
+    assert has_peft_adapter_artifacts(str(ckpt))
 
 
 def test_vqa_lora_train_checkpoint_round_trip(vqa_config_path, tmp_path):
