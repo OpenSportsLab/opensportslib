@@ -38,6 +38,14 @@ From action recognition and temporal event spotting to retrieval and automatic c
 - [Training & Inference](tni/tni.md)
 - [API Reference](api/api.md)
 
+## X-VARS Integration
+
+The authoritative X-VARS parity ledger lives in:
+
+- [docs/xvars_integration_phases.md](xvars_integration_phases.md)
+
+Use that document as the single source of truth for phase status, parity checklist, evidence paths, and verification dates.
+
 
 ## License
 

@@ -92,3 +92,27 @@ class NumericProjector(nn.Module):
         with torch.no_grad():
             projected = self.proj(x.unsqueeze(0)).squeeze(0).tolist()
         return " ".join(f"<v{i}:{val:.3f}>" for i, val in enumerate(projected))
+
+    def to_patch_embeddings(
+        self,
+        video_features: torch.Tensor,
+        *,
+        patch_count: int,
+        embed_dim: int,
+    ) -> torch.Tensor:
+        """Create patch-aligned embeddings for multimodal token injection."""
+        if patch_count <= 0:
+            raise ValueError("patch_count must be > 0")
+        if embed_dim <= 0:
+            raise ValueError("embed_dim must be > 0")
+
+        x = self._align(video_features).to(torch.float32)
+        with torch.no_grad():
+            projected = self.proj(x.unsqueeze(0)).squeeze(0)
+
+        repeats = (embed_dim + projected.numel() - 1) // projected.numel()
+        base = projected.repeat(repeats)[:embed_dim]
+        # Deterministic small variation across patch positions.
+        scales = torch.linspace(0.98, 1.02, steps=patch_count, dtype=base.dtype)
+        out = torch.stack([base * s for s in scales], dim=0)
+        return out

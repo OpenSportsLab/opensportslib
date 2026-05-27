@@ -105,9 +105,9 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
+        name: lmsys/vicuna-7b-v1.1
       params:
-        repo_id: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
+        repo_id: lmsys/vicuna-7b-v1.1
       overrides: {}
   topology:
     - from: video_encoder
@@ -164,34 +164,39 @@ TRAIN:
       fallback_policy: baseline_on_failure
       max_new_tokens_cap: 64
     sft:
-      max_seq_length: 96
+      max_seq_length: 768
       answer_field: references
-      include_video_tokens: false
-      video_token_len: 0
+      include_video_tokens: true
+      video_token_len: 300
       per_device_train_batch_size: 1
       per_device_eval_batch_size: 1
       gradient_accumulation_steps: 1
       num_train_epochs: 1
       learning_rate: 0.0001
-      logging_steps: 1
+      logging_steps: 50
+      disable_tqdm: true
+      completion_only_loss: true
       save_strategy: "no"
       fp16: false
       bf16: false
     hf:
-      model_id: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
-      local_files_only: true
+      model_id: lmsys/vicuna-7b-v1.1
+      local_files_only: false
       prefer_cuda: true
+      cuda_device_index: 1
     lora:
-      r: 2
-      alpha: 4
-      dropout: 0.0
+      r: 16
+      alpha: 32
+      dropout: 0.05
       bias: none
-      prepare_kbit: false
-      target_modules: [c_attn]
+      prepare_kbit: true
+      target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
     quantization:
-      enabled: false
+      enabled: true
       load_in_4bit: true
+      bnb_4bit_quant_type: nf4
       compute_dtype: bfloat16
+      bnb_4bit_use_double_quant: true
     checkpoint:
       save_adapter: true
       merge_and_save: false

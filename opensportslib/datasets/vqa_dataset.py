@@ -50,6 +50,10 @@ class VQADataset(Dataset):
                 refs = qa.get("answers", []) or []
                 if not question:
                     continue
+                # X-VARS-style short prior text used by prompt and SFT builders.
+                pred_action = ((labels.get("action") or {}).get("label") or "").strip()
+                pred_offence = ((labels.get("offence") or {}).get("label") or "").strip()
+                prior_prediction_text = " ".join([x for x in (pred_action, pred_offence) if x]).strip()
                 self.samples.append(
                     {
                         "id": item_id,
@@ -58,6 +62,7 @@ class VQADataset(Dataset):
                         "video_path": video_path,
                         "labels": labels,
                         "metadata": metadata,
+                        "prior_prediction_text": prior_prediction_text,
                     }
                 )
 

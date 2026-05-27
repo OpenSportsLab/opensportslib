@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import inspect
 from typing import Any
 
 from opensportslib.core.config.accessors import (
@@ -22,7 +24,7 @@ from opensportslib.core.utils.hf_runtime import (
     require_optional_package,
 )
 from opensportslib.metrics.vqa_metric import compute_vqa_metrics
-from opensportslib.models.utils.vqa_prompting import build_prior_text
+from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
@@ -33,6 +35,30 @@ def _as_dict(obj: Any) -> dict[str, Any]:
     if hasattr(obj, "__dict__"):
         return {k: v for k, v in vars(obj).items()}
     return {}
+
+
+def _extract_cuda_device_index(config, hf_cfg: dict[str, Any]) -> int | None:
+    # If CUDA_VISIBLE_DEVICES is set, CUDA indices are remapped; let runtime use
+    # torch.cuda.current_device() to avoid 4-bit device mismatch with Accelerate.
+    if os.environ.get("CUDA_VISIBLE_DEVICES"):
+        return None
+
+    explicit = hf_cfg.get("cuda_device_index")
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except Exception:
+            return None
+    system = getattr(config, "SYSTEM", None)
+    gpu = getattr(system, "gpu", None) if system is not None else None
+    if gpu is not None:
+        gid = getattr(gpu, "id", None)
+        if gid is not None:
+            try:
+                return int(gid)
+            except Exception:
+                return None
+    return None
 
 
 def build_vqa_sft_text(
@@ -56,24 +82,20 @@ def build_vqa_sft_text(
 
     prior_text = ""
     if bool(prompt_cfg.get("include_priors", True)):
-        prior_text = build_prior_text(
+        built_prior = build_prior_text(
             sample.get("labels", {}) or {},
             sample.get("metadata", {}) or {},
             include_fields=prompt_cfg.get("prior_fields"),
         )
+        prior_text = built_prior or str(sample.get("prior_prediction_text", "")).strip()
 
-    video_token = ""
-    if bool(sft_cfg.get("include_video_tokens", True)):
-        token_len = int(sft_cfg.get("video_token_len", 300))
-        video_token = "<vid_start>" + ("<vid_patch>" * token_len) + "<vid_end>"
-
-    prompt_parts = [system_prompt, f"USER: {question}"]
-    if prior_text:
-        prompt_parts.append(f"The prediction for this video is {prior_text}.")
-    if video_token:
-        prompt_parts.append(video_token)
-    prompt_parts.append("ASSISTANT:")
-    prompt = "\n".join(prompt_parts)
+    token_len = int(sft_cfg.get("video_token_len", 300)) if bool(sft_cfg.get("include_video_tokens", True)) else 0
+    prompt = build_xvars_prompt(
+        system_prompt=system_prompt,
+        question=question,
+        prior_text=prior_text,
+        video_token_len=token_len,
+    )
     return {
         "prompt": prompt,
         "answer": answer,
@@ -105,7 +127,7 @@ class VQALoraTrainer:
     def __init__(self, config):
         self.config = config
 
-    def train(self, train_data, valid_data=None) -> str:
+    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1) -> str:
         execution = get_train_execution(self.config)
         prompt_cfg = _as_dict(execution.get("prompt"))
         sft_cfg = _as_dict(execution.get("sft"))
@@ -113,6 +135,12 @@ class VQALoraTrainer:
         lora_cfg = _as_dict(execution.get("lora"))
         quant_cfg = _as_dict(execution.get("quantization"))
         checkpoint_cfg = _as_dict(execution.get("checkpoint"))
+
+        is_ddp = int(world_size) > 1
+        if is_ddp:
+            logging.info("VQA LoRA trainer | mode=ddp | world_size=%s | rank=%s", world_size, rank)
+        else:
+            logging.info("VQA LoRA trainer | mode=single | rank=%s", rank)
 
         save_root = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
         output_dir = os.path.join(save_root, "xvars_lora")
@@ -132,6 +160,12 @@ class VQALoraTrainer:
                 "peft": optional_package_available("peft"),
                 "bitsandbytes": optional_package_available("bitsandbytes"),
             },
+            "data_quality": {
+                "train_total_rows": len(train_sft),
+                "valid_total_rows": len(valid_sft) if valid_sft is not None else 0,
+                "train_dropped_tokenization_mismatch": 0,
+                "valid_dropped_tokenization_mismatch": 0,
+            },
         }
 
         if bool(execution.get("dry_run", False)):
@@ -148,41 +182,76 @@ class VQALoraTrainer:
             local_files_only=bool(hf_cfg.get("local_files_only", False)),
             prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
             quantization_cfg=quant_cfg,
+            cuda_device_index=rank if is_ddp else _extract_cuda_device_index(self.config, hf_cfg),
         )
-        model = apply_lora_for_causal_lm(model, lora_cfg)
-        hf_train_sft = Dataset.from_list(train_sft.rows)
-        hf_valid_sft = Dataset.from_list(valid_sft.rows) if valid_sft is not None else None
+        model = apply_lora_for_causal_lm(model, lora_cfg, distributed=is_ddp)
+        train_rows, dropped_train = self._filter_tokenization_mismatch(
+            train_sft.rows,
+            tokenizer=tokenizer,
+            max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+        )
+        valid_rows = []
+        dropped_valid = 0
+        if valid_sft is not None:
+            valid_rows, dropped_valid = self._filter_tokenization_mismatch(
+                valid_sft.rows,
+                tokenizer=tokenizer,
+                max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+            )
+        metadata["data_quality"]["train_dropped_tokenization_mismatch"] = int(dropped_train)
+        metadata["data_quality"]["valid_dropped_tokenization_mismatch"] = int(dropped_valid)
+        metadata["data_quality"]["train_kept_rows"] = int(len(train_rows))
+        metadata["data_quality"]["valid_kept_rows"] = int(len(valid_rows))
+        if len(train_rows) == 0:
+            raise ValueError(
+                "All training rows were dropped by tokenization/masking checks. "
+                "Increase sft.max_seq_length or reduce prompt/video token length."
+            )
 
-        args = TrainingArguments(
-            output_dir=output_dir,
-            per_device_train_batch_size=int(sft_cfg.get("per_device_train_batch_size", 1)),
-            per_device_eval_batch_size=int(sft_cfg.get("per_device_eval_batch_size", 1)),
-            gradient_accumulation_steps=int(sft_cfg.get("gradient_accumulation_steps", 1)),
-            num_train_epochs=float(sft_cfg.get("num_train_epochs", 1)),
-            learning_rate=float(sft_cfg.get("learning_rate", 2e-4)),
-            logging_steps=int(sft_cfg.get("logging_steps", 1)),
-            save_strategy=str(sft_cfg.get("save_strategy", "epoch")),
-            report_to=[],
-            fp16=bool(sft_cfg.get("fp16", False)),
-            bf16=bool(sft_cfg.get("bf16", False)),
-            use_cpu=not bool(hf_cfg.get("prefer_cuda", True)),
-        )
+        hf_train_sft = Dataset.from_list(train_rows)
+        hf_valid_sft = Dataset.from_list(valid_rows) if valid_sft is not None else None
+
+        training_kwargs = {
+            "output_dir": output_dir,
+            "per_device_train_batch_size": int(sft_cfg.get("per_device_train_batch_size", 1)),
+            "per_device_eval_batch_size": int(sft_cfg.get("per_device_eval_batch_size", 1)),
+            "gradient_accumulation_steps": int(sft_cfg.get("gradient_accumulation_steps", 1)),
+            "num_train_epochs": float(sft_cfg.get("num_train_epochs", 1)),
+            "learning_rate": float(sft_cfg.get("learning_rate", 2e-4)),
+            "logging_steps": int(sft_cfg.get("logging_steps", 1)),
+            "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
+            "report_to": [],
+            "fp16": bool(sft_cfg.get("fp16", False)),
+            "bf16": bool(sft_cfg.get("bf16", False)),
+            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
+            "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
+        }
+        ta_params = inspect.signature(TrainingArguments.__init__).parameters
+        if is_ddp and "ddp_find_unused_parameters" in ta_params:
+            training_kwargs["ddp_find_unused_parameters"] = False
+        if is_ddp and "gradient_checkpointing_kwargs" in ta_params:
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+        args = TrainingArguments(**training_kwargs)
         trainer = build_trl_sft_trainer(
             model=model,
             train_dataset=hf_train_sft,
             eval_dataset=hf_valid_sft,
             tokenizer=tokenizer,
             args=args,
-            dataset_text_field="text",
+            dataset_text_field=None,
             max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+            completion_only_loss=bool(sft_cfg.get("completion_only_loss", True)),
         )
         trainer.train()
 
-        if bool(checkpoint_cfg.get("save_adapter", True)):
+        if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
             trainer.model.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)
         metadata["status"] = "trained"
-        return self._write_artifacts(output_dir, metadata)
+        if rank == 0:
+            return self._write_artifacts(output_dir, metadata)
+        return output_dir
 
     def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:
         save_config(self.config, os.path.join(output_dir, "config.yaml"))
@@ -193,6 +262,33 @@ class VQALoraTrainer:
         with open(os.path.join(marker, "README.txt"), "w", encoding="utf-8") as f:
             f.write("VQA LoRA adapter artifacts are stored in the parent directory when training runs.\n")
         return output_dir
+
+    @staticmethod
+    def _filter_tokenization_mismatch(rows, *, tokenizer, max_seq_length: int):
+        kept = []
+        dropped = 0
+        for row in rows:
+            prompt = str(row.get("prompt", ""))
+            completion = str(row.get("completion", ""))
+            if not prompt or not completion:
+                dropped += 1
+                continue
+
+            prompt_ids = tokenizer(prompt, truncation=True, max_length=max_seq_length).input_ids
+            full_ids = tokenizer(
+                f"{prompt} {completion}".strip(),
+                truncation=True,
+                max_length=max_seq_length,
+            ).input_ids
+            # Prompt must be a prefix and completion must contribute at least one token.
+            if len(full_ids) <= len(prompt_ids):
+                dropped += 1
+                continue
+            if full_ids[: len(prompt_ids)] != prompt_ids:
+                dropped += 1
+                continue
+            kept.append(row)
+        return kept, dropped
 
 
 class Trainer_VQA:
@@ -212,12 +308,12 @@ class Trainer_VQA:
         self.best_checkpoint_path = weights
         return weights
 
-    def train(self, model, train_data, valid_data=None) -> str:
+    def train(self, model, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1) -> str:
         del model
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
         if backend == "xvars_lora":
-            ckpt = VQALoraTrainer(self.config).train(train_data, valid_data)
+            ckpt = VQALoraTrainer(self.config).train(train_data, valid_data, rank=rank, world_size=world_size)
             self.best_checkpoint_path = ckpt
             return ckpt
 

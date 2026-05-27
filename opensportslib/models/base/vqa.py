@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import torch
 import torch.nn as nn
 
 from opensportslib.core.config.accessors import get_data_sampling, get_model_load
 from opensportslib.core.utils.hf_runtime import HFCausalDecoderRuntime
-from opensportslib.models.utils.vqa_prompting import build_prior_text
+from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
 from opensportslib.models.utils.vqa_xvars_features import NumericProjector, XVarsVideoEncoder
 
 logger = logging.getLogger(__name__)
@@ -98,12 +99,19 @@ class MultimodalHFVQAModel(nn.Module):
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        cuda_device_index = hf_cfg.get("cuda_device_index")
+        if cuda_device_index is not None:
+            try:
+                cuda_device_index = int(cuda_device_index)
+            except Exception:
+                cuda_device_index = None
         adapter_path = get_model_load(config).get("checkpoint_path")
         self.decoder = HFCausalDecoderRuntime(
             model_id=model_id,
             local_files_only=local_files_only,
             prefer_cuda=prefer_cuda,
             adapter_path=adapter_path,
+            cuda_device_index=cuda_device_index,
         )
 
     def _build_prompt(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None = None) -> str:
@@ -126,17 +134,12 @@ class MultimodalHFVQAModel(nn.Module):
             if include_priors
             else ""
         )
-
-        video_vec = self.encoder.encode(sample.get("video_path"))
-        video_tokens = self.projector.to_prompt_tokens(video_vec)
-        prior_line = f"Priors: {prior_text}\n" if prior_text else ""
-
-        return (
-            f"{system_prompt}\n"
-            f"Question: {question}\n"
-            f"VideoDescriptor: {video_tokens}\n"
-            f"{prior_line}"
-            "Answer:"
+        token_len = int(prompt_cfg.get("video_token_len", 300))
+        return build_xvars_prompt(
+            system_prompt=system_prompt,
+            question=question,
+            prior_text=prior_text,
+            video_token_len=token_len,
         )
 
     def generate_answer(
@@ -154,8 +157,18 @@ class MultimodalHFVQAModel(nn.Module):
             return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
 
         prompt = self._build_prompt(sample, prompt_cfg=prompt_cfg)
+        video_vec = self.encoder.encode(sample.get("video_path"))
+        token_len = int((prompt_cfg or {}).get("video_token_len", 300))
+        hidden_size = int(getattr(self.decoder, "hidden_size", 0) or 0)
+        projected_features = None
+        if token_len > 0 and hidden_size > 0:
+            projected_features = self.projector.to_patch_embeddings(
+                video_vec if isinstance(video_vec, torch.Tensor) else torch.tensor(video_vec, dtype=torch.float32),
+                patch_count=token_len,
+                embed_dim=hidden_size,
+            )
         try:
-            out = self.decoder.generate(prompt, generation_cfg=generation_cfg)
+            out = self.decoder.generate(prompt, generation_cfg=generation_cfg, video_features=projected_features)
             if out:
                 return out
         except Exception as exc:

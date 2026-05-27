@@ -65,6 +65,23 @@ def test_lora_trainer_dry_run_writes_checkpoint_artifacts(tmp_path):
     assert (out_path / "adapter_model").exists()
 
 
+def test_lora_trainer_filters_tokenization_mismatch_rows():
+    class TinyTok:
+        def __call__(self, text, truncation=True, max_length=32):
+            toks = text.strip().split()
+            if truncation:
+                toks = toks[:max_length]
+            return SimpleNamespace(input_ids=toks)
+
+    rows = [
+        {"prompt": "USER: q ASSISTANT:", "completion": "valid answer"},
+        {"prompt": "USER: q ASSISTANT:", "completion": ""},
+    ]
+    kept, dropped = VQALoraTrainer._filter_tokenization_mismatch(rows, tokenizer=TinyTok(), max_seq_length=32)
+    assert len(kept) == 1
+    assert dropped == 1
+
+
 def test_lora_trainer_missing_optional_dependency_is_actionable(tmp_path, monkeypatch):
     import opensportslib.core.trainer.vqa_trainer as mod
 

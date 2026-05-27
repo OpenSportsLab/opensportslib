@@ -26,3 +26,21 @@ def build_prior_text(
         chunks.append(f"league={league}")
 
     return "; ".join(chunks)
+
+
+def build_xvars_prompt(
+    *,
+    system_prompt: str,
+    question: str,
+    prior_text: str = "",
+    video_token_len: int = 300,
+) -> str:
+    """Build a shared X-VARS-style prompt contract for train/infer."""
+    video_token_len = max(int(video_token_len), 0)
+    parts = [str(system_prompt).strip(), f"USER: {str(question).strip()}"]
+    if str(prior_text).strip():
+        parts.append(f"The prediction for this video is {str(prior_text).strip()}.")
+    if video_token_len > 0:
+        parts.append("<vid_start>" + ("<vid_patch>" * video_token_len) + "<vid_end>")
+    parts.append("ASSISTANT:")
+    return "\n".join(parts)
