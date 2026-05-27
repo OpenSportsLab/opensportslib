@@ -62,3 +62,30 @@ def test_hf_backend_receives_adapter_checkpoint_path(monkeypatch, tmp_path):
 
     mm.MultimodalHFVQAModel(cfg, model_id="distilgpt2", projector_params={"input_dim": 270, "output_dim": 8})
     assert captured["adapter_path"] == str(tmp_path)
+
+
+def test_hf_backend_respects_fallback_policy_none(monkeypatch):
+    import opensportslib.models.base.vqa as mm
+
+    class DummyDecoder:
+        def __init__(self, *args, **kwargs):
+            self._ready = False
+            self._error = "offline"
+
+        @property
+        def is_ready(self):
+            return self._ready
+
+        @property
+        def error(self):
+            return self._error
+
+    monkeypatch.setattr(mm, "HFCausalDecoderRuntime", DummyDecoder)
+    model = mm.MultimodalHFVQAModel(_cfg(), model_id="distilgpt2", projector_params={"input_dim": 270, "output_dim": 8})
+
+    sample = {"question": "What card?", "labels": {}, "metadata": {}}
+    try:
+        model.generate_answer(sample, prompt_cfg={"style": "short"}, generation_cfg={"fallback_policy": "none"})
+        assert False, "Expected RuntimeError when fallback_policy=none and HF decoder unavailable"
+    except RuntimeError:
+        assert True

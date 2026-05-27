@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import inspect
+import time
 from contextlib import contextmanager
 from typing import Any
 
@@ -287,18 +288,42 @@ class HFCausalDecoderRuntime:
 
         generation_cfg = generation_cfg or {}
         max_new_tokens = int(generation_cfg.get("max_new_tokens", self.max_new_tokens))
+        max_new_tokens_cap = generation_cfg.get("max_new_tokens_cap")
+        if max_new_tokens_cap is not None:
+            max_new_tokens = min(max_new_tokens, int(max_new_tokens_cap))
         temperature = float(generation_cfg.get("temperature", self.temperature))
+        retry_count = int(generation_cfg.get("retry_count", 0))
+        retry_backoff_s = float(generation_cfg.get("retry_backoff_s", 0.0))
+        timeout_s = float(generation_cfg.get("timeout_s", 0.0))
 
-        inputs = self._tokenizer(prompt, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        do_sample = temperature > 0
-        with torch.inference_mode():
-            output_ids = self._model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=do_sample,
-                temperature=temperature if do_sample else None,
-                pad_token_id=self._tokenizer.eos_token_id,
-            )
-        text = self._tokenizer.decode(output_ids[0], skip_special_tokens=True)
-        return text[len(prompt):].strip() if text.startswith(prompt) else text.strip()
+        last_exc: Exception | None = None
+        attempts = max(1, retry_count + 1)
+        for attempt_idx in range(attempts):
+            try:
+                started = time.time()
+                inputs = self._tokenizer(prompt, return_tensors="pt")
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                do_sample = temperature > 0
+                with torch.inference_mode():
+                    output_ids = self._model.generate(
+                        **inputs,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=do_sample,
+                        temperature=temperature if do_sample else None,
+                        pad_token_id=self._tokenizer.eos_token_id,
+                    )
+                elapsed = time.time() - started
+                if timeout_s > 0 and elapsed > timeout_s:
+                    raise TimeoutError(f"Generation exceeded timeout_s={timeout_s:.3f} (elapsed={elapsed:.3f}s)")
+
+                text = self._tokenizer.decode(output_ids[0], skip_special_tokens=True)
+                return text[len(prompt):].strip() if text.startswith(prompt) else text.strip()
+            except Exception as exc:
+                last_exc = exc
+                if attempt_idx >= attempts - 1:
+                    break
+                if retry_backoff_s > 0:
+                    time.sleep(retry_backoff_s)
+
+        assert last_exc is not None
+        raise last_exc

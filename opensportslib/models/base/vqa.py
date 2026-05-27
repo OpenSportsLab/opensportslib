@@ -145,8 +145,12 @@ class MultimodalHFVQAModel(nn.Module):
         prompt_cfg: dict[str, Any] | None = None,
         generation_cfg: dict[str, Any] | None = None,
     ) -> str:
+        generation_cfg = generation_cfg or {}
+        fallback_policy = str(generation_cfg.get("fallback_policy", "baseline_on_failure")).lower()
         if not self.decoder.is_ready:
             logger.warning("Falling back to baseline VQA answer generation | reason=%s", self.decoder.error)
+            if fallback_policy == "none":
+                raise RuntimeError(self.decoder.error or "HF decoder not ready and fallback_policy=none")
             return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
 
         prompt = self._build_prompt(sample, prompt_cfg=prompt_cfg)
@@ -156,6 +160,8 @@ class MultimodalHFVQAModel(nn.Module):
                 return out
         except Exception as exc:
             logger.warning("HF generation failed, using baseline fallback | reason=%s", str(exc))
+            if fallback_policy == "none":
+                raise
         return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
 
 

@@ -146,6 +146,23 @@ TRAIN:
       system_prompt: You are an artificial intelligence assistant for visual football referee questions. Give short and helpful answers.
       include_priors: true
       prior_fields: [action, offence, contact, bodypart]
+    generation:
+      max_new_tokens: 32
+      temperature: 0.2
+    benchmark:
+      subset_ids: [action_1, action_2]
+      max_samples: 8
+      lora_checkpoint: /home/vorajv/opensportslib/checkpoints_vqa_lora/lightweight_video_descriptor/f8ed1514/xvars_lora
+    eval_profile:
+      metric_set: [exact_match, contains_match, token_f1, semantic]
+      aggregation: mean
+      exclusions: []
+    production:
+      timeout_s: 30
+      retry_count: 1
+      retry_backoff_s: 0.5
+      fallback_policy: baseline_on_failure
+      max_new_tokens_cap: 64
     sft:
       max_seq_length: 96
       answer_field: references
@@ -163,7 +180,7 @@ TRAIN:
     hf:
       model_id: /home/vorajv/.cache/huggingface/hub/models--distilgpt2/snapshots/2290a62682d06624634c1f46a6ad5be0f47f38aa
       local_files_only: true
-      prefer_cuda: false
+      prefer_cuda: true
     lora:
       r: 2
       alpha: 4

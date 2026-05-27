@@ -384,8 +384,22 @@ def get_vqa_prompt_cfg(cfg: Any) -> dict[str, Any]:
 
 def get_vqa_generation_cfg(cfg: Any) -> dict[str, Any]:
     execution = get_train_execution(cfg)
-    generation = execution.get("generation", {})
-    return _as_dict(generation)
+    generation = _as_dict(execution.get("generation", {}))
+    production = _as_dict(execution.get("production", {}))
+    out = dict(generation)
+    if production:
+        out.setdefault("max_new_tokens_cap", production.get("max_new_tokens_cap"))
+        out.setdefault("retry_count", production.get("retry_count"))
+        out.setdefault("retry_backoff_s", production.get("retry_backoff_s"))
+        out.setdefault("timeout_s", production.get("timeout_s"))
+        out.setdefault("fallback_policy", production.get("fallback_policy"))
+    return out
+
+
+def get_vqa_eval_profile_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    profile = execution.get("eval_profile", {})
+    return _as_dict(profile)
 
 
 def get_vqa_backend(cfg: Any) -> str:

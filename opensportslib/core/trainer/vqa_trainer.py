@@ -9,6 +9,7 @@ from typing import Any
 from opensportslib.core.config.accessors import (
     get_system_path,
     get_train_execution,
+    get_vqa_eval_profile_cfg,
     get_vqa_generation_cfg,
 )
 from opensportslib.core.utils.config import save_config
@@ -252,7 +253,7 @@ class Trainer_VQA:
         return {"task": "vqa", "data": preds}
 
     def evaluate(self, predictions: dict[str, Any], dataset) -> dict[str, Any]:
-        return compute_vqa_metrics(predictions, dataset)
+        return compute_vqa_metrics(predictions, dataset, eval_profile=get_vqa_eval_profile_cfg(self.config))
 
 
 __all__ = [
