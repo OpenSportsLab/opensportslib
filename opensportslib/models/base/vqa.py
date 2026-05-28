@@ -8,10 +8,10 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from opensportslib.core.config.accessors import get_data_sampling, get_model_load
+from opensportslib.core.config.accessors import get_model_load
 from opensportslib.core.utils.hf_runtime import HFCausalDecoderRuntime
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
-from opensportslib.models.utils.vqa_xvars_features import NumericProjector, XVarsVideoEncoder
+from opensportslib.models.utils.vqa_xvars_features import NumericProjector
 
 logger = logging.getLogger(__name__)
 
@@ -66,19 +66,16 @@ class VQABaselineModel(nn.Module):
 
 
 class MultimodalHFVQAModel(nn.Module):
-    """X-VARS-inspired multimodal VQA model with robust HF fallback."""
+    """X-VARS multimodal VQA model backed by indexed CLIP feature tensors."""
 
     def __init__(self, config, model_id: str, projector_params: dict[str, Any] | None = None):
         super().__init__()
         self.config = config
         self.baseline = VQABaselineModel(config)
 
-        sampling_cfg = get_data_sampling(config)
-        self.encoder = XVarsVideoEncoder(sampling_cfg=sampling_cfg)
-
         projector_params = projector_params or {}
-        in_dim = int(projector_params.get("input_dim", 270))
-        out_dim = int(projector_params.get("output_dim", 64))
+        in_dim = int(projector_params.get("input_dim", 1024))
+        out_dim = int(projector_params.get("output_dim", 1024))
         self.projector = NumericProjector(in_dim=in_dim, out_dim=out_dim)
 
         exec_cfg_ns = getattr(getattr(config, "TRAIN", None), "execution", None)
@@ -125,15 +122,14 @@ class MultimodalHFVQAModel(nn.Module):
         question = str(sample.get("question", "")).strip()
 
         include_priors = bool(prompt_cfg.get("include_priors", True))
-        prior_text = (
-            build_prior_text(
+        prior_text = ""
+        if include_priors:
+            built_prior = build_prior_text(
                 sample.get("labels", {}) or {},
                 sample.get("metadata", {}) or {},
                 include_fields=prompt_cfg.get("prior_fields"),
             )
-            if include_priors
-            else ""
-        )
+            prior_text = str(sample.get("prior_prediction_text", "")).strip() or built_prior
         token_len = int(prompt_cfg.get("video_token_len", 300))
         return build_xvars_prompt(
             system_prompt=system_prompt,
@@ -149,15 +145,24 @@ class MultimodalHFVQAModel(nn.Module):
         generation_cfg: dict[str, Any] | None = None,
     ) -> str:
         generation_cfg = generation_cfg or {}
-        fallback_policy = str(generation_cfg.get("fallback_policy", "baseline_on_failure")).lower()
+        fallback_policy = str(generation_cfg.get("fallback_policy", "none")).lower()
         if not self.decoder.is_ready:
-            logger.warning("Falling back to baseline VQA answer generation | reason=%s", self.decoder.error)
-            if fallback_policy == "none":
-                raise RuntimeError(self.decoder.error or "HF decoder not ready and fallback_policy=none")
-            return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
+            if fallback_policy == "baseline_on_failure":
+                logger.warning("Falling back to baseline VQA answer generation | reason=%s", self.decoder.error)
+                return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
+            raise RuntimeError(self.decoder.error or "HF decoder not ready and fallback_policy=none")
 
         prompt = self._build_prompt(sample, prompt_cfg=prompt_cfg)
-        video_vec = self.encoder.encode(sample.get("video_path"))
+        clip_features = sample.get("video_spatio_temporal_features")
+        if clip_features is None:
+            raise ValueError("Missing 'video_spatio_temporal_features' on sample. Ensure dataset uses xvars_clip backend.")
+        if not isinstance(clip_features, torch.Tensor):
+            clip_features = torch.as_tensor(clip_features, dtype=torch.float32)
+        if clip_features.ndim == 1:
+            clip_features = clip_features.unsqueeze(0)
+        if clip_features.ndim != 2:
+            raise ValueError(f"Expected 2D CLIP feature tensor [tokens, dim], got shape {tuple(clip_features.shape)}")
+        video_vec = clip_features.mean(dim=0).to(torch.float32)
         token_len = int((prompt_cfg or {}).get("video_token_len", 300))
         hidden_size = int(getattr(self.decoder, "hidden_size", 0) or 0)
         projected_features = None
@@ -171,11 +176,18 @@ class MultimodalHFVQAModel(nn.Module):
             out = self.decoder.generate(prompt, generation_cfg=generation_cfg, video_features=projected_features)
             if out:
                 return out
+            if fallback_policy == "baseline_on_failure":
+                logger.warning("HF generation returned empty text, using baseline fallback")
+                return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
         except Exception as exc:
-            logger.warning("HF generation failed, using baseline fallback | reason=%s", str(exc))
-            if fallback_policy == "none":
-                raise
-        return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
+            if fallback_policy == "baseline_on_failure":
+                logger.warning("HF generation failed, using baseline fallback | reason=%s", str(exc))
+                return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
+            raise
+        raise RuntimeError(
+            "HF decoder returned an empty response and fallback_policy=none "
+            "(set fallback_policy=baseline_on_failure to allow deterministic fallback)"
+        )
 
 
 __all__ = ["MultimodalHFVQAModel", "VQABaselineModel"]

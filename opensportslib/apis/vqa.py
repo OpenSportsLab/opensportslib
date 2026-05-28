@@ -54,6 +54,9 @@ class VQAModel(BaseTaskModel):
         )
         if rank != 0:
             logging.getLogger().setLevel(logging.ERROR)
+        # Keep INFO on all ranks while debugging multi-GPU startup/hangs.
+        # This makes DDP failures visible instead of appearing as a silent stall.
+        #logging.getLogger().setLevel(logging.INFO)
 
         is_ddp = world_size > 1
         if is_ddp:

@@ -1,8 +1,10 @@
 from pathlib import Path
 import json
+import pickle
 
 import pytest
 import yaml
+import numpy as np
 
 
 def _write_config(path: Path, payload: dict) -> str:
@@ -384,6 +386,17 @@ def make_vqa_config(tmp_path: Path) -> str:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     annotation = _write_vqa_annotation(tmp_path / "vqa-test.json")
+    feature_dir = data_dir / "features" / "action_0"
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    feat = np.random.default_rng(7).normal(size=(356, 1024)).astype("float32")
+    with (feature_dir / "PRE_CLIP_feature_clip_1.pkl").open("wb") as f:
+        pickle.dump(feat, f)
+    pred_path = tmp_path / "vqa-predictions.json"
+    pred_payload = [{"id": "action_0", "Action class": "Challenge", "Offence": "Offence", "Severity": "3.0"}]
+    pred_path.write_text(json.dumps(pred_payload), encoding="utf-8")
+    feat_index_path = tmp_path / "vqa-feature-index.json"
+    feat_payload = [{"id": "action_0", "feature_dir": str(feature_dir)}]
+    feat_index_path.write_text(json.dumps(feat_payload), encoding="utf-8")
     payload = {
         "TASK": "VQA",
         "VERSION": 2,
@@ -392,6 +405,8 @@ def make_vqa_config(tmp_path: Path) -> str:
             "common": {
                 "dataset_name": "OSL-XFoul-mini",
                 "data_root": str(data_dir),
+                "feature_index": str(feat_index_path),
+                "prediction_index": str(pred_path),
                 "runtime": {"loader_backend": "opencv"},
                 "splits": {
                     "train": {"annotation_path": annotation, "source_path": str(data_dir), "dataloader": {"batch_size": 1, "shuffle": True, "num_workers": 0, "pin_memory": False}},
@@ -420,7 +435,21 @@ def make_vqa_config(tmp_path: Path) -> str:
             "criterion": {"type": "CrossEntropyLoss"},
             "optimizer": {"type": "AdamW", "lr": 0.0001},
             "scheduler": {"type": "StepLR"},
-            "execution": {"enabled": True, "prompt": {"style": "short"}},
+            "execution": {
+                "enabled": True,
+                "backend": "xvars_hf",
+                "training_backend": "xvars_lora",
+                "feature_backend": "xvars_clip",
+                "view_sampling_policy": "random_train_deterministic_eval",
+                "dry_run": True,
+                "prompt": {"style": "short", "video_token_len": 8},
+                "generation": {"fallback_policy": "baseline_on_failure"},
+                "hf": {"model_id": "distilgpt2", "local_files_only": True, "prefer_cuda": False},
+                "lora": {"target_modules": ["q_proj", "v_proj"]},
+                "quantization": {"enabled": False},
+                "sft": {"include_video_tokens": True, "video_token_len": 8},
+                "checkpoint": {"save_adapter": True, "merge_and_save": False},
+            },
             "sampling": {},
             "selection": {"monitor": "loss", "mode": "min"},
             "checkpoint": {"save_every": 1, "save_best": True},

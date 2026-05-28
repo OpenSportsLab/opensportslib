@@ -87,7 +87,7 @@ def build_vqa_sft_text(
             sample.get("metadata", {}) or {},
             include_fields=prompt_cfg.get("prior_fields"),
         )
-        prior_text = built_prior or str(sample.get("prior_prediction_text", "")).strip()
+        prior_text = str(sample.get("prior_prediction_text", "")).strip() or built_prior
 
     token_len = int(sft_cfg.get("video_token_len", 300)) if bool(sft_cfg.get("include_video_tokens", True)) else 0
     prompt = build_xvars_prompt(
@@ -185,18 +185,19 @@ class VQALoraTrainer:
             cuda_device_index=rank if is_ddp else _extract_cuda_device_index(self.config, hf_cfg),
         )
         model = apply_lora_for_causal_lm(model, lora_cfg, distributed=is_ddp)
-        train_rows, dropped_train = self._filter_tokenization_mismatch(
+        max_seq_length = int(sft_cfg.get("max_seq_length", 512))
+        train_rows, dropped_train = self._tokenize_and_mask_rows_xvars_style(
             train_sft.rows,
             tokenizer=tokenizer,
-            max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+            max_seq_length=max_seq_length,
         )
         valid_rows = []
         dropped_valid = 0
         if valid_sft is not None:
-            valid_rows, dropped_valid = self._filter_tokenization_mismatch(
+            valid_rows, dropped_valid = self._tokenize_and_mask_rows_xvars_style(
                 valid_sft.rows,
                 tokenizer=tokenizer,
-                max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+                max_seq_length=max_seq_length,
             )
         metadata["data_quality"]["train_dropped_tokenization_mismatch"] = int(dropped_train)
         metadata["data_quality"]["valid_dropped_tokenization_mismatch"] = int(dropped_valid)
@@ -240,7 +241,7 @@ class VQALoraTrainer:
             tokenizer=tokenizer,
             args=args,
             dataset_text_field=None,
-            max_seq_length=int(sft_cfg.get("max_seq_length", 512)),
+            max_seq_length=max_seq_length,
             completion_only_loss=bool(sft_cfg.get("completion_only_loss", True)),
         )
         trainer.train()
@@ -288,6 +289,65 @@ class VQALoraTrainer:
                 dropped += 1
                 continue
             kept.append(row)
+        return kept, dropped
+
+    @staticmethod
+    def _tokenize_and_mask_rows_xvars_style(rows, *, tokenizer, max_seq_length: int):
+        """Tokenize prompt+completion and mask prompt tokens (answer-only loss)."""
+        kept = []
+        dropped = 0
+        ignore_index = -100
+        pad_id = tokenizer.pad_token_id
+        if pad_id is None:
+            pad_id = tokenizer.eos_token_id
+        for row in rows:
+            prompt = str(row.get("prompt", "")).strip()
+            completion = str(row.get("completion", "")).strip()
+            if not prompt or not completion:
+                dropped += 1
+                continue
+            full_text = f"{prompt} {completion}".strip()
+            enc_full = tokenizer(
+                full_text,
+                truncation=True,
+                max_length=max_seq_length,
+                padding="max_length",
+            )
+            enc_prompt = tokenizer(
+                prompt,
+                truncation=True,
+                max_length=max_seq_length,
+                padding="max_length",
+            )
+            input_ids = list(enc_full["input_ids"])
+            attn = list(enc_full["attention_mask"])
+            prompt_ids = list(enc_prompt["input_ids"])
+            full_len = int(sum(attn))
+            prompt_len = int(sum(enc_prompt["attention_mask"]))
+            if full_len <= prompt_len or prompt_len <= 0:
+                dropped += 1
+                continue
+            if input_ids[:prompt_len] != prompt_ids[:prompt_len]:
+                dropped += 1
+                continue
+            labels = list(input_ids)
+            for i in range(len(labels)):
+                if i < prompt_len:
+                    labels[i] = ignore_index
+                elif attn[i] == 0:
+                    labels[i] = ignore_index
+                elif input_ids[i] == pad_id:
+                    labels[i] = ignore_index
+            if all(x == ignore_index for x in labels):
+                dropped += 1
+                continue
+            kept.append(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attn,
+                    "labels": labels,
+                }
+            )
         return kept, dropped
 
 

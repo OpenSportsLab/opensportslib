@@ -18,6 +18,8 @@ DATA:
   common:
     dataset_name: OSL-XFoul
     data_root: /home/vorajv/dataset/OSL-XFoul
+    feature_index: /home/vorajv/dataset/OSL-XFoul/feature_index.json
+    prediction_index: /home/vorajv/dataset/OSL-XFoul/prediction_index.json
     runtime:
       loader_backend: opencv
     splits:
@@ -140,6 +142,8 @@ TRAIN:
     enabled: true
     backend: xvars_hf
     training_backend: xvars_lora
+    feature_backend: xvars_clip
+    view_sampling_policy: random_train_deterministic_eval
     dry_run: false
     prompt:
       style: detailed

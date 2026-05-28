@@ -18,6 +18,8 @@ DATA:
   common:
     dataset_name: OSL-XFoul
     data_root: /home/vorajv/dataset/OSL-XFoul
+    feature_index: /home/vorajv/dataset/OSL-XFoul/feature_index.json
+    prediction_index: /home/vorajv/dataset/OSL-XFoul/prediction_index.json
     runtime:
       loader_backend: opencv
     splits:
@@ -143,6 +145,10 @@ TRAIN:
     type: StepLR
   execution:
     enabled: true
+    backend: xvars_hf
+    training_backend: xvars_lora
+    feature_backend: xvars_clip
+    view_sampling_policy: random_train_deterministic_eval
     prompt:
       style: short
       include_priors: true
@@ -150,6 +156,7 @@ TRAIN:
     generation:
       max_new_tokens: 128
       temperature: 0.2
+      fallback_policy: none
   sampling: {}
   selection:
     monitor: loss

@@ -1,8 +1,9 @@
 import torch.distributed as dist
 def ddp_setup(rank, world_size):
     import os
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"  # any free port
+    # Prefer IPv4 localhost by default; some environments fail on IPv6 localhost.
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "12355")  # any free port
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 def ddp_cleanup():
