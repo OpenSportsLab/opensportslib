@@ -36,7 +36,10 @@ nav:
 
   - Training & Inference:
       - Training & Inference: tni/tni.md
-      - Configuration Guide: tni/config-guide.md
+  - Configuration:
+      - Configuration Guide: config/configuration-guide.md
+      - Legacy to Canonical Mapping: config/legacy-to-canonical-mapping.md
+      - Configuration Developer Guide: config/developer-guide.md
 
   - Data Formats:
       - OSL JSON Format: data/osl-json-format.md

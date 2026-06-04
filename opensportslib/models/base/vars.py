@@ -5,6 +5,10 @@ import torch
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
 from opensportslib.models.heads.builder import build_head
+from opensportslib.core.config.accessors import (
+    get_data_classes,
+    get_data_num_classes,
+)
 
 class MVNetwork(torch.nn.Module):
 
@@ -20,7 +24,8 @@ class MVNetwork(torch.nn.Module):
                 lifting_net=self.lifting_net
             )
         )
-        head.num_classes = config.DATA.num_classes
+        print(f"Data classes: {get_data_classes(config)}")
+        head.num_classes = get_data_num_classes(config)
         head.feat_dim = self.backbone.feat_dim
         self.head = build_head(head)
 

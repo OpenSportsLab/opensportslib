@@ -358,6 +358,7 @@ def process_frame_predictions(
         pred_events_high_recall (List[dict]): List of dictionnaries with video, events, fps. Several possible classes per frame.
         pred_scores (dict): Mapping between videos and associated scores.
     """
+    classes = _normalize_classes_map(classes)
     classes_inv = {v: k for k, v in classes.items()}
 
     fps_dict = {}
@@ -475,6 +476,7 @@ def infer_and_process_predictions_e2e(
         pred_events_high_recall (List[dict]): List of dictionnaries with video, events, fps. Several possible classes per frame.
         avg_mAP (float): Average mean AP computed for the predictions.
     """
+    classes = _normalize_classes_map(classes)
     # print(dataset.)
     pred_dict = {}
     for video, video_len, _ in dataset.videos:
@@ -571,6 +573,19 @@ def infer_and_process_predictions_e2e(
 
     logging.info(f"avg_mAP: {avg_mAP}")
     return avg_mAP
+
+
+def _normalize_classes_map(classes):
+    """Normalize classes to a {label: index} mapping."""
+    if isinstance(classes, dict):
+        return classes
+    if isinstance(classes, (list, tuple)):
+        # E2E metrics reserve class index 0 as background.
+        # User-provided class lists only contain foreground labels.
+        return {label: idx for idx, label in enumerate(classes, start=1)}
+    raise TypeError(
+        f"classes must be dict, list, or tuple, got {type(classes).__name__}"
+    )
 
 
 def search_best_epoch(work_dir):

@@ -7,216 +7,31 @@ This section explains how to:
 - Run inference
 - Use pretrained weights from HuggingFace
 
-For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](config-guide.md).
+For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](../config/configuration-guide.md).
 
 ---
 ## Configuration Sample (.yaml) file
 
-The snippets below show the main structure of the runnable configs in
-`opensportslib/config/`. Use the source files when you need the complete
-experiment defaults.
+Use source-of-truth runnable configs from `opensportslib/configs/`.
+`examples/configs/` mirrors these files.
 
-### 1. Classification
+### 1. Classification (Video)
 
-```yaml
-TASK: classification
-
-DATA:
-  dataset_name: mvfouls
-  data_dir: /path/to/OSL-XFoul/224p
-  data_modality: video
-  view_type: multi
-  train:
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-      num_workers: 4
-  valid:
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 1
-      shuffle: false
-  test:
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    dataloader:
-      batch_size: 1
-      shuffle: false
-  num_frames: 16
-  input_fps: 25
-  target_fps: 17
-  frame_size: [224, 224]
-
-MODEL:
-  type: custom
-  backbone:
-    type: mvit_v2_s
-  neck:
-    type: MV_Aggregate
-    agr_type: max
-  head:
-    type: MV_LinearLayer
-
-TRAIN:
-  monitor: balanced_accuracy
-  mode: max
-  epochs: 20
-  criterion:
-    type: CrossEntropyLoss
-  optimizer:
-    type: AdamW
-    lr: 0.0001
-
-SYSTEM:
-  save_dir: ./checkpoints
-  device: cuda
-  GPU: 4
-```
+- Source: [`opensportslib/configs/classification/video/classification.yaml`](../../opensportslib/configs/classification/video/classification.yaml)
+- Example mirror: [`examples/configs/classification_video.yaml`](../../examples/configs/classification_video.yaml)
 
 ### 2. Classification (Tracking)
 
-```yaml
-TASK: classification
+- Source: [`opensportslib/configs/classification/tracking/sngar-tracking.yaml`](../../opensportslib/configs/classification/tracking/sngar-tracking.yaml)
+- Example mirror: [`examples/configs/classification_tracking.yaml`](../../examples/configs/classification_tracking.yaml)
 
-DATA:
-  dataset_name: sngar
-  data_modality: tracking_parquet
-  data_dir: /path/to/soccernetpro-classification-GAR/tracking-parquet
-  train:
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 32
-      shuffle: true
-  valid:
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 32
-      shuffle: false
-  test:
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    dataloader:
-      batch_size: 32
-      shuffle: false
-  num_frames: 16
-  frame_interval: 9
-  normalize: true
-  num_objects: 23
-  feature_dim: 8
+### 3. Localization (DALI)
 
-MODEL:
-  type: custom
-  backbone:
-    type: graph_conv
-    encoder: gin
-    hidden_dim: 64
-    num_layers: 20
-  neck:
-    type: TemporalAggregation
-    agr_type: maxpool
-  head:
-    type: TrackingClassifier
-    num_classes: 10
-  edge: positional
-  k: 8
-  r: 15.0
+- Source: [`opensportslib/configs/localization/video/localization-dali.yaml`](../../opensportslib/configs/localization/video/localization-dali.yaml)
+- Example mirror: [`examples/configs/localization.yaml`](../../examples/configs/localization.yaml)
 
-TRAIN:
-  monitor: loss
-  mode: min
-  epochs: 100
-  optimizer:
-    type: Adam
-    lr: 0.001
-
-SYSTEM:
-  save_dir: ./checkpoints_tracking
-  device: cuda
-  GPU: 1
-```
-
-### 3. Localization
-
-```yaml
-TASK: localization
-dali: true
-
-DATA:
-  dataset_name: SoccerNet
-  data_dir: /path/to/OSL-SNBAS/224p-2024
-  classes:
-    - PASS
-    - DRIVE
-    - HEADER
-    - HIGH PASS
-    - OUT
-    - CROSS
-    - THROW IN
-    - SHOT
-    - BALL PLAYER BLOCK
-    - PLAYER SUCCESSFUL TACKLE
-    - FREE KICK
-    - GOAL
-  modality: rgb
-  clip_len: 100
-  input_fps: 25
-  extract_fps: 2
-  target_height: 224
-  target_width: 398
-  train:
-    type: VideoGameWithDali
-    video_path: ${DATA.data_dir}/train
-    path: ${DATA.train.video_path}/train.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-  valid:
-    type: VideoGameWithDali
-    video_path: ${DATA.data_dir}/valid
-    path: ${DATA.valid.video_path}/valid.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-  test:
-    type: VideoGameWithDaliVideo
-    video_path: ${DATA.data_dir}/test
-    path: ${DATA.test.video_path}/test.json
-    results: results_spotting_test
-    nms_window: 2
-    metric: tight
-    overlap_len: 50
-
-MODEL:
-  type: E2E
-  runner:
-    type: runner_e2e
-  backbone:
-    type: rny008_gsm
-  head:
-    type: gru
-  multi_gpu: true
-
-TRAIN:
-  type: trainer_e2e
-  num_epochs: 10
-  criterion_valid: map
-  criterion:
-    type: CrossEntropyLoss
-  optimizer:
-    type: AdamWithScaler
-    lr: 0.01
-
-SYSTEM:
-  save_dir: ./checkpoints
-  work_dir: ${SYSTEM.save_dir}
-  device: cuda
-  GPU: 4
-```
+For canonical key definitions and migration-safe authoring rules, use the
+[Configuration Guide](../config/configuration-guide.md).
 
 ## Annotations (train/valid/test) JSON Format
 
@@ -261,9 +76,9 @@ must be present in the root `labels.action.labels` list.
 ```
 
 For video classification, `inputs[].path` is resolved from the split media root
-in the YAML config, such as `DATA.train.video_path`. For tracking
-classification, use `type: tracking_parquet` and set
-`DATA.data_modality: tracking_parquet`.
+in the YAML config, such as `DATA.common.splits.train.source_path`. For tracking
+classification, use a tracking input block under `DATA.inputs` with
+`source.format: parquet`.
 
 ### Localization annotations
 

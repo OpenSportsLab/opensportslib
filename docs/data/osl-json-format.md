@@ -135,7 +135,8 @@ OpenSportsLib stores input paths as relative paths inside JSON whenever
 possible.
 
 - Classification and localization training/inference resolve `inputs[].path`
-  from the configured split media root, usually `DATA.<split>.video_path`.
+  from the configured split media root, usually
+  `DATA.common.splits.<split>.source_path`.
 - Feature-based localization resolves `inputs[0].path` from the configured
   feature directory.
 - Conversion tools resolve `inputs[].path` from the `media_root` argument passed
@@ -158,8 +159,8 @@ dataset/
     └── annotations_test.json
 ```
 
-For the train split, set `DATA.train.video_path` to `dataset/train` and store
-the sample path as `clips/clip_0001.mp4`.
+For the train split, set `DATA.common.splits.train.source_path` to
+`dataset/train` and store the sample path as `clips/clip_0001.mp4`.
 
 ### Multi-Input And Multi-View Samples
 

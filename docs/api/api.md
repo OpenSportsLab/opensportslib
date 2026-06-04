@@ -195,7 +195,7 @@ Steps:
 ### ⚙️ Modify Configurations
 All experiment configs live in:
 ```bash
-opensportslib/config/*.yaml
+opensportslib/configs/**/*.yaml
 ```
 Typical edits:
 - TYPE

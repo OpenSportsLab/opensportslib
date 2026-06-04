@@ -35,19 +35,39 @@ def _write_classification_annotation(path: Path) -> str:
 def _make_config(data_dir: Path, valid_video_root: Path) -> SimpleNamespace:
     return SimpleNamespace(
         DATA=SimpleNamespace(
-            data_dir=str(data_dir),
-            data_modality="video",
-            view_type="single",
-            num_frames=16,
-            input_fps=25,
-            target_fps=17,
-            start_frame=0,
-            end_frame=15,
-            train=SimpleNamespace(video_path=str(data_dir / "train_root")),
-            valid=SimpleNamespace(video_path=str(valid_video_root)),
-            test=SimpleNamespace(video_path=str(data_dir / "test_root")),
+            common=SimpleNamespace(
+                data_root=str(data_dir),
+                splits=SimpleNamespace(
+                    train=SimpleNamespace(source_path=str(data_dir / "train_root")),
+                    valid=SimpleNamespace(source_path=str(valid_video_root)),
+                    test=SimpleNamespace(source_path=str(data_dir / "test_root")),
+                ),
+            ),
+            inputs=SimpleNamespace(
+                video=SimpleNamespace(
+                    modality="video",
+                    representation="raw",
+                    sampling=SimpleNamespace(
+                        num_frames=16,
+                        input_fps=25,
+                        target_fps=17,
+                        start_frame=0,
+                        end_frame=15,
+                    ),
+                    params=SimpleNamespace(view_type="single"),
+                )
+            ),
         ),
-        MODEL=SimpleNamespace(type="custom", pretrained_model="smoke_backbone"),
+        MODEL=SimpleNamespace(
+            components=SimpleNamespace(
+                video_encoder=SimpleNamespace(
+                    kind="encoder",
+                    source=SimpleNamespace(provider="opensportslib", name="smoke_backbone"),
+                    params=SimpleNamespace(),
+                    overrides=SimpleNamespace(),
+                )
+            )
+        ),
     )
 
 

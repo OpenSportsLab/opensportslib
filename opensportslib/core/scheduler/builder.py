@@ -30,6 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import torch
 from torch.optim.lr_scheduler import ChainedScheduler, LinearLR, CosineAnnealingLR
 import logging
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 def build_scheduler(optimizer, cfg, default_args=None):
@@ -43,6 +44,8 @@ def build_scheduler(optimizer, cfg, default_args=None):
     Returns:
         scheduler: The constructed scheduler.
     """
+    cfg = normalize_builder_cfg(cfg, kind="scheduler")
+
     if cfg.type == "ReduceLROnPlateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode=cfg.mode, patience=cfg.patience,

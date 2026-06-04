@@ -6,7 +6,7 @@ this file contains two independent things:
 
 1. the existing VideoMAE HuggingFace full-model builder functions
    (build_video_mae_backbone, load_video_mae_checkpoint).
-   these are left exactly as they were and route through MODEL.type == "huggingface".
+   these now read canonical component config directly.
 
 2. the new VideoBackbone + VideoModel classes for the custom frames_npy path,
    supporting dinov3, clip, videomae, videomae2 as pure feature extractors
@@ -20,6 +20,14 @@ import torch.nn as nn
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
 from opensportslib.models.heads.builder import build_head
+from opensportslib.core.config.accessors import (
+    get_component_by_kind,
+    get_component_name_by_kind,
+    get_component_params_by_kind,
+    get_data_sampling,
+    get_data_num_classes,
+)
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 # -----------------------------------------------------------------------
@@ -33,9 +41,19 @@ def build_video_mae_backbone(config, device, ckpt_path=None, infer=False):
     """
     from transformers import VideoMAEForVideoClassification, VideoMAEImageProcessor
 
-    num_classes = config.MODEL.num_classes
-    pretrained_model_name = ckpt_path if ckpt_path else config.MODEL.pretrained_model
-    processor = VideoMAEImageProcessor.from_pretrained(config.MODEL.pretrained_model)
+    encoder_cfg = get_component_by_kind(config, "encoder") or {}
+    encoder_source = encoder_cfg.get("source", {})
+    encoder_params = get_component_params_by_kind(config, "encoder")
+    head_params = get_component_params_by_kind(config, "head")
+
+    num_classes = head_params.get("num_classes", get_data_num_classes(config))
+    pretrained_ref = (
+        encoder_params.get("pretrained_model")
+        or encoder_source.get("repo_id")
+        or encoder_source.get("name")
+    )
+    pretrained_model_name = ckpt_path if ckpt_path else pretrained_ref
+    processor = VideoMAEImageProcessor.from_pretrained(pretrained_ref)
     model = VideoMAEForVideoClassification.from_pretrained(
         pretrained_model_name,
         num_labels=num_classes,
@@ -48,11 +66,11 @@ def build_video_mae_backbone(config, device, ckpt_path=None, infer=False):
         param.requires_grad = False
 
     if not infer:
-        if config.MODEL.unfreeze_head:
+        if encoder_params.get("unfreeze_head", False):
             for p in model.classifier.parameters():
                 p.requires_grad = True
 
-        n_unfreeze = getattr(config.MODEL, "unfreeze_last_n_layers", 0)
+        n_unfreeze = encoder_params.get("unfreeze_last_n_layers", 0)
         if n_unfreeze > 0:
             for layer in model.videomae.encoder.layer[-n_unfreeze:]:
                 for p in layer.parameters():
@@ -93,23 +111,35 @@ class VideoModel(nn.Module):
 
     def __init__(self, config, device):
         super().__init__()
-        print("Building VideoModel")
+        print(f"Building VideoModel ({get_component_name_by_kind(config, 'encoder')})")
 
         self.device = device
-        self.num_frames = config.DATA.num_frames
+        sampling = get_data_sampling(config)
+        self.num_frames = sampling.get("num_frames")
 
         # backbone: pure feature extractor
-        self.backbone = build_backbone(config.MODEL.backbone)
+        self.backbone = build_backbone(
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "encoder"),
+                kind="encoder",
+            )
+        )
 
         # neck: temporal aggregation over the frame sequence
         self.neck = build_neck(
-            config.MODEL.neck,
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "adapter"),
+                kind="adapter",
+            ),
             default_args={"window_size": self.num_frames}
         )
 
         # head: linear classifier
         self.head = build_head(
-            config.MODEL.head,
+            normalize_builder_cfg(
+                get_component_params_by_kind(config, "head"),
+                kind="head",
+            ),
             default_args={"input_dim": self.neck.feat_dim}
         )
 

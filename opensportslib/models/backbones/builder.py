@@ -489,7 +489,7 @@ class VideoBackbone(nn.Module):
         - videomae2: VideoMAEv2 (OpenGVLab/VideoMAEv2-Base), processes full clip.
 
     Args:
-        cfg: MODEL.backbone config node. required fields:
+        cfg: Canonical encoder component params. Required fields:
             type (str): one of VIDEO_BACKBONE_TYPES.
             pretrained_model (str): HuggingFace model ID.
             hidden_dim (int): expected output feature dimension.

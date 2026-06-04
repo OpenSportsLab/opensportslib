@@ -5,6 +5,10 @@ import random
 import torch.nn as nn
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
+from opensportslib.core.config.accessors import (
+    get_data_transform,
+    get_data_augmentations
+)
 
 try:
     import decord
@@ -228,7 +232,8 @@ def _get_img_transforms(
     import torch.nn as nn
 
     crop_transform = None
-    if crop_dim is not None:
+    # Legacy configs often use -1 to disable cropping.
+    if crop_dim is not None and crop_dim > 0:
         if multi_crop:
             assert is_eval
             crop_transform = ThreeCrop(crop_dim)
@@ -385,8 +390,10 @@ class VideoTransform:
         self.mode = mode
         self.config = config
 
-        self.frame_height, self.frame_width = config.DATA.frame_size
-        self.augmentations = config.DATA.augmentations
+        resize_cfg = get_data_transform(config).get("resize", {})
+        self.frame_height = getattr(resize_cfg, "height", 224)
+        self.frame_width = getattr(resize_cfg, "width", 224)
+        self.augmentations = get_data_augmentations(config)
 
     def __call__(self, frames: np.ndarray):
         """
@@ -900,4 +907,3 @@ def batch2long(output_segmentation, video_size, chunk_size, receptive_field):
 #         T.Resize(frame_size),
 #         T.Normalize(mean, std),
 #     ])
-

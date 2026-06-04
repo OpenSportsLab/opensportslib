@@ -58,7 +58,7 @@ _AWAY_SLOT_START = 12
 # frame-level feature extraction
 # -------------------------------------------------------------------
 
-def parse_frame(row):
+def parse_frame(row, num_objects=NUM_OBJECTS, feature_dim=FEATURE_DIM):
     """parse a single parquet row into per-object features and positions.
 
     Each row is expected to contain JSON-encoded columns balls,
@@ -71,15 +71,15 @@ def parse_frame(row):
 
     Returns:
         A tuple (features, positions) where features is a
-        numpy.ndarray of shape (NUM_OBJECTS, FEATURE_DIM) and
+        numpy.ndarray of shape (num_objects, feature_dim) and
         positions is a list of position-group strings (e.g.
         "GK", "DEF").  Unobserved slots are filled with
         MISSING_VALUE and an empty string respectively.
     """
     features = np.full(
-        (NUM_OBJECTS, FEATURE_DIM), MISSING_VALUE, dtype=np.float32,
+        (num_objects, feature_dim), MISSING_VALUE, dtype=np.float32,
     )
-    positions = [""] * NUM_OBJECTS
+    positions = [""] * num_objects
 
     obj_idx = _BALL_SLOT
 
@@ -165,7 +165,7 @@ def parse_frame(row):
 # temporal feature computation
 # -------------------------------------------------------------------
 
-def compute_deltas(all_features):
+def compute_deltas(all_features, num_objects=NUM_OBJECTS):
     """compute per-object velocity deltas across consecutive frames.
 
     For each object that is observed in both frame t and frame t - 1,
@@ -181,7 +181,7 @@ def compute_deltas(all_features):
         populated.
     """
     for t in range(1, all_features.shape[0]):
-        for obj in range(NUM_OBJECTS):
+        for obj in range(num_objects):
             curr_valid = all_features[t, obj, 0] != MISSING_VALUE
             prev_valid = all_features[t - 1, obj, 0] != MISSING_VALUE
             if curr_valid and prev_valid:
@@ -194,7 +194,13 @@ def compute_deltas(all_features):
     return all_features
 
 
-def normalize_features(features):
+def normalize_features(
+    features,
+    pitch_half_length=PITCH_HALF_LENGTH,
+    pitch_half_width=PITCH_HALF_WIDTH,
+    max_displacement=MAX_DISPLACEMENT,
+    max_ball_height=MAX_BALL_HEIGHT,
+):
     """normalize spatial features to roughly [-1, 1].
 
     observed coordinates are divided by the known pitch / displacement
@@ -213,11 +219,11 @@ def normalize_features(features):
     features_norm = features.copy()
     valid_mask = features_norm[:, :, 0] != MISSING_VALUE
 
-    features_norm[valid_mask, 0] /= PITCH_HALF_LENGTH
-    features_norm[valid_mask, 1] /= PITCH_HALF_WIDTH
-    features_norm[valid_mask, 5] /= MAX_DISPLACEMENT
-    features_norm[valid_mask, 6] /= MAX_DISPLACEMENT
-    features_norm[valid_mask, 7] /= MAX_BALL_HEIGHT
+    features_norm[valid_mask, 0] /= pitch_half_length
+    features_norm[valid_mask, 1] /= pitch_half_width
+    features_norm[valid_mask, 5] /= max_displacement
+    features_norm[valid_mask, 6] /= max_displacement
+    features_norm[valid_mask, 7] /= max_ball_height
 
     # write the normalized sentinel into every spatial channel of
     # missing objects so downstream layers can distinguish "absent"

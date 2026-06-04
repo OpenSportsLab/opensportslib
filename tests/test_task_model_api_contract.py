@@ -260,19 +260,45 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
         def split(name):
             path = tmp_path / f"{name}.json"
             path.write_text("{}", encoding="utf-8")
-            return SimpleNamespace(path=str(path), dataloader=SimpleNamespace())
+            return SimpleNamespace(
+                annotation_path=str(path),
+                source_path=str(tmp_path),
+                dataloader=SimpleNamespace(),
+            )
 
         return SimpleNamespace(
             DATA=SimpleNamespace(
-                train=split("train"),
-                valid=split("valid"),
-                test=split("test"),
-                classes=["PASS", "SHOT"],
+                common=SimpleNamespace(
+                    classes=["PASS", "SHOT"],
+                    runtime=SimpleNamespace(loader_backend="opencv"),
+                    splits=SimpleNamespace(
+                        train=split("train"),
+                        valid=split("valid"),
+                        test=split("test"),
+                    ),
+                ),
+                inputs=SimpleNamespace(
+                    video=SimpleNamespace(
+                        modality="video",
+                        representation="raw",
+                        sampling=SimpleNamespace(),
+                        transform=SimpleNamespace(),
+                        params=SimpleNamespace(),
+                    )
+                ),
             ),
-            MODEL=SimpleNamespace(multi_gpu=True),
-            SYSTEM=SimpleNamespace(seed=42, GPU=1),
-            TRAIN=SimpleNamespace(type="trainer"),
-            dali=False,
+            MODEL=SimpleNamespace(
+                task="localization",
+                components=SimpleNamespace(),
+                topology=[],
+            ),
+            SYSTEM=SimpleNamespace(
+                reproducibility=SimpleNamespace(seed=42, use_seed=False),
+                gpu=SimpleNamespace(count=1, id=0),
+                device="cpu",
+                paths=SimpleNamespace(save_dir=str(tmp_path)),
+            ),
+            TRAIN=SimpleNamespace(trainer=SimpleNamespace(type="trainer_e2e")),
         )
 
     class FakeData:

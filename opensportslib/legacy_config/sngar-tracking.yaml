@@ -9,11 +9,11 @@ TASK: classification
 DATA:
   dataset_name: sngar
   data_modality: tracking_parquet
-  data_dir: /home/giancos/datasets/OpenSportsLab/soccernetpro-classification-GAR/tracking-parquet
+  data_dir: /home/vorajv/dataset/sngar-tracking
   preload_data: false
   train: 
     type: annotations_train.json
-    video_path: ${DATA.data_dir}/train
+    video_path: ${DATA.data_dir}
     path: ${DATA.train.video_path}/train.json
     dataloader:
       batch_size: 32
@@ -22,7 +22,7 @@ DATA:
       pin_memory: true
   valid:
     type: annotations_valid.json
-    video_path: ${DATA.data_dir}/valid
+    video_path: ${DATA.data_dir}
     path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 32
@@ -30,7 +30,7 @@ DATA:
       shuffle: false
   test:
     type: annotations_test.json
-    video_path: ${DATA.data_dir}/test
+    video_path: ${DATA.data_dir}
     path: ${DATA.test.video_path}/test.json
     dataloader:
       batch_size: 32
@@ -107,6 +107,6 @@ SYSTEM:
   save_dir: ./checkpoints_tracking
   use_seed: true
   seed: 42
-  GPU: 1
+  GPU: 4
   device: cuda   # auto | cuda | cpu
   gpu_id: 0

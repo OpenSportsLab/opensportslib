@@ -1,10 +1,10 @@
 TASK: localization
 
-dali: false
+dali: True
 
 DATA:
   dataset_name: SoccerNet
-  data_dir: /home/vorajv/opensportslib/SoccerNet/annotations/
+  data_dir: /home/vorajv/dataset/BAS/
   classes:
     - PASS
     - DRIVE
@@ -33,63 +33,58 @@ DATA:
   target_width: 398
 
   train:
-    type: VideoGameWithOpencv
+    type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/train/
-    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
+    path: ${DATA.train.video_path}/train.json
     dataloader:
       batch_size: 8
       shuffle: true
       num_workers: 4
       pin_memory: true
-      prefetch_factor: 1
 
   valid:
-    type: VideoGameWithOpencv
+    type: VideoGameWithDali
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/valid/
-    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
+    path: ${DATA.valid.video_path}/valid.json
     dataloader:
       batch_size: 8
-      shuffle: false
+      shuffle: true
       num_workers: 4
       pin_memory: true
-      prefetch_factor: 1
 
   valid_data_frames:
-    type: VideoGameWithOpencvVideo
+    type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.valid.video_path}
     path: ${DATA.valid.path}
     overlap_len: 0
     dataloader:
-      batch_size: 8
+      batch_size: 4
       shuffle: false
       num_workers: 4
       pin_memory: true
-      prefetch_factor: 1
 
   test:
-    type: VideoGameWithOpencvVideo
+    type: VideoGameWithDaliVideo
     classes: ${DATA.classes}
     output_map: [data, label]
     video_path: ${DATA.data_dir}/test/
-    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
+    path: ${DATA.test.video_path}/test.json
     results: results_spotting_test
     nms_window: 2 
     metric: tight
     overlap_len: 50
     dataloader:
-      batch_size: 8
+      batch_size: 4
       shuffle: false
-      num_workers: 4
-      pin_memory: true
 
   challenge:
-    type: VideoGameWithOpencvVideo
+    type: VideoGameWithDaliVideo
     overlap_len: 50
     output_map: [data, label]
     path: ${DATA.data_dir}/challenge/annotations.json
