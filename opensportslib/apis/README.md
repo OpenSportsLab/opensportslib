@@ -8,6 +8,7 @@ Use task model classes from `opensportslib.apis`:
 
 - `ClassificationModel(...)`
 - `LocalizationModel(...)`
+- `VQAModel(...)`
 
 ## Shared Base Wrapper
 
@@ -111,5 +112,25 @@ saved_predictions = m.save_predictions(
 
 metrics = m.evaluate(
     test_set="/path/to/test_annotations.json",
+)
+```
+
+## VQA Usage
+
+```python
+from opensportslib.apis import VQAModel
+
+m = VQAModel(
+    config="/path/to/vqa.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = m.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics = m.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=predictions,
 )
 ```

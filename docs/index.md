@@ -4,7 +4,7 @@ Welcome to the OpenSportsLib!
 
 OpenSportsLib is a deep learning–based backend toolkit for advanced sports video understanding. It provides production-ready and research-grade modules for training, evaluating, and deploying state-of-the-art models on sports video data.
 
-From action recognition and temporal event spotting to retrieval and automatic captioning, OpenSportsLib offers a unified framework for developing scalable sports video intelligence systems.
+From action recognition, temporal event spotting, and visual question answering to retrieval and automatic captioning, OpenSportsLib offers a unified framework for developing scalable sports video intelligence systems.
 
 
 ![Main GUI Screenshot](assets/osl.jpg)
@@ -12,7 +12,7 @@ From action recognition and temporal event spotting to retrieval and automatic c
 **Features**
 
 - Modular deep learning framework for soccer video understanding
-- Support for action recognition, event spotting, retrieval, and captioning
+- Support for action recognition, event spotting, VQA, retrieval, and captioning
 - Training, evaluation, and inference pipelines
 - Config-driven experiments for reproducibility
 - Pretrained model support and checkpoint management
