@@ -407,3 +407,155 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     train_api.config = make_config()
     train_api.train(weights="override", use_wandb=False)
     assert trainer_resume_from[-1]["source_weights"] == "override"
+
+
+def test_vqa_api_uses_wandb_for_train_infer_and_evaluate(vqa_config_path, tmp_path, monkeypatch):
+    wandb_inits = []
+    train_calls = []
+    infer_calls = []
+    evaluate_calls = []
+
+    def split(name):
+        path = tmp_path / f"{name}.json"
+        path.write_text("[]", encoding="utf-8")
+        return SimpleNamespace(
+            annotation_path=str(path),
+            source_path=str(tmp_path),
+            dataloader=SimpleNamespace(batch_size=1),
+        )
+
+    config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    train=split("train"),
+                    valid=split("valid"),
+                    test=split("test"),
+                )
+            )
+        ),
+        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
+        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "baseline", "prompt": {}, "generation": {}}),
+        TASK="VQA",
+    )
+
+    class FakeTrainer:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def train(self, model, train_data, valid_data=None, *, rank=0, world_size=1, use_wandb=False):
+            del model, train_data, valid_data, rank, world_size
+            train_calls.append(use_wandb)
+            return "trained.ckpt"
+
+        def infer(self, model, dataset, *, use_wandb=False):
+            del model, dataset
+            infer_calls.append(use_wandb)
+            return {"task": "vqa", "data": [{"id": "1", "question": "Q", "answer_text": "A"}]}
+
+        def evaluate(self, predictions, dataset, *, use_wandb=False):
+            del predictions, dataset
+            evaluate_calls.append(use_wandb)
+            return {"exact_match": 1.0}
+
+        def load(self, weights):
+            return weights
+
+    monkeypatch.setattr(
+        "opensportslib.core.utils.config.resolve_config_omega",
+        lambda cfg, weights=None: cfg,
+    )
+    monkeypatch.setattr(
+        "opensportslib.datasets.builder.build_dataset",
+        lambda *args, **kwargs: [{"id": kwargs.get("split", "x")}],
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda cfg, device: (object(), None),
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.config.select_device",
+        lambda system: "cpu",
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        FakeTrainer,
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: wandb_inits.append(use_wandb),
+    )
+
+    api = VQAModel(config=vqa_config_path)
+    api.config = config
+
+    assert api.train(use_wandb=True) == "trained.ckpt"
+    predictions = api.infer(use_wandb=True)
+    assert predictions["task"] == "vqa"
+    metrics = api.evaluate(predictions=predictions, use_wandb=True)
+    assert metrics == {"exact_match": 1.0}
+
+    assert wandb_inits == [True, True, True]
+    assert train_calls == [True]
+    assert infer_calls == [True]
+    assert evaluate_calls == [True]
+
+
+def test_vqa_worker_ddp_initializes_wandb_on_rank_zero(vqa_config_path, tmp_path, monkeypatch):
+    wandb_inits = []
+
+    train_path = tmp_path / "train.json"
+    valid_path = tmp_path / "valid.json"
+    train_path.write_text("[]", encoding="utf-8")
+    valid_path.write_text("[]", encoding="utf-8")
+
+    class FakeTrainer:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def train(self, model, train_data, valid_data=None, *, rank=0, world_size=1, use_wandb=False):
+            del model, train_data, valid_data, rank, world_size, use_wandb
+            return "trained.ckpt"
+
+    class FakeQueue:
+        def __init__(self):
+            self.items = []
+
+        def put(self, item):
+            self.items.append(item)
+
+    monkeypatch.setattr("torch.cuda.set_device", lambda rank: None)
+    monkeypatch.setattr("opensportslib.core.utils.ddp.ddp_setup", lambda rank, world_size: None)
+    monkeypatch.setattr("opensportslib.core.utils.ddp.ddp_cleanup", lambda: None)
+    monkeypatch.setattr(
+        "opensportslib.datasets.builder.build_dataset",
+        lambda *args, **kwargs: [{"id": kwargs.get("split", "x")}],
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        FakeTrainer,
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: wandb_inits.append((cfg_path, use_wandb)),
+    )
+
+    os_environ = __import__("os").environ
+    os_environ["RUN_ID"] = "testrun"
+    queue = FakeQueue()
+    config = SimpleNamespace()
+
+    VQAModel._worker_ddp(
+        rank=0,
+        world_size=1,
+        config_path=vqa_config_path,
+        config=config,
+        return_queue=queue,
+        train_set=str(train_path),
+        valid_set=str(valid_path),
+        use_wandb=True,
+    )
+
+    assert wandb_inits == [(vqa_config_path, True)]
+    assert queue.items == ["trained.ckpt"]

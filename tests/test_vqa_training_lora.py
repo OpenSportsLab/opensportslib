@@ -7,6 +7,7 @@ import yaml
 from opensportslib.core.trainer.vqa_trainer import (
     OptionalDependencyError,
     VQALoraTrainer,
+    VQAXVarsVideoChatGPTLoraTrainer,
     build_vqa_sft_text,
 )
 from opensportslib.core.utils.hf_runtime import has_peft_adapter_artifacts
@@ -103,6 +104,148 @@ def test_peft_adapter_artifact_detection(tmp_path):
 
     (ckpt / "adapter_config.json").write_text("{}", encoding="utf-8")
     assert has_peft_adapter_artifacts(str(ckpt))
+
+
+def test_vqa_lora_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
+    import opensportslib.core.trainer.vqa_trainer as mod
+
+    captured = {}
+
+    class FakeTrainingArguments:
+        def __init__(self, **kwargs):
+            captured["report_to"] = kwargs.get("report_to")
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    class FakeDataset:
+        @staticmethod
+        def from_list(rows):
+            return rows
+
+    class FakeTrainer:
+        def train(self):
+            return None
+
+        @property
+        def model(self):
+            class _Model:
+                def save_pretrained(self, output_dir):
+                    del output_dir
+
+            return _Model()
+
+    class FakeTokenizer:
+        pad_token_id = 0
+        eos_token_id = 0
+
+        def save_pretrained(self, output_dir):
+            del output_dir
+
+        def __call__(self, text, truncation=True, max_length=512, padding="max_length"):
+            del truncation, max_length, padding
+            toks = list(range(1, len(text.split()) + 1))
+            return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
+
+    class FakeModel:
+        pass
+
+    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
+    monkeypatch.setitem(__import__("sys").modules, "datasets", SimpleNamespace(Dataset=FakeDataset))
+    monkeypatch.setitem(__import__("sys").modules, "transformers", SimpleNamespace(TrainingArguments=FakeTrainingArguments))
+    monkeypatch.setattr(mod, "load_hf_causal_lm_for_training", lambda *args, **kwargs: (FakeTokenizer(), FakeModel(), "cpu"))
+    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
+    monkeypatch.setattr(mod, "build_trl_sft_trainer", lambda **kwargs: FakeTrainer())
+
+    trainer = VQALoraTrainer(_cfg(tmp_path, dry_run=False))
+    trainer.train([_sample()], [_sample()], use_wandb=True)
+
+    assert captured["report_to"] == ["wandb"]
+
+
+def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
+    import opensportslib.core.trainer.vqa_trainer as mod
+
+    captured = {}
+
+    class FakeTrainingArguments:
+        def __init__(self, **kwargs):
+            captured["report_to"] = kwargs.get("report_to")
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "</s>"
+        pad_token_id = 0
+        eos_token_id = 0
+
+        def save_pretrained(self, output_dir):
+            del output_dir
+
+        def __call__(self, text, truncation=True, max_length=768, padding="max_length"):
+            del truncation, max_length, padding
+            toks = list(range(1, len(text.split()) + 1))
+            return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
+
+    class FakeBaseLM:
+        pass
+
+    class FakeModel:
+        def save_pretrained(self, output_dir):
+            del output_dir
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            self.model = kwargs["model"]
+
+        def train(self):
+            return None
+
+    sample = _sample() | {"video_spatio_temporal_features": [[0.1] * 4, [0.2] * 4]}
+    cfg = _cfg(tmp_path, dry_run=False)
+    cfg.TRAIN.execution["training_backend"] = "xvars_videochatgpt_lora"
+    cfg.TRAIN.execution["xvars"] = {
+        "base_model": "fake",
+        "video_token_len": 2,
+        "mm_hidden_size": 4,
+        "projection_path": None,
+    }
+    cfg.TRAIN.execution["sft"] = {
+        "max_seq_length": 32,
+        "video_token_len": 2,
+        "gradient_accumulation_steps": 1,
+        "num_train_epochs": 1,
+        "learning_rate": 1e-4,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "disable_tqdm": True,
+    }
+
+    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=lambda *args, **kwargs: FakeTokenizer()),
+            AutoModelForCausalLM=SimpleNamespace(from_pretrained=lambda *args, **kwargs: FakeBaseLM()),
+            TrainingArguments=FakeTrainingArguments,
+        ),
+    )
+    monkeypatch.setattr(mod, "build_bitsandbytes_config", lambda cfg: None)
+    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
+    monkeypatch.setattr(
+        "opensportslib.core.utils.hf_runtime._ensure_video_special_tokens",
+        lambda tokenizer, model=None: 0,
+    )
+    monkeypatch.setattr(
+        mod.XVarsVideoChatGPTCausalLM,
+        "from_pretrained_projector",
+        staticmethod(lambda base_lm, projection_path, mm_hidden_size=1024: FakeModel()),
+    )
+    monkeypatch.setattr(mod, "XVarsVideoChatGPTTrainer", FakeTrainer)
+
+    trainer = VQAXVarsVideoChatGPTLoraTrainer(cfg)
+    trainer.train([sample], [sample], use_wandb=True)
+
+    assert captured["report_to"] == ["wandb"]
 
 
 def test_vqa_lora_train_checkpoint_round_trip(vqa_config_path, tmp_path):

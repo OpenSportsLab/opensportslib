@@ -31,6 +31,17 @@ def _set_model_checkpoint_path(config, weights: str | None) -> None:
 
 class VQAModel(BaseTaskModel):
     """Top-level task wrapper for VQA."""
+
+    def _init_wandb(self, use_wandb: bool) -> None:
+        from opensportslib.core.utils.wandb import init_wandb
+
+        init_wandb(
+            self.config_path,
+            self.config,
+            run_id=os.environ["RUN_ID"],
+            use_wandb=use_wandb,
+        )
+
     @staticmethod
     def _worker_ddp(
         rank,
@@ -42,10 +53,10 @@ class VQAModel(BaseTaskModel):
         valid_set=None,
         use_wandb=False,
     ):
-        del config_path, use_wandb
         import torch
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.core.utils.ddp import ddp_cleanup, ddp_setup
+        from opensportslib.core.utils.wandb import init_wandb
         from opensportslib.datasets.builder import build_dataset
 
         logging.basicConfig(
@@ -68,10 +79,24 @@ class VQAModel(BaseTaskModel):
             ddp_setup(rank, world_size)
 
         try:
+            if rank == 0:
+                init_wandb(
+                    config_path,
+                    config,
+                    run_id=os.environ["RUN_ID"],
+                    use_wandb=use_wandb,
+                )
             train_data = build_dataset(config, train_set, None, split="train")
             valid_data = build_dataset(config, valid_set, None, split="valid")
             trainer = Trainer_VQA(config)
-            ckpt = trainer.train(None, train_data, valid_data, rank=rank, world_size=world_size)
+            ckpt = trainer.train(
+                None,
+                train_data,
+                valid_data,
+                rank=rank,
+                world_size=world_size,
+                use_wandb=use_wandb,
+            )
             if rank == 0 and return_queue is not None:
                 return_queue.put(ckpt)
         finally:
@@ -163,7 +188,8 @@ class VQAModel(BaseTaskModel):
         train_data = build_dataset(self.config, train_set, None, split="train")
         valid_data = build_dataset(self.config, valid_set, None, split="valid")
         self.trainer = Trainer_VQA(self.config)
-        ckpt = self.trainer.train(model, train_data, valid_data, rank=0, world_size=1)
+        self._init_wandb(use_wandb=use_wandb)
+        ckpt = self.trainer.train(model, train_data, valid_data, rank=0, world_size=1, use_wandb=use_wandb)
         self.best_checkpoint = ckpt
         self.last_loaded_weights = ckpt
         return ckpt
@@ -175,7 +201,7 @@ class VQAModel(BaseTaskModel):
         use_wandb: bool = True,
         **kwargs,
     ) -> dict:
-        del use_wandb, kwargs
+        del kwargs
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
@@ -191,7 +217,8 @@ class VQAModel(BaseTaskModel):
         self.trainer = Trainer_VQA(self.config)
         if effective_weights is not None:
             self.trainer.load(effective_weights)
-        return self.trainer.infer(model, test_data)
+        self._init_wandb(use_wandb=use_wandb)
+        return self.trainer.infer(model, test_data, use_wandb=use_wandb)
 
     def evaluate(
         self,
@@ -201,22 +228,23 @@ class VQAModel(BaseTaskModel):
         use_wandb: bool = True,
         **kwargs,
     ) -> dict | str | None:
-        del use_wandb, kwargs
+        del kwargs
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
 
         self.config = resolve_config_omega(self.config, weights=weights)
         test_set = self._resolve_split_path("test", test_set)
         test_data = build_dataset(self.config, test_set, None, split="test")
+        self._init_wandb(use_wandb=use_wandb)
         if predictions is None:
-            predictions = self.infer(test_set=test_set, weights=weights, use_wandb=False)
+            predictions = self.infer(test_set=test_set, weights=weights, use_wandb=use_wandb)
         elif isinstance(predictions, str):
             import json
 
             with open(expand(predictions), encoding="utf-8") as f:
                 predictions = json.load(f)
         self.trainer = self.trainer or Trainer_VQA(self.config)
-        return self.trainer.evaluate(predictions, test_data)
+        return self.trainer.evaluate(predictions, test_data, use_wandb=use_wandb)
 
     def save_predictions(
         self,

@@ -81,6 +81,54 @@ def _extract_cuda_device_index(config, hf_cfg: dict[str, Any]) -> int | None:
     return None
 
 
+def _maybe_log_vqa_predictions(predictions: dict[str, Any], *, use_wandb: bool) -> None:
+    if not use_wandb:
+        return
+    try:
+        import wandb
+        from opensportslib.core.utils.wandb import log_table_wandb
+    except ImportError:
+        return
+    if getattr(wandb, "run", None) is None:
+        return
+
+    rows = predictions.get("data", []) if isinstance(predictions, dict) else []
+    wandb.log({"vqa/infer_prediction_count": len(rows)})
+    preview = [
+        [
+            row.get("id"),
+            row.get("question"),
+            row.get("answer_text"),
+        ]
+        for row in rows[:10]
+    ]
+    if preview:
+        log_table_wandb(
+            name="vqa/infer_preview",
+            rows=preview,
+            headers=["id", "question", "answer_text"],
+        )
+
+
+def _maybe_log_vqa_metrics(metrics: dict[str, Any], *, use_wandb: bool) -> None:
+    if not use_wandb:
+        return
+    try:
+        import wandb
+    except ImportError:
+        return
+    if getattr(wandb, "run", None) is None or not isinstance(metrics, dict):
+        return
+
+    payload = {
+        f"vqa/eval/{key}": value
+        for key, value in metrics.items()
+        if isinstance(value, (int, float, bool))
+    }
+    if payload:
+        wandb.log(payload)
+
+
 def build_vqa_sft_text(
     sample: dict[str, Any],
     *,
@@ -147,7 +195,7 @@ class VQALoraTrainer:
     def __init__(self, config):
         self.config = config
 
-    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1) -> str:
+    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
         execution = get_train_execution(self.config)
         prompt_cfg = _as_dict(execution.get("prompt"))
         sft_cfg = _as_dict(execution.get("sft"))
@@ -242,7 +290,7 @@ class VQALoraTrainer:
             "learning_rate": float(sft_cfg.get("learning_rate", 2e-4)),
             "logging_steps": int(sft_cfg.get("logging_steps", 1)),
             "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
-            "report_to": [],
+            "report_to": ["wandb"] if use_wandb else [],
             "fp16": bool(sft_cfg.get("fp16", False)),
             "bf16": bool(sft_cfg.get("bf16", False)),
             "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
@@ -496,7 +544,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
     def __init__(self, config):
         self.config = config
 
-    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1) -> str:
+    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
         execution = get_train_execution(self.config)
         prompt_cfg = _as_dict(execution.get("prompt"))
         sft_cfg = _as_dict(execution.get("sft"))
@@ -588,7 +636,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "learning_rate": float(sft_cfg.get("learning_rate", 2e-4)),
             "logging_steps": int(sft_cfg.get("logging_steps", 1)),
             "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
-            "report_to": [],
+            "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
             "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
@@ -639,7 +687,7 @@ class Trainer_VQA:
         self.best_checkpoint_path = weights
         return weights
 
-    def train(self, model, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1) -> str:
+    def train(self, model, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
         del model
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
@@ -649,11 +697,18 @@ class Trainer_VQA:
                 valid_data,
                 rank=rank,
                 world_size=world_size,
+                use_wandb=use_wandb,
             )
             self.best_checkpoint_path = ckpt
             return ckpt
         if backend == "xvars_lora":
-            ckpt = VQALoraTrainer(self.config).train(train_data, valid_data, rank=rank, world_size=world_size)
+            ckpt = VQALoraTrainer(self.config).train(
+                train_data,
+                valid_data,
+                rank=rank,
+                world_size=world_size,
+                use_wandb=use_wandb,
+            )
             self.best_checkpoint_path = ckpt
             return ckpt
 
@@ -666,7 +721,7 @@ class Trainer_VQA:
         self.best_checkpoint_path = ckpt
         return ckpt
 
-    def infer(self, model, dataset) -> dict[str, Any]:
+    def infer(self, model, dataset, *, use_wandb: bool = False) -> dict[str, Any]:
         exec_cfg = get_train_execution(self.config)
         prompt_cfg = exec_cfg.get("prompt", {}) if isinstance(exec_cfg, dict) else {}
         generation_cfg = get_vqa_generation_cfg(self.config)
@@ -686,10 +741,14 @@ class Trainer_VQA:
                     "video_path": sample.get("video_path"),
                 }
             )
-        return {"task": "vqa", "data": preds}
+        payload = {"task": "vqa", "data": preds}
+        _maybe_log_vqa_predictions(payload, use_wandb=use_wandb)
+        return payload
 
-    def evaluate(self, predictions: dict[str, Any], dataset) -> dict[str, Any]:
-        return compute_vqa_metrics(predictions, dataset, eval_profile=get_vqa_eval_profile_cfg(self.config))
+    def evaluate(self, predictions: dict[str, Any], dataset, *, use_wandb: bool = False) -> dict[str, Any]:
+        metrics = compute_vqa_metrics(predictions, dataset, eval_profile=get_vqa_eval_profile_cfg(self.config))
+        _maybe_log_vqa_metrics(metrics, use_wandb=use_wandb)
+        return metrics
 
 
 __all__ = [
