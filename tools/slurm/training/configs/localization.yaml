@@ -1,122 +1,168 @@
 TASK: localization
+VERSION: 3
 
-dali: False
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+    work_dir: ${SYSTEM.paths.save_dir}
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
 
 DATA:
-  dataset_name: SoccerNet
-  data_dir: /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023/
-  classes:
-    - PASS
-    - DRIVE
-    
-  epoch_num_frames: 500000
-  mixup: true
-  modality: rgb
-  crop_dim: -1
-  dilate_len: 0        # Dilate ground truth labels
-  clip_len: 100
-  input_fps: 25
-  extract_fps: 2
-  imagenet_mean: [0.485, 0.456, 0.406]
-  imagenet_std: [0.229, 0.224, 0.225]
-  target_height: 224
-  target_width: 398
-
-  train:
-    type: VideoGameWithOpencv
-    classes: ${DATA.classes}
-    output_map: [data, label]
-    video_path: ${DATA.data_dir}/
-    path: ${DATA.train.video_path}/annotations-2024-224p-train.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-      num_workers: 4
-      pin_memory: true
-
-  valid:
-    type: VideoGameWithOpencv
-    classes: ${DATA.classes}
-    output_map: [data, label]
-    video_path: ${DATA.data_dir}/
-    path: ${DATA.valid.video_path}/annotations-2024-224p-valid.json
-    dataloader:
-      batch_size: 8
-      shuffle: true
-
-  valid_data_frames:
-    type: VideoGameWithOpencvVideo
-    classes: ${DATA.classes}
-    output_map: [data, label]
-    video_path: ${DATA.valid.video_path}
-    path: ${DATA.valid.path}
-    overlap_len: 0
-    dataloader:
-      batch_size: 4
-      shuffle: false
-
-  test:
-    type: VideoGameWithOpencvVideo
-    classes: ${DATA.classes}
-    output_map: [data, label]
-    video_path: ${DATA.data_dir}/
-    path: ${DATA.test.video_path}/annotations-2024-224p-test.json
-    results: results_spotting_test
-    nms_window: 2 
-    metric: tight
-    overlap_len: 50
-    dataloader:
-      batch_size: 4
-      shuffle: false
-
-  challenge:
-    type: VideoGameWithDaliVideo
-    overlap_len: 50
-    output_map: [data, label]
-    path: ${DATA.data_dir}/challenge/annotations.json
-    dataloader:
-      batch_size: 4
-      shuffle: false
+  common:
+    dataset_name: SoccerNet
+    data_root: /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snbas/224p-2023/
+    classes:
+      - PASS
+      - DRIVE
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: VideoGameWithOpencv
+        annotation_path: ${DATA.common.data_root}/annotations-2024-224p-train.json
+        source_path: ${DATA.common.data_root}/
+        output_map: [data, label]
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        type: VideoGameWithOpencv
+        annotation_path: ${DATA.common.data_root}/annotations-2024-224p-valid.json
+        source_path: ${DATA.common.data_root}/
+        output_map: [data, label]
+        dataloader:
+          batch_size: 8
+          shuffle: true
+      valid_data_frames:
+        type: VideoGameWithOpencvVideo
+        annotation_path: ${DATA.common.splits.valid.annotation_path}
+        source_path: ${DATA.common.splits.valid.source_path}
+        output_map: [data, label]
+        overlap_len: 0
+        dataloader:
+          batch_size: 4
+          shuffle: false
+      test:
+        type: VideoGameWithOpencvVideo
+        annotation_path: ${DATA.common.data_root}/annotations-2024-224p-test.json
+        source_path: ${DATA.common.data_root}/
+        output_map: [data, label]
+        results: results_spotting_test
+        nms_window: 2
+        metric: tight
+        overlap_len: 50
+        dataloader:
+          batch_size: 4
+          shuffle: false
+      challenge:
+        type: VideoGameWithDaliVideo
+        annotation_path: ${DATA.common.data_root}/challenge/annotations.json
+        output_map: [data, label]
+        overlap_len: 50
+        dataloader:
+          batch_size: 4
+          shuffle: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        epoch_num_frames: 500000
+        clip_len: 100
+        input_fps: 25
+        extract_fps: 2
+      transform:
+        resize:
+          height: 224
+          width: 398
+        normalization:
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+      augmentations: {}
+      params:
+        color_mode: rgb
+        crop_dim: -1
+        mixup: true
+        dilate_len: 0
 
 MODEL:
-    type: E2E
-    runner:
-      type: runner_e2e
-    backbone:
-      type: rny008_gsm
-    head:
-      type: gru
-    multi_gpu: true
-    load_weights: null
+  schema_version: 3
+  task: localization
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny008_gsm
+      params: {}
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+      params: {}
+      overrides: {}
+  topology:
+    - from: video_encoder
+      to: task_head
+
+IO:
+  inputs:
+    video: video_encoder
+    label: task_head
+  outputs:
+    logits: task_head
 
 TRAIN:
-  type: trainer_e2e
-  num_epochs: 10
-  acc_grad_iter: 1
-  base_num_valid_epochs: 30
-  start_valid_epoch: 4
-  valid_map_every: 1
-  criterion_valid: map
-
+  trainer:
+    type: trainer_e2e
+  epochs: 10
   criterion:
     type: CrossEntropyLoss
-
   optimizer:
     type: AdamWithScaler
     lr: 0.01
-
   scheduler:
     type: ChainedSchedulerE2E
     acc_grad_iter: 1
-    num_epochs: ${TRAIN.num_epochs}
+    num_epochs: ${TRAIN.epochs}
     warm_up_epochs: 3
-
-SYSTEM:
-  log_dir: ./logs
-  save_dir: ./checkpoints
-  work_dir: ${SYSTEM.save_dir}
-  seed: 42
-  GPU: 4         # number of gpus to use
-  device: cuda   # auto | cuda | cpu
-  gpu_id: 0      # device id for single gpu training
-
+  execution:
+    enabled: true
+    multi_gpu: true
+    acc_grad_iter: 1
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 1
+    criterion_valid: map
+  sampling: {}
+  selection:
+    monitor: valid_loss
+    mode: min
+  checkpoint:
+    save_best: true

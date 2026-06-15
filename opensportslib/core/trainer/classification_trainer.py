@@ -14,6 +14,7 @@ import gc
 import json
 import time
 import logging
+import multiprocessing as mp
 
 import torch
 import tqdm
@@ -40,6 +41,33 @@ from opensportslib.metrics.classification_metric import (
     compute_classification_metrics,
     process_preds_labels
 )
+from opensportslib.core.config.accessors import (
+    get_component_name_by_kind,
+    get_data_modality,
+    get_split_dataloader_cfg,
+    get_system_path,
+    get_system_seed,
+    get_train_checkpoint,
+    get_train_execution,
+    get_train_sampling,
+    get_train_selection,
+    get_input_cfg,
+)
+
+
+def _is_frames_npy_modality(config, modality=None):
+    """Return True when runtime should use the frames_npy training path."""
+    modality = str(modality or get_data_modality(config)).lower()
+    if modality in {"frames", "frames_npy"}:
+        return True
+    if modality != "video":
+        return False
+
+    input_cfg = get_input_cfg(config)
+    source_cfg = input_cfg.get("source", {}) if isinstance(input_cfg, dict) else {}
+    source_format = str(source_cfg.get("format", "")).lower()
+    representation = str(input_cfg.get("representation", "")).lower()
+    return source_format == "npy" or representation == "frames"
 
 # -------------------------------------------------------------------
 # base classification trainer
@@ -125,6 +153,7 @@ class BaseTrainerClassification:
         self.revert_on_lr_reduction = revert_on_lr_reduction
         self._best_model_state = None
         self.predictions_payload = None
+        self.predictions_path = None
         
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         
@@ -302,10 +331,17 @@ class BaseTrainerClassification:
 
             # ---------------- CHECKPOINT ----------------
             current = val_loss if monitor == "loss" else val_metrics.get(monitor, 0)
+            if dist.is_initialized():
+                current_tensor = torch.tensor(
+                    [float(current if self.rank == 0 else 0.0)],
+                    device=self.device,
+                )
+                dist.broadcast(current_tensor, src=0)
+                current = current_tensor.item()
 
             is_better = current > best_metric if mode == "max" else current < best_metric
 
-            if is_better and self.rank == 0:
+            if is_better:
                 best_metric = current
                 self.best_metric = best_metric
 
@@ -315,13 +351,14 @@ class BaseTrainerClassification:
                         for k, v in self.model.state_dict().items()
                     }
 
-                best_path = self._save_checkpoint("best", epoch + 1, tag="best")
-                self.best_checkpoint_path = best_path
+                if self.rank == 0:
+                    best_path = self._save_checkpoint("best", epoch + 1, tag="best")
+                    self.best_checkpoint_path = best_path
 
-                if wandb.run is not None:
-                    artifact = wandb.Artifact("model-checkpoint", type="model")
-                    artifact.add_file(best_path)
-                    wandb.log_artifact(artifact)
+                    if wandb.run is not None:
+                        artifact = wandb.Artifact("model-checkpoint", type="model")
+                        artifact.add_file(best_path)
+                        wandb.log_artifact(artifact)
             
         if self.rank == 0:
             logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
@@ -457,8 +494,20 @@ class BaseTrainerClassification:
         else:
             all_labels = np.zeros((0,))
 
+        avg_loss = total_loss / max(1, total_batches)
+
         # --- DDP gather (handles uneven shard sizes) ---
         if dist.is_initialized():
+            loss_stats = torch.tensor(
+                [total_loss, total_batches],
+                dtype=torch.float64,
+                device=self.device,
+            )
+            dist.all_reduce(loss_stats, op=dist.ReduceOp.SUM)
+            avg_loss = (
+                loss_stats[0] / torch.clamp(loss_stats[1], min=1.0)
+            ).item()
+
             gathered = [None for _ in range(dist.get_world_size())]
             dist.all_gather_object(gathered, (all_logits, all_labels, results))
 
@@ -468,7 +517,7 @@ class BaseTrainerClassification:
                 results = [r for g in gathered for r in g[2]]
             else:
                 self.predictions_payload = None
-                return None, None, 0.0, {}
+                return None, None, avg_loss, {}
 
         # --- metrics (rank-0 only in DDP) ---
         if len(all_labels) > 0:
@@ -520,8 +569,9 @@ class BaseTrainerClassification:
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
+            self.predictions_path = save_path
 
-        return all_logits, all_labels, total_loss / max(1, total_batches), metrics
+        return all_logits, all_labels, avg_loss, metrics
 
 
     # -- checkpoint saving ---------------------------------------
@@ -718,6 +768,7 @@ class Trainer_Classification:
     def __init__(self, config):
         self.config = config
         self.device = select_device(self.config.SYSTEM)
+        self.save_dir = get_system_path(config, "save_dir", "./checkpoints") or "./checkpoints"
         self.model = None
         self.optimizer = None
         self.scheduler = None
@@ -763,16 +814,15 @@ class Trainer_Classification:
         from torch.utils.data.distributed import DistributedSampler
 
         is_ddp = world_size > 1
-        modality = getattr(self.config.DATA, 'data_modality', 'video')
-        seed = self.config.SYSTEM.seed
+        modality = get_data_modality(self.config)
+        is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+        is_frames_modality = _is_frames_npy_modality(self.config, modality)
+        seed = get_system_seed(self.config)
 
         g = torch.Generator()
         g.manual_seed(seed)
 
-        # HuggingFace models (e.g. VideoMAE) use the HF Trainer.
-        if self.config.MODEL.type == "huggingface":
-            self._train_huggingface(model, train_dataset, val_dataset)
-            return
+        # HuggingFace-backed models use the HF Trainer path when routed there.
 
         if is_ddp:
                 torch.cuda.set_device(rank)
@@ -793,9 +843,12 @@ class Trainer_Classification:
             optimizer, cfg=self.config.TRAIN.scheduler
         )
         criterion = build_criterion(self.config.TRAIN.criterion)
+        train_sampling = get_train_sampling(self.config)
+        train_selection = get_train_selection(self.config)
+        train_checkpoint = get_train_checkpoint(self.config)
 
         # --- class weights for the loss ---
-        if self.config.TRAIN.use_weighted_loss:
+        if train_sampling.get("use_weighted_loss", False):
             class_weights = train_dataset.get_class_weights(
                 num_classes=train_dataset.num_classes(), sqrt=True
             ).to(self.device)
@@ -804,15 +857,13 @@ class Trainer_Classification:
 
         # tracking modality needs a customm collate that merges PyG
         # Data objects into a single batched graph per timestamp.
-        collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+        collate_fn = tracking_collate_fn if is_tracking_modality else None
 
         # --- train sampler ---
-        if self.config.TRAIN.use_weighted_sampler:
+        if train_sampling.get("use_weighted_sampler", False):
             sample_weights = train_dataset.get_sample_weights()
 
-            samples_per_class = getattr(
-                self.config.TRAIN, 'samples_per_class', None
-            )
+            samples_per_class = train_sampling.get("samples_per_class")
             if samples_per_class:
                 num_classes = train_dataset.num_classes()
                 num_samples = samples_per_class * num_classes
@@ -826,7 +877,7 @@ class Trainer_Classification:
                     rank=rank,
                     replacement=True,
                     num_samples=num_samples,
-                    seed=self.config.SYSTEM.seed
+                    seed=seed
                 )
             else:
                 train_sampler = WeightedRandomSampler(
@@ -865,42 +916,61 @@ class Trainer_Classification:
         else:
             val_sampler = None
 
-        num_train_workers = self.config.DATA.train.dataloader.num_workers
-        num_val_workers = self.config.DATA.valid.dataloader.num_workers
+        train_dataloader_cfg = get_split_dataloader_cfg(self.config, "train")
+        train_num_workers = getattr(train_dataloader_cfg, "num_workers", 0)
+        train_pin_memory = getattr(train_dataloader_cfg, "pin_memory", self.device.type == "cuda")
+        train_mp_context = getattr(train_dataloader_cfg, "mp_context", None)
+        train_persistent_workers = getattr(train_dataloader_cfg, "persistent_workers", train_num_workers > 0)
+        train_prefetch_factor = getattr(train_dataloader_cfg, "prefetch_factor", 4 if train_num_workers > 0 else None)
+        
+        if train_mp_context is not None:
+            train_mp_context = mp.get_context(train_mp_context)
 
         train_loader = DataLoader(
             train_dataset,
-            batch_size=self.config.DATA.train.dataloader.batch_size,
+            batch_size=train_dataloader_cfg.batch_size,
             shuffle=(train_sampler is None and shuffle),
             sampler=train_sampler,
-            num_workers=num_train_workers,
-            pin_memory=True,
+            num_workers=train_num_workers,
+            pin_memory=train_pin_memory,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
             generator=g,
             drop_last=True,
-            persistent_workers=num_train_workers > 0,
-            prefetch_factor=4 if num_train_workers > 0 else None,
+            multiprocessing_context=train_mp_context,
+            persistent_workers=train_persistent_workers,
+            prefetch_factor=train_prefetch_factor,
         )
 
+        valid_dataloader_cfg = get_split_dataloader_cfg(self.config, "valid")
+        valid_num_workers = getattr(valid_dataloader_cfg, "num_workers", 0)
+        valid_pin_memory = getattr(valid_dataloader_cfg, "pin_memory", self.device.type == "cuda")
+        valid_mp_context = getattr(valid_dataloader_cfg, "mp_context", None)
+        valid_persistent_workers = getattr(valid_dataloader_cfg, "persistent_workers", valid_num_workers > 0)
+        valid_prefetch_factor = getattr(valid_dataloader_cfg, "prefetch_factor", 4 if valid_num_workers > 0 else None)
+
+        if valid_mp_context is not None:
+            valid_mp_context = mp.get_context(valid_mp_context)
+            
         val_loader = DataLoader(
             val_dataset,
-            batch_size=self.config.DATA.valid.dataloader.batch_size,
+            batch_size=valid_dataloader_cfg.batch_size,
             shuffle=False,
             sampler=val_sampler,   
-            num_workers=num_val_workers,
-            pin_memory=True,
+            num_workers=valid_num_workers,
+            pin_memory=valid_pin_memory,
             collate_fn=collate_fn,
             worker_init_fn=seed_worker,
             generator=g,
-            persistent_workers=num_val_workers > 0,
-            prefetch_factor=4 if num_val_workers > 0 else None,
+            multiprocessing_context=valid_mp_context,
+            persistent_workers=valid_persistent_workers,
+            prefetch_factor=valid_prefetch_factor,
         )
 
         # select the modality-specific trainer.
-        if modality == "tracking_parquet":
+        if is_tracking_modality:
             TrainerClass = TrackingTrainerClassification
-        elif modality == "frames_npy":
+        elif is_frames_modality:
             TrainerClass = FramesTrainerClassification
         else:
             TrainerClass = MVTrainerClassification
@@ -915,19 +985,22 @@ class Trainer_Classification:
             criterion=criterion,
             class_weights=class_weights,
             class_names=train_dataset.label_map,
-            save_dir=self.config.SYSTEM.save_dir,
-            model_name=self.config.MODEL.backbone.type,
+            save_dir=self.save_dir,
+            model_name=get_component_name_by_kind(self.config, "encoder") or "model",
             max_epochs=self.config.TRAIN.epochs,
             device=self.device,
             top_k=2,
-            patience=getattr(self.config.TRAIN, "patience", 0),
-            monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
-            mode=getattr(self.config.TRAIN, "mode", "max"),
-            revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+            patience=train_selection.get("patience", 0),
+            monitor=train_selection.get("monitor", "balanced_accuracy"),
+            mode=train_selection.get("mode", "max"),
+            revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
             config=self.config,
         )
 
-        self.trainer.train(epoch_start=self.epoch, save_every=self.config.TRAIN.save_every)
+        self.trainer.train(
+            epoch_start=self.epoch,
+            save_every=train_checkpoint.get("save_every", 1),
+        )
         return getattr(self.trainer, "best_checkpoint_path", None)
 
     def _train_huggingface(self, model, train_dataset, val_dataset):
@@ -938,9 +1011,9 @@ class Trainer_Classification:
 
         args = TrainingArguments(
             label_names=["labels"],
-            output_dir=self.config.SYSTEM.save_dir,
-            per_device_train_batch_size=self.config.DATA.train.dataloader.batch_size,
-            per_device_eval_batch_size=self.config.DATA.valid.dataloader.batch_size,
+            output_dir=self.save_dir,
+            per_device_train_batch_size=get_split_dataloader_cfg(self.config, "train").batch_size,
+            per_device_eval_batch_size=get_split_dataloader_cfg(self.config, "valid").batch_size,
             num_train_epochs=self.config.TRAIN.epochs,
             eval_strategy="epoch" if val_dataset else "no",
             save_strategy="epoch",
@@ -952,7 +1025,7 @@ class Trainer_Classification:
             warmup_ratio=0.1,
         )
 
-        if self.config.TRAIN.use_weighted_sampler:
+        if get_train_sampling(self.config).get("use_weighted_sampler", False):
             self.trainer = WeightedTrainer(
                 model=self.model,
                 args=args,
@@ -978,11 +1051,10 @@ class Trainer_Classification:
         #############
 
     def infer(self, test_dataset, rank=0, world_size=1):
-        if self.config.MODEL.type == "huggingface":
-
+        if not self.config.MODEL:
             args = TrainingArguments(
-            output_dir=self.config.SYSTEM.save_dir,  # any directory, not used here
-            per_device_eval_batch_size=1#self.config.DATA.valid.dataloader.batch_size,  # or whatever batch size you want
+            output_dir=self.save_dir,  # any directory, not used here
+            per_device_eval_batch_size=1,
             )
 
             self.hf_trainer = HFTrainer(
@@ -1022,12 +1094,13 @@ class Trainer_Classification:
                     },
                 })
 
-            out_dir = os.path.join(self.config.SYSTEM.save_dir, "final")
+            out_dir = os.path.join(self.save_dir, "final")
             os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, "predictions_test_epoch_final.json")
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(submission, f, indent=2)
             self.predictions_payload = submission
+            self.predictions_path = out_path
             return submission
         
         else:
@@ -1054,15 +1127,19 @@ class Trainer_Classification:
             else:
                 test_sampler = None
 
-            modality = getattr(self.config.DATA, 'data_modality', 'video')
-            collate_fn = tracking_collate_fn if modality == "tracking_parquet" else None
+            modality = get_data_modality(self.config)
+            is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+            is_frames_modality = _is_frames_npy_modality(self.config, modality)
+            collate_fn = tracking_collate_fn if is_tracking_modality else None
+            test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
 
             test_loader = DataLoader(
                 test_dataset, 
-                batch_size=self.config.DATA.test.dataloader.batch_size, 
+
+                batch_size=test_dataloader_cfg.batch_size, 
                 shuffle=False, 
                 sampler=test_sampler,
-                num_workers=self.config.DATA.test.dataloader.num_workers, 
+                num_workers=getattr(test_dataloader_cfg, "num_workers", 0), 
                 pin_memory=True,
                 collate_fn=collate_fn
             )
@@ -1072,9 +1149,9 @@ class Trainer_Classification:
             criterion = build_criterion(self.config.TRAIN.criterion)
 
             # Select trainer class based on modality
-            if modality == "tracking_parquet":
+            if is_tracking_modality:
                 TrainerClass = TrackingTrainerClassification
-            elif modality == "frames_npy":
+            elif is_frames_modality:
                 TrainerClass = FramesTrainerClassification
             else:
                 TrainerClass = MVTrainerClassification
@@ -1089,21 +1166,24 @@ class Trainer_Classification:
                 criterion=criterion,
                 class_weights=None,
                 class_names=test_dataset.label_map,
-                save_dir=self.config.SYSTEM.save_dir,
-                model_name=self.config.MODEL.backbone.type,
+                save_dir=self.save_dir,
+                model_name=get_component_name_by_kind(self.config, "encoder") or "model",
                 max_epochs=self.config.TRAIN.epochs,
                 device=self.device,
                 top_k=2,
-                monitor=getattr(self.config.TRAIN, "monitor", "balanced_accuracy"),
-                mode=getattr(self.config.TRAIN, "mode", "max"),
-                revert_on_lr_reduction=(modality in ("tracking_parquet", "frames_npy")),
+                monitor=get_train_selection(self.config).get("monitor", "balanced_accuracy"),
+                mode=get_train_selection(self.config).get("mode", "max"),
+                revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
                 config=self.config,
             )
             self.test_trainer.test(
-                detailed_results=getattr(self.config.TRAIN, 'detailed_results', False)
+                detailed_results=get_train_execution(self.config).get("detailed_results", False)
             )
             self.predictions_payload = getattr(
                 self.test_trainer, "predictions_payload", None
+            )
+            self.predictions_path = getattr(
+                self.test_trainer, "predictions_path", None
             )
             return self.predictions_payload
 
@@ -1165,21 +1245,15 @@ class Trainer_Classification:
         """
         Load model checkpoint. Returns loaded model, optimizer, epoch
         """
-        if self.config.MODEL.type == "huggingface":
-            epoch = None
-            self.model, processor = load_huggingface_checkpoint(self.config, path=path, device=self.device)
-            logging.info(f"Model loaded from {path}")
-            return self.model, processor, scheduler, epoch
-        else:
-            from opensportslib.models.builder import build_model
-            if self.model is None:
-                self.model, _ = build_model(self.config, self.device)
-            self.model, optimizer, scheduler, scaler, epoch, checkpoint = load_checkpoint(
-                self.model, path, optimizer, scheduler, device=self.device
-            )
-            self.optimizer = optimizer
-            self.scheduler = scheduler
-            self.scaler = scaler
-            self.epoch = epoch
-            logging.info(f"Model loaded from {path}, epoch: {epoch}")
-            return self.model, self.optimizer, self.scheduler, self.epoch
+        from opensportslib.models.builder import build_model
+        if self.model is None:
+            self.model, _ = build_model(self.config, self.device)
+        self.model, optimizer, scheduler, scaler, epoch, checkpoint = load_checkpoint(
+            self.model, path, optimizer, scheduler, device=self.device
+        )
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.scaler = scaler
+        self.epoch = epoch
+        logging.info(f"Model loaded from {path}, epoch: {epoch}")
+        return self.model, self.optimizer, self.scheduler, self.epoch

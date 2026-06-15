@@ -31,6 +31,17 @@ def get_cpu_tag():
 def install_torch():
     python = sys.executable
     subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
+    
+    if CUDA_VERSION == "cu130":
+        cuda = "cu130"
+        subprocess.check_call([
+            python, "-m", "pip", "install",
+            "torch", "torchvision", "torchaudio",
+            "--index-url",
+            f"https://download.pytorch.org/whl/{cuda}"
+        ])
+        print(f"\nSuccess with {cuda}")
+        return cuda
     for cuda in CUDA_SUPPORT:
 
         print(f"\n Trying installation: {cuda}\n")
@@ -64,16 +75,29 @@ def install_dali():
 
     # DALI (only if GPU)
     if CUDA_VERSION:
-        subprocess.check_call([
-            python, "-m", "pip", "install",
-            "nvidia-dali-cuda120"
-        ])
-    
-        # CuPy (CUDA-aware but auto-resolves internally)
-        subprocess.check_call([
-            python, "-m", "pip", "install",
-            "cupy-cuda12x"
-        ])
+        
+        if CUDA_VERSION == "cu130":
+            subprocess.check_call([
+                python, "-m", "pip", "install",
+                "nvidia-dali-cuda130"
+            ])
+
+            # CuPy (CUDA-aware but auto-resolves internally)
+            subprocess.check_call([
+                python, "-m", "pip", "install",
+                "cupy-cuda130"
+            ])
+        else:
+            subprocess.check_call([
+                python, "-m", "pip", "install",
+                "nvidia-dali-cuda120"
+            ])
+
+            # CuPy (CUDA-aware but auto-resolves internally)
+            subprocess.check_call([
+                python, "-m", "pip", "install",
+                "cupy-cuda12x"
+            ])
 
 def install_pyg():
     import torch

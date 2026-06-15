@@ -1,22 +1,22 @@
-import wandb
-import matplotlib.pyplot as plt
-import numpy as np
 import logging
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import wandb
+
+from opensportslib.core.config.accessors import (
+    get_component_name_by_kind,
+    get_data_modality,
+    get_train_epochs,
+)
 from opensportslib.core.utils.config import namespace_to_dict
 
+
 def build_wandb_config(cfg):
-    """
-    Extract minimal + useful config for W&B dashboard.
-    Returns a FLAT dict (ready for wandb.init(config=...))
-    """
-
-    from opensportslib.core.utils.config import namespace_to_dict
-
     cfg_dict = namespace_to_dict(cfg)
 
     def get(d, path, default=None):
-        """Safe nested get using dot notation"""
         keys = path.split(".")
         for k in keys:
             if not isinstance(d, dict) or k not in d:
@@ -24,107 +24,37 @@ def build_wandb_config(cfg):
             d = d[k]
         return d
 
-    def pick(paths):
-        """Pick only selected keys"""
-        out = {}
-        for p in paths:
-            v = get(cfg_dict, p)
-            if v is not None:
-                out[p] = v
-        return out
-
-    # -------------------------
-    # REQUIRED (core columns)
-    # -------------------------
-    REQUIRED_KEYS = [
+    fields = [
         "TASK",
-
-        "DATA.dataset_name",
-        "DATA.data_modality",
-
-        "MODEL.type",
-        "MODEL.backbone.type",
-        "MODEL.neck.type",
-        "MODEL.head.type",
-
+        "SYSTEM.device",
+        "SYSTEM.gpu.count",
+        "SYSTEM.reproducibility.seed",
+        "DATA.common.dataset_name",
+        "DATA.common.runtime.loader_backend",
+        "TRAIN.trainer.type",
         "TRAIN.optimizer.type",
         "TRAIN.optimizer.lr",
         "TRAIN.scheduler.type",
-
-        "TRAIN.monitor",
-        "TRAIN.mode",
-
-        "SYSTEM.device",
-    ]
-
-    # -------------------------
-    # OPTIONAL (useful knobs)
-    # -------------------------
-    OPTIONAL_KEYS = [
-        # DATA
-        "DATA.num_frames",
-        "DATA.clip_len",
-        "DATA.input_fps",
-        "DATA.extract_fps",
-        "DATA.frame_size",
-        "DATA.view_type",
-        "DATA.num_classes",
-
-        # MODEL
-        "MODEL.backbone.encoder",
-        "MODEL.backbone.hidden_dim",
-        "MODEL.backbone.freeze",
-        "MODEL.unfreeze_last_n_layers",
-        "MODEL.neck.agr_type",
-        "MODEL.edge",
-
-        # TRAIN
         "TRAIN.epochs",
-        "TRAIN.num_epochs",
-        "TRAIN.max_epochs",
-        "TRAIN.use_amp",
-        "TRAIN.use_weighted_loss",
-        "TRAIN.use_weighted_sampler",
-        "TRAIN.mixup",
-        "TRAIN.mixup_alpha",
-
-        # SYSTEM
-        "SYSTEM.GPU",
-        "SYSTEM.seed",
+        "TRAIN.selection.monitor",
+        "TRAIN.selection.mode",
     ]
 
-    config = {}
+    out = {k: get(cfg_dict, k) for k in fields if get(cfg_dict, k) is not None}
+    out["MODEL.encoder"] = get_component_name_by_kind(cfg, "encoder")
+    out["MODEL.head"] = get_component_name_by_kind(cfg, "head")
+    out["DATA.modality"] = get_data_modality(cfg)
+    out["TRAIN.total_epochs"] = get_train_epochs(cfg)
 
-    # pick required
-    config.update(pick(REQUIRED_KEYS))
+    train_bs = get(cfg_dict, "TRAIN.sampling.batch_size")
+    if train_bs is not None:
+        out["TRAIN.batch_size"] = train_bs
 
-    # pick optional
-    config.update(pick(OPTIONAL_KEYS))
+    return out
 
-    # -------------------------
-    # SPECIAL HANDLING
-    # -------------------------
-
-    # Normalize batch_size (from nested dataloader)
-    batch_size = get(cfg_dict, "DATA.train.dataloader.batch_size")
-    if batch_size is not None:
-        config["TRAIN.batch_size"] = batch_size
-
-    # Normalize epochs (different configs use different names)
-    epochs = (
-        get(cfg_dict, "TRAIN.epochs")
-        or get(cfg_dict, "TRAIN.num_epochs")
-        or get(cfg_dict, "TRAIN.max_epochs")
-    )
-    if epochs is not None:
-        config["TRAIN.total_epochs"] = epochs
-
-    return config
 
 def _flatten_config(data, parent_key="", sep="."):
-    """Flatten nested dict/list config for W&B table-friendly columns."""
     items = {}
-
     if isinstance(data, dict):
         for k, v in data.items():
             key = f"{parent_key}{sep}{k}" if parent_key else str(k)
@@ -139,52 +69,38 @@ def _flatten_config(data, parent_key="", sep="."):
 
     if parent_key:
         items[parent_key] = data
-
     return items
 
 
 def _wandb_ready():
     return getattr(wandb, "run", None) is not None
 
-def init_wandb(cfg_path, cfg, run_id, use_wandb=False):
-    """
-    Initialize Weights & Biases if enabled.
-    
-    Args:
-        cfg_path: Path to the configuration file.
-        cfg: config object with attributes:
-             - use_wandb (bool)
-             - project_name (str)
-             - run_name (str)
-    """
 
+def init_wandb(cfg_path, cfg, run_id, use_wandb=False):
     if not use_wandb:
         logging.info("W&B disabled.")
         return None
 
     try:
-        import wandb
+        import wandb as wandb_pkg
     except ImportError:
         logging.warning("wandb not installed. Install with `pip install wandb`.")
         return None
 
-    # Prevent multiple processes from initializing wandb
     rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", 0)))
     if rank != 0:
         return None
 
-    # Prevent re-initialization
-    if wandb.run is not None:
-        return wandb
+    if wandb_pkg.run is not None:
+        return wandb_pkg
 
-    if getattr(cfg.DATA, "data_modality", None):
-        run_name = f"{cfg.MODEL.backbone.type}_{cfg.DATA.data_modality}"
-    else:
-        run_name = f"{cfg.MODEL.backbone.type}"
+    encoder_name = get_component_name_by_kind(cfg, "encoder") or "model"
+    modality = get_data_modality(cfg)
+    run_name = f"{encoder_name}_{modality}" if modality else encoder_name
 
     config_flat = build_wandb_config(cfg)
 
-    wandb.init(
+    wandb_pkg.init(
         project=cfg.TASK,
         name=run_name,
         id=run_id,
@@ -192,36 +108,29 @@ def init_wandb(cfg_path, cfg, run_id, use_wandb=False):
         config=config_flat,
     )
 
-    artifact = wandb.Artifact(
+    artifact = wandb_pkg.Artifact(
         name=f"{cfg.TASK}-config",
         type="config",
-        description="configuration (YAML)"
+        description="configuration (YAML)",
     )
 
     artifact.add_file(cfg_path)
-    wandb.log_artifact(artifact)
+    wandb_pkg.log_artifact(artifact)
 
-    logging.info(f"Wandb initialised")
-    return wandb
+    logging.info("Wandb initialised")
+    return wandb_pkg
+
 
 def log_table_wandb(name, rows, headers):
-    """
-    Log a table to Weights & Biases.
-
-    Args:
-        name (str): Name of the table in wandb.
-        rows (list[list]): Table rows.
-        headers (list[str]): Column headers.
-    """
     if not _wandb_ready():
         return
 
     table = wandb.Table(columns=headers)
-
     for row in rows:
         table.add_data(*row)
 
     wandb.log({name: table})
+
 
 def log_attention_wandb(attention, split_name):
     if not _wandb_ready():
@@ -235,46 +144,74 @@ def log_attention_wandb(attention, split_name):
     ax.set_xlabel("Views / Time")
     ax.set_ylabel("Batch")
 
-    wandb.log({
-        f"{split_name}/attention_map": wandb.Image(fig)
-    })
-
+    wandb.log({f"{split_name}/attention_map": wandb.Image(fig)})
     plt.close(fig)
 
 
-def log_sample_videos_wandb(mvclips, preds, labels, split_name, max_samples=2, fps=5):
+def log_confusion_matrix_wandb(
+    cm=None,
+    class_names=None,
+    split_name="valid",
+    y_true=None,
+    y_pred=None,
+):
     if not _wandb_ready():
         return
 
+    if cm is None:
+        if y_true is None or y_pred is None:
+            raise TypeError(
+                "log_confusion_matrix_wandb() requires either `cm` or both "
+                "`y_true` and `y_pred`."
+            )
 
-    # mvclips: (B, V, C, T, H, W)
-    mvclips = mvclips.detach().cpu().numpy()
+        if class_names is None:
+            labels = sorted(set(y_true) | set(y_pred))
+            class_names = [str(label) for label in labels]
+        else:
+            labels = list(range(len(class_names)))
 
-    for i in range(min(len(mvclips), max_samples)):
-        views = mvclips[i]  # (V, C, T, H, W)
+        cm = np.zeros((len(labels), len(labels)), dtype=int)
+        label_to_idx = {label: idx for idx, label in enumerate(labels)}
+        for true_label, pred_label in zip(y_true, y_pred):
+            true_idx = label_to_idx.get(true_label)
+            pred_idx = label_to_idx.get(pred_label)
+            if true_idx is None or pred_idx is None:
+                continue
+            cm[true_idx, pred_idx] += 1
+    else:
+        cm = np.asarray(cm)
+        if class_names is None:
+            class_names = [str(i) for i in range(cm.shape[0])]
 
-        # Log each view separately
-        for v in range(views.shape[0]):
-            video = views[v].transpose(1, 2, 3, 0)  # (T, H, W, C)
-            video = (video * 255).astype(np.uint8) if video.max() <= 1.0 else video
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    ax.figure.colorbar(im, ax=ax)
 
-            wandb.log({
-                f"{split_name}/sample_{i}_view_{v}": wandb.Video(
-                    video,
-                    fps=fps,
-                    caption=f"Pred: {preds[i]}, GT: {labels[i]}"
-                )
-            })
+    ax.set(
+        xticks=np.arange(len(class_names)),
+        yticks=np.arange(len(class_names)),
+        xticklabels=class_names,
+        yticklabels=class_names,
+        ylabel="True label",
+        xlabel="Predicted label",
+        title=f"Confusion Matrix ({split_name})",
+    )
 
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-def log_confusion_matrix_wandb(y_true, y_pred, class_names, split_name):
-    if not _wandb_ready():
-        return
-    wandb.log({
-        f"{split_name}/confusion_matrix": wandb.plot.confusion_matrix(
-            probs=None,
-            y_true=y_true,
-            preds=y_pred,
-            class_names=class_names
-        )
-    })
+    thresh = cm.max() / 2.0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(
+                j,
+                i,
+                format(cm[i, j], "d"),
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > thresh else "black",
+            )
+
+    fig.tight_layout()
+    wandb.log({f"{split_name}/confusion_matrix": wandb.Image(fig)})
+    plt.close(fig)

@@ -208,7 +208,7 @@ def test_localization_evaluate_uses_provided_predictions(
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.resolve_config_omega",
-        lambda config: config,
+        lambda config, weights=None: config,
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.load_annotations.check_config",
@@ -260,19 +260,45 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
         def split(name):
             path = tmp_path / f"{name}.json"
             path.write_text("{}", encoding="utf-8")
-            return SimpleNamespace(path=str(path), dataloader=SimpleNamespace())
+            return SimpleNamespace(
+                annotation_path=str(path),
+                source_path=str(tmp_path),
+                dataloader=SimpleNamespace(),
+            )
 
         return SimpleNamespace(
             DATA=SimpleNamespace(
-                train=split("train"),
-                valid=split("valid"),
-                test=split("test"),
-                classes=["PASS", "SHOT"],
+                common=SimpleNamespace(
+                    classes=["PASS", "SHOT"],
+                    runtime=SimpleNamespace(loader_backend="opencv"),
+                    splits=SimpleNamespace(
+                        train=split("train"),
+                        valid=split("valid"),
+                        test=split("test"),
+                    ),
+                ),
+                inputs=SimpleNamespace(
+                    video=SimpleNamespace(
+                        modality="video",
+                        representation="raw",
+                        sampling=SimpleNamespace(),
+                        transform=SimpleNamespace(),
+                        params=SimpleNamespace(),
+                    )
+                ),
             ),
-            MODEL=SimpleNamespace(multi_gpu=True),
-            SYSTEM=SimpleNamespace(seed=42, GPU=1),
-            TRAIN=SimpleNamespace(type="trainer"),
-            dali=False,
+            MODEL=SimpleNamespace(
+                task="localization",
+                components=SimpleNamespace(),
+                topology=[],
+            ),
+            SYSTEM=SimpleNamespace(
+                reproducibility=SimpleNamespace(seed=42, use_seed=False),
+                gpu=SimpleNamespace(count=1, id=0),
+                device="cpu",
+                paths=SimpleNamespace(save_dir=str(tmp_path)),
+            ),
+            TRAIN=SimpleNamespace(trainer=SimpleNamespace(type="trainer_e2e")),
         )
 
     class FakeData:
@@ -304,6 +330,7 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
         self.model = object()
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
+        self._resume_state = {"source_weights": weights}
 
     def fake_build_trainer(cfg, model, default_args, resume_from=None):
         del cfg, model, default_args
@@ -329,7 +356,7 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.resolve_config_omega",
-        lambda config: config,
+        lambda config, weights=None: config,
     )
     monkeypatch.setattr(
         "opensportslib.core.utils.config.select_device",
@@ -367,9 +394,9 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     train_api = LocalizationModel(config=localization_config_path, weights="default")
     train_api.config = make_config()
     train_api.train(use_wandb=False)
-    assert trainer_resume_from[-1] == "default"
+    assert trainer_resume_from[-1]["source_weights"] == "default"
 
     train_api = LocalizationModel(config=localization_config_path, weights="default")
     train_api.config = make_config()
     train_api.train(weights="override", use_wandb=False)
-    assert trainer_resume_from[-1] == "override"
+    assert trainer_resume_from[-1]["source_weights"] == "override"

@@ -1,0 +1,136 @@
+TASK: captioning
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_captioning
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: video_captioning
+    data_root: /path/to/data
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /path/to/train.json
+        source_path: /path/to/train
+        dataloader:
+          batch_size: 8
+          shuffle: true
+          num_workers: 4
+          pin_memory: true
+      valid:
+        annotation_path: /path/to/valid.json
+        source_path: /path/to/valid
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+      test:
+        annotation_path: /path/to/test.json
+        source_path: /path/to/test
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 16
+      transform:
+        resize:
+          height: 224
+          width: 224
+      augmentations: {}
+      params:
+        color_mode: rgb
+    text:
+      modality: text
+      representation: caption
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  runtime:
+    dtype: bf16
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: huggingface
+        repo_id: MCG-NJU/videomae-base
+      load:
+        pretrained: true
+      params: {}
+      overrides: {}
+    caption_decoder:
+      kind: decoder
+      source:
+        provider: huggingface
+        repo_id: google/t5-v1_1-base
+      load:
+        pretrained: true
+      params: {}
+      overrides: {}
+  topology:
+    - from: video_encoder
+      to: caption_decoder
+      map:
+        features: encoder_hidden_states
+
+IO:
+  inputs:
+    video: video_encoder
+    text: caption_decoder
+  outputs:
+    captions: caption_decoder
+
+TRAIN:
+  trainer:
+    type: captioning
+  epochs: 20
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0001
+  scheduler:
+    type: StepLR
+  execution:
+    enabled: true
+    use_amp: true
+  sampling: {}
+  selection:
+    monitor: caption_loss
+    mode: min
+  checkpoint:
+    save_every: 5
+    save_best: true

@@ -28,6 +28,16 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 from opensportslib.metrics.localization_metric import *
+from opensportslib.core.config.accessors import (
+    get_data_classes,
+    get_runner_type,
+    get_split_cfg,
+    get_split_dataloader_cfg,
+    get_system_path,
+    get_train_epochs,
+    get_train_execution,
+    get_loader_backend,
+)
 from opensportslib.core.optimizer.builder import build_optimizer
 from opensportslib.core.scheduler.builder import build_scheduler
 from opensportslib.core.utils.config import store_json
@@ -58,8 +68,7 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
     Returns:
         evaluator: The constructed trainer.
     """
-    if cfg.TRAIN.type == "trainer_e2e":
-        print(cfg.SYSTEM.work_dir)
+    if cfg.TRAIN.trainer.type == "trainer_e2e":
         checkpoint_dir = default_args["work_dir"]
         start_epoch = 0
         logging.info(f"Checkpoint directory: {checkpoint_dir}")
@@ -71,13 +80,13 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
             scaler = resume_from["scaler"]
             start_epoch = resume_from["epoch"] + 1
             # Check if we've already reached target epochs
-            if start_epoch >= cfg.TRAIN.num_epochs:
+            if start_epoch >= get_train_epochs(cfg):
                 logging.error(f"Model already trained for {start_epoch} epochs")
-                logging.error(f"Target epochs in config: {cfg.TRAIN.num_epochs}")
+                logging.error(f"Target epochs in config: {get_train_epochs(cfg)}")
                 logging.error("Please increase num_epochs in config to continue training")
                 raise ValueError("Need to increase num_epochs to continue training")
             
-            logging.info(f"Will continue training from epoch {start_epoch} to {cfg.TRAIN.num_epochs}")
+            logging.info(f"Will continue training from epoch {start_epoch} to {get_train_epochs(cfg)}")
         else:
             logging.info("Building optimizer...")
             optimizer, scaler = build_optimizer(model._get_params(), cfg.TRAIN.optimizer)
@@ -103,7 +112,7 @@ def build_trainer(cfg, model=None, default_args=None, resume_from=None):
         if resume_from is not None:
             trainer.best_epoch = resume_from.get('best_epoch', 0)
             trainer.best_criterion_valid = resume_from.get('best_criterion_valid', 
-                0 if cfg.TRAIN.criterion_valid == "map" else float("inf"))
+                0 if cfg.TRAIN.execution.criterion_valid == "map" else float("inf"))
             logging.info(f"Restored best epoch: {trainer.best_epoch}")
     
     else:
@@ -229,9 +238,10 @@ class Trainer_e2e(Trainer):
         self.config = args
         self.losses = []
         self.best_epoch = 0
-        self.best_criterion_valid = 0 if args.TRAIN.criterion_valid == "map" else float("inf")
+        execution = get_train_execution(args)
+        self.best_criterion_valid = 0 if execution.get("criterion_valid") == "map" else float("inf")
 
-        self.num_epochs = args.TRAIN.num_epochs
+        self.num_epochs = get_train_epochs(args)
         self.epoch = start_epoch
         self.model = model
 
@@ -239,11 +249,11 @@ class Trainer_e2e(Trainer):
         self.scaler = scaler
         self.lr_scheduler = lr_scheduler
 
-        self.acc_grad_iter = args.TRAIN.acc_grad_iter
+        self.acc_grad_iter = execution.get("acc_grad_iter")
 
-        self.start_valid_epoch = args.TRAIN.start_valid_epoch
-        self.criterion_valid = args.TRAIN.criterion_valid
-        self.valid_map_every = args.TRAIN.valid_map_every
+        self.start_valid_epoch = execution.get("start_valid_epoch")
+        self.criterion_valid = execution.get("criterion_valid")
+        self.valid_map_every = execution.get("valid_map_every")
         #self.save_dir = work_dir
         self.dali = dali
 
@@ -438,8 +448,13 @@ class Trainer_e2e(Trainer):
             # elif split == "challenge":
             #     cfg_tmp = self.cfg_challenge
 
-            split_path = os.path.join(cfg_tmp.path)
-            if not os.path.exists(split_path):
+            if cfg_tmp is None:
+                continue
+
+            split_path = getattr(cfg_tmp, "path", None)
+            if split_path is None:
+                split_path = getattr(cfg_tmp, "annotation_path", None)
+            if split_path is None or not os.path.exists(split_path):
                 continue
 
             data_obj = build_dataset(self.config, split=split)
@@ -485,17 +500,17 @@ def build_inferer(cfg, model, default_args=None):
     Returns:
         inferer: The constructed inferer.
     """
-
-    if cfg.runner.type == "runner_JSON":
-        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_JSON")
-    elif cfg.runner.type == "runner_pooling":
-        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
-    elif cfg.runner.type == "runner_CALF":
-        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
-    elif cfg.runner.type == "runner_e2e":
-        inferer = Inferer(cfg=cfg, model=model, infer_Spotting="infer_E2E")
-
-    return inferer
+    
+    runner_type = get_runner_type(cfg)
+    if runner_type == "runner_JSON":
+        return Inferer(cfg=cfg, model=model, infer_Spotting="infer_JSON")
+    if runner_type == "runner_pooling":
+        return Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
+    if runner_type == "runner_CALF":
+        return Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
+    if runner_type == "runner_e2e":
+        return Inferer(cfg=cfg, model=model, infer_Spotting="infer_E2E")
+    raise ValueError(f"Unsupported localization runner type: {runner_type}")
 
 class Inferer:
     def __init__(self, cfg, model, infer_Spotting):
@@ -509,6 +524,7 @@ class Inferer:
         self.cfg_model = cfg
         self.model = model
         self.infer_Spotting=infer_Spotting
+        self.dali = get_loader_backend(cfg) == "dali"
 
     def infer(self, cfg, data, dataloader=None):
         """Infer actions from data.
@@ -548,7 +564,7 @@ class Inferer:
         if wandb.run is not None:  # means init_wandb already ran
             wandb_logger = WandbLogger(experiment=wandb.run)
 
-        if cfg.SYSTEM.work_dir is not None and dataloader is not None:
+        if get_system_path(cfg, "work_dir") is not None and dataloader is not None:
             
             evaluator = pl.Trainer(
                 logger=wandb_logger,
@@ -601,26 +617,28 @@ class Inferer:
             Dict containing predictions
         """
         pred_file = None
-        if cfg.SYSTEM.work_dir is not None:
-            pred_file = os.path.join(cfg.SYSTEM.work_dir, cfg.DATA.test.results)
+        work_dir = get_system_path(cfg, "work_dir")
+        cfg_testset = get_split_cfg(cfg, "test")
+        if work_dir is not None:
+            pred_file = os.path.join(work_dir, cfg_testset.results)
 
         predictions = infer_and_process_predictions_e2e(
             model,
-            getattr(cfg, "dali", False),
+            self.dali,
             data,
             "infer",
-            cfg.DATA.classes,
+            get_data_classes(cfg),
             pred_file,
             True,
-            cfg.DATA.test.dataloader,
+            get_split_dataloader_cfg(cfg, "test"),
             return_pred=True,
         )
 
         if pred_file is not None:
             pred_json_file = os.path.join(pred_file + ".json")
             pred_recall_file = os.path.join(pred_file + ".recall.json.gz")
-            logging.info("Predictions saved")
-            logging.info(pred_json_file)
+            #logging.info("Predictions saved")
+            #logging.info(pred_json_file)
             logging.info("High recall predictions saved")
             logging.info(pred_recall_file)
 
@@ -638,13 +656,14 @@ def build_evaluator(cfg, default_args=None):
     Returns:
         evaluator: The constructed evaluator.
     """
-    if cfg.MODEL.runner.type == "runner_JSON":
+    runner_type = get_runner_type(cfg)
+    if runner_type == "runner_JSON":
         evaluator = Evaluator(cfg=cfg, evaluate_Spotting="evaluate_pred_JSON")
-    elif cfg.MODEL.runner.type == "runner_pooling":
+    elif runner_type == "runner_pooling":
         evaluator = Evaluator(cfg=cfg, evaluate_Spotting="evaluate_pred_SN")
-    elif cfg.MODEL.runner.type == "runner_CALF":
+    elif runner_type == "runner_CALF":
         evaluator = Evaluator(cfg=cfg, evaluate_Spotting="evaluate_pred_SN")
-    elif cfg.MODEL.runner.type == "runner_e2e":
+    elif runner_type == "runner_e2e":
         evaluator = Evaluator(cfg=cfg, evaluate_Spotting="evaluate_pred_E2E")
 
     return evaluator
@@ -671,11 +690,11 @@ class Evaluator:
             cfg_testset (dict): Config dict that contains informations for the predictions.
         """
         if self.evaluate_Spotting == "evaluate_pred_JSON":
-            return self.evaluate_pred_JSON(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_JSON(cfg_testset, get_system_path(self.cfg, "work_dir"), json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_SN":
-            return self.evaluate_pred_SN(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_SN(cfg_testset, get_system_path(self.cfg, "work_dir"), json_gz_file, metric=cfg_testset.metric)
         elif self.evaluate_Spotting == "evaluate_pred_E2E":
-            return self.evaluate_pred_E2E(cfg_testset, self.cfg.SYSTEM.work_dir, json_gz_file, metric=cfg_testset.metric)
+            return self.evaluate_pred_E2E(cfg_testset, get_system_path(self.cfg, "work_dir"), json_gz_file, metric=cfg_testset.metric)
 
 
     # def evaluate_common_JSON(self, cfg, results, metric):
@@ -768,13 +787,23 @@ class Evaluator:
     
       
     def evaluate_common_JSON(self, cfg, results, metric):
-        if cfg.path is None:
+        def _normalize_pred_key(path_value):
+            if path_value is None:
+                return "", ""
+            raw = str(path_value).strip().replace("\\", "/")
+            no_ext = os.path.splitext(raw)[0]
+            return raw, no_ext
+
+        gt_path = getattr(cfg, "annotation_path", None)
+        if gt_path is None:
+            gt_path = getattr(cfg, "path", None)
+        if gt_path is None:
             return
 
         # --------------------------------------------------
         # LOAD GT
         # --------------------------------------------------
-        with open(cfg.path, encoding="utf-8") as f:
+        with open(gt_path, encoding="utf-8") as f:
             GT_data = json.load(f)
 
         # --------------------------------------------------
@@ -819,7 +848,11 @@ class Evaluator:
         if pred_is_v2:
             for item in pred_data["data"]:
                 video_path = item["inputs"][0]["path"]
-                pred_lookup[video_path] = item
+                raw_key, no_ext_key = _normalize_pred_key(video_path)
+                if raw_key:
+                    pred_lookup[raw_key] = item
+                if no_ext_key:
+                    pred_lookup[no_ext_key] = item
 
         targets_numpy = []
         detections_numpy = []
@@ -829,7 +862,7 @@ class Evaluator:
         # LOOP
         # ==================================================
         for game in tqdm.tqdm(videos):
-
+            
             # ---------------- GT ----------------
             if gt_is_v2:
                 video_path = game["inputs"][0]["path"]
@@ -843,13 +876,13 @@ class Evaluator:
 
             # ---------------- PRED ----------------
             if pred_path_is_file:
-
                 # ===== V2 PRED =====
                 if pred_is_v2:
-                    if video_path not in pred_lookup:
+                    raw_key, no_ext_key = _normalize_pred_key(video_path)
+                    item = pred_lookup.get(raw_key) or pred_lookup.get(no_ext_key)
+                    if item is None:
                         continue
 
-                    item = pred_lookup[video_path]
                     fps = item["inputs"][0].get("fps", self.extract_fps)
 
                     predictions = [
@@ -874,7 +907,7 @@ class Evaluator:
             else:
                 # ===== FOLDER MODE =====
                 pred_file = os.path.join(results, os.path.splitext(video_path)[0], "results_spotting.json")
-                
+
                 if not os.path.exists(pred_file):
                     continue
                 
@@ -910,7 +943,6 @@ class Evaluator:
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,
             )
-
             targets_numpy.append(dense_labels)
             detections_numpy.append(dense_predictions)
 

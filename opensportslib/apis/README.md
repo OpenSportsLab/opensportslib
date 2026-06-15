@@ -30,13 +30,22 @@ Each task model exposes:
 
 Current behavior:
 
-- `infer()` runs the model on `test_set` and returns predictions directly as an in-memory OSL JSON payload (including confidence scores when provided by the task output format)
-- `infer()` does not write predictions to disk
-- `evaluate()` runs inference on `test_set` and computes metrics against that same test set ground truth when `predictions` is not provided
-- `evaluate(predictions=...)` skips inference and evaluates an in-memory predictions dict or prediction file path directly
-- `save_predictions(output_path=..., predictions=...)` saves an OSL JSON predictions payload to a file
-- `ClassificationModel(config=..., weights=...)` uses constructor weights as the default for later `train()` / `infer()` calls
-- `LocalizationModel(config=..., weights=...)` stores constructor weights lazily and loads them on the first `train()` / `infer()` call that needs them
+| Method | Main inputs | Returns | Notes |
+| --- | --- | --- | --- |
+| `load_weights(weights=...)` | Local checkpoint path or Hugging Face model ID | `None` | Loads weights into the task wrapper. |
+| `train(train_set=..., valid_set=...)` | OSL JSON train/validation files | Best checkpoint path or `None` | Split paths can also come from the YAML config. |
+| `infer(test_set=...)` | OSL JSON test/inference file | In-memory OSL JSON-style prediction dict | The public API does not require an output path. Use `save_predictions(...)` for explicit persistence. |
+| `evaluate(test_set=...)` | OSL JSON test file | Metrics dict | Runs inference first when `predictions` is not provided. |
+| `evaluate(test_set=..., predictions=...)` | OSL JSON test file plus prediction dict/path | Metrics dict | Skips inference and evaluates the provided predictions. |
+| `save_predictions(output_path=..., predictions=...)` | Prediction dict returned by `infer()` | Saved file path | Explicitly writes an OSL JSON prediction payload to disk. |
+
+Additional weight behavior:
+
+- `ClassificationModel(config=..., weights=...)` uses constructor weights as the default for later `train()` / `infer()` calls.
+- `LocalizationModel(config=..., weights=...)` stores constructor weights lazily and loads them on the first `train()` / `infer()` call that needs them.
+
+Annotation and prediction payloads follow the OSL JSON data model. For the full
+schema, see the docs page `docs/data/osl-json-format.md`.
 
 ## Minimal Usage
 
@@ -45,7 +54,7 @@ from opensportslib.apis import ClassificationModel
 
 m = ClassificationModel(
     config="/path/to/classification.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 best_ckpt = m.train(
@@ -83,7 +92,7 @@ from opensportslib.apis import LocalizationModel
 
 m = LocalizationModel(
     config="/path/to/localization.yaml",
-    weights="/path/to/weights.pt",  # optional
+    weights=None,  # optional: path or Hugging Face model ID
 )
 
 best_ckpt = m.train(

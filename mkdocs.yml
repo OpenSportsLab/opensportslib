@@ -27,6 +27,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Model Zoo: model-zoo.md
 
   - Getting Started:
       - Installation: getting-started/installation.md
@@ -35,7 +36,17 @@ nav:
 
   - Training & Inference:
       - Training & Inference: tni/tni.md
-      - Configuration Guide: tni/config-guide.md
+  - Configuration:
+      - Configuration Guide: config/configuration-guide.md
+      - Legacy to Canonical Mapping: config/legacy-to-canonical-mapping.md
+      - Configuration Developer Guide: config/developer-guide.md
+
+  - Data Formats:
+      - OSL JSON Format: data/osl-json-format.md
+
+  - Tools:
+      - Dataset Conversion: tools/dataset-conversion.md
+      - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
 
   - API Reference:
       - API: api/api.md

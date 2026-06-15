@@ -12,6 +12,335 @@ def _write_config(path: Path, payload: dict) -> str:
     return str(path)
 
 
+def _system_block(save_dir: Path, log_dir: Path, gpu_count: int = 0) -> dict:
+    return {
+        "paths": {
+            "save_dir": str(save_dir),
+            "work_dir": str(save_dir),
+            "log_dir": str(log_dir),
+        },
+        "device": "cpu",
+        "gpu": {"count": gpu_count, "id": 0},
+        "reproducibility": {"use_seed": False, "seed": 0},
+    }
+
+
+def _classification_payload(
+    data_root: Path,
+    save_dir: Path,
+    log_dir: Path,
+    train_path: str | None = None,
+    valid_path: str | None = None,
+    test_path: str | None = None,
+) -> dict:
+    return {
+        "TASK": "classification",
+        "VERSION": 3,
+        "SYSTEM": _system_block(save_dir, log_dir),
+        "DATA": {
+            "common": {
+                "dataset_name": "mvfouls",
+                "data_root": str(data_root),
+                "classes": ["PASS", "SHOT"],
+                "runtime": {"loader_backend": "opencv"},
+                "splits": {
+                    "train": {
+                        "type": "annotations_train.json",
+                        "annotation_path": train_path,
+                        "source_path": str(data_root),
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": True,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                    "valid": {
+                        "type": "annotations_valid.json",
+                        "annotation_path": valid_path,
+                        "source_path": str(data_root),
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": False,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                    "test": {
+                        "type": "annotations_test.json",
+                        "annotation_path": test_path,
+                        "source_path": str(data_root),
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": False,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                },
+            },
+            "inputs": {
+                "video": {
+                    "modality": "video",
+                    "representation": "raw",
+                    "source": {"format": "mp4"},
+                    "sampling": {
+                        "num_frames": 16,
+                        "input_fps": 25,
+                        "target_fps": 17,
+                        "start_frame": 63,
+                        "end_frame": 87,
+                    },
+                    "transform": {"resize": {"height": 224, "width": 224}},
+                    "augmentations": {},
+                    "params": {"view_type": "single", "num_classes": 2},
+                }
+            },
+        },
+        "MODEL": {
+            "schema_version": 3,
+            "task": "classification",
+            "runtime": {
+                "dtype": "fp32",
+                "device": "auto",
+                "compile": False,
+                "freeze": False,
+            },
+            "load": {
+                "checkpoint_path": None,
+                "pretrained": False,
+                "strict": True,
+                "map_location": None,
+                "format": "auto",
+            },
+            "components": {
+                "video_encoder": {
+                    "kind": "encoder",
+                    "source": {
+                        "provider": "opensportslib",
+                        "registry": "backbone",
+                        "name": "smoke_backbone",
+                    },
+                    "params": {},
+                    "overrides": {},
+                },
+                "task_head": {
+                    "kind": "head",
+                    "source": {
+                        "provider": "opensportslib",
+                        "registry": "head",
+                        "name": "smoke_head",
+                    },
+                    "params": {"num_classes": 2},
+                    "overrides": {},
+                },
+            },
+            "topology": [{"from": "video_encoder", "to": "task_head"}],
+        },
+        "IO": {
+            "inputs": {"video": "video_encoder", "label": "task_head"},
+            "outputs": {"logits": "task_head"},
+        },
+        "TRAIN": {
+            "trainer": {"type": "classification"},
+            "epochs": 1,
+            "criterion": {"type": "CrossEntropyLoss"},
+            "optimizer": {"type": "SGD", "lr": 0.1},
+            "scheduler": {"type": "StepLR", "step_size": 1, "gamma": 0.1},
+            "execution": {"enabled": True, "log_interval": 1},
+            "sampling": {
+                "use_weighted_sampler": False,
+                "use_weighted_loss": False,
+            },
+            "selection": {"monitor": "loss", "mode": "min"},
+            "checkpoint": {"save_every": 1, "save_best": True},
+        },
+    }
+
+
+def _localization_payload(
+    data_root: Path,
+    save_dir: Path,
+    log_dir: Path,
+    train_path: str | None = None,
+    valid_path: str | None = None,
+    test_path: str | None = None,
+    result_name: str | None = None,
+) -> dict:
+    return {
+        "TASK": "localization",
+        "VERSION": 3,
+        "SYSTEM": _system_block(save_dir, log_dir),
+        "DATA": {
+            "common": {
+                "dataset_name": "SoccerNet",
+                "data_root": str(data_root),
+                "classes": ["PASS", "SHOT"],
+                "runtime": {"loader_backend": "opencv"},
+                "splits": {
+                    "train": {
+                        "type": "VideoGameWithOpencv",
+                        "annotation_path": train_path,
+                        "source_path": str(data_root),
+                        "output_map": ["data", "label"],
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": True,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                    "valid": {
+                        "type": "VideoGameWithOpencv",
+                        "annotation_path": valid_path,
+                        "source_path": str(data_root),
+                        "output_map": ["data", "label"],
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": False,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                    "valid_data_frames": {
+                        "type": "VideoGameWithOpencvVideo",
+                        "annotation_path": valid_path,
+                        "source_path": str(data_root),
+                        "output_map": ["data", "label"],
+                        "overlap_len": 0,
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": False,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                    "test": {
+                        "type": "VideoGameWithOpencvVideo",
+                        "annotation_path": test_path,
+                        "source_path": str(data_root),
+                        "output_map": ["data", "label"],
+                        "results": result_name,
+                        "metric": "tight",
+                        "nms_window": 2,
+                        "overlap_len": 50,
+                        "dataloader": {
+                            "batch_size": 1,
+                            "shuffle": False,
+                            "num_workers": 0,
+                            "pin_memory": False,
+                            "mp_context": "spawn",
+                            "persistent_workers": False,
+                        },
+                    },
+                },
+            },
+            "inputs": {
+                "video": {
+                    "modality": "video",
+                    "representation": "raw",
+                    "source": {"format": "mp4"},
+                    "sampling": {
+                        "epoch_num_frames": 64,
+                        "clip_len": 16,
+                        "input_fps": 25,
+                        "extract_fps": 2,
+                    },
+                    "transform": {
+                        "resize": {"height": 224, "width": 224},
+                        "normalization": {
+                            "mean": [0.485, 0.456, 0.406],
+                            "std": [0.229, 0.224, 0.225],
+                        },
+                    },
+                    "augmentations": {},
+                    "params": {"crop_dim": -1, "mixup": False, "dilate_len": 0},
+                }
+            },
+        },
+        "MODEL": {
+            "schema_version": 3,
+            "task": "localization",
+            "runtime": {
+                "dtype": "fp32",
+                "device": "auto",
+                "compile": False,
+                "freeze": False,
+            },
+            "load": {
+                "checkpoint_path": None,
+                "pretrained": False,
+                "strict": True,
+                "map_location": None,
+                "format": "auto",
+            },
+            "components": {
+                "video_encoder": {
+                    "kind": "encoder",
+                    "source": {
+                        "provider": "opensportslib",
+                        "registry": "backbone",
+                        "name": "smoke_backbone",
+                    },
+                    "params": {},
+                    "overrides": {},
+                },
+                "task_head": {
+                    "kind": "head",
+                    "source": {
+                        "provider": "opensportslib",
+                        "registry": "head",
+                        "name": "gru",
+                    },
+                    "params": {},
+                    "overrides": {},
+                },
+            },
+            "topology": [{"from": "video_encoder", "to": "task_head"}],
+        },
+        "IO": {
+            "inputs": {"video": "video_encoder", "label": "task_head"},
+            "outputs": {"logits": "task_head"},
+        },
+        "TRAIN": {
+            "trainer": {"type": "trainer_e2e"},
+            "epochs": 1,
+            "criterion": {"type": "CrossEntropyLoss"},
+            "optimizer": {"type": "AdamWithScaler", "lr": 0.01},
+            "scheduler": {
+                "type": "ChainedSchedulerE2E",
+                "acc_grad_iter": 1,
+                "num_epochs": 1,
+                "warm_up_epochs": 0,
+            },
+            "execution": {
+                "enabled": True,
+                "multi_gpu": False,
+                "acc_grad_iter": 1,
+                "base_num_valid_epochs": 1,
+                "start_valid_epoch": 0,
+                "valid_map_every": 1,
+                "criterion_valid": "map",
+            },
+            "sampling": {},
+            "selection": {"monitor": "valid_loss", "mode": "min"},
+            "checkpoint": {"save_best": True},
+        },
+    }
+
+
 def make_classification_config(tmp_path: Path) -> str:
     data_dir = tmp_path / "classification_data"
     save_dir = tmp_path / "classification_save"
@@ -20,17 +349,13 @@ def make_classification_config(tmp_path: Path) -> str:
     save_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = {
-        "DATA": {
-            "data_dir": str(data_dir),
-            "annotations": {
-                "train": str(tmp_path / "train.json"),
-                "valid": str(tmp_path / "valid.json"),
-            },
-        },
-        "MODEL": {"backbone": {"type": "smoke_backbone"}},
-        "SYSTEM": {"save_dir": str(save_dir), "log_dir": str(log_dir)},
-    }
+    payload = _classification_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+        train_path=str(tmp_path / "train.json"),
+        valid_path=str(tmp_path / "valid.json"),
+    )
     return _write_config(tmp_path / "classification.yaml", payload)
 
 
@@ -42,11 +367,11 @@ def make_localization_config(tmp_path: Path) -> str:
     save_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = {
-        "DATA": {"data_dir": str(data_dir), "classes": ["PASS", "SHOT"]},
-        "MODEL": {"backbone": {"type": "smoke_backbone"}},
-        "SYSTEM": {"save_dir": str(save_dir), "log_dir": str(log_dir)},
-    }
+    payload = _localization_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+    )
     return _write_config(tmp_path / "localization.yaml", payload)
 
 
@@ -82,13 +407,10 @@ def _write_annotation(path: Path, num_samples: int = 2) -> str:
                         "fps": 25,
                     }
                 ],
-                # Classification-style annotation
                 "labels": {
                     "action": {"label": label},
-                    # Keep foul_type for backward compatibility with legacy utilities.
                     "foul_type": {"label": label},
                 },
-                # Localization-style annotation
                 "events": [
                     {
                         "label": label,
@@ -127,29 +449,14 @@ def classification_integration_assets(tmp_path: Path) -> dict:
     valid_path = _write_annotation(tmp_path / "classification-valid.json", num_samples=2)
     test_path = _write_annotation(tmp_path / "classification-test.json", num_samples=2)
 
-    payload = {
-        "DATA": {
-            "data_dir": str(data_dir),
-            "annotations": {
-                "train": train_path,
-                "valid": valid_path,
-                "test": test_path,
-            },
-        },
-        "MODEL": {
-            "type": "custom",
-            "backbone": {"type": "smoke_backbone"},
-        },
-        "SYSTEM": {
-            "save_dir": str(save_dir),
-            "log_dir": str(log_dir),
-            "GPU": 0,
-            "device": "cpu",
-            "use_seed": False,
-            "seed": 0,
-        },
-        "TRAIN": {"epochs": 1},
-    }
+    payload = _classification_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+        train_path=train_path,
+        valid_path=valid_path,
+        test_path=test_path,
+    )
     config_path = _write_config(tmp_path / "classification-integration.yaml", payload)
 
     return {
@@ -174,60 +481,15 @@ def localization_integration_assets(tmp_path: Path) -> dict:
     test_path = _write_annotation(tmp_path / "localization-test.json", num_samples=1)
     result_path = tmp_path / "localization-results.json"
 
-    payload = {
-        "dali": False,
-        "DATA": {
-            "data_dir": str(data_dir),
-            "classes": ["PASS", "SHOT"],
-            "mixup": False,
-            "train": {
-                "path": train_path,
-                "video_path": str(data_dir),
-                "dataloader": {
-                    "batch_size": 1,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                },
-            },
-            "valid": {
-                "path": valid_path,
-                "video_path": str(data_dir),
-                "dataloader": {
-                    "batch_size": 1,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                },
-            },
-            "test": {
-                "path": test_path,
-                "video_path": str(data_dir),
-                "results": str(result_path),
-                "dataloader": {
-                    "batch_size": 1,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                },
-            },
-        },
-        "MODEL": {
-            "backbone": {"type": "smoke_backbone"},
-            "multi_gpu": False,
-        },
-        "TRAIN": {
-            "max_epochs": 1,
-            "evaluation_frequency": 1,
-            "batch_size": 1,
-            "type": "localization",
-        },
-        "SYSTEM": {
-            "save_dir": str(save_dir),
-            "log_dir": str(log_dir),
-            "work_dir": str(save_dir),
-            "GPU": 0,
-            "device": "cpu",
-            "seed": 0,
-        },
-    }
+    payload = _localization_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+        train_path=train_path,
+        valid_path=valid_path,
+        test_path=test_path,
+        result_name=str(result_path),
+    )
     config_path = _write_config(tmp_path / "localization-integration.yaml", payload)
 
     return {
@@ -258,28 +520,14 @@ def classification_public_dataset_assets(tmp_path: Path) -> dict:
         num_samples=2,
     )
 
-    payload = {
-        "DATA": {
-            "dataset_name": "mvfouls",
-            "data_dir": str(data_dir),
-            "train": {"path": train_path},
-            "valid": {"path": valid_path},
-            "test": {"path": test_path},
-        },
-        "MODEL": {
-            "type": "custom",
-            "backbone": {"type": "smoke_backbone"},
-        },
-        "SYSTEM": {
-            "save_dir": str(save_dir),
-            "log_dir": str(log_dir),
-            "GPU": 0,
-            "device": "cpu",
-            "use_seed": False,
-            "seed": 0,
-        },
-        "TRAIN": {"epochs": 1},
-    }
+    payload = _classification_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+        train_path=train_path,
+        valid_path=valid_path,
+        test_path=test_path,
+    )
     config_path = _write_config(tmp_path / "classification-public.yaml", payload)
 
     return {
@@ -313,41 +561,15 @@ def localization_public_dataset_assets(tmp_path: Path) -> dict:
     )
     result_path = tmp_path / "results_spotting_test"
 
-    payload = {
-        "dali": False,
-        "DATA": {
-            "dataset_name": "SoccerNet",
-            "data_dir": str(data_dir),
-            "classes": ["PASS", "SHOT"],
-            "mixup": False,
-            "train": {
-                "path": train_path,
-                "video_path": str(data_dir / "train"),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
-            },
-            "valid": {
-                "path": valid_path,
-                "video_path": str(data_dir / "valid"),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
-            },
-            "test": {
-                "path": test_path,
-                "video_path": str(data_dir / "test"),
-                "results": str(result_path),
-                "dataloader": {"batch_size": 1, "num_workers": 0, "pin_memory": False},
-            },
-        },
-        "MODEL": {"backbone": {"type": "smoke_backbone"}, "multi_gpu": False},
-        "TRAIN": {"max_epochs": 1, "evaluation_frequency": 1, "batch_size": 1, "type": "localization"},
-        "SYSTEM": {
-            "save_dir": str(save_dir),
-            "log_dir": str(log_dir),
-            "work_dir": str(save_dir),
-            "GPU": 0,
-            "device": "cpu",
-            "seed": 0,
-        },
-    }
+    payload = _localization_payload(
+        data_root=data_dir,
+        save_dir=save_dir,
+        log_dir=log_dir,
+        train_path=train_path,
+        valid_path=valid_path,
+        test_path=test_path,
+        result_name=str(result_path),
+    )
     config_path = _write_config(tmp_path / "localization-public.yaml", payload)
 
     return {

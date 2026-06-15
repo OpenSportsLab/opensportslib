@@ -161,9 +161,13 @@ Steps:
 
 
 ### ⚙️ Modify Configurations
-All experiment configs live in:
+Canonical experiment configs live in:
 ```bash
-opensportslib/config/*.yaml
+opensportslib/configs/**/*.yaml
+```
+Legacy fixture configs kept only for compatibility/migration coverage live in:
+```bash
+opensportslib/legacy_config/*.yaml
 ```
 Typical edits:
 - TYPE

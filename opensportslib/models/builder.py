@@ -1,66 +1,145 @@
-# opensportslib/models/builder.py
+"""Model builder entrypoints."""
 
-def build_model(config, device):
-    """
-    Dispatch model builder based on cfg.MODEL.task
-    """
+from opensportslib.core.config.accessors import (
+    get_component_load_by_kind,
+    get_component_name_by_kind,
+    get_component_params_by_kind,
+    get_data_classes,
+    get_data_num_classes,
+    get_data_modality,
+    get_runtime_modality,
+    get_data_sampling,
+    get_model_family,
+    get_model_load,
+    get_runner_type,
+)
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg, to_namespace
+
+
+def _component_cfg(config, kind: str, required: bool = True):
+    params = get_component_params_by_kind(config, kind)
+    if not required and not params:
+        return to_namespace({})
+    return normalize_builder_cfg(params, kind=kind)
+
+
+def build_model_canonical(config, device):
+    """Build model directly from canonical config."""
     task = config.TASK.lower()
-    
+
+    encoder_type = get_component_name_by_kind(config, "encoder")
+    sampling = get_data_sampling(config)
+    model_family = get_model_family(config)
+
     if task == "classification":
-        # return model, processor
-        if config.MODEL.backbone.type == "video_mae":
+        backbone = _component_cfg(config, "encoder")
+        head = _component_cfg(config, "head")
+        if encoder_type == "video_mae":
             from opensportslib.models.base.video import build_video_mae_backbone
             return build_video_mae_backbone(config, device)
-        
-        elif config.MODEL.backbone.type in ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]:
+
+        elif encoder_type in ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]:
             from opensportslib.models.base.vars import MVNetwork
-            return MVNetwork(config, config.MODEL.backbone, config.MODEL.neck, config.MODEL.head), None
-        
-        elif config.MODEL.backbone.type == "graph_conv":
+            neck = _component_cfg(config, "adapter")
+            return MVNetwork(config, backbone, neck, head), None
+
+        elif encoder_type == "graph_conv":
             from opensportslib.models.base.tracking import TrackingModel
             return TrackingModel(config, device), None
 
-        elif config.MODEL.backbone.type in ("dinov3", "clip", "videomae", "videomae2"):
+        elif encoder_type in ("dinov3", "clip", "videomae", "videomae2"):
             from opensportslib.models.base.video import VideoModel
             return VideoModel(config, device), None
-        
+
         else:
-            raise ValueError(f"Unsupported backbone type: {config.MODEL.backbone.type}")
-    
+            raise ValueError(f"Unsupported encoder type: {encoder_type}")
+
     if task == "localization":
         from opensportslib.models.base.e2e import E2EModel
         from opensportslib.models.base.contextaware import LiteContextAwareModel
         from opensportslib.models.base.learnablepooling import LiteLearnablePoolingModel
-        
-        if config.MODEL.type == "LearnablePooling":
-            model = LiteLearnablePoolingModel(
+
+        backbone = _component_cfg(config, "encoder")
+        head = _component_cfg(config, "head")
+        model_weights = (
+            get_model_load(config).get("checkpoint_path")
+            or get_component_load_by_kind(config, "encoder").get("weights_path")
+        )
+        runner = get_runner_type(config)
+        normalized_family = str(model_family or "").strip().lower()
+
+        if normalized_family == "learnablepooling":
+            neck = _component_cfg(config, "adapter")
+            post_proc = _component_cfg(config, "postprocessor", required=False)
+            return LiteLearnablePoolingModel(
                 cfg=config,
-                weights=config.MODEL.load_weights,
-                backbone=config.MODEL.backbone,
-                head=config.MODEL.head,
-                neck=config.MODEL.neck,
-                post_proc=config.MODEL.post_proc,
-                runner=config.MODEL.runner.type,
+                weights=model_weights,
+                backbone=backbone,
+                head=head,
+                neck=neck,
+                post_proc=post_proc,
+                runner=runner,
             )
-        elif config.MODEL.type == "ContextAware":
-            model = LiteContextAwareModel(
+        if normalized_family == "contextaware":
+            neck = _component_cfg(config, "adapter")
+            return LiteContextAwareModel(
                 cfg=config,
-                weights=config.MODEL.load_weights,
-                backbone=config.MODEL.backbone,
-                head=config.MODEL.head,
-                neck=config.MODEL.neck,
-                runner=config.MODEL.runner.type,
+                weights=model_weights,
+                backbone=backbone,
+                head=head,
+                neck=neck,
+                runner=runner,
             )
-            
-        elif config.MODEL.type == "E2E":
-            model = E2EModel(config, 
-                            len(config.DATA.classes)+1,
-                            config.MODEL.backbone,
-                            config.MODEL.head,
-                            clip_len=config.DATA.clip_len,
-                            modality=config.DATA.modality,
-                            device=device,
-                            multi_gpu=config.MODEL.multi_gpu)
-        return model
+
+        if normalized_family == "e2e":
+            return E2EModel(
+                config,
+                get_data_num_classes(config) + 1,
+                backbone,
+                head,
+                clip_len=sampling.get("clip_len"),
+                modality=get_runtime_modality(config),
+                device=device,
+                multi_gpu=getattr(config.TRAIN.execution, "multi_gpu", False),
+            )
+
+        raise ValueError(
+            f"Unsupported localization model family: {model_family!r}. "
+            "Expected one of: E2E, ContextAware, LearnablePooling."
+        )
     else:
-        raise ValueError(f"Unsupported model type: {config.MODEL.backbone} for task: {task}")
+        raise ValueError(f"Unsupported model family for task: {task}")
+
+
+def build_model_from_config(config, device):
+    """Version-neutral public dispatcher for model construction."""
+    model_cfg = getattr(config, "MODEL", None)
+    if hasattr(model_cfg, "components"):
+        return build_model_canonical(config, device)
+    raise ValueError("Only canonical model config is supported at runtime.")
+
+
+def build_model(config, device):
+    """Backward-compatible alias for the public dispatcher."""
+    return build_model_from_config(config, device)
+
+
+def _resolve_model_route(payload):
+    """Validate canonical source/provider metadata for routing."""
+    model = payload.get("MODEL", {})
+    task = str(payload.get("TASK", "")).lower()
+    components = model.get("components", {})
+
+    if task == "classification":
+        encoders = [c for c in components.values() if c.get("kind") == "encoder"]
+        if not encoders:
+            raise ValueError("Canonical classification config must define an encoder component.")
+        source = encoders[0].get("source", {})
+        if not source.get("provider"):
+            raise ValueError("Encoder component must define source.provider.")
+        return
+
+    if task == "localization":
+        if not model.get("metadata", {}).get("family"):
+            # Family inference fallback remains in runtime adapter.
+            return

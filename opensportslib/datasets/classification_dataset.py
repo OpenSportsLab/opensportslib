@@ -21,6 +21,19 @@ from tqdm import tqdm
 
 from opensportslib.core.utils.load_annotations import load_annotations
 from opensportslib.core.utils.video_processing import *
+from opensportslib.core.config.accessors import (
+    get_component_name_by_kind,
+    get_component_params_by_kind,
+    get_component_provider_by_kind,
+    get_data_classes,
+    get_data_modality,
+    get_data_augmentations,
+    get_data_params,
+    get_data_sampling,
+    set_data_classes,
+    get_data_transform,
+    get_split_source_path,
+)
 
 
 # -------------------------------------------------------------
@@ -42,11 +55,11 @@ def build(config, annotations_path, processor=None, split="train"):
     Raises:
         ValueError: if the data_modality is not recognized.
     """
-    modality = config.DATA.data_modality.lower()
+    modality = get_data_modality(config).lower()
 
-    if modality == "tracking_parquet":
+    if modality in ("tracking", "tracking_parquet"):
         return TrackingDataset(config, annotations_path, split)
-    elif modality in ("video", "frames_npy"):
+    elif modality in ("video", "frames_npy", "frames"):
         return VideoDataset(config, annotations_path, processor, split)
     else:
         raise ValueError(f"Unknown data_modality: {modality}")
@@ -73,11 +86,12 @@ class ClassificationDataset(Dataset):
         self.config = config
         self.split = split
         self.exclude_labels = ["Unknown", "Dont know"]
-        self.data_dir = config.DATA.data_dir
+        self.video_path = get_split_source_path(config, split)
         self.processor = None
 
         # view_type is optional; only MVFoul uses it as of now
-        is_multiview = getattr(config.DATA, "view_type", None) == "multi"
+        data_params = get_data_params(config)
+        is_multiview = data_params.get("view_type") == "multi"
 
         allow_missing_labels = split in ["test", "infer"]
 
@@ -91,15 +105,21 @@ class ClassificationDataset(Dataset):
         #     training_matches: <number of games to include in the training set>
         # we will refer to this as "data slicing" in the rest of the code.
         max_games = None
-        slicing_cfg = getattr(config.DATA, "data_slicing", None)
-        if slicing_cfg and getattr(slicing_cfg, "enabled", False) and split == "train":
-            max_games = getattr(slicing_cfg, "training_matches", None)
+        slicing_cfg = data_params.get("data_slicing", {})
+        if slicing_cfg and slicing_cfg.get("enabled", False) and split == "train":
+            max_games = slicing_cfg.get("training_matches")
+
+        annotation_input_type = str(get_data_modality(config)).lower()
+        if annotation_input_type == "tracking":
+            annotation_input_type = "tracking_parquet"
+        elif annotation_input_type in {"frames", "frames_npy"}:
+            annotation_input_type = "frames_npy"
 
         self.samples, self.label_map = load_annotations(
             annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
-            input_type=config.DATA.data_modality,
+            input_type=annotation_input_type,
             allow_missing_labels=allow_missing_labels,
             max_games=max_games
         )
@@ -110,22 +130,59 @@ class ClassificationDataset(Dataset):
         # to use this, you need to add the following to the config:
         # DATA:
         #   max_samples: <number of samples to include in the training set>
-        max_samples = getattr(config.DATA, 'max_samples', None)
+        max_samples = data_params.get("max_samples")
         if max_samples:
             self.samples = self.samples[:max_samples]
 
         # invert to id -> name and propagate into the config so
         # downstream components (metrics, logging) can look it up.
         self.label_map = {v: k for k, v in self.label_map.items()}
-        self.config.DATA.classes = list(self.label_map.values())
-        self.config.DATA.num_classes = len(self.label_map)
+        set_data_classes(self.config, list(self.label_map.values()))
 
-        print(self.config.DATA.num_classes, "classes:", self.config.DATA.classes)
+        print(len(get_data_classes(self.config)), "classes:", get_data_classes(self.config))
         print("Label Map : ", self.label_map)
 
         self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
 
     # -- Sampling / loss weights ------------------------------------------
+
+    def _normalized_label_tensor(self):
+        """Return labels as validated torch.long class ids."""
+        normalized_labels = []
+
+        for idx, item in enumerate(self.samples):
+            if "label" not in item or item["label"] is None:
+                raise ValueError(
+                    f"Missing label for sample index {idx}; cannot compute class weights."
+                )
+
+            label = item["label"]
+
+            if isinstance(label, torch.Tensor):
+                if label.numel() != 1:
+                    raise ValueError(
+                        f"Expected scalar label at sample index {idx}, got shape {tuple(label.shape)}."
+                    )
+                label = label.item()
+
+            try:
+                label_float = float(label)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Label at sample index {idx} is not numeric: {label!r}."
+                ) from exc
+
+            if not label_float.is_integer():
+                raise ValueError(
+                    f"Label at sample index {idx} must be an integer class id, got {label!r}."
+                )
+
+            normalized_labels.append(int(label_float))
+
+        if not normalized_labels:
+            raise ValueError("Cannot compute class weights from an empty dataset.")
+
+        return torch.tensor(normalized_labels, dtype=torch.long)
     
     def get_sample_weights(self):
         """per-sample inverse-frequency weights for WeightedRandomSampler.
@@ -133,9 +190,9 @@ class ClassificationDataset(Dataset):
         Returns:
             torch.Tensor of length len(self) with one weight per sample.
         """
-        labels = [item["label"] for item in self.samples]
+        labels = self._normalized_label_tensor()
 
-        class_counts = torch.bincount(torch.tensor(labels))
+        class_counts = torch.bincount(labels)
         class_weights = 1.0 / class_counts.float()
         sample_weights = torch.tensor(
             [class_weights[label] for label in labels], 
@@ -156,7 +213,7 @@ class ClassificationDataset(Dataset):
         Returns:
             torch.Tensor of shape (num_classes,).
         """
-        labels = torch.tensor([item["label"] for item in self.samples])
+        labels = self._normalized_label_tensor()
 
         if num_classes is None:
             num_classes = int(labels.max().item() + 1)
@@ -197,12 +254,13 @@ class VideoDataset(ClassificationDataset):
     """
 
     def __init__(self, config, annotations_path, processor, split="train"):
-        super().__init__(config, annotations_path, split)
+        super().__init__(config, annotations_path, processor, split=split)
 
         self.processor = processor
-        self.view_type = getattr(config.DATA, "view_type", "single")
-        self.num_frames = getattr(config.DATA, "num_frames", None)
-        self.input_fps = getattr(config.DATA, "input_fps", None)
+        self.view_type = get_data_params(config).get("view_type", "single")
+        sampling_cfg = get_data_sampling(config)
+        self.num_frames = sampling_cfg.get("num_frames")
+        self.input_fps = sampling_cfg.get("input_fps")
         self.transform = build_transform(config, mode=self.split)
 
     def _select_views(self, video_paths):
@@ -227,15 +285,13 @@ class VideoDataset(ClassificationDataset):
         """read a video file, temporally sub-sample, and apply transforms.
 
         Args:
-            path: realtive path (under data_dir) to the video file.
+            path: realtive path (under video_path) to the video file.
 
         Returns:
             numpy.ndarray of shape (T, H, W, C).
         """
-        full_path = os.path.join(self.config.DATA.data_dir, path)
-
-        if full_path.endswith(".npy"):
-            frames = np.load(full_path).astype(np.float32) / 255.0
+        if path.endswith(".npy"):
+            frames = np.load(os.path.join(self.video_path, path)).astype(np.float32) / 255.0
             if self.transform is not None:
                 frames = self.transform(frames)
             mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -243,15 +299,15 @@ class VideoDataset(ClassificationDataset):
             frames = (frames - mean) / std
             return frames
 
-        v = read_video(os.path.join(self.config.DATA.data_dir, path))
+        v = read_video(os.path.join(self.video_path, path))
 
         v = process_frames(
             v,
             self.num_frames,
             self.input_fps,
-            self.config.DATA.target_fps,
-            start_frame=self.config.DATA.start_frame,
-            end_frame=self.config.DATA.end_frame
+            get_data_sampling(self.config).get("target_fps"),
+            start_frame=get_data_sampling(self.config).get("start_frame"),
+            end_frame=get_data_sampling(self.config).get("end_frame"),
         )
 
         if isinstance(v, list):
@@ -277,7 +333,7 @@ class VideoDataset(ClassificationDataset):
         selected_paths = self._select_views(video_paths)
         
         # --- Load and process frames for selected clips ---
-        if self.config.MODEL.type == "huggingface":
+        if get_component_provider_by_kind(self.config, "encoder") == "huggingface":
             path = selected_paths[0]
             v = self._load_and_sample_clip(path)
             # convert clip -> list of frames
@@ -303,7 +359,11 @@ class VideoDataset(ClassificationDataset):
                 else:
                     # existing raw video path: apply torchvision model transforms
                     v = torch.from_numpy(v).permute(0, 3, 1, 2)  # (T, C, H, W)
-                    v = get_transforms_model(self.config.MODEL.pretrained_model)(v)  # (C, T, H, W)
+                    encoder_name = get_component_params_by_kind(self.config, "encoder").get(
+                        "pretrained_model",
+                        get_component_name_by_kind(self.config, "encoder"),
+                    )
+                    v = get_transforms_model(encoder_name)(v)  # (C, T, H, W)
 
                 view_tensors.append(v)
 
@@ -344,8 +404,6 @@ class TrackingDataset(ClassificationDataset):
         super().__init__(config, annotations_path, processor=None, split=split)
 
         from opensportslib.datasets.utils.tracking import (
-            FEATURE_DIM,
-            NUM_OBJECTS,
             HorizontalFlip,
             TeamFlip,
             VerticalFlip,
@@ -353,16 +411,26 @@ class TrackingDataset(ClassificationDataset):
         )
 
         # storing references for the constants without repeating the import.
-        self._NUM_OBJECTS = NUM_OBJECTS
-        self._FEATURE_DIM = FEATURE_DIM
         self._build_edge_index = build_edge_index
 
-        self.num_frames = config.DATA.num_frames
-        self.normalize = config.DATA.normalize
-        self.edge_type = config.MODEL.edge
-        self.k = config.MODEL.k
-        self.r = config.MODEL.r
-        self.preload_data = config.DATA.preload_data
+        sampling_cfg = get_data_sampling(config)
+        transform_cfg = get_data_transform(config)
+        params_cfg = get_data_params(config)
+        encoder_cfg = get_component_params_by_kind(config, "encoder")
+
+        self.num_frames = sampling_cfg.get("num_frames")
+        self.normalize = transform_cfg.get("normalize", False)
+        self.edge_type = encoder_cfg.get("edge_type")
+        self.k = encoder_cfg.get("k")
+        self.r = encoder_cfg.get("radius", encoder_cfg.get("r"))
+        self.preload_data = params_cfg.get("preload_data", False)
+        objects_cfg = params_cfg.get("objects", {}) or {}
+        self._NUM_OBJECTS = int(objects_cfg.get("num_objects", self._NUM_OBJECTS))
+        self._FEATURE_DIM = int(objects_cfg.get("feature_dim", self._FEATURE_DIM))
+        self._pitch_half_length = float(objects_cfg.get("pitch_half_length", 85.0))
+        self._pitch_half_width = float(objects_cfg.get("pitch_half_width", 50.0))
+        self._max_displacement = float(objects_cfg.get("max_displacement", 110.0))
+        self._max_ball_height = float(objects_cfg.get("max_ball_height", 30.0))
         
         self.transforms = self._build_transforms(
             config, split, HorizontalFlip, VerticalFlip, TeamFlip
@@ -391,16 +459,16 @@ class TrackingDataset(ClassificationDataset):
             return []
         
         transforms = []
-        aug_config = config.DATA.augmentations
+        aug_config = get_data_augmentations(config)
 
         # augmentation flags are optional in the config; default to off.
-        if getattr(aug_config, "horizontal_flip", False):
+        if aug_config.get("horizontal_flip", False):
             transforms.append(HorizontalFlip(probability=0.5))
         
-        if getattr(aug_config, "vertical_flip", False):
+        if aug_config.get("vertical_flip", False):
             transforms.append(VerticalFlip(probability=0.5))
         
-        if getattr(aug_config, "team_flip", False):
+        if aug_config.get("team_flip", False):
             transforms.append(TeamFlip(probability=0.5))
         
         return transforms
@@ -439,11 +507,18 @@ class TrackingDataset(ClassificationDataset):
             all_positions = []
             
             for t, (_, row) in enumerate(df.iterrows()):
-                features, positions = parse_frame(row)
+                features, positions = parse_frame(
+                    row,
+                    num_objects=self._NUM_OBJECTS,
+                    feature_dim=self._FEATURE_DIM,
+                )
                 all_features[t] = features
                 all_positions.append(positions)
             
-            all_features = compute_deltas(all_features)
+            all_features = compute_deltas(
+                all_features,
+                num_objects=self._NUM_OBJECTS,
+            )
 
             # build edge indices on raw features (before any augmentation
             # or normalization) so the graph topology stays consistent
@@ -473,7 +548,7 @@ class TrackingDataset(ClassificationDataset):
         """read a single parquet tracking clip.
         
         Args:
-            path: Relative path (under ``data_dir``) to the parquet
+            path: Relative path (under ``video_path``) to the parquet
                 file.
 
         Returns:
@@ -481,7 +556,7 @@ class TrackingDataset(ClassificationDataset):
         """
         import pandas as pd
 
-        full_path = os.path.join(self.data_dir, path)
+        full_path = os.path.join(self.video_path, path)
         return pd.read_parquet(full_path)
     
     def __getitem__(self, idx):
@@ -514,7 +589,13 @@ class TrackingDataset(ClassificationDataset):
             features = transform(features)
         
         if self.normalize:
-            features = normalize_features(features)
+            features = normalize_features(
+                features,
+                pitch_half_length=self._pitch_half_length,
+                pitch_half_width=self._pitch_half_width,
+                max_displacement=self._max_displacement,
+                max_ball_height=self._max_ball_height,
+            )
         
         # build one PyG Data object per frame. The downstream collate function
         # (tracking_collate) uses PyG Batch.from_data_list to merge these across
@@ -573,11 +654,18 @@ class TrackingDataset(ClassificationDataset):
         all_positions = []
         
         for t, (_, row) in enumerate(df.iterrows()):
-            features, positions = parse_frame(row)
+            features, positions = parse_frame(
+                row,
+                num_objects=self._NUM_OBJECTS,
+                feature_dim=self._FEATURE_DIM,
+            )
             all_features[t] = features
             all_positions.append(positions)
         
-        all_features = compute_deltas(all_features)
+        all_features = compute_deltas(
+            all_features,
+            num_objects=self._NUM_OBJECTS,
+        )
         
         # edge indices are built on raw features (before any augmentation /
         # normalization) so the graph structure is augmentation-invariant.
@@ -596,7 +684,13 @@ class TrackingDataset(ClassificationDataset):
             all_features = transform(all_features)
         
         if self.normalize:
-            all_features = normalize_features(all_features)
+            all_features = normalize_features(
+                all_features,
+                pitch_half_length=self._pitch_half_length,
+                pitch_half_width=self._pitch_half_width,
+                max_displacement=self._max_displacement,
+                max_ball_height=self._max_ball_height,
+            )
         
         graphs = []
         for t in range(num_frames):

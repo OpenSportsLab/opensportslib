@@ -4,7 +4,13 @@ import torch.nn as nn
 from opensportslib.models.backbones.builder import build_backbone
 from opensportslib.models.neck.builder import build_neck
 from opensportslib.models.heads.builder import build_head
-from opensportslib.datasets.utils.tracking import FEATURE_DIM
+from opensportslib.core.config.accessors import (
+    get_component_name_by_kind,
+    get_component_params_by_kind,
+    get_data_params,
+    get_data_sampling,
+)
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
 
 class TrackingModel(nn.Module):
@@ -18,23 +24,32 @@ class TrackingModel(nn.Module):
         print("Building TrackingModel")
         
         self.device = device
-        self.num_frames = config.DATA.num_frames
-        
+        sampling = get_data_sampling(config)
+        params = get_data_params(config)
+        objects_cfg = params.get("objects", {}) if isinstance(params, dict) else {}
+        feature_dim = int(objects_cfg.get("feature_dim", 8))
+        self.num_frames = sampling.get("num_frames")
+
+        def _component_cfg(kind):
+            params = dict(get_component_params_by_kind(config, kind) or {})
+            params.setdefault("type", get_component_name_by_kind(config, kind))
+            return normalize_builder_cfg(params, kind=kind)
+
         # backbone: graph encoder
         self.backbone = build_backbone(
-            config.MODEL.backbone,
-            default_args={"input_dim": FEATURE_DIM}
+            _component_cfg("encoder"),
+            default_args={"input_dim": feature_dim}
         )
-        
+
         # neck: temporal aggregation
         self.neck = build_neck(
-            config.MODEL.neck,
+            _component_cfg("adapter"),
             default_args={"window_size": self.num_frames}
         )
-        
+
         # head: classifier
         self.head = build_head(
-            config.MODEL.head,
+            _component_cfg("head"),
             default_args={"input_dim": self.neck.feat_dim}
         )
     

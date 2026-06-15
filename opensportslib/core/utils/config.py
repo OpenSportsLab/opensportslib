@@ -1,9 +1,25 @@
-
 import os
 import re
 import json
 import gzip
 import yaml
+
+from opensportslib.core.config import (
+    load_config as _load_config,
+    load_config_omega as _load_config_omega,
+    migrate_config,
+    resolve_config as _resolve_config,
+    validate_config,
+)
+
+
+def _nested_get(mapping, path, default=None):
+    current = mapping
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return current
 
 def dict_to_namespace(d, skip_keys=("classes",)):
     """
@@ -73,41 +89,17 @@ def load_config(config_path):
     """
     Loading configurations
     """
-    print(config_path)
-    if config_path.endswith(".yaml") or config_path.endswith(".yml"):
-        with open(config_path, "r") as f:
-            cfg_dict = yaml.safe_load(f)
-    elif config_path.endswith(".json"):
-        with open(config_path, "r") as f:
-            cfg_dict = json.load(f)
-    else:
-        raise ValueError("Unsupported config format. Use YAML or JSON.")
-    return dict_to_namespace(cfg_dict)
+    return _load_config(config_path, validate=True, as_namespace=True)
 
 
 
 def load_config_omega(path):
-    
-    from omegaconf import OmegaConf
-    cfg = OmegaConf.load(path)
-    # OmegaConf.resolve(cfg)
-    # cfg = OmegaConf.to_container(cfg, resolve=True)
-    return dict_to_namespace(cfg)
+    return _load_config_omega(path, validate=True, as_namespace=True)
 
 def resolve_config_omega(cfg, weights=None):
-    from omegaconf import OmegaConf, DictConfig
-    #cfg = namespace_to_omegaconf(cfg)
-    #cfg = namespace_to_dict(cfg)
-    #print(type(cfg))
-    #cfg = OmegaConf.create(cfg)
     if weights is not None:
         cfg = fetch_and_merge_config_from_HF(cfg, weights, merge_policy="compatibility")
-
-    if not isinstance(cfg, DictConfig):
-        return cfg 
-    OmegaConf.resolve(cfg)
-    cfg = dict_to_namespace(OmegaConf.to_container(cfg, resolve=True))
-    return cfg
+    return _resolve_config(cfg, as_namespace=True)
 
 
 def expand(path):
@@ -194,14 +186,20 @@ def _print_info_helper(src_file, labels):
 
 def select_device(config):
     import torch
-    mode = config.device.lower()
+
+    cfg_dict = namespace_to_dict(config)
+    mode = str(cfg_dict.get("device", "auto")).lower()
+    gpu_cfg = cfg_dict.get("gpu", {}) if isinstance(cfg_dict, dict) else {}
+    gpu_id = int(gpu_cfg.get("id", cfg_dict.get("gpu_id", 0)) or 0)
 
     if mode == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device.type == "cuda":
+            torch.cuda.set_device(gpu_id)
+            device = torch.device(f"cuda:{gpu_id}")
 
     elif mode == "cuda":
         assert torch.cuda.is_available(), "CUDA requested but not available"
-        gpu_id = getattr(config, "gpu_id", 0)
         torch.cuda.set_device(gpu_id)
         device = torch.device(f"cuda:{gpu_id}")
 
@@ -212,7 +210,7 @@ def select_device(config):
         raise ValueError(f"Unknown device mode: {mode}")
 
     print(f"Using device: {device}")
-    if device.type == "cuda" or device.type == "auto":
+    if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(device)}")
 
     return device
@@ -231,8 +229,8 @@ def fetch_and_merge_config_from_HF(
     Fetch config from a local path or HF repo and merge it with the local config.
 
     merge_policy:
-      - "full": legacy behavior; local config overrides loaded config for
-        TASK/MODEL/SYSTEM/TRAIN/DATA.
+      - "full": backward-compat behavior; local config overrides loaded config
+        for TASK/MODEL/SYSTEM/TRAIN/DATA.
       - "compatibility": used for inference; only TASK/MODEL are updated from
         pretrained config while runtime/system/data settings remain local.
     """
@@ -306,7 +304,7 @@ def fetch_and_merge_config_from_HF(
         else:
             raise ValueError(f"Unknown merge_policy: {merge_policy}")
 
-        # Convert back using DictConfig or SimpleNamespace
+        validate_config(target_dict)
         return dict_to_namespace(target_dict)
     
     return target_config
@@ -318,8 +316,14 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
     local_data = target_dict.get("DATA", {}) if isinstance(target_dict, dict) else {}
     hf_data = loaded_dict.get("DATA", {}) if isinstance(loaded_dict, dict) else {}
 
-    local_num_classes = local_data.get("num_classes")
-    hf_num_classes = hf_data.get("num_classes")
+    local_num_classes = (
+        _nested_get(local_data, ["common", "num_classes"])
+        or local_data.get("num_classes")
+    )
+    hf_num_classes = (
+        _nested_get(hf_data, ["common", "num_classes"])
+        or hf_data.get("num_classes")
+    )
     if (
         local_num_classes is not None
         and hf_num_classes is not None
@@ -332,8 +336,14 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
             hf_num_classes,
         )
 
-    local_classes = local_data.get("classes")
-    hf_classes = hf_data.get("classes")
+    local_classes = (
+        _nested_get(local_data, ["common", "classes"])
+        or local_data.get("classes")
+    )
+    hf_classes = (
+        _nested_get(hf_data, ["common", "classes"])
+        or hf_data.get("classes")
+    )
     if (
         local_classes is not None
         and hf_classes is not None
@@ -346,9 +356,8 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
 
 def save_config(config_obj, path):
     """Save the configuration object to a YAML file."""
-    from omegaconf import OmegaConf, DictConfig
-    import yaml
-    
+    from omegaconf import DictConfig, OmegaConf
+
     if isinstance(config_obj, DictConfig):
         cfg_dict = OmegaConf.to_container(config_obj, resolve=True)
     else:

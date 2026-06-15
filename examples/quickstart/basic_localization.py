@@ -9,7 +9,7 @@ def main():
 
     my_model = LocalizationModel(
         config="examples/configs/localization.yaml",
-        weights="/path/to/weights.pt",  # optional
+        weights=None,  # optional: path or Hugging Face model ID
     )
 
     my_model.train(
