@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -209,6 +210,13 @@ def test_vqa_xvars_prediction_export(tmp_path):
     }
     rows = VQAModel._to_xvars_prediction_rows(predictions)
     assert rows == [{"id": "action_0", "video_name": "action_0", "Q": "What card?", "pred": "Yellow card."}]
+
+    api = VQAModel.__new__(VQAModel)
+    out_path = tmp_path / "xvars_predictions.json"
+    saved = api.save_predictions(str(out_path), predictions, output_format="xvars")
+    assert saved == str(out_path)
+    assert out_path.exists()
+    assert json.loads(out_path.read_text(encoding="utf-8")) == rows
 
 
 def test_xvars_raw_num_frames_prefers_data_video_sampling():

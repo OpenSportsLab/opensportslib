@@ -155,6 +155,8 @@ TRAIN:
     generation:
       max_new_tokens: 1024
       temperature: 0.2
+    # OpenSportsLib-native VQA evaluation config. This does not correspond to
+    # an upstream X-VARS benchmark scorer.
     eval_profile:
       metric_set: [exact_match, contains_match, token_f1, semantic]
       aggregation: mean
