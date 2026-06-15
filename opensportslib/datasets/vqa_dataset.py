@@ -45,14 +45,24 @@ class VQADataset(Dataset):
         feature_index_path = str(common.get("feature_index") or "").strip()
         prediction_index_path = str(common.get("prediction_index") or "").strip()
         feature_backend = str(self._train_execution.get("feature_backend", "xvars_clip")).lower()
+        xvars_cfg = self._as_dict(self._train_execution.get("xvars"))
+        feature_source = str(xvars_cfg.get("feature_source", "indexed")).lower()
         if feature_backend != "xvars_clip":
             raise ValueError(f"Unsupported VQA feature backend '{feature_backend}'. Expected 'xvars_clip'.")
-        if not feature_index_path:
+        require_feature_index = feature_source in {"indexed", ""}
+        if require_feature_index and not feature_index_path:
             raise ValueError("Missing required config key DATA.common.feature_index for VQA xvars_clip mode.")
-        if not prediction_index_path:
-            raise ValueError("Missing required config key DATA.common.prediction_index for VQA xvars_clip mode.")
-        self.feature_index = load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)))
-        self.prediction_index = load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)))
+        self.feature_source = feature_source
+        self.feature_index = (
+            load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)))
+            if feature_index_path
+            else {}
+        )
+        self.prediction_index = (
+            load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)))
+            if prediction_index_path
+            else {}
+        )
 
         self.samples: list[dict[str, Any]] = []
         for item in data:
@@ -69,8 +79,8 @@ class VQADataset(Dataset):
                         video_path = os.path.join(source_root, rel) if source_root and not os.path.isabs(rel) else rel
                         break
 
-            feature_candidates = self.feature_index.get(item_id_str)
-            if not feature_candidates:
+            feature_candidates = self.feature_index.get(item_id_str, [])
+            if require_feature_index and not feature_candidates:
                 raise ValueError(
                     f"Missing feature index entry for sample id '{item_id_str}'. "
                     "Provide DATA.common.feature_index mapping with feature_paths or feature_dir/path."
@@ -89,6 +99,7 @@ class VQADataset(Dataset):
                         "references": refs,
                         "video_path": video_path,
                         "feature_candidates": list(feature_candidates),
+                        "feature_source": self.feature_source,
                         "labels": labels,
                         "metadata": metadata,
                         "prediction": pred_row,
@@ -103,6 +114,10 @@ class VQADataset(Dataset):
         sample = dict(self.samples[idx])
         feature_path = self._choose_feature_path(sample.get("feature_candidates") or [])
         if not feature_path or not os.path.exists(feature_path):
+            if self.feature_source in {"raw_video", "auto"}:
+                sample["selected_feature_path"] = None
+                sample["video_spatio_temporal_features"] = None
+                return sample
             raise FileNotFoundError(
                 f"Missing CLIP feature file for sample '{sample.get('id')}'. "
                 f"Selected path: {feature_path!r}"

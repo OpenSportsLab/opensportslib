@@ -134,3 +134,20 @@ metrics = m.evaluate(
     predictions=predictions,
 )
 ```
+
+### X-VARS Backends
+
+Use `MODEL.metadata.backend: xvars_videochatgpt` with
+`TRAIN.execution.training_backend: xvars_videochatgpt_lora` for the
+X-VARS-compatible multimodal path. This backend preserves
+`video_spatio_temporal_features` during training and injects them into
+`<vid_patch>` token positions at inference.
+
+The older `xvars_hf` backend remains available as a lightweight HuggingFace
+fallback, but it is not full X-VARS parity.
+
+For upstream-style inference JSON, save VQA predictions with:
+
+```python
+m.save_predictions("xvars_predictions.json", predictions, output_format="xvars")
+```

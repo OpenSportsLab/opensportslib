@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution
@@ -117,7 +118,7 @@ class VQAModel(BaseTaskModel):
         valid_set = self._resolve_split_path("valid", valid_set)
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
-        if backend == "xvars_lora":
+        if backend in {"xvars_lora", "xvars_videochatgpt_lora"}:
             world_size = torch.cuda.device_count() or get_system_gpu_count(self.config)
             requested_gpus = get_system_gpu_count(self.config)
             use_ddp = world_size > 1 and int(requested_gpus) > 1
@@ -216,3 +217,39 @@ class VQAModel(BaseTaskModel):
                 predictions = json.load(f)
         self.trainer = self.trainer or Trainer_VQA(self.config)
         return self.trainer.evaluate(predictions, test_data)
+
+    def save_predictions(
+        self,
+        output_path: str,
+        predictions: dict,
+        output_format: str = "osl",
+    ) -> str:
+        """Persist VQA predictions, optionally as X-VARS-compatible rows."""
+
+        if str(output_format).lower() != "xvars":
+            return super().save_predictions(output_path, predictions)
+
+        import json
+
+        payload = self._to_xvars_prediction_rows(predictions)
+        dst = expand(output_path)
+        os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+        with open(dst, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        return dst
+
+    @staticmethod
+    def _to_xvars_prediction_rows(predictions: dict[str, Any]) -> list[dict[str, Any]]:
+        rows = []
+        for item in predictions.get("data", []) if isinstance(predictions, dict) else []:
+            video_path = str(item.get("video_path") or "")
+            video_name = os.path.splitext(os.path.basename(video_path))[0] if video_path else str(item.get("id"))
+            rows.append(
+                {
+                    "id": item.get("id"),
+                    "video_name": video_name,
+                    "Q": item.get("question"),
+                    "pred": item.get("answer_text"),
+                }
+            )
+        return rows

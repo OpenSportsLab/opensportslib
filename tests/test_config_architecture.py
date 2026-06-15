@@ -61,6 +61,31 @@ def test_validation_accepts_canonical_schema():
     assert validated["VERSION"] == 2
 
 
+def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
+    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml", as_namespace=False)
+
+    splits = cfg["DATA"]["common"]["splits"]
+    assert set(splits) >= {"train", "valid", "test"}
+    assert splits["train"]["dataloader"]["batch_size"] == 1
+    assert splits["train"]["dataloader"]["shuffle"] is True
+    assert splits["valid"]["dataloader"]["shuffle"] is False
+    assert splits["test"]["dataloader"]["pin_memory"] is False
+    assert cfg["DATA"]["inputs"]["video"]["sampling"]["num_frames"] == 100
+    assert "per_device_train_batch_size" not in cfg["TRAIN"]["execution"]["sft"]
+
+
+def test_vqa_xvars_config_uses_canonical_topology():
+    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml", as_namespace=False)
+
+    components = cfg["MODEL"]["components"]
+    assert components["video_encoder"]["source"]["name"] == "xvars_clip_features"
+    assert components["mm_projector"]["params"]["input_dim"] == 1024
+    assert cfg["MODEL"]["topology"] == [
+        {"from": "video_encoder", "to": "mm_projector"},
+        {"from": "mm_projector", "to": "llm_decoder"},
+    ]
+
+
 def test_builder_exposes_version_neutral_dispatcher():
     assert callable(build_model_from_config)
 
