@@ -257,7 +257,7 @@ def build_trl_sft_trainer(
                     "learning_rate": getattr(args, "learning_rate", 2e-4),
                     "logging_steps": getattr(args, "logging_steps", 1),
                     "save_strategy": getattr(args, "save_strategy", "epoch"),
-                    "report_to": [],
+                    "report_to": getattr(args, "report_to", []),
                     "max_length": max_seq_length,
                     "gradient_checkpointing": False,
                     "bf16": False,

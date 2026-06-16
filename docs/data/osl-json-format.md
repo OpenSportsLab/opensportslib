@@ -8,10 +8,10 @@ An OSL JSON file is a single JSON object with project metadata, a shared label
 schema, and a `data` array of samples. Each sample points to one or more input
 files and can carry task-specific annotations.
 
-The current OpenSportsLib implementation supports classification and
-localization workflows. The format also reserves payloads for description,
-dense description, and question/answer tasks so datasets can stay compatible
-with the broader OpenSportsLab ecosystem.
+The current OpenSportsLib implementation supports classification,
+localization, and VQA workflows. The format also reserves payloads for
+description and dense description tasks so datasets can stay compatible with
+the broader OpenSportsLab ecosystem.
 
 ## Minimal Structure
 
@@ -270,8 +270,8 @@ For predictions and evaluation, current OpenSportsLib spotting outputs use
 ## Description, Dense Description, And Q/A Payloads
 
 These payloads are part of the OSL JSON ecosystem. They are useful for datasets
-that need to round-trip through OpenSportsLab annotation tools, but they are not
-yet first-class OpenSportsLib training tasks.
+that need to round-trip through OpenSportsLab annotation tools. Q/A payloads
+are used by the OpenSportsLib VQA workflow.
 
 Clip-level captions:
 
@@ -309,10 +309,18 @@ Grouped question/answer annotations:
 
 ```json
 {
+  "id": "clip_0001",
+  "inputs": [
+    {
+      "type": "video",
+      "path": "clips/clip_0001.mp4",
+      "fps": 25.0
+    }
+  ],
   "answers": [
     {
-      "question": "What happens after the pass?",
-      "answers": ["The receiving player shoots."]
+      "question": "What card would you give? Why?",
+      "answers": ["No card, because this is a fair challenge."]
     }
   ]
 }

@@ -38,15 +38,18 @@ High-level entry points for training and inference.
 - **`localization.py`**  
   API for temporal action spotting tasks.
 
+- **`vqa.py`**
+  API for visual question answering tasks.
+
 #### Public task wrapper contract
 
 Use the high-level wrappers from `opensportslib.apis`:
 
 ```python
-from opensportslib.apis import ClassificationModel, LocalizationModel
+from opensportslib.apis import ClassificationModel, LocalizationModel, VQAModel
 ```
 
-Both wrappers inherit the shared `BaseTaskModel` contract:
+Task wrappers inherit the shared `BaseTaskModel` contract:
 
 | Method | Purpose | Return value |
 | --- | --- | --- |

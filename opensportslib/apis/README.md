@@ -8,6 +8,7 @@ Use task model classes from `opensportslib.apis`:
 
 - `ClassificationModel(...)`
 - `LocalizationModel(...)`
+- `VQAModel(...)`
 
 ## Shared Base Wrapper
 
@@ -112,4 +113,43 @@ saved_predictions = m.save_predictions(
 metrics = m.evaluate(
     test_set="/path/to/test_annotations.json",
 )
+```
+
+## VQA Usage
+
+```python
+from opensportslib.apis import VQAModel
+
+m = VQAModel(
+    config="/path/to/vqa.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = m.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics = m.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=predictions,
+)
+```
+
+### X-VARS Backends
+
+Use `MODEL.metadata.backend: xvars_videochatgpt` with
+`TRAIN.execution.training_backend: xvars_videochatgpt_lora` for the
+X-VARS-compatible multimodal path. This backend preserves
+`video_spatio_temporal_features` during training and injects them into
+`<vid_patch>` token positions at inference. In OpenSportsLib, X-VARS parity is
+claimed through training, inference, and X-VARS-style prediction export; VQA
+evaluation remains OpenSportsLib-native.
+
+The older `xvars_hf` backend remains available as a lightweight HuggingFace
+fallback, but it is not full X-VARS parity.
+
+For upstream-style inference JSON, save VQA predictions with:
+
+```python
+m.save_predictions("xvars_predictions.json", predictions, output_format="xvars")
 ```

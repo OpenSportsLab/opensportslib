@@ -114,6 +114,27 @@ def build_model_canonical(config, device):
         decoder_provider = (get_component_provider_by_kind(config, "decoder") or "").lower()
         decoder_name = get_component_name_by_kind(config, "decoder") or ""
 
+        if backend == "xvars_videochatgpt":
+            from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+            decoder_params = get_component_params_by_kind(config, "decoder")
+            projector_params = get_component_params_by_kind(config, "projector")
+            execution = getattr(getattr(config, "TRAIN", None), "execution", {})
+            xvars_cfg = getattr(execution, "xvars", {}) if not isinstance(execution, dict) else execution.get("xvars", {})
+            if hasattr(xvars_cfg, "__dict__"):
+                xvars_cfg = vars(xvars_cfg)
+            model_id = (
+                (xvars_cfg or {}).get("base_model")
+                or decoder_params.get("repo_id")
+                or decoder_name
+                or "lmsys/vicuna-7b-v1.1"
+            )
+            return XVarsVideoChatGPTModel(
+                config,
+                model_id=model_id,
+                projector_params=projector_params,
+            ), None
+
         if backend == "xvars_hf" or decoder_provider == "huggingface":
             from opensportslib.models.base.vqa import MultimodalHFVQAModel
 
