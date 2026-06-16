@@ -19,10 +19,18 @@ opensportslib/
     │   └── localization.py
 
     ├── config/                 # Default configuration files
-    │   ├── classification.yaml
-    │   ├── classification_tracking.yaml
-    │   ├── localization.yaml
-    │   └── graph_tracking_classification/
+    │   ├── default.yaml
+    │   ├── classification/
+    │   │   ├── default.yaml
+    │   │   ├── video.yaml
+    │   │   ├── sngar_tracking.yaml
+    │   │   └── sngar_frames.yaml
+    │   └── localization/
+    │       ├── default.yaml
+    │       ├── video_ocv.yaml
+    │       ├── video_dali.yaml
+    │       ├── calf_resnetpca512.yaml
+    │       └── netvladpp_resnetpca512.yaml
 
     ├── core/                   # Training engine & utilities
     │   ├── loss/

@@ -4,7 +4,7 @@ VERSION: 2
 SYSTEM:
   paths:
     log_dir: ./logs
-    save_dir: ./checkpoints
+    save_dir: ./checkpoints_video
   device: cuda
   gpu:
     count: 4
