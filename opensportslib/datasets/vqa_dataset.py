@@ -11,7 +11,11 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
-from opensportslib.core.config.accessors import get_split_annotation_path, get_split_source_path
+from opensportslib.core.config.accessors import (
+    get_split_annotation_path,
+    get_split_source_path,
+    get_vqa_feature_source,
+)
 from opensportslib.models.utils.xvars_clip_index import (
     build_xvars_prior_from_prediction,
     load_feature_index,
@@ -45,8 +49,7 @@ class VQADataset(Dataset):
         feature_index_path = str(common.get("feature_index") or "").strip()
         prediction_index_path = str(common.get("prediction_index") or "").strip()
         feature_backend = str(self._train_execution.get("feature_backend", "xvars_clip")).lower()
-        xvars_cfg = self._as_dict(self._train_execution.get("xvars"))
-        feature_source = str(xvars_cfg.get("feature_source", "indexed")).lower()
+        feature_source = get_vqa_feature_source(config, default="indexed")
         if feature_backend != "xvars_clip":
             raise ValueError(f"Unsupported VQA feature backend '{feature_backend}'. Expected 'xvars_clip'.")
         require_feature_index = feature_source in {"indexed", ""}

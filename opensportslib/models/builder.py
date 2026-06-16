@@ -6,6 +6,7 @@ from opensportslib.core.config.accessors import (
     get_component_provider_by_kind,
     get_component_params_by_kind,
     get_vqa_backend,
+    get_vqa_decoder_model_id,
     get_data_classes,
     get_data_num_classes,
     get_data_modality,
@@ -112,23 +113,12 @@ def build_model_canonical(config, device):
     if task == "vqa":
         backend = get_vqa_backend(config)
         decoder_provider = (get_component_provider_by_kind(config, "decoder") or "").lower()
-        decoder_name = get_component_name_by_kind(config, "decoder") or ""
 
         if backend == "xvars_videochatgpt":
             from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
 
-            decoder_params = get_component_params_by_kind(config, "decoder")
             projector_params = get_component_params_by_kind(config, "projector")
-            execution = getattr(getattr(config, "TRAIN", None), "execution", {})
-            xvars_cfg = getattr(execution, "xvars", {}) if not isinstance(execution, dict) else execution.get("xvars", {})
-            if hasattr(xvars_cfg, "__dict__"):
-                xvars_cfg = vars(xvars_cfg)
-            model_id = (
-                (xvars_cfg or {}).get("base_model")
-                or decoder_params.get("repo_id")
-                or decoder_name
-                or "lmsys/vicuna-7b-v1.1"
-            )
+            model_id = get_vqa_decoder_model_id(config, default="base_model_videoChatGPT")
             return XVarsVideoChatGPTModel(
                 config,
                 model_id=model_id,
@@ -138,13 +128,8 @@ def build_model_canonical(config, device):
         if backend == "xvars_hf" or decoder_provider == "huggingface":
             from opensportslib.models.base.vqa import MultimodalHFVQAModel
 
-            decoder_params = get_component_params_by_kind(config, "decoder")
             projector_params = get_component_params_by_kind(config, "projector")
-            model_id = (
-                decoder_params.get("repo_id")
-                or decoder_name
-                or "distilgpt2"
-            )
+            model_id = get_vqa_decoder_model_id(config, default="distilgpt2")
             return MultimodalHFVQAModel(
                 config,
                 model_id=model_id,

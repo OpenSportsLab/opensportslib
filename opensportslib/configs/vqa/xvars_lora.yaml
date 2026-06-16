@@ -110,9 +110,9 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: lmsys/vicuna-7b-v1.1
+        name: /home/vorajv/opensportslib/base_model_videoChatGPT
       params:
-        repo_id: lmsys/vicuna-7b-v1.1
+        repo_id: /home/vorajv/opensportslib/base_model_videoChatGPT
       overrides: {}
   topology:
     - from: video_encoder
@@ -133,25 +133,32 @@ IO:
 TRAIN:
   trainer:
     type: vqa
+  epochs: 3
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0002
+    weight_decay: 0.001
+  scheduler:
+    type: constant
   execution:
     enabled: true
-    backend: xvars_videochatgpt
     training_backend: xvars_videochatgpt_lora
     feature_backend: xvars_clip
     view_sampling_policy: random_train_deterministic_eval
+    acc_grad_iter: 16
+    log_interval: 1
     dry_run: false
     xvars:
-      base_model: lmsys/vicuna-7b-v1.1
       projection_path: null
       conv_mode: video-chatgpt_v1
-      video_token_len: 356
-      mm_hidden_size: 1024
-      feature_source: auto
     prompt:
       style: detailed
       system_prompt: You are an artificial intelligence assistant for visual football referee questions. Give short and helpful answers.
       include_priors: true
       prior_fields: [action, offence, contact, bodypart]
+      video_token_len: 300
     generation:
       max_new_tokens: 1024
       temperature: 0.2
@@ -168,21 +175,14 @@ TRAIN:
       fallback_policy: baseline_on_failure
       max_new_tokens_cap: 1024
     sft:
-      max_seq_length: 768
+      max_seq_length: 512
       answer_field: references
       include_video_tokens: true
-      video_token_len: 356
-      gradient_accumulation_steps: 1
-      num_train_epochs: 1
-      learning_rate: 0.0001
-      logging_steps: 50
-      disable_tqdm: true
+      disable_tqdm: false
       completion_only_loss: true
-      save_strategy: "no"
-      fp16: false
-      bf16: false
+      gradient_checkpointing: true
+      save_strategy: "epoch"
     hf:
-      model_id: lmsys/vicuna-7b-v1.1
       local_files_only: false
       prefer_cuda: true
       cuda_device_index: 1

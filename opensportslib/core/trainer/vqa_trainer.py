@@ -11,11 +11,21 @@ from typing import Any
 import torch
 
 from opensportslib.core.config.accessors import (
+    get_xvars_train_model_id,
+    get_xvars_train_tokenizer_id,
+    get_xvars_train_video_token_len,
+    is_xvars_videochatgpt_backend,
+    get_model_runtime_dtype,
     get_split_dataloader_cfg,
     get_system_path,
+    get_train_epochs,
     get_train_execution,
+    get_train_optimizer,
+    get_vqa_decoder_model_id,
     get_vqa_eval_profile_cfg,
     get_vqa_generation_cfg,
+    get_vqa_mm_hidden_size,
+    get_vqa_prompt_video_token_len,
 )
 from opensportslib.core.utils.config import save_config
 from opensportslib.core.utils.hf_runtime import (
@@ -28,6 +38,7 @@ from opensportslib.core.utils.hf_runtime import (
     require_optional_package,
 )
 from opensportslib.metrics.vqa_metric import compute_vqa_metrics
+from opensportslib.models.base.video_chatgpt_compat import load_videochatgpt_compatible_causal_lm
 from opensportslib.models.base.xvars_videochatgpt import (
     DEFAULT_XVARS_TARGET_MODULES,
     XVarsVideoChatGPTCausalLM,
@@ -81,6 +92,27 @@ def _extract_cuda_device_index(config, hf_cfg: dict[str, Any]) -> int | None:
     return None
 
 
+def _resolve_vqa_video_token_len(config, prompt_cfg: dict[str, Any] | None = None, sft_cfg: dict[str, Any] | None = None) -> int:
+    prompt_cfg = prompt_cfg or {}
+    sft_cfg = sft_cfg or {}
+    if config is not None and is_xvars_videochatgpt_backend(config):
+        return get_xvars_train_video_token_len(config)
+    if prompt_cfg.get("video_token_len") is not None:
+        return int(prompt_cfg["video_token_len"])
+    if sft_cfg.get("video_token_len") is not None:
+        return int(sft_cfg["video_token_len"])
+    return get_vqa_prompt_video_token_len(config, default=300)
+
+
+def _resolve_training_precision_flags(config, sft_cfg: dict[str, Any]) -> tuple[bool, bool]:
+    dtype = get_model_runtime_dtype(config, default="fp32")
+    if dtype == "bf16":
+        return False, True
+    if dtype == "fp16":
+        return True, False
+    return bool(sft_cfg.get("fp16", False)), bool(sft_cfg.get("bf16", False))
+
+
 def _maybe_log_vqa_predictions(predictions: dict[str, Any], *, use_wandb: bool) -> None:
     if not use_wandb:
         return
@@ -132,6 +164,7 @@ def _maybe_log_vqa_metrics(metrics: dict[str, Any], *, use_wandb: bool) -> None:
 def build_vqa_sft_text(
     sample: dict[str, Any],
     *,
+    config=None,
     prompt_cfg: dict[str, Any] | None = None,
     sft_cfg: dict[str, Any] | None = None,
 ) -> dict[str, str]:
@@ -157,7 +190,11 @@ def build_vqa_sft_text(
         )
         prior_text = str(sample.get("prior_prediction_text", "")).strip() or built_prior
 
-    token_len = int(sft_cfg.get("video_token_len", 300)) if bool(sft_cfg.get("include_video_tokens", True)) else 0
+    if config is not None:
+        token_len = _resolve_vqa_video_token_len(config, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
+    else:
+        token_len = int(prompt_cfg.get("video_token_len", sft_cfg.get("video_token_len", 300)))
+    token_len = token_len if bool(sft_cfg.get("include_video_tokens", True)) else 0
     prompt = build_xvars_prompt(
         system_prompt=system_prompt,
         question=question,
@@ -175,9 +212,9 @@ def build_vqa_sft_text(
 class VQALoraSFTDataset:
     """Small adapter expected by TRL SFTTrainer."""
 
-    def __init__(self, dataset, prompt_cfg: dict[str, Any], sft_cfg: dict[str, Any]):
+    def __init__(self, dataset, config, prompt_cfg: dict[str, Any], sft_cfg: dict[str, Any]):
         self.rows = [
-            build_vqa_sft_text(sample, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
+            build_vqa_sft_text(sample, config=config, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
             for sample in dataset
             if sample.get("references")
         ]
@@ -214,12 +251,13 @@ class VQALoraTrainer:
         output_dir = os.path.join(save_root, "xvars_lora")
         os.makedirs(output_dir, exist_ok=True)
 
-        train_sft = VQALoraSFTDataset(train_data, prompt_cfg, sft_cfg)
-        valid_sft = VQALoraSFTDataset(valid_data, prompt_cfg, sft_cfg) if valid_data is not None else None
+        train_sft = VQALoraSFTDataset(train_data, self.config, prompt_cfg, sft_cfg)
+        valid_sft = VQALoraSFTDataset(valid_data, self.config, prompt_cfg, sft_cfg) if valid_data is not None else None
+        model_id = get_vqa_decoder_model_id(self.config, default=str(hf_cfg.get("model_id", "distilgpt2")))
 
         metadata = {
             "backend": "xvars_lora",
-            "model_id": str(hf_cfg.get("model_id", "distilgpt2")),
+            "model_id": model_id,
             "num_train_samples": len(train_sft),
             "num_valid_samples": len(valid_sft) if valid_sft is not None else 0,
             "status": "metadata_only",
@@ -244,7 +282,6 @@ class VQALoraTrainer:
         from datasets import Dataset
         from transformers import TrainingArguments
 
-        model_id = str(hf_cfg.get("model_id", "distilgpt2"))
         tokenizer, model, _device = load_hf_causal_lm_for_training(
             model_id,
             local_files_only=bool(hf_cfg.get("local_files_only", False)),
@@ -281,18 +318,21 @@ class VQALoraTrainer:
         hf_valid_sft = Dataset.from_list(valid_rows) if valid_sft is not None else None
         train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
 
+        fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
+        optimizer_cfg = get_train_optimizer(self.config)
+        execution_cfg = get_train_execution(self.config)
         training_kwargs = {
             "output_dir": output_dir,
             "per_device_train_batch_size": train_bs,
             "per_device_eval_batch_size": eval_bs,
-            "gradient_accumulation_steps": int(sft_cfg.get("gradient_accumulation_steps", 1)),
-            "num_train_epochs": float(sft_cfg.get("num_train_epochs", 1)),
-            "learning_rate": float(sft_cfg.get("learning_rate", 2e-4)),
-            "logging_steps": int(sft_cfg.get("logging_steps", 1)),
+            "gradient_accumulation_steps": int(execution_cfg.get("acc_grad_iter", sft_cfg.get("gradient_accumulation_steps", 1))),
+            "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
+            "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
+            "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
             "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
             "report_to": ["wandb"] if use_wandb else [],
-            "fp16": bool(sft_cfg.get("fp16", False)),
-            "bf16": bool(sft_cfg.get("bf16", False)),
+            "fp16": fp16,
+            "bf16": bf16,
             "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
@@ -472,9 +512,12 @@ class XVarsVideoChatGPTTrainer:
 class VQAXVarsVideoChatGPTSFTDataset:
     """Tokenized multimodal SFT dataset for the true X-VARS backend."""
 
-    def __init__(self, dataset, *, tokenizer, prompt_cfg: dict[str, Any], sft_cfg: dict[str, Any], xvars_cfg: dict[str, Any]):
+    def __init__(self, dataset, *, config=None, tokenizer, prompt_cfg: dict[str, Any], sft_cfg: dict[str, Any], xvars_cfg: dict[str, Any]):
         self.rows = []
-        token_len = int(xvars_cfg.get("video_token_len", sft_cfg.get("video_token_len", 356)))
+        if config is not None and is_xvars_videochatgpt_backend(config):
+            token_len = get_xvars_train_video_token_len(config)
+        else:
+            token_len = int(prompt_cfg.get("video_token_len", xvars_cfg.get("video_token_len", sft_cfg.get("video_token_len", 356))))
         max_seq_length = int(sft_cfg.get("max_seq_length", 768))
         for sample in dataset:
             refs = sample.get("references") or []
@@ -496,6 +539,7 @@ class VQAXVarsVideoChatGPTSFTDataset:
                     features = torch.cat([features, pad], dim=0)
             row = build_vqa_sft_text(
                 sample,
+                config=config,
                 prompt_cfg=prompt_cfg,
                 sft_cfg={**sft_cfg, "include_video_tokens": True, "video_token_len": token_len},
             )
@@ -558,12 +602,14 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         output_dir = os.path.join(save_root, "xvars_videochatgpt_lora")
         os.makedirs(output_dir, exist_ok=True)
 
+        prompt_token_len = _resolve_vqa_video_token_len(self.config, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
+        model_id = get_xvars_train_model_id(self.config, default=str(hf_cfg.get("model_id", "base_model_videoChatGPT")))
         metadata = {
             "backend": "xvars_videochatgpt_lora",
-            "model_id": str(xvars_cfg.get("base_model") or hf_cfg.get("model_id", "lmsys/vicuna-7b-v1.1")),
+            "model_id": model_id,
             "status": "metadata_only",
             "multimodal_training": True,
-            "video_token_len": int(xvars_cfg.get("video_token_len", sft_cfg.get("video_token_len", 356))),
+            "video_token_len": prompt_token_len,
             "lora_target_modules": list(lora_cfg.get("target_modules") or DEFAULT_XVARS_TARGET_MODULES),
             "num_train_samples": 0,
             "num_valid_samples": 0,
@@ -577,11 +623,16 @@ class VQAXVarsVideoChatGPTLoraTrainer:
 
         require_optional_package("transformers", "pip install transformers")
         require_optional_package("peft", "pip install peft")
-        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+        from transformers import AutoTokenizer, TrainingArguments
 
-        model_id = str(xvars_cfg.get("base_model") or hf_cfg.get("model_id", "lmsys/vicuna-7b-v1.1"))
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(
+            get_xvars_train_tokenizer_id(self.config),
+            local_files_only=local_files_only,
+            use_fast=False,
+            model_max_length=int(hf_cfg.get("model_max_length", 1048)),
+            padding_side=str(hf_cfg.get("padding_side", "right")),
+        )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         bnb_config = build_bitsandbytes_config(quant_cfg)
@@ -590,21 +641,23 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             model_kwargs["quantization_config"] = bnb_config
             if bool(hf_cfg.get("prefer_cuda", True)) and torch.cuda.is_available():
                 model_kwargs["device_map"] = {"": torch.cuda.current_device()}
-        base_lm = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+        base_lm = load_videochatgpt_compatible_causal_lm(model_id, **model_kwargs)
         from opensportslib.core.utils.hf_runtime import _ensure_video_special_tokens
 
         _ensure_video_special_tokens(tokenizer, base_lm)
         model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(
             base_lm,
             xvars_cfg.get("projection_path"),
-            mm_hidden_size=int(xvars_cfg.get("mm_hidden_size", 1024)),
+            mm_hidden_size=get_vqa_mm_hidden_size(self.config, default=1024),
         )
         lora_cfg = dict(lora_cfg)
         lora_cfg.setdefault("target_modules", DEFAULT_XVARS_TARGET_MODULES)
         model = apply_lora_for_causal_lm(model, lora_cfg, distributed=int(world_size) > 1)
 
+        logging.info("Building X-VARS SFT datasets | rank=%s", rank)
         train_sft = VQAXVarsVideoChatGPTSFTDataset(
             train_data,
+            config=self.config,
             tokenizer=tokenizer,
             prompt_cfg=prompt_cfg,
             sft_cfg=sft_cfg,
@@ -613,6 +666,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         valid_sft = (
             VQAXVarsVideoChatGPTSFTDataset(
                 valid_data,
+                config=self.config,
                 tokenizer=tokenizer,
                 prompt_cfg=prompt_cfg,
                 sft_cfg=sft_cfg,
@@ -625,22 +679,47 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             raise ValueError("No multimodal X-VARS training rows were usable.")
         metadata["num_train_samples"] = len(train_sft)
         metadata["num_valid_samples"] = len(valid_sft) if valid_sft is not None else 0
+        feature_shape = tuple(train_sft[0]["video_spatio_temporal_features"].shape) if len(train_sft) else None
+        logging.info(
+            "Built X-VARS SFT datasets | rank=%s | train=%s | valid=%s | feature_shape=%s",
+            rank,
+            metadata["num_train_samples"],
+            metadata["num_valid_samples"],
+            feature_shape,
+        )
         train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
+
+        optimizer_cfg = get_train_optimizer(self.config)
+        execution_cfg = get_train_execution(self.config)
+        fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
+        eval_strategy_key = "evaluation_strategy"
+        try:
+            if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters:
+                eval_strategy_key = "eval_strategy"
+        except Exception:
+            eval_strategy_key = "evaluation_strategy"
 
         training_kwargs = {
             "output_dir": output_dir,
             "per_device_train_batch_size": train_bs,
             "per_device_eval_batch_size": eval_bs,
-            "gradient_accumulation_steps": int(sft_cfg.get("gradient_accumulation_steps", 1)),
-            "num_train_epochs": float(sft_cfg.get("num_train_epochs", 1)),
-            "learning_rate": float(sft_cfg.get("learning_rate", 2e-4)),
-            "logging_steps": int(sft_cfg.get("logging_steps", 1)),
+            "gradient_accumulation_steps": int(execution_cfg.get("acc_grad_iter", sft_cfg.get("gradient_accumulation_steps", 1))),
+            "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
+            "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
+            "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
+            "optim": str(optimizer_cfg.get("hf_optim", "paged_adamw_8bit")),
+            "weight_decay": float(optimizer_cfg.get("weight_decay", 0.001)),
+            "lr_scheduler_type": str(sft_cfg.get("lr_scheduler_type", "constant")),
             "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
             "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
             "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "fp16": fp16,
+            "bf16": bf16,
+            "ddp_find_unused_parameters": bool(int(world_size) > 1),
         }
+        training_kwargs[eval_strategy_key] = str(sft_cfg.get("evaluation_strategy", "epoch"))
         args = TrainingArguments(**training_kwargs)
         trainer = XVarsVideoChatGPTTrainer(
             model=model,
@@ -650,7 +729,9 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             eval_dataset=valid_sft,
             data_collator=XVarsVideoChatGPTDataCollator(tokenizer),
         )
+        logging.info("Starting X-VARS trainer.train | rank=%s | world_size=%s", rank, world_size)
         trainer.train()
+        logging.info("Finished X-VARS trainer.train | rank=%s", rank)
         if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
             trainer.model.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)

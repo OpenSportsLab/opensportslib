@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from opensportslib.core.trainer.vqa_trainer import (
@@ -109,13 +110,40 @@ def _sample():
 def _cfg(tmp_path, *, dry_run=True):
     return SimpleNamespace(
         SYSTEM=SimpleNamespace(paths=SimpleNamespace(save_dir=str(tmp_path / "ckpt"))),
+        MODEL=SimpleNamespace(
+            runtime=SimpleNamespace(dtype="fp32"),
+            components=SimpleNamespace(
+                video_encoder=SimpleNamespace(
+                    kind="encoder",
+                    source=SimpleNamespace(provider="opensportslib", name="xvars_clip_features"),
+                    params=SimpleNamespace(feature_source="indexed"),
+                    overrides=SimpleNamespace(),
+                ),
+                mm_projector=SimpleNamespace(
+                    kind="projector",
+                    source=SimpleNamespace(provider="opensportslib", name="xvars_mm_projector"),
+                    params=SimpleNamespace(input_dim=1024),
+                    overrides=SimpleNamespace(),
+                ),
+                llm_decoder=SimpleNamespace(
+                    kind="decoder",
+                    source=SimpleNamespace(provider="huggingface", name="tiny"),
+                    params=SimpleNamespace(repo_id="tiny"),
+                    overrides=SimpleNamespace(),
+                ),
+            ),
+        ),
         TRAIN=SimpleNamespace(
+            epochs=1,
+            optimizer=SimpleNamespace(type="AdamW", lr=1e-4),
             execution={
                 "training_backend": "xvars_videochatgpt_lora",
                 "dry_run": dry_run,
-                "prompt": {"include_priors": True},
-                "sft": {"include_video_tokens": True, "video_token_len": 3, "max_seq_length": 64},
-                "xvars": {"base_model": "tiny", "video_token_len": 3, "feature_source": "indexed"},
+                "acc_grad_iter": 1,
+                "log_interval": 1,
+                "prompt": {"include_priors": True, "video_token_len": 3},
+                "sft": {"include_video_tokens": True, "max_seq_length": 64},
+                "xvars": {"projection_path": None},
                 "hf": {"local_files_only": True, "prefer_cuda": False},
                 "lora": {},
                 "quantization": {"enabled": False},
@@ -159,9 +187,9 @@ def test_xvars_sft_dataset_and_collator_keep_video_features():
     ds = VQAXVarsVideoChatGPTSFTDataset(
         [_sample()],
         tokenizer=tok,
-        prompt_cfg={"include_priors": True},
-        sft_cfg={"video_token_len": 3, "max_seq_length": 64},
-        xvars_cfg={"video_token_len": 3},
+        prompt_cfg={"include_priors": True, "video_token_len": 3},
+        sft_cfg={"max_seq_length": 64},
+        xvars_cfg={},
     )
     batch = XVarsVideoChatGPTDataCollator(tok)([ds[0]])
     assert tuple(batch["video_spatio_temporal_features"].shape) == (1, 3, 1024)
@@ -183,6 +211,78 @@ def test_xvars_model_forward_injects_video_features_at_patch_tokens():
     assert float(out.loss) > 0
     patch_positions = (input_ids[0] == tok.convert_tokens_to_ids("<vid_patch>")).nonzero(as_tuple=False).flatten()
     assert torch.all(base.seen_inputs_embeds[0, patch_positions, :] == 7.0)
+
+
+def test_xvars_model_forward_ignores_peft_inputs_embeds_kwarg():
+    tok = TinyTokenizer()
+    base = TinyLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+    with torch.no_grad():
+        model.mm_projector.weight.fill_(0.0)
+        model.mm_projector.bias.fill_(5.0)
+    encoded = tok("USER: q <vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT: a", padding="max_length", max_length=16)
+    input_ids = torch.tensor([encoded["input_ids"]])
+    features = torch.ones((1, 3, 1024))
+
+    out = model(
+        input_ids=input_ids,
+        labels=input_ids.clone(),
+        inputs_embeds=torch.zeros((1, input_ids.shape[1], 4)),
+        video_spatio_temporal_features=features,
+        tokenizer=tok,
+    )
+
+    assert float(out.loss) > 0
+    patch_positions = (input_ids[0] == tok.convert_tokens_to_ids("<vid_patch>")).nonzero(as_tuple=False).flatten()
+    assert torch.all(base.seen_inputs_embeds[0, patch_positions, :] == 5.0)
+
+
+def test_xvars_model_backward_with_video_features_avoids_in_place_leaf_error():
+    tok = TinyTokenizer()
+    model = XVarsVideoChatGPTCausalLM(TinyLM(), mm_hidden_size=1024)
+    encoded = tok("USER: q <vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT: a", padding="max_length", max_length=16)
+    input_ids = torch.tensor([encoded["input_ids"]])
+    labels = input_ids.clone()
+    features = torch.ones((1, 3, 1024))
+
+    out = model(input_ids=input_ids, labels=labels, video_spatio_temporal_features=features, tokenizer=tok)
+    loss = out.logits.sum() + out.loss
+    loss.backward()
+
+    assert model.mm_projector.weight.grad is not None
+
+
+def test_xvars_model_prepare_inputs_for_generation_keeps_video_features():
+    tok = TinyTokenizer()
+    model = XVarsVideoChatGPTCausalLM(TinyLM(), mm_hidden_size=1024)
+    input_ids = torch.tensor([[5, 6, 7]])
+    attention_mask = torch.ones_like(input_ids)
+    features = torch.ones((1, 3, 1024))
+
+    first_step = model.prepare_inputs_for_generation(
+        input_ids,
+        attention_mask=attention_mask,
+        inputs_embeds=torch.zeros((1, 3, 4)),
+        video_spatio_temporal_features=features,
+        tokenizer=tok,
+        use_cache=True,
+    )
+    assert "inputs_embeds" in first_step
+    assert "input_ids" not in first_step
+    assert first_step["video_spatio_temporal_features"] is features
+    assert first_step["tokenizer"] is tok
+    assert first_step["use_cache"] is True
+
+    next_step = model.prepare_inputs_for_generation(
+        input_ids,
+        past_key_values=(("cached",),),
+        attention_mask=attention_mask,
+        video_spatio_temporal_features=features,
+        _xvars_tokenizer=tok,
+    )
+    assert next_step["input_ids"].tolist() == [[7]]
+    assert next_step["video_spatio_temporal_features"] is features
+    assert next_step["_xvars_tokenizer"] is tok
 
 
 def test_xvars_videochatgpt_lora_dry_run_marks_multimodal(tmp_path):
@@ -233,3 +333,137 @@ def test_xvars_raw_num_frames_falls_back_to_legacy_xvars_value():
 
     cfg = SimpleNamespace(DATA=SimpleNamespace(inputs=SimpleNamespace(video=SimpleNamespace(sampling=SimpleNamespace()))))
     assert resolve_xvars_raw_num_frames(cfg, {"raw_num_frames": 13}) == 13
+
+
+def test_xvars_dataset_and_model_prefer_canonical_vqa_fields(tmp_path):
+    from opensportslib.datasets.vqa_dataset import VQADataset
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    annotation_path = tmp_path / "train.json"
+    annotation_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "action_0",
+                        "inputs": [{"type": "video", "path": "clip.mp4"}],
+                        "answers": [{"question": "What card?", "answers": ["Yellow"]}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.DATA = SimpleNamespace(
+        common=SimpleNamespace(
+            feature_index="",
+            prediction_index="",
+            splits=SimpleNamespace(
+                train=SimpleNamespace(
+                    annotation_path=str(annotation_path),
+                    source_path=str(tmp_path),
+                    dataloader=SimpleNamespace(batch_size=1),
+                )
+            ),
+        )
+    )
+    cfg.MODEL.components.video_encoder.params.feature_source = "raw_video"
+    cfg.TRAIN.execution["xvars"] = {"feature_source": "indexed", "video_token_len": 9, "mm_hidden_size": 12}
+    cfg.TRAIN.execution["prompt"]["video_token_len"] = 5
+    cfg.MODEL.components.mm_projector.params.input_dim = 7
+
+    dataset = VQADataset(cfg, split="train")
+    assert dataset.feature_source == "raw_video"
+
+    model = XVarsVideoChatGPTModel.__new__(XVarsVideoChatGPTModel)
+    model.config = cfg
+    model.video_token_len = 5
+    model.feature_source = "raw_video"
+    features = torch.ones((5, 7))
+    assert tuple(model._features_for_sample({"video_spatio_temporal_features": features}, {"video_token_len": 5}).shape) == (5, 7)
+
+
+def test_xvars_model_init_uses_original_inference_defaults(monkeypatch, tmp_path):
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    captured = {}
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "</s>"
+
+    class FakeWrappedModel:
+        def to(self, device):
+            del device
+            return self
+
+        def eval(self):
+            return self
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.MODEL.components.llm_decoder.params.repo_id = "base_model_videoChatGPT"
+    cfg.TRAIN.execution["prompt"]["video_token_len"] = 300
+
+    def _load_tok(model_id, **kwargs):
+        del kwargs
+        captured["tokenizer"] = model_id
+        return FakeTokenizer()
+
+    def _load_model(model_id, **kwargs):
+        del kwargs
+        captured["model"] = model_id
+        return object()
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=_load_tok),
+        ),
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt.load_videochatgpt_compatible_causal_lm",
+        _load_model,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt._ensure_video_special_tokens",
+        lambda tokenizer, model=None: 0,
+    )
+    monkeypatch.setattr(
+        XVarsVideoChatGPTCausalLM,
+        "from_pretrained_projector",
+        staticmethod(lambda base_lm, projector_path, mm_hidden_size=1024: captured.__setitem__("mm_hidden_size", mm_hidden_size) or FakeWrappedModel()),
+    )
+
+    model = XVarsVideoChatGPTModel(cfg, model_id="base_model_videoChatGPT", projector_params={"input_dim": 1024})
+
+    assert captured["model"] == "base_model_videoChatGPT"
+    assert captured["tokenizer"] == "LLaVA-7B-Lightening-v1-1"
+    assert captured["mm_hidden_size"] == 1024
+    assert model.video_token_len == 356
+
+
+def test_videochatgpt_loader_raises_clear_xvars_error(monkeypatch, tmp_path):
+    from opensportslib.models.base import video_chatgpt_compat as compat
+
+    ckpt_dir = tmp_path / "videochatgpt_ckpt"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "config.json").write_text('{"model_type": "VideoChatGPT"}', encoding="utf-8")
+
+    class FakeAutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(model_id, **kwargs):
+            del model_id, kwargs
+            raise ValueError("Transformers does not recognize this architecture")
+
+    monkeypatch.setattr(compat, "ensure_videochatgpt_registered", lambda: None)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(AutoModelForCausalLM=FakeAutoModelForCausalLM),
+    )
+
+    with pytest.raises(ValueError, match="root cause"):
+        compat.load_videochatgpt_compatible_causal_lm(str(ckpt_dir), local_files_only=True)

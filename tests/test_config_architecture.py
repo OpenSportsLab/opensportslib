@@ -72,6 +72,22 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert splits["test"]["dataloader"]["pin_memory"] is False
     assert cfg["DATA"]["inputs"]["video"]["sampling"]["num_frames"] == 100
     assert "per_device_train_batch_size" not in cfg["TRAIN"]["execution"]["sft"]
+    assert cfg["TRAIN"]["epochs"] == 3
+    assert cfg["TRAIN"]["optimizer"]["lr"] == 0.0002
+    assert cfg["TRAIN"]["optimizer"]["weight_decay"] == 0.001
+    assert cfg["TRAIN"]["execution"]["acc_grad_iter"] == 16
+    assert cfg["TRAIN"]["execution"]["log_interval"] == 1
+    assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
+    assert cfg["TRAIN"]["execution"]["sft"]["max_seq_length"] == 512
+    assert cfg["TRAIN"]["execution"]["sft"]["gradient_checkpointing"] is True
+    assert cfg["TRAIN"]["execution"]["sft"]["save_strategy"] == "epoch"
+    assert "gradient_accumulation_steps" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "num_train_epochs" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "learning_rate" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "logging_steps" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "fp16" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "bf16" not in cfg["TRAIN"]["execution"]["sft"]
+    assert "video_token_len" not in cfg["TRAIN"]["execution"]["sft"]
 
 
 def test_vqa_xvars_config_uses_canonical_topology():
@@ -79,11 +95,17 @@ def test_vqa_xvars_config_uses_canonical_topology():
 
     components = cfg["MODEL"]["components"]
     assert components["video_encoder"]["source"]["name"] == "xvars_clip_features"
+    assert components["video_encoder"]["params"]["feature_source"] == "indexed_or_raw_clip"
     assert components["mm_projector"]["params"]["input_dim"] == 1024
+    assert components["llm_decoder"]["source"]["name"] == "/home/vorajv/opensportslib/base_model_videoChatGPT"
+    assert components["llm_decoder"]["params"]["repo_id"] == "/home/vorajv/opensportslib/base_model_videoChatGPT"
     assert cfg["MODEL"]["topology"] == [
         {"from": "video_encoder", "to": "mm_projector"},
         {"from": "mm_projector", "to": "llm_decoder"},
     ]
+    assert "base_model" not in cfg["TRAIN"]["execution"]["xvars"]
+    assert "mm_hidden_size" not in cfg["TRAIN"]["execution"]["xvars"]
+    assert "feature_source" not in cfg["TRAIN"]["execution"]["xvars"]
 
 
 def test_builder_exposes_version_neutral_dispatcher():

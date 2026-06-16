@@ -305,6 +305,11 @@ def get_model_load(cfg: Any) -> dict[str, Any]:
     return _as_dict(model.get("load"))
 
 
+def get_model_runtime(cfg: Any) -> dict[str, Any]:
+    model = _as_dict(getattr(cfg, "MODEL", None))
+    return _as_dict(model.get("runtime"))
+
+
 def get_model_family(cfg: Any) -> str:
     model = _as_dict(getattr(cfg, "MODEL", None))
     metadata = _as_dict(model.get("metadata"))
@@ -333,6 +338,11 @@ def get_train_epochs(cfg: Any) -> int:
 def get_train_execution(cfg: Any) -> dict[str, Any]:
     train = _as_dict(getattr(cfg, "TRAIN", None))
     return _as_dict(train.get("execution"))
+
+
+def get_train_optimizer(cfg: Any) -> dict[str, Any]:
+    train = _as_dict(getattr(cfg, "TRAIN", None))
+    return _as_dict(train.get("optimizer"))
 
 
 def get_train_sampling(cfg: Any) -> dict[str, Any]:
@@ -414,3 +424,112 @@ def get_vqa_backend(cfg: Any) -> str:
     if backend:
         return str(backend).lower()
     return "baseline"
+
+
+def is_xvars_videochatgpt_backend(cfg: Any) -> bool:
+    return get_vqa_backend(cfg) == "xvars_videochatgpt"
+
+
+def get_vqa_prompt_video_token_len(cfg: Any, default: int = 300) -> int:
+    prompt_cfg = get_vqa_prompt_cfg(cfg)
+    token_len = prompt_cfg.get("video_token_len")
+    if token_len is not None:
+        return int(token_len)
+
+    execution = get_train_execution(cfg)
+    sft_cfg = _as_dict(execution.get("sft"))
+    if sft_cfg.get("video_token_len") is not None:
+        return int(sft_cfg["video_token_len"])
+
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("video_token_len") is not None:
+        return int(xvars_cfg["video_token_len"])
+
+    return int(default)
+
+
+def get_xvars_train_video_token_len(cfg: Any) -> int:
+    token_len = get_vqa_prompt_video_token_len(cfg, default=300)
+    if token_len != 356:
+        return int(token_len)
+    return 300
+
+
+def get_xvars_infer_video_token_len(cfg: Any) -> int:
+    token_len = get_vqa_prompt_video_token_len(cfg, default=300)
+    if token_len == 300:
+        return 356
+    return int(token_len)
+
+
+def get_vqa_decoder_model_id(cfg: Any, default: str = "distilgpt2") -> str:
+    decoder = get_component_by_kind(cfg, "decoder") or {}
+    decoder = _as_dict(decoder)
+    source = _as_dict(decoder.get("source"))
+    params = get_component_params_by_kind(cfg, "decoder")
+    model_id = params.get("repo_id") or source.get("repo_id")
+    if model_id:
+        return str(model_id)
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("base_model"):
+        return str(xvars_cfg["base_model"])
+    hf_cfg = _as_dict(execution.get("hf"))
+    if hf_cfg.get("model_id"):
+        return str(hf_cfg["model_id"])
+    if str(source.get("provider", "")).lower() == "huggingface" and source.get("name"):
+        return str(source["name"])
+    if source.get("name"):
+        return str(source["name"])
+    return str(default)
+
+
+def get_xvars_train_model_id(cfg: Any, default: str = "base_model_videoChatGPT") -> str:
+    model_id = get_vqa_decoder_model_id(cfg, default=default)
+    return str(model_id or default)
+
+
+def get_xvars_train_tokenizer_id(cfg: Any) -> str:
+    return get_xvars_train_model_id(cfg, default="base_model_videoChatGPT")
+
+
+def get_xvars_infer_tokenizer_id(cfg: Any, default: str = "LLaVA-7B-Lightening-v1-1") -> str:
+    execution = get_train_execution(cfg)
+    hf_cfg = _as_dict(execution.get("hf"))
+    tokenizer_id = hf_cfg.get("tokenizer_id")
+    if tokenizer_id:
+        return str(tokenizer_id)
+    return str(default)
+
+
+def get_vqa_feature_source(cfg: Any, default: str = "indexed") -> str:
+    encoder_params = get_component_params_by_kind(cfg, "encoder")
+    feature_source = encoder_params.get("feature_source")
+    if feature_source is not None:
+        return str(feature_source).lower()
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("feature_source") is not None:
+        return str(xvars_cfg["feature_source"]).lower()
+    return str(default).lower()
+
+
+def get_vqa_mm_hidden_size(cfg: Any, default: int = 1024) -> int:
+    projector_params = get_component_params_by_kind(cfg, "projector")
+    hidden_size = projector_params.get("input_dim") or projector_params.get("mm_hidden_size")
+    if hidden_size is not None:
+        return int(hidden_size)
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("mm_hidden_size") is not None:
+        return int(xvars_cfg["mm_hidden_size"])
+    return int(default)
+
+
+def get_model_runtime_dtype(cfg: Any, default: str = "fp32") -> str:
+    runtime = get_model_runtime(cfg)
+    dtype = runtime.get("dtype", default)
+    return str(dtype).lower()

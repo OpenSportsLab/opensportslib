@@ -342,6 +342,12 @@ TRAIN:
 | `valid_map_every` | int | task-dependent | `>=1` | Localization mAP evaluation cadence. |
 | `criterion_valid` | string | `loss` | `loss`, `map` | Validation criterion selector. |
 
+Authoring rule:
+- Keep general hyperparameters in canonical `TRAIN` keys such as `TRAIN.epochs`, `TRAIN.optimizer`, and `TRAIN.scheduler`.
+- Keep model identity and architecture values in `MODEL.components.*` and `MODEL.runtime`.
+- Use `TRAIN.execution` only for runtime/backend-specific controls; do not duplicate learning rate, epoch count, model id, hidden size, or precision here when a canonical owner already exists.
+- Backend adapters may translate canonical values into backend-specific runtime defaults. For the X-VARS VideoChatGPT backend, canonical prompt/video-token authoring can remain single-source while train and infer adapters preserve the original upstream defaults where they differ.
+
 CPU behavior note:
 `TRAIN.execution.multi_gpu` requires CUDA. If effective runtime device is CPU,
 localization runtime automatically forces `multi_gpu=false`.

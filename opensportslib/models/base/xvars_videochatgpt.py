@@ -15,13 +15,22 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from opensportslib.core.config.accessors import get_data_sampling, get_model_load, get_train_execution
+from opensportslib.core.config.accessors import (
+    get_data_sampling,
+    get_xvars_infer_tokenizer_id,
+    get_xvars_infer_video_token_len,
+    get_model_load,
+    get_train_execution,
+    get_vqa_feature_source,
+    get_vqa_mm_hidden_size,
+)
 from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
     _ensure_video_special_tokens,
     hf_offline_if_requested,
     load_peft_adapter_if_available,
 )
+from opensportslib.models.base.video_chatgpt_compat import load_videochatgpt_compatible_causal_lm
 from opensportslib.models.base.vqa import VQABaselineModel
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
 
@@ -128,9 +137,12 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
         start_id = token_ids["<vid_start>"]
         end_id = token_ids["<vid_end>"]
 
+        new_input_embeds = []
         for batch_idx, cur_input_ids in enumerate(input_ids):
+            cur_input_embeds = inputs_embeds[batch_idx]
             patch_positions = (cur_input_ids == patch_id).nonzero(as_tuple=False).flatten()
             if patch_positions.numel() == 0:
+                new_input_embeds.append(cur_input_embeds)
                 continue
             start_positions = (cur_input_ids == start_id).nonzero(as_tuple=False).flatten()
             end_positions = (cur_input_ids == end_id).nonzero(as_tuple=False).flatten()
@@ -141,18 +153,43 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
                     f"Patch-feature mismatch: prompt has {int(patch_positions.numel())} <vid_patch> tokens "
                     f"but features have {int(features.shape[1])} rows."
                 )
-            inputs_embeds[batch_idx, patch_positions, :] = features[batch_idx]
-        return inputs_embeds
+            mask_index_start = patch_positions[0]
+            expected_positions = torch.arange(
+                mask_index_start,
+                mask_index_start + patch_positions.numel(),
+                device=patch_positions.device,
+                dtype=patch_positions.dtype,
+            )
+            if torch.any(patch_positions != expected_positions):
+                raise ValueError("The <vid_patch> tokens should be consecutive for X-VARS prompts.")
+            video_start_pos = start_positions[0]
+            video_end_pos = end_positions[0]
+            if mask_index_start != video_start_pos + 1 or patch_positions[-1] + 1 != video_end_pos:
+                raise ValueError("X-VARS <vid_patch> block must be between <vid_start> and <vid_end>.")
+            new_input_embeds.append(
+                torch.cat(
+                    (
+                        cur_input_embeds[:mask_index_start],
+                        features[batch_idx].to(device=cur_input_embeds.device),
+                        cur_input_embeds[mask_index_start + patch_positions.numel():],
+                    ),
+                    dim=0,
+                )
+            )
+        return torch.stack(new_input_embeds, dim=0)
 
     def forward(
         self,
         input_ids=None,
         attention_mask=None,
         labels=None,
+        inputs_embeds=None,
         video_spatio_temporal_features=None,
         tokenizer=None,
         **kwargs,
     ):
+        del inputs_embeds
+        kwargs.pop("inputs_embeds", None)
         if tokenizer is None:
             tokenizer = kwargs.pop("_xvars_tokenizer", None)
         if tokenizer is None:
@@ -174,6 +211,36 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
             attention_mask=attention_mask,
             **kwargs,
         )
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        **kwargs,
+    ):
+        if past_key_values:
+            input_ids = input_ids[:, -1:]
+
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": kwargs.get("use_cache"),
+                "attention_mask": attention_mask,
+                "video_spatio_temporal_features": kwargs.get("video_spatio_temporal_features", None),
+            }
+        )
+        if "tokenizer" in kwargs:
+            model_inputs["tokenizer"] = kwargs["tokenizer"]
+        if "_xvars_tokenizer" in kwargs:
+            model_inputs["_xvars_tokenizer"] = kwargs["_xvars_tokenizer"]
+        return model_inputs
 
 
 class XVarsRawVideoFeatureExtractor:
@@ -255,9 +322,9 @@ class XVarsVideoChatGPTModel(nn.Module):
         xvars_cfg = _as_dict(exec_cfg.get("xvars"))
         hf_cfg = _as_dict(exec_cfg.get("hf"))
         projector_params = projector_params or {}
-        self.video_token_len = int(xvars_cfg.get("video_token_len", projector_params.get("video_token_len", 356)))
+        self.video_token_len = get_xvars_infer_video_token_len(config)
         self.conv_mode = str(xvars_cfg.get("conv_mode", "video-chatgpt_v1"))
-        self.feature_source = str(xvars_cfg.get("feature_source", "auto")).lower()
+        self.feature_source = get_vqa_feature_source(config, default="auto")
         self.raw_num_frames = resolve_xvars_raw_num_frames(config, xvars_cfg)
         self.raw_extractor = None
 
@@ -265,16 +332,20 @@ class XVarsVideoChatGPTModel(nn.Module):
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
         adapter_path = get_model_load(config).get("checkpoint_path")
         projection_path = xvars_cfg.get("projection_path")
-        mm_hidden_size = int(projector_params.get("input_dim", xvars_cfg.get("mm_hidden_size", 1024)))
+        mm_hidden_size = get_vqa_mm_hidden_size(config, default=1024)
         device = torch.device("cuda" if prefer_cuda and torch.cuda.is_available() else "cpu")
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoTokenizer
 
             with hf_offline_if_requested(local_files_only):
-                self.tokenizer = AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only, use_fast=False)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    get_xvars_infer_tokenizer_id(config),
+                    local_files_only=local_files_only,
+                    use_fast=False,
+                )
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
-                base_lm = AutoModelForCausalLM.from_pretrained(model_id, local_files_only=local_files_only)
+                base_lm = load_videochatgpt_compatible_causal_lm(model_id, local_files_only=local_files_only)
             _ensure_video_special_tokens(self.tokenizer, base_lm)
             self.model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(
                 base_lm,
@@ -330,9 +401,11 @@ class XVarsVideoChatGPTModel(nn.Module):
         if features.ndim != 2:
             raise ValueError(f"Expected X-VARS features [tokens, dim], got {tuple(features.shape)}")
         if int(features.shape[0]) != token_len:
-            raise ValueError(
-                f"X-VARS token mismatch: prompt video_token_len={token_len}, features rows={int(features.shape[0])}."
-            )
+            if int(features.shape[0]) > token_len:
+                features = features[:token_len]
+            else:
+                pad = torch.zeros((token_len - int(features.shape[0]), int(features.shape[1])), dtype=features.dtype)
+                features = torch.cat([features, pad], dim=0)
         return features
 
     def generate_answer(self, sample: dict[str, Any], prompt_cfg=None, generation_cfg=None) -> str:
