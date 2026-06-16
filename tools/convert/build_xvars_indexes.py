@@ -37,11 +37,16 @@ def _norm_severity(raw: str) -> str:
     return ""
 
 
-def _sample_feature_dirs(item: dict[str, Any], split_source_root: Path, split_name: str, dataset_root: Path) -> list[Path]:
+def _sample_feature_dirs(
+    item: dict[str, Any],
+    data_root: Path,
+    features_root: Path,
+    split_name: str,
+) -> list[Path]:
     out: list[Path] = []
     sid = str(item.get("id", "")).strip()
     if sid:
-        out.append(dataset_root / split_name / sid)
+        out.append(features_root / split_name / sid)
     inputs = item.get("inputs") or []
     for inp in inputs:
         if not isinstance(inp, dict):
@@ -51,8 +56,17 @@ def _sample_feature_dirs(item: dict[str, Any], split_source_root: Path, split_na
         rel = str(inp.get("path", "")).strip()
         if not rel:
             continue
-        abs_vid = Path(rel) if Path(rel).is_absolute() else (split_source_root / rel)
-        out.append(abs_vid.parent)
+        rel_path = Path(rel)
+        if rel_path.is_absolute():
+            abs_vid = rel_path
+            try:
+                rel_to_data = abs_vid.parent.relative_to(data_root)
+            except ValueError:
+                out.append(abs_vid.parent)
+            else:
+                out.append(features_root / rel_to_data)
+        else:
+            out.append(features_root / rel_path.parent)
     # dedup, keep order
     uniq: list[Path] = []
     seen = set()
@@ -90,7 +104,12 @@ def _build_prediction_row(item: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build feature_index.json and prediction_index.json for xvars_clip mode.")
-    ap.add_argument("--dataset-root", required=True, help="OSL-XFoul root containing train/valid/test folders and split JSON files.")
+    ap.add_argument("--dataset-root", required=True, help="OSL-XFoul data root containing train/valid/test folders and split JSON files.")
+    ap.add_argument(
+        "--features-root",
+        default=None,
+        help="Optional root where CLIP feature files are stored. Defaults to --dataset-root.",
+    )
     ap.add_argument("--output-dir", required=True, help="Directory to write feature_index.json and prediction_index.json.")
     ap.add_argument(
         "--emit-expected-paths",
@@ -100,6 +119,7 @@ def main() -> None:
     args = ap.parse_args()
 
     dataset_root = Path(args.dataset_root).expanduser().resolve()
+    features_root = Path(args.features_root).expanduser().resolve() if args.features_root else dataset_root
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,13 +129,11 @@ def main() -> None:
     total = 0
 
     for split in ("train", "valid", "test"):
-        ann = dataset_root / f"{split}.json"
+        ann = dataset_root / f"{split}/{split}.json"
         payload = _load_json(ann)
         items = payload.get("data") or []
         if not isinstance(items, list):
             continue
-        split_source_root = dataset_root
-
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -123,7 +141,12 @@ def main() -> None:
             if not sid:
                 continue
             total += 1
-            dirs = _sample_feature_dirs(item, split_source_root=split_source_root, split_name=split, dataset_root=dataset_root)
+            dirs = _sample_feature_dirs(
+                item,
+                data_root=dataset_root,
+                features_root=features_root,
+                split_name=split,
+            )
             candidates = _feature_candidates(dirs)
             existing = [str(p) for p in candidates if p.exists()]
             if existing:

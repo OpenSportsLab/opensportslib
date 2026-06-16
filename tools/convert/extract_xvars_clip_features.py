@@ -90,6 +90,7 @@ def extract_feature_for_video(
 def main() -> None:
     ap = argparse.ArgumentParser(description="Extract PRE_CLIP_feature_clip_{i}.pkl files for OSL-XFoul.")
     ap.add_argument("--dataset-root", required=True, help="Root path containing train/valid/test and split JSON files.")
+    ap.add_argument("--dataset-output-root", required=True, help="Root path to write PRE_CLIP_feature_clip_{i}.pkl files.")
     ap.add_argument("--splits", nargs="+", default=["train", "valid", "test"])
     ap.add_argument("--vision-model", default="openai/clip-vit-large-patch14")
     ap.add_argument("--max-frames", type=int, default=100)
@@ -112,7 +113,7 @@ def main() -> None:
     failed = 0
 
     for split in args.splits:
-        ann_path = dataset_root / f"{split}.json"
+        ann_path = dataset_root / f"{split}" / f"{split}.json"
         payload = json.loads(ann_path.read_text(encoding="utf-8"))
         items = payload.get("data", [])
         for item in items:
@@ -130,13 +131,15 @@ def main() -> None:
                 if not rel:
                     continue
                 p = Path(rel)
-                video_paths.append(p if p.is_absolute() else (dataset_root / rel))
+                video_paths.append(p if p.is_absolute() else (dataset_root /split / rel))
             if not video_paths:
                 continue
 
-            action_dir = dataset_root / split / sid
+            # action_dir = dataset_root / split / sid
+            action_dir = Path(args.dataset_output_root) / split / sid
             action_dir.mkdir(parents=True, exist_ok=True)
             for i, vp in enumerate(sorted(video_paths)[:3], start=1):
+                print(f"Processing split={split} id={sid} video={vp}")
                 out_path = action_dir / f"PRE_CLIP_feature_clip_{i}.pkl"
                 if out_path.exists() and not args.overwrite:
                     skipped += 1
