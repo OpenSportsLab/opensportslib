@@ -149,6 +149,8 @@ TRAIN:
     training_backend: xvars_lora
     feature_backend: xvars_clip
     view_sampling_policy: random_train_deterministic_eval
+    xvars:
+      feature_mode: clip_compat
     prompt:
       style: short
       include_priors: true

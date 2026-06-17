@@ -430,6 +430,57 @@ def is_xvars_videochatgpt_backend(cfg: Any) -> bool:
     return get_vqa_backend(cfg) == "xvars_videochatgpt"
 
 
+def normalize_xvars_feature_mode(mode: Any, default: str = "strict_xvars") -> str:
+    value = str(mode or "").strip().lower()
+    if not value:
+        return str(default)
+    aliases = {
+        "strict": "strict_xvars",
+        "strict_xvars": "strict_xvars",
+        "original": "strict_xvars",
+        "original_xvars": "strict_xvars",
+        "clip": "clip_compat",
+        "clip_compat": "clip_compat",
+        "compat": "clip_compat",
+        "compatibility": "clip_compat",
+    }
+    if value in aliases:
+        return aliases[value]
+    raise ValueError(f"Unsupported X-VARS feature mode '{mode}'. Expected 'strict_xvars' or 'clip_compat'.")
+
+
+def get_xvars_feature_token_len_for_mode(mode: Any) -> int:
+    normalized = normalize_xvars_feature_mode(mode)
+    if normalized == "strict_xvars":
+        return 300
+    if normalized == "clip_compat":
+        return 356
+    raise ValueError(f"Unsupported X-VARS feature mode '{mode}'.")
+
+
+def get_vqa_xvars_feature_mode(cfg: Any, default: str = "strict_xvars") -> str:
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    mode = xvars_cfg.get("feature_mode")
+    if mode:
+        return normalize_xvars_feature_mode(mode, default=default)
+
+    token_len = None
+    try:
+        token_len = get_vqa_prompt_video_token_len(cfg, default=get_xvars_feature_token_len_for_mode(default))
+    except Exception:
+        token_len = None
+    if int(token_len or 0) == 356:
+        return "clip_compat"
+    return normalize_xvars_feature_mode(default, default=default)
+
+
+def has_explicit_xvars_feature_mode(cfg: Any) -> bool:
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    return xvars_cfg.get("feature_mode") is not None
+
+
 def get_vqa_prompt_video_token_len(cfg: Any, default: int = 300) -> int:
     prompt_cfg = get_vqa_prompt_cfg(cfg)
     token_len = prompt_cfg.get("video_token_len")
@@ -444,22 +495,18 @@ def get_vqa_prompt_video_token_len(cfg: Any, default: int = 300) -> int:
     xvars_cfg = _as_dict(execution.get("xvars"))
     if xvars_cfg.get("video_token_len") is not None:
         return int(xvars_cfg["video_token_len"])
+    if xvars_cfg.get("feature_mode") is not None:
+        return get_xvars_feature_token_len_for_mode(xvars_cfg.get("feature_mode"))
 
     return int(default)
 
 
 def get_xvars_train_video_token_len(cfg: Any) -> int:
-    token_len = get_vqa_prompt_video_token_len(cfg, default=300)
-    if token_len != 356:
-        return int(token_len)
-    return 300
+    return get_xvars_feature_token_len_for_mode(get_vqa_xvars_feature_mode(cfg, default="strict_xvars"))
 
 
 def get_xvars_infer_video_token_len(cfg: Any) -> int:
-    token_len = get_vqa_prompt_video_token_len(cfg, default=300)
-    if token_len == 300:
-        return 356
-    return int(token_len)
+    return get_xvars_feature_token_len_for_mode(get_vqa_xvars_feature_mode(cfg, default="strict_xvars"))
 
 
 def get_vqa_decoder_model_id(cfg: Any, default: str = "distilgpt2") -> str:

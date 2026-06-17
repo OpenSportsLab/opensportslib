@@ -116,3 +116,21 @@ class NumericProjector(nn.Module):
         scales = torch.linspace(0.98, 1.02, steps=patch_count, dtype=base.dtype)
         out = torch.stack([base * s for s in scales], dim=0)
         return out
+
+
+def validate_xvars_feature_tensor(
+    features: torch.Tensor,
+    *,
+    expected_tokens: int | None = None,
+    context: str = "X-VARS features",
+) -> torch.Tensor:
+    if not isinstance(features, torch.Tensor):
+        features = torch.as_tensor(features, dtype=torch.float32)
+    if features.ndim != 2:
+        raise ValueError(f"{context} must be a 2D tensor [tokens, dim], got shape {tuple(features.shape)}")
+    if expected_tokens is not None and int(features.shape[0]) != int(expected_tokens):
+        raise ValueError(
+            f"{context} token count mismatch: expected {int(expected_tokens)}, got {int(features.shape[0])}. "
+            "Check that the configured X-VARS feature mode matches the extracted feature files."
+        )
+    return features

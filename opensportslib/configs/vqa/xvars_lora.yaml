@@ -151,6 +151,7 @@ TRAIN:
     log_interval: 1
     dry_run: false
     xvars:
+      feature_mode: strict_xvars
       projection_path: null
       conv_mode: video-chatgpt_v1
     prompt:

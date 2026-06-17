@@ -23,6 +23,7 @@ from opensportslib.core.config.accessors import (
     get_train_execution,
     get_vqa_feature_source,
     get_vqa_mm_hidden_size,
+    get_vqa_xvars_feature_mode,
 )
 from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
@@ -33,6 +34,7 @@ from opensportslib.core.utils.hf_runtime import (
 from opensportslib.models.base.video_chatgpt_compat import load_videochatgpt_compatible_causal_lm
 from opensportslib.models.base.vqa import VQABaselineModel
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
+from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +325,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         hf_cfg = _as_dict(exec_cfg.get("hf"))
         projector_params = projector_params or {}
         self.video_token_len = get_xvars_infer_video_token_len(config)
+        self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
         self.conv_mode = str(xvars_cfg.get("conv_mode", "video-chatgpt_v1"))
         self.feature_source = get_vqa_feature_source(config, default="auto")
         self.raw_num_frames = resolve_xvars_raw_num_frames(config, xvars_cfg)
@@ -391,21 +394,21 @@ class XVarsVideoChatGPTModel(nn.Module):
                 if self.raw_extractor is None:
                     exec_cfg = get_train_execution(self.config)
                     hf_cfg = _as_dict(exec_cfg.get("hf"))
+                    if self.feature_mode == "strict_xvars":
+                        raise ValueError(
+                            "Strict X-VARS mode requires indexed 300-token features extracted with the parity extractor; "
+                            "raw-video fallback is only supported for clip_compat mode."
+                        )
                     self.raw_extractor = XVarsRawVideoFeatureExtractor(prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)))
                 features = self.raw_extractor.extract(video_path, num_frames=self.raw_num_frames)
         if features is None:
             raise ValueError("Missing X-VARS video features and raw-video extraction was not available.")
-        if not isinstance(features, torch.Tensor):
-            features = torch.as_tensor(features, dtype=torch.float32)
         token_len = int((prompt_cfg or {}).get("video_token_len", self.video_token_len))
-        if features.ndim != 2:
-            raise ValueError(f"Expected X-VARS features [tokens, dim], got {tuple(features.shape)}")
-        if int(features.shape[0]) != token_len:
-            if int(features.shape[0]) > token_len:
-                features = features[:token_len]
-            else:
-                pad = torch.zeros((token_len - int(features.shape[0]), int(features.shape[1])), dtype=features.dtype)
-                features = torch.cat([features, pad], dim=0)
+        features = validate_xvars_feature_tensor(
+            features,
+            expected_tokens=token_len,
+            context="X-VARS video_spatio_temporal_features",
+        )
         return features
 
     def generate_answer(self, sample: dict[str, Any], prompt_cfg=None, generation_cfg=None) -> str:

@@ -143,7 +143,7 @@ def _cfg(tmp_path, *, dry_run=True):
                 "log_interval": 1,
                 "prompt": {"include_priors": True, "video_token_len": 3},
                 "sft": {"include_video_tokens": True, "max_seq_length": 64},
-                "xvars": {"projection_path": None},
+                "xvars": {"projection_path": None, "feature_mode": "strict_xvars"},
                 "hf": {"local_files_only": True, "prefer_cuda": False},
                 "lora": {},
                 "quantization": {"enabled": False},
@@ -385,7 +385,7 @@ def test_xvars_dataset_and_model_prefer_canonical_vqa_fields(tmp_path):
     assert tuple(model._features_for_sample({"video_spatio_temporal_features": features}, {"video_token_len": 5}).shape) == (5, 7)
 
 
-def test_xvars_model_init_uses_original_inference_defaults(monkeypatch, tmp_path):
+def test_xvars_model_init_uses_explicit_feature_mode_token_len(monkeypatch, tmp_path):
     from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
 
     captured = {}
@@ -442,7 +442,55 @@ def test_xvars_model_init_uses_original_inference_defaults(monkeypatch, tmp_path
     assert captured["model"] == "base_model_videoChatGPT"
     assert captured["tokenizer"] == "LLaVA-7B-Lightening-v1-1"
     assert captured["mm_hidden_size"] == 1024
-    assert model.video_token_len == 356
+    assert model.video_token_len == 300
+
+
+def test_xvars_dataset_rejects_feature_mode_shape_mismatch(tmp_path):
+    from opensportslib.datasets.vqa_dataset import VQADataset
+
+    annotation_path = tmp_path / "train.json"
+    annotation_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "action_0",
+                        "inputs": [{"type": "video", "path": "clip.mp4"}],
+                        "answers": [{"question": "What card?", "answers": ["Yellow"]}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    feature_dir = tmp_path / "features" / "action_0"
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    bad_features = torch.ones((356, 1024), dtype=torch.float32).numpy()
+    with (feature_dir / "PRE_CLIP_feature_clip_1.pkl").open("wb") as f:
+        import pickle
+
+        pickle.dump(bad_features, f)
+    feature_index = tmp_path / "feature_index.json"
+    feature_index.write_text(json.dumps([{"id": "action_0", "feature_dir": str(feature_dir)}]), encoding="utf-8")
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.DATA = SimpleNamespace(
+        common=SimpleNamespace(
+            feature_index=str(feature_index),
+            prediction_index="",
+            splits=SimpleNamespace(
+                train=SimpleNamespace(
+                    annotation_path=str(annotation_path),
+                    source_path=str(tmp_path),
+                    dataloader=SimpleNamespace(batch_size=1),
+                )
+            ),
+        )
+    )
+
+    dataset = VQADataset(cfg, split="train")
+    with pytest.raises(ValueError, match="token count mismatch"):
+        dataset[0]
 
 
 def test_videochatgpt_loader_raises_clear_xvars_error(monkeypatch, tmp_path):

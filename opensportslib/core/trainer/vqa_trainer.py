@@ -44,6 +44,7 @@ from opensportslib.models.base.xvars_videochatgpt import (
     XVarsVideoChatGPTCausalLM,
 )
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
+from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
@@ -526,17 +527,11 @@ class VQAXVarsVideoChatGPTSFTDataset:
             features = sample.get("video_spatio_temporal_features")
             if features is None:
                 continue
-            features = torch.as_tensor(features, dtype=torch.float32)
-            if features.ndim != 2:
-                continue
-            if features.shape[0] != token_len:
-                # X-VARS requires one feature row per <vid_patch>. Crop/pad keeps
-                # legacy indexes usable while preserving the model contract.
-                if features.shape[0] > token_len:
-                    features = features[:token_len]
-                else:
-                    pad = torch.zeros((token_len - features.shape[0], features.shape[1]), dtype=features.dtype)
-                    features = torch.cat([features, pad], dim=0)
+            features = validate_xvars_feature_tensor(
+                torch.as_tensor(features, dtype=torch.float32),
+                expected_tokens=token_len,
+                context=f"X-VARS training features for sample '{sample.get('id', 'unknown')}'",
+            )
             row = build_vqa_sft_text(
                 sample,
                 config=config,

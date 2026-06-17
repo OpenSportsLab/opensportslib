@@ -17,6 +17,20 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _resolve_split_annotation_path(dataset_root: Path, split: str) -> Path:
+    candidates = [
+        dataset_root / split / f"{split}.json",
+        dataset_root / f"{split}.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not find annotation JSON for split '{split}'. Tried: "
+        + ", ".join(str(path) for path in candidates)
+    )
+
+
 def _norm_offence(raw: str) -> str:
     x = raw.strip().lower()
     if "no offence" in x or "no offense" in x:
@@ -66,7 +80,16 @@ def _sample_feature_dirs(
             else:
                 out.append(features_root / rel_to_data)
         else:
-            out.append(features_root / rel_path.parent)
+            candidates = [
+                features_root / rel_path.parent,
+                features_root / split_name / rel_path.parent,
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    out.append(candidate)
+                    break
+            else:
+                out.append(candidates[0])
     # dedup, keep order
     uniq: list[Path] = []
     seen = set()
@@ -129,7 +152,7 @@ def main() -> None:
     total = 0
 
     for split in ("train", "valid", "test"):
-        ann = dataset_root / f"{split}/{split}.json"
+        ann = _resolve_split_annotation_path(dataset_root, split)
         payload = _load_json(ann)
         items = payload.get("data") or []
         if not isinstance(items, list):

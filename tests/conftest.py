@@ -445,6 +445,7 @@ def make_vqa_config(tmp_path: Path) -> str:
                 "log_interval": 1,
                 "dry_run": True,
                 "prompt": {"style": "short", "video_token_len": 8},
+                "xvars": {"feature_mode": "clip_compat"},
                 "generation": {"fallback_policy": "baseline_on_failure"},
                 "hf": {"local_files_only": True, "prefer_cuda": False},
                 "lora": {"target_modules": ["q_proj", "v_proj"]},

@@ -245,3 +245,40 @@ def test_hf_backend_empty_generation_falls_back(monkeypatch):
         generation_cfg={"fallback_policy": "baseline_on_failure"},
     )
     assert isinstance(out, str) and out
+
+
+def test_hf_backend_rejects_shape_mismatch_when_feature_mode_is_explicit(monkeypatch):
+    import opensportslib.models.base.vqa as mm
+
+    class DummyDecoder:
+        def __init__(self, *args, **kwargs):
+            self._ready = True
+            self._error = None
+
+        @property
+        def is_ready(self):
+            return self._ready
+
+        @property
+        def error(self):
+            return self._error
+
+        @property
+        def hidden_size(self):
+            return 16
+
+        def generate(self, prompt, generation_cfg=None, video_features=None):
+            del prompt, generation_cfg, video_features
+            return "ok"
+
+    monkeypatch.setattr(mm, "HFCausalDecoderRuntime", DummyDecoder)
+    cfg = _cfg()
+    cfg.TRAIN.execution = SimpleNamespace(
+        hf=SimpleNamespace(local_files_only=True, prefer_cuda=False),
+        xvars=SimpleNamespace(feature_mode="strict_xvars"),
+    )
+    model = mm.MultimodalHFVQAModel(cfg, model_id="distilgpt2", projector_params={"input_dim": 270, "output_dim": 8})
+    sample = {"question": "What card?", "labels": {}, "metadata": {}, "video_spatio_temporal_features": torch.ones((356, 1024))}
+
+    with pytest.raises(ValueError, match="token count mismatch"):
+        model.generate_answer(sample, prompt_cfg={"video_token_len": 300}, generation_cfg={})

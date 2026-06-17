@@ -15,12 +15,15 @@ from opensportslib.core.config.accessors import (
     get_split_annotation_path,
     get_split_source_path,
     get_vqa_feature_source,
+    get_vqa_xvars_feature_mode,
+    get_xvars_train_video_token_len,
 )
 from opensportslib.models.utils.xvars_clip_index import (
     build_xvars_prior_from_prediction,
     load_feature_index,
     load_prediction_index,
 )
+from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
 
 
 class VQADataset(Dataset):
@@ -56,6 +59,8 @@ class VQADataset(Dataset):
         if require_feature_index and not feature_index_path:
             raise ValueError("Missing required config key DATA.common.feature_index for VQA xvars_clip mode.")
         self.feature_source = feature_source
+        self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
+        self.expected_feature_tokens = get_xvars_train_video_token_len(config)
         self.feature_index = (
             load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)))
             if feature_index_path
@@ -127,7 +132,11 @@ class VQADataset(Dataset):
             )
         with open(feature_path, "rb") as f:
             raw = pickle.load(f)
-        features = torch.as_tensor(raw, dtype=torch.float32)
+        features = validate_xvars_feature_tensor(
+            torch.as_tensor(raw, dtype=torch.float32),
+            expected_tokens=self.expected_feature_tokens,
+            context=f"X-VARS features for sample '{sample.get('id')}'",
+        )
         sample["selected_feature_path"] = feature_path
         sample["video_spatio_temporal_features"] = features
         return sample

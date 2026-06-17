@@ -4,6 +4,12 @@ import pytest
 import yaml
 
 from opensportslib.core.config import load_config, migrate_config, validate_config
+from opensportslib.core.config.accessors import (
+    get_vqa_xvars_feature_mode,
+    get_xvars_feature_token_len_for_mode,
+    get_xvars_infer_video_token_len,
+    get_xvars_train_video_token_len,
+)
 from opensportslib.core.config.conflicts import assert_no_legacy_aliases
 from opensportslib.models.builder import build_model_from_config
 
@@ -78,6 +84,7 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert cfg["TRAIN"]["execution"]["acc_grad_iter"] == 16
     assert cfg["TRAIN"]["execution"]["log_interval"] == 1
     assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
+    assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
     assert cfg["TRAIN"]["execution"]["sft"]["max_seq_length"] == 512
     assert cfg["TRAIN"]["execution"]["sft"]["gradient_checkpointing"] is True
     assert cfg["TRAIN"]["execution"]["sft"]["save_strategy"] == "epoch"
@@ -110,6 +117,16 @@ def test_vqa_xvars_config_uses_canonical_topology():
 
 def test_builder_exposes_version_neutral_dispatcher():
     assert callable(build_model_from_config)
+
+
+def test_xvars_feature_mode_helpers_are_explicit():
+    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml")
+
+    assert get_vqa_xvars_feature_mode(cfg) == "strict_xvars"
+    assert get_xvars_feature_token_len_for_mode("strict_xvars") == 300
+    assert get_xvars_feature_token_len_for_mode("clip_compat") == 356
+    assert get_xvars_train_video_token_len(cfg) == 300
+    assert get_xvars_infer_video_token_len(cfg) == 300
 
 
 def test_legacy_dali_migrates_to_canonical_loader_backend():

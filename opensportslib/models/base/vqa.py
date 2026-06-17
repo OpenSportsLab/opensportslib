@@ -8,10 +8,14 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from opensportslib.core.config.accessors import get_model_load
+from opensportslib.core.config.accessors import (
+    get_model_load,
+    get_xvars_train_video_token_len,
+    has_explicit_xvars_feature_mode,
+)
 from opensportslib.core.utils.hf_runtime import HFCausalDecoderRuntime
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
-from opensportslib.models.utils.vqa_xvars_features import NumericProjector
+from opensportslib.models.utils.vqa_xvars_features import NumericProjector, validate_xvars_feature_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,8 @@ class MultimodalHFVQAModel(nn.Module):
         in_dim = int(projector_params.get("input_dim", 1024))
         out_dim = int(projector_params.get("output_dim", 1024))
         self.projector = NumericProjector(in_dim=in_dim, out_dim=out_dim)
+        self.expected_feature_tokens = get_xvars_train_video_token_len(config)
+        self.enforce_feature_tokens = has_explicit_xvars_feature_mode(config)
 
         exec_cfg_ns = getattr(getattr(config, "TRAIN", None), "execution", None)
         if exec_cfg_ns is None:
@@ -160,10 +166,13 @@ class MultimodalHFVQAModel(nn.Module):
             clip_features = torch.as_tensor(clip_features, dtype=torch.float32)
         if clip_features.ndim == 1:
             clip_features = clip_features.unsqueeze(0)
-        if clip_features.ndim != 2:
-            raise ValueError(f"Expected 2D CLIP feature tensor [tokens, dim], got shape {tuple(clip_features.shape)}")
+        clip_features = validate_xvars_feature_tensor(
+            clip_features,
+            expected_tokens=self.expected_feature_tokens if self.enforce_feature_tokens else None,
+            context="HF VQA video_spatio_temporal_features",
+        )
         video_vec = clip_features.mean(dim=0).to(torch.float32)
-        token_len = int((prompt_cfg or {}).get("video_token_len", 300))
+        token_len = int((prompt_cfg or {}).get("video_token_len", self.expected_feature_tokens))
         hidden_size = int(getattr(self.decoder, "hidden_size", 0) or 0)
         projected_features = None
         if token_len > 0 and hidden_size > 0:
