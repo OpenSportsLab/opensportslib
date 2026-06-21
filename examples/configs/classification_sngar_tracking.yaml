@@ -48,7 +48,7 @@ DATA:
           num_workers: 8
           pin_memory: true
   inputs:
-    tracking:
+    video:
       modality: tracking_parquet
       representation: raw
       source:
@@ -88,7 +88,7 @@ MODEL:
     map_location: null
     format: auto
   components:
-    tracking_encoder:
+    video_encoder:
       kind: encoder
       source:
         provider: opensportslib
@@ -102,8 +102,7 @@ MODEL:
         edge_type: positional
         k: 8
         radius: 15.0
-      overrides: {}
-    tracking_adapter:
+    video_adapter:
       kind: adapter
       source:
         provider: opensportslib
@@ -127,14 +126,14 @@ MODEL:
         num_classes: 10
       overrides: {}
   topology:
-    - from: tracking_encoder
-      to: tracking_adapter
-    - from: tracking_adapter
+    - from: video_encoder
+      to: video_adapter
+    - from: video_adapter
       to: task_head
 
 IO:
   inputs:
-    tracking: tracking_encoder
+    video: video_encoder
     label: task_head
   outputs:
     logits: task_head

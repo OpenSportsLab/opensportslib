@@ -8,7 +8,7 @@ def main():
     """
 
     my_model = LocalizationModel(
-        config="examples/configs/localization.yaml",
+        config="examples/configs/localization_video_dali.yaml",
         weights=None,  # optional: path or Hugging Face model ID
     )
 

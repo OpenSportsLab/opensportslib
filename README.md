@@ -222,7 +222,7 @@ print(metrics)
 from opensportslib.apis import LocalizationModel
 
 my_model = LocalizationModel(
-    config="/path/to/localization.yaml",
+    config="/path/to/localization_video_dali.yaml",
     weights=None,  # optional: path or Hugging Face model ID
 )
 

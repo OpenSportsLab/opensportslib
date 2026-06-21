@@ -1,24 +1,11 @@
-TASK: classification
-VERSION: 2
-
 SYSTEM:
   paths:
-    log_dir: ./logs
     save_dir: ./checkpoints_video
-  device: cuda
-  gpu:
-    count: 4
-    id: 0
-  reproducibility:
-    use_seed: true
-    seed: 42
 
 DATA:
   common:
     dataset_name: sngar
     data_root: /home/vorajv/dataset/sngar-frames
-    runtime:
-      loader_backend: opencv
     splits:
       train:
         annotation_path: ${DATA.common.data_root}/train.json
@@ -69,20 +56,8 @@ DATA:
           training_matches: 45
 
 MODEL:
-  runtime:
-    dtype: fp32
-    device: auto
-    compile: false
-    freeze: false
-  load:
-    checkpoint_path: null
-    pretrained: false
-    strict: true
-    map_location: null
-    format: auto
   components:
     video_encoder:
-      kind: encoder
       source:
         provider: opensportslib
         registry: backbone
@@ -97,7 +72,6 @@ MODEL:
       overrides:
         unfreeze_last_n_layers: 0
     video_adapter:
-      kind: adapter
       source:
         provider: opensportslib
         registry: neck
@@ -108,9 +82,7 @@ MODEL:
         dropout: 0.1
         lstm_dropout: 0.3
         num_attention_heads: 8
-      overrides: {}
     task_head:
-      kind: head
       source:
         provider: opensportslib
         registry: head
@@ -119,26 +91,9 @@ MODEL:
         hidden_dim: 64
         num_classes: 10
         dropout: 0.1
-      overrides: {}
-  topology:
-    - from: video_encoder
-      to: video_adapter
-    - from: video_adapter
-      to: task_head
-
-IO:
-  inputs:
-    pixel_values: video_encoder
-    label: task_head
-  outputs:
-    logits: task_head
 
 TRAIN:
-  trainer:
-    type: classification
   epochs: 100
-  criterion:
-    type: CrossEntropyLoss
   optimizer:
     type: AdamW
     lr: 0.00005
@@ -153,19 +108,14 @@ TRAIN:
     factor: 0.1
     min_lr: 1e-8
   execution:
-    enabled: true
     use_amp: true
     mixup_alpha: 0.2
-    log_interval: 10
     detailed_results: true
   sampling:
     use_weighted_sampler: true
-    use_weighted_loss: false
     samples_per_class: 4000
   selection:
     monitor: loss
-    mode: min
     patience: 5
   checkpoint:
     save_every: 5
-    save_best: true

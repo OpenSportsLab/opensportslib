@@ -96,10 +96,10 @@ Data ingestion and preprocessing logic for various soccer-related tasks.
 ### `config/`
 Templates and configuration files defining task parameters.
 
-- **`classification.yaml`**  
+- **`classification/default.yaml`**  
   Configuration template for foul classification tasks.
 
-- **`localization.yaml`**  
+- **`localization/default.yaml`**  
   Configuration template for action spotting tasks.
 
 - **`graph_tracking_classification/`**  

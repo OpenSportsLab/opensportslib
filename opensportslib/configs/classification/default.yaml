@@ -2,23 +2,13 @@ TASK: classification
 VERSION: 2
 
 SYSTEM:
-  paths:
-    log_dir: ./logs
-    save_dir: ./checkpoints
-  device: cuda
   gpu:
-    count: 1
-    id: 0
-  reproducibility:
-    use_seed: true
-    seed: 42
+    count: 4
 
 DATA:
   common:
     dataset_name: dataset_name
     data_root: /path/to/data
-    runtime:
-      loader_backend: opencv
     splits:
       train:
         annotation_path: /path/to/train.json
@@ -61,23 +51,20 @@ DATA:
         color_mode: rgb
 
 MODEL:
-  runtime:
-    dtype: fp32
-    device: auto
-    compile: false
-    freeze: false
-  load:
-    checkpoint_path: null
-    pretrained: false
-    strict: true
-    map_location: null
-    format: auto
   components:
     video_encoder:
       kind: encoder
       source:
         provider: opensportslib
         registry: backbone
+        name: null
+      params: {}
+      overrides: {}
+    video_adapter:
+      kind: adapter
+      source:
+        provider: opensportslib
+        registry: neck
         name: null
       params: {}
       overrides: {}
@@ -91,6 +78,8 @@ MODEL:
       overrides: {}
   topology:
     - from: video_encoder
+      to: video_adapter
+    - from: video_adapter
       to: task_head
 
 IO:

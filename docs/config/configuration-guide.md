@@ -9,6 +9,7 @@ See also:
 ## Canonical Config Examples
 
 Use production-ready canonical templates from:
+- [opensportslib/configs/default.yaml](../../opensportslib/configs/default.yaml)
 - [opensportslib/configs/](../../opensportslib/configs/)
 - [opensportslib/configs/classification/](../../opensportslib/configs/classification/)
 - [opensportslib/configs/localization/](../../opensportslib/configs/localization/)

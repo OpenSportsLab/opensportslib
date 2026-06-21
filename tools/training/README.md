@@ -42,7 +42,7 @@ python tools/training/classification.py \
 
 ```bash
 python tools/training/localization.py \
-    --config examples/configs/localization.yaml
+    --config examples/configs/localization_video_dali.yaml
 ```
 
 ## Example Configs
@@ -51,8 +51,8 @@ Ready-to-use YAML configs are in `examples/configs/`:
 
 ```
 examples/configs/classification_video.yaml
-examples/configs/classification_tracking.yaml
-examples/configs/localization.yaml
+examples/configs/classification_sngar_tracking.yaml
+examples/configs/localization_video_dali.yaml
 ```
 
 ## Running on Ibex (SLURM)

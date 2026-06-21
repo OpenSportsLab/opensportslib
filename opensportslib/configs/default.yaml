@@ -1,0 +1,30 @@
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints
+  device: cuda
+  gpu:
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    runtime:
+      loader_backend: opencv
+
+MODEL:
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+
+IO: {}
