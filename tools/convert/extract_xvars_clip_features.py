@@ -139,10 +139,8 @@ def normalize_strict_xvars_state_dict(raw_state_dict: dict[str, torch.Tensor]) -
         new_key = str(key)
         if new_key.startswith("module."):
             new_key = new_key[len("module.") :]
-        if new_key.startswith("vision_tower.vision_model."):
-            new_key = "vision_tower." + new_key[len("vision_tower.vision_model.") :]
         if new_key.startswith("vision_model."):
-            new_key = "vision_tower." + new_key[len("vision_model.") :]
+            new_key = "vision_tower.vision_model." + new_key[len("vision_model.") :]
         if new_key.startswith("text_model.") or new_key in {"visual_projection.weight", "text_projection.weight", "logit_scale"}:
             continue
         normalized[new_key] = value

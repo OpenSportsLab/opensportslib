@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 
 import numpy as np
+import torch
 
 
 def _load_module():
@@ -41,6 +42,39 @@ def test_dual_mode_extractors_return_expected_shapes():
 
     assert strict.shape == (300, 1024)
     assert compat.shape == (356, 1024)
+
+
+def test_strict_xvars_normalization_preserves_upstream_vision_tower_keys():
+    module = _load_module()
+    weight = torch.zeros(1024)
+
+    normalized = module.normalize_strict_xvars_state_dict(
+        {"vision_tower.vision_model.embeddings.class_embedding": weight}
+    )
+
+    assert normalized == {"vision_tower.vision_model.embeddings.class_embedding": weight}
+
+
+def test_strict_xvars_normalization_unwraps_module_prefix():
+    module = _load_module()
+    weight = torch.zeros(1024)
+
+    normalized = module.normalize_strict_xvars_state_dict(
+        {"module.vision_tower.vision_model.embeddings.class_embedding": weight}
+    )
+
+    assert normalized == {"vision_tower.vision_model.embeddings.class_embedding": weight}
+
+
+def test_strict_xvars_normalization_maps_bare_vision_model_keys():
+    module = _load_module()
+    weight = torch.zeros(1024)
+
+    normalized = module.normalize_strict_xvars_state_dict(
+        {"vision_model.embeddings.class_embedding": weight}
+    )
+
+    assert normalized == {"vision_tower.vision_model.embeddings.class_embedding": weight}
 
 
 def test_strict_window_crop_uses_original_bounds():
