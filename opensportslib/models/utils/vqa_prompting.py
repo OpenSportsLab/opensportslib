@@ -35,12 +35,21 @@ def build_xvars_prompt(
     prior_text: str = "",
     video_token_len: int = 300,
 ) -> str:
-    """Build a shared X-VARS-style prompt contract for train/infer."""
+    """Build a shared X-VARS/Video-ChatGPT-style prompt contract."""
     video_token_len = max(int(video_token_len), 0)
-    parts = [str(system_prompt).strip(), f"USER: {str(question).strip()}"]
-    if str(prior_text).strip():
-        parts.append(f"The prediction for this video is {str(prior_text).strip()}.")
+    question_text = str(question).strip()
+    prior_text = str(prior_text).strip()
+
+    user_turn = f"USER: {question_text}"
+    if prior_text:
+        user_turn = f"{user_turn} The prediction for this video is {prior_text}."
     if video_token_len > 0:
-        parts.append("<vid_start>" + ("<vid_patch>" * video_token_len) + "<vid_end>")
-    parts.append("ASSISTANT:")
-    return "\n".join(parts)
+        user_turn = f"{user_turn}\n<vid_start>{'<vid_patch>' * video_token_len}<vid_end>"
+
+    return "\n".join(
+        [
+            str(system_prompt).strip(),
+            user_turn,
+            "ASSISTANT:",
+        ]
+    )

@@ -9,6 +9,7 @@ embedding space at those token positions.
 from __future__ import annotations
 
 import logging
+import json
 import os
 from typing import Any
 
@@ -28,6 +29,7 @@ from opensportslib.core.config.accessors import (
 from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
     _ensure_video_special_tokens,
+    build_bitsandbytes_config,
     hf_offline_if_requested,
     load_peft_adapter_if_available,
 )
@@ -60,6 +62,74 @@ def resolve_xvars_raw_num_frames(config, xvars_cfg: dict[str, Any] | None = None
     return int(video_sampling.get("num_frames", xvars_cfg.get("raw_num_frames", 100)))
 
 
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _get_embedded_mm_projector(base_lm) -> nn.Module | None:
+    """Return a projector already stored in a loaded Video-ChatGPT model, if any."""
+
+    candidates = [base_lm]
+    get_model = getattr(base_lm, "get_model", None)
+    if callable(get_model):
+        try:
+            candidates.append(get_model())
+        except Exception:
+            pass
+    nested_model = getattr(base_lm, "model", None)
+    if nested_model is not None:
+        candidates.append(nested_model)
+
+    for candidate in candidates:
+        projector = getattr(candidate, "mm_projector", None)
+        if isinstance(projector, nn.Module):
+            return projector
+    return None
+
+
+def _load_raw_mm_projector_state(base_lm) -> dict[str, torch.Tensor] | None:
+    """Load unquantized projector tensors from a local sharded safetensors checkpoint."""
+
+    config = getattr(base_lm, "config", None)
+    checkpoint_dir = os.path.expanduser(str(getattr(config, "_name_or_path", "") or ""))
+    if not checkpoint_dir or not os.path.isdir(checkpoint_dir):
+        return None
+
+    index_path = os.path.join(checkpoint_dir, "model.safetensors.index.json")
+    tensor_to_file: dict[str, str] = {}
+    if os.path.isfile(index_path):
+        with open(index_path, encoding="utf-8") as f:
+            tensor_to_file = dict(json.load(f).get("weight_map", {}))
+    else:
+        single_file = os.path.join(checkpoint_dir, "model.safetensors")
+        if os.path.isfile(single_file):
+            tensor_to_file = {
+                "model.mm_projector.weight": "model.safetensors",
+                "model.mm_projector.bias": "model.safetensors",
+            }
+
+    source_keys = ("model.mm_projector.weight", "model.mm_projector.bias")
+    if not all(key in tensor_to_file for key in source_keys):
+        return None
+
+    try:
+        from safetensors import safe_open
+    except ImportError:
+        return None
+
+    state = {}
+    for source_key in source_keys:
+        shard_path = os.path.join(checkpoint_dir, tensor_to_file[source_key])
+        with safe_open(shard_path, framework="pt", device="cpu") as shard:
+            state[source_key.rsplit(".", 1)[-1]] = shard.get_tensor(source_key)
+    return state
+
+
 class XVarsVideoChatGPTCausalLM(nn.Module):
     """Causal LM wrapper with X-VARS-compatible visual feature injection."""
 
@@ -88,6 +158,30 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
     def resize_token_embeddings(self, size: int):
         return self.base_lm.resize_token_embeddings(size)
 
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        enable = getattr(self.base_lm, "gradient_checkpointing_enable", None)
+        if not callable(enable):
+            raise AttributeError("The wrapped VideoChatGPT decoder does not support gradient checkpointing.")
+        return enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+
+    def gradient_checkpointing_disable(self):
+        disable = getattr(self.base_lm, "gradient_checkpointing_disable", None)
+        if not callable(disable):
+            raise AttributeError("The wrapped VideoChatGPT decoder does not support gradient checkpointing.")
+        return disable()
+
+    def enable_input_require_grads(self):
+        enable = getattr(self.base_lm, "enable_input_require_grads", None)
+        if callable(enable):
+            return enable()
+        return None
+
+    def disable_input_require_grads(self):
+        disable = getattr(self.base_lm, "disable_input_require_grads", None)
+        if callable(disable):
+            return disable()
+        return None
+
     def save_pretrained(self, output_dir: str):
         os.makedirs(output_dir, exist_ok=True)
         self.base_lm.save_pretrained(output_dir)
@@ -103,6 +197,38 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
     @classmethod
     def from_pretrained_projector(cls, base_lm, projector_path: str | None = None, *, mm_hidden_size: int = 1024):
         model = cls(base_lm, mm_hidden_size=mm_hidden_size)
+        embedded_projector = _get_embedded_mm_projector(base_lm)
+        initialized = False
+        if embedded_projector is not None:
+            embedded_state = embedded_projector.state_dict()
+            wrapper_state = model.mm_projector.state_dict()
+            compatible = (
+                set(embedded_state.keys()) == set(wrapper_state.keys())
+                and all(tuple(embedded_state[k].shape) == tuple(wrapper_state[k].shape) for k in wrapper_state)
+            )
+            if compatible:
+                model.mm_projector.load_state_dict(
+                    {k: v.detach().cpu() for k, v in embedded_state.items()},
+                    strict=True,
+                )
+                initialized = True
+                logger.info("Initialized X-VARS mm_projector from loaded VideoChatGPT weights.")
+        if embedded_projector is not None and not initialized:
+            raw_state = _load_raw_mm_projector_state(base_lm)
+            wrapper_state = model.mm_projector.state_dict()
+            compatible = raw_state is not None and all(
+                key in raw_state and tuple(raw_state[key].shape) == tuple(wrapper_state[key].shape)
+                for key in wrapper_state
+            )
+            if compatible:
+                model.mm_projector.load_state_dict(raw_state, strict=True)
+                initialized = True
+                logger.info("Initialized X-VARS mm_projector from unquantized checkpoint tensors.")
+        if embedded_projector is not None and not initialized:
+            logger.warning(
+                "Loaded VideoChatGPT mm_projector does not match the wrapper and raw checkpoint tensors "
+                "were unavailable; leaving the wrapper projector initialized unless projection_path is provided."
+            )
         if projector_path:
             state = torch.load(os.path.expanduser(projector_path), map_location="cpu")
             if isinstance(state, dict) and "mm_projector" in state:
@@ -133,7 +259,10 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
 
         input_ids = input_ids.to(self.device)
         inputs_embeds = self.get_input_embeddings()(input_ids)
-        features = self.mm_projector(video_spatio_temporal_features.to(self.device, dtype=inputs_embeds.dtype))
+        projector_param = next(self.mm_projector.parameters())
+        features = self.mm_projector(
+            video_spatio_temporal_features.to(projector_param.device, dtype=projector_param.dtype)
+        ).to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
         token_ids = self._video_token_ids(tokenizer)
         patch_id = token_ids["<vid_patch>"]
         start_id = token_ids["<vid_start>"]
@@ -208,7 +337,7 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
     def generate(self, input_ids, *, tokenizer, video_spatio_temporal_features=None, attention_mask=None, **kwargs):
         inputs_embeds = self._prepare_inputs_embeds(input_ids, video_spatio_temporal_features, tokenizer)
         return self.base_lm.generate(
-            input_ids=None,
+            input_ids=input_ids.to(self.device),
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
             **kwargs,
@@ -323,6 +452,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         exec_cfg = get_train_execution(config)
         xvars_cfg = _as_dict(exec_cfg.get("xvars"))
         hf_cfg = _as_dict(exec_cfg.get("hf"))
+        quant_cfg = _as_dict(exec_cfg.get("quantization"))
         projector_params = projector_params or {}
         self.video_token_len = get_xvars_infer_video_token_len(config)
         self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
@@ -333,12 +463,24 @@ class XVarsVideoChatGPTModel(nn.Module):
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        cuda_device_index = _optional_int(hf_cfg.get("cuda_device_index"))
         adapter_path = get_model_load(config).get("checkpoint_path")
         projection_path = xvars_cfg.get("projection_path")
         mm_hidden_size = get_vqa_mm_hidden_size(config, default=1024)
-        device = torch.device("cuda" if prefer_cuda and torch.cuda.is_available() else "cpu")
+        use_cuda = prefer_cuda and torch.cuda.is_available()
+        if use_cuda and cuda_device_index is not None:
+            torch.cuda.set_device(cuda_device_index)
+        device = torch.device(
+            f"cuda:{cuda_device_index}" if use_cuda and cuda_device_index is not None else ("cuda" if use_cuda else "cpu")
+        )
         try:
             from transformers import AutoTokenizer
+
+            bnb_config = build_bitsandbytes_config(quant_cfg)
+            model_kwargs = {"local_files_only": local_files_only}
+            if bnb_config is not None:
+                model_kwargs["quantization_config"] = bnb_config
+                model_kwargs["device_map"] = {"": torch.cuda.current_device()} if use_cuda else None
 
             with hf_offline_if_requested(local_files_only):
                 self.tokenizer = AutoTokenizer.from_pretrained(
@@ -348,16 +490,20 @@ class XVarsVideoChatGPTModel(nn.Module):
                 )
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
-                base_lm = load_videochatgpt_compatible_causal_lm(model_id, local_files_only=local_files_only)
+                base_lm = load_videochatgpt_compatible_causal_lm(model_id, **model_kwargs)
             _ensure_video_special_tokens(self.tokenizer, base_lm)
             self.model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(
                 base_lm,
                 projection_path,
                 mm_hidden_size=mm_hidden_size,
             )
+            if bnb_config is not None and hasattr(self.model, "mm_projector"):
+                self.model.mm_projector = self.model.mm_projector.to(device)
             if adapter_path:
                 self.model, _status = load_peft_adapter_if_available(self.model, adapter_path)
-            self.model = self.model.to(device).eval()
+            if bnb_config is None:
+                self.model = self.model.to(device)
+            self.model = self.model.eval()
             self._ready = True
         except Exception as exc:
             self._error = str(exc)
@@ -444,7 +590,11 @@ class XVarsVideoChatGPTModel(nn.Module):
                 decoded = self.tokenizer.batch_decode(output_ids[:, input_ids.shape[-1]:], skip_special_tokens=True)[0]
             else:
                 decoded = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-            return decoded.strip()
+            decoded = decoded.strip()
+            for stop_str in ("</s>",):
+                if decoded.endswith(stop_str):
+                    decoded = decoded[: -len(stop_str)].strip()
+            return decoded
         except Exception:
             if fallback_policy == "baseline_on_failure":
                 return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
@@ -467,4 +617,5 @@ __all__ = [
     "XVarsRawVideoFeatureExtractor",
     "XVarsVideoChatGPTCausalLM",
     "XVarsVideoChatGPTModel",
+    "_get_embedded_mm_projector",
 ]

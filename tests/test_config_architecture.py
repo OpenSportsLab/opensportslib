@@ -85,7 +85,8 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert cfg["TRAIN"]["execution"]["log_interval"] == 1
     assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
     assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
-    assert cfg["TRAIN"]["execution"]["sft"]["max_seq_length"] == 512
+    assert cfg["MODEL"]["runtime"]["dtype"] == "fp16"
+    assert cfg["TRAIN"]["execution"]["sft"]["max_seq_length"] == 480
     assert cfg["TRAIN"]["execution"]["sft"]["gradient_checkpointing"] is True
     assert cfg["TRAIN"]["execution"]["sft"]["save_strategy"] == "epoch"
     assert "gradient_accumulation_steps" not in cfg["TRAIN"]["execution"]["sft"]
@@ -95,6 +96,17 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert "fp16" not in cfg["TRAIN"]["execution"]["sft"]
     assert "bf16" not in cfg["TRAIN"]["execution"]["sft"]
     assert "video_token_len" not in cfg["TRAIN"]["execution"]["sft"]
+    assert cfg["TRAIN"]["execution"]["lora"]["r"] == 8
+    assert cfg["TRAIN"]["execution"]["lora"]["alpha"] == 16
+    assert cfg["TRAIN"]["execution"]["lora"]["target_modules"] == [
+        "mm_projector",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    ]
+    assert cfg["TRAIN"]["execution"]["lora"]["exclude_modules"] == r"^base_lm\.model\.mm_projector$"
+    assert cfg["TRAIN"]["execution"]["quantization"]["compute_dtype"] == "float16"
 
 
 def test_vqa_xvars_config_uses_canonical_topology():
@@ -104,8 +116,8 @@ def test_vqa_xvars_config_uses_canonical_topology():
     assert components["video_encoder"]["source"]["name"] == "xvars_clip_features"
     assert components["video_encoder"]["params"]["feature_source"] == "indexed_or_raw_clip"
     assert components["mm_projector"]["params"]["input_dim"] == 1024
-    assert components["llm_decoder"]["source"]["name"] == "/home/vorajv/opensportslib/base_model_videoChatGPT"
-    assert components["llm_decoder"]["params"]["repo_id"] == "/home/vorajv/opensportslib/base_model_videoChatGPT"
+    assert components["llm_decoder"]["source"]["name"] == "/home/vorajv/xvars-weights/base_model_videoChatGPT"
+    assert components["llm_decoder"]["params"]["repo_id"] == "/home/vorajv/xvars-weights/base_model_videoChatGPT"
     assert cfg["MODEL"]["topology"] == [
         {"from": "video_encoder", "to": "mm_projector"},
         {"from": "mm_projector", "to": "llm_decoder"},

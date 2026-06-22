@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import inspect
+import time
 from typing import Any
 
 import torch
@@ -645,9 +646,11 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             xvars_cfg.get("projection_path"),
             mm_hidden_size=get_vqa_mm_hidden_size(self.config, default=1024),
         )
+        model.config.use_cache = False
         lora_cfg = dict(lora_cfg)
         lora_cfg.setdefault("target_modules", DEFAULT_XVARS_TARGET_MODULES)
         model = apply_lora_for_causal_lm(model, lora_cfg, distributed=int(world_size) > 1)
+        model.config.use_cache = False
 
         logging.info("Building X-VARS SFT datasets | rank=%s", rank)
         train_sft = VQAXVarsVideoChatGPTSFTDataset(
@@ -712,8 +715,11 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
             "fp16": fp16,
             "bf16": bf16,
-            "ddp_find_unused_parameters": bool(int(world_size) > 1),
+            "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
+            "ddp_find_unused_parameters": False,
         }
+        if int(world_size) > 1:
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
         training_kwargs[eval_strategy_key] = str(sft_cfg.get("evaluation_strategy", "epoch"))
         args = TrainingArguments(**training_kwargs)
         trainer = XVarsVideoChatGPTTrainer(
@@ -724,7 +730,17 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             eval_dataset=valid_sft,
             data_collator=XVarsVideoChatGPTDataCollator(tokenizer),
         )
-        logging.info("Starting X-VARS trainer.train | rank=%s | world_size=%s", rank, world_size)
+        logging.info(
+            "Starting X-VARS trainer.train | rank=%s | world_size=%s | precision=%s | "
+            "max_seq_length=%s | lora_targets=%s | gradient_checkpointing=%s | use_cache=%s",
+            rank,
+            world_size,
+            "fp16" if fp16 else "bf16" if bf16 else "fp32",
+            int(sft_cfg.get("max_seq_length", 768)),
+            list(lora_cfg["target_modules"]),
+            training_kwargs["gradient_checkpointing"],
+            model.config.use_cache,
+        )
         trainer.train()
         logging.info("Finished X-VARS trainer.train | rank=%s", rank)
         if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
@@ -803,12 +819,41 @@ class Trainer_VQA:
         generation_cfg = get_vqa_generation_cfg(self.config)
 
         preds = []
-        for sample in dataset:
+        log_interval = max(1, int(exec_cfg.get("log_interval", 10) if isinstance(exec_cfg, dict) else 10))
+        try:
+            total = len(dataset)
+        except Exception:
+            total = None
+        logging.info(
+            "Starting VQA inference | samples=%s | log_interval=%s | max_new_tokens=%s",
+            total if total is not None else "unknown",
+            log_interval,
+            generation_cfg.get("max_new_tokens"),
+        )
+        started_at = time.perf_counter()
+        for idx, sample in enumerate(dataset, start=1):
+            if idx == 1 or idx % log_interval == 0:
+                logging.info(
+                    "VQA inference generating | sample=%s/%s | id=%s | question=%s",
+                    idx,
+                    total if total is not None else "?",
+                    sample.get("id"),
+                    sample.get("question"),
+                )
+            sample_started_at = time.perf_counter()
             answer = model.generate_answer(
                 sample,
                 prompt_cfg=prompt_cfg,
                 generation_cfg=generation_cfg,
             )
+            if idx == 1 or idx % log_interval == 0:
+                logging.info(
+                    "VQA inference generated | sample=%s/%s | id=%s | elapsed_s=%.2f",
+                    idx,
+                    total if total is not None else "?",
+                    sample.get("id"),
+                    time.perf_counter() - sample_started_at,
+                )
             preds.append(
                 {
                     "id": sample.get("id"),
@@ -817,6 +862,11 @@ class Trainer_VQA:
                     "video_path": sample.get("video_path"),
                 }
             )
+        logging.info(
+            "Finished VQA inference | samples=%s | elapsed_s=%.2f",
+            len(preds),
+            time.perf_counter() - started_at,
+        )
         payload = {"task": "vqa", "data": preds}
         _maybe_log_vqa_predictions(payload, use_wandb=use_wandb)
         return payload

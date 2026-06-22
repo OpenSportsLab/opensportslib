@@ -150,6 +150,9 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
             self.q_proj = torch.nn.Linear(4, 4)
             self.v_proj = torch.nn.Linear(4, 4)
             self.lm_head = torch.nn.Linear(4, 64)
+            self.model = torch.nn.Module()
+            self.model.mm_projector = torch.nn.Linear(1024, 4)
+            self.gradient_checkpointing_kwargs = None
 
         def get_input_embeddings(self):
             return self.emb
@@ -157,6 +160,9 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
         def resize_token_embeddings(self, size):
             del size
             return self.emb
+
+        def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+            self.gradient_checkpointing_kwargs = gradient_checkpointing_kwargs
 
         def forward(self, input_ids=None, inputs_embeds=None, attention_mask=None, labels=None, **kwargs):
             del input_ids, attention_mask, kwargs
@@ -185,6 +191,7 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
 
     model = XVarsVideoChatGPTCausalLM(TinyCausalLM(), mm_hidden_size=1024)
     wrapped = apply_lora_for_causal_lm(model, {"target_modules": ["q_proj", "v_proj"]})
+    wrapped.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     input_ids = torch.tensor([[9, 2, 3, 3, 3, 4, 10]])
     features = torch.ones((1, 3, 1024))
     out = wrapped(
@@ -196,7 +203,40 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
     )
 
     assert hasattr(wrapped, "prepare_inputs_for_generation")
+    assert model.base_lm.gradient_checkpointing_kwargs == {"use_reentrant": False}
     assert float(out.loss) > 0
+
+
+def test_xvars_lora_excludes_inactive_embedded_projector():
+    pytest.importorskip("peft")
+
+    class TinyCausalLM(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(hidden_size=4, vocab_size=32, model_type="llama")
+            self.emb = torch.nn.Embedding(64, 4)
+            self.model = torch.nn.Module()
+            self.model.mm_projector = torch.nn.Linear(1024, 4)
+
+        def get_input_embeddings(self):
+            return self.emb
+
+        def resize_token_embeddings(self, size):
+            del size
+            return self.emb
+
+    model = XVarsVideoChatGPTCausalLM(TinyCausalLM(), mm_hidden_size=1024)
+    wrapped = apply_lora_for_causal_lm(
+        model,
+        {
+            "target_modules": ["mm_projector"],
+            "exclude_modules": r"^base_lm\.model\.mm_projector$",
+        },
+    )
+    trainable = [name for name, param in wrapped.named_parameters() if param.requires_grad]
+
+    assert any("base_model.model.mm_projector.lora_" in name for name in trainable)
+    assert not any("base_lm.model.mm_projector.lora_" in name for name in trainable)
 
 
 def test_vqa_lora_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
@@ -355,6 +395,8 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
             return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
 
     class FakeModel:
+        config = SimpleNamespace(use_cache=True)
+
         def save_pretrained(self, output_dir):
             del output_dir
 
@@ -365,11 +407,11 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
         def train(self):
             return None
 
-    sample = _sample() | {"video_spatio_temporal_features": [[0.1] * 4, [0.2] * 4]}
+    sample = _sample() | {"video_spatio_temporal_features": [[0.1] * 4] * 300}
     cfg = _cfg(tmp_path, dry_run=False)
     cfg.TRAIN.execution["training_backend"] = "xvars_videochatgpt_lora"
     cfg.MODEL = SimpleNamespace(
-        runtime=SimpleNamespace(dtype="fp32"),
+        runtime=SimpleNamespace(dtype="fp16"),
         components=SimpleNamespace(
             video_encoder=SimpleNamespace(params=SimpleNamespace(feature_source="indexed")),
             mm_projector=SimpleNamespace(params=SimpleNamespace(input_dim=4)),
@@ -390,9 +432,15 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
         "projection_path": None,
     }
     cfg.TRAIN.execution["sft"] = {
-        "max_seq_length": 512,
+        "max_seq_length": 480,
         "save_strategy": "epoch",
         "disable_tqdm": True,
+        "gradient_checkpointing": True,
+    }
+    cfg.TRAIN.execution["lora"] = {
+        "r": 8,
+        "alpha": 16,
+        "target_modules": ["mm_projector", "q_proj", "k_proj", "v_proj", "o_proj"],
     }
 
     monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
@@ -417,7 +465,12 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
         ),
     )
     monkeypatch.setattr(mod, "build_bitsandbytes_config", lambda cfg: None)
-    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
+    def _apply_lora(model, lora_cfg, distributed=False):
+        captured["lora_cfg"] = dict(lora_cfg)
+        captured["lora_distributed"] = distributed
+        return model
+
+    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", _apply_lora)
     monkeypatch.setattr(mod, "load_videochatgpt_compatible_causal_lm", _load_model)
     monkeypatch.setattr(
         "opensportslib.core.utils.hf_runtime._ensure_video_special_tokens",
@@ -442,7 +495,14 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
     assert captured["weight_decay"] == 0.001
     assert captured["lr_scheduler_type"] == "constant"
     assert captured.get("eval_strategy", captured.get("evaluation_strategy")) == "epoch"
-    assert captured["ddp_find_unused_parameters"] is True
+    assert captured["fp16"] is True
+    assert captured["bf16"] is False
+    assert captured["gradient_checkpointing"] is True
+    assert captured["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
+    assert captured["ddp_find_unused_parameters"] is False
+    assert captured["lora_cfg"]["target_modules"] == ["mm_projector", "q_proj", "k_proj", "v_proj", "o_proj"]
+    assert captured["lora_distributed"] is True
+    assert FakeModel.config.use_cache is False
     assert captured_sources["model"] == "base_model_videoChatGPT"
     assert captured_sources["tokenizer"] == "base_model_videoChatGPT"
 

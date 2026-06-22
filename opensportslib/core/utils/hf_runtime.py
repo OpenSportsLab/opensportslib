@@ -185,6 +185,7 @@ def apply_lora_for_causal_lm(
         bias=str(lora_cfg.get("bias", "none")),
         task_type="CAUSAL_LM",
         target_modules=list(matched),
+        exclude_modules=lora_cfg.get("exclude_modules"),
     )
     model = get_peft_model(model, peft_config)
     if distributed and hasattr(model, "gradient_checkpointing_enable"):

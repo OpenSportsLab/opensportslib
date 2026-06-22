@@ -76,7 +76,7 @@ DATA:
 
 MODEL:
   runtime:
-    dtype: fp32
+    dtype: fp16
     device: auto
     compile: false
     freeze: false
@@ -110,9 +110,9 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: /home/vorajv/opensportslib/base_model_videoChatGPT
+        name: /home/vorajv/xvars-weights/base_model_videoChatGPT
       params:
-        repo_id: /home/vorajv/opensportslib/base_model_videoChatGPT
+        repo_id: /home/vorajv/xvars-weights/base_model_videoChatGPT
       overrides: {}
   topology:
     - from: video_encoder
@@ -173,10 +173,10 @@ TRAIN:
       timeout_s: 30
       retry_count: 1
       retry_backoff_s: 0.5
-      fallback_policy: baseline_on_failure
+      fallback_policy: none
       max_new_tokens_cap: 1024
     sft:
-      max_seq_length: 512
+      max_seq_length: 480
       answer_field: references
       include_video_tokens: true
       disable_tqdm: false
@@ -187,18 +187,20 @@ TRAIN:
       local_files_only: false
       prefer_cuda: true
       cuda_device_index: 1
+      tokenizer_id: /home/vorajv/xvars-weights/base_model_videoChatGPT
     lora:
-      r: 16
-      alpha: 32
+      r: 8
+      alpha: 16
       dropout: 0.05
       bias: none
       prepare_kbit: true
-      target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
+      target_modules: [mm_projector, q_proj, k_proj, v_proj, o_proj]
+      exclude_modules: '^base_lm\.model\.mm_projector$'
     quantization:
       enabled: true
       load_in_4bit: true
       bnb_4bit_quant_type: nf4
-      compute_dtype: bfloat16
+      compute_dtype: float16
       bnb_4bit_use_double_quant: true
     checkpoint:
       save_adapter: true

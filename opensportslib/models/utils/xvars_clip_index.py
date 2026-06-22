@@ -78,6 +78,19 @@ def build_xvars_prior_from_prediction(pred: dict[str, Any] | None) -> str:
     action = str(pred.get("Action class") or pred.get("action") or "").strip()
     offence = str(pred.get("Offence") or pred.get("offence") or "").strip()
     severity = str(pred.get("Severity") or pred.get("severity") or "").strip()
+
+    action_map = {
+        "tackling": "a tackle",
+        "standing tackling": "a foot duel",
+        "elbowing": "using his elbows or arms",
+        "holding": "holding",
+        "high leg": "a high leg",
+        "pushing": "pushing",
+        "challenge": "a shoulder challenge",
+        "dive": "a simulation",
+    }
+    action = action_map.get(action.lower(), action)
+
     if offence.lower() == "offence":
         offence = "foul"
     elif offence.lower() == "no offence":

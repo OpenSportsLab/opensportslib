@@ -12,6 +12,7 @@ from opensportslib.core.trainer.vqa_trainer import (
     _resolve_sft_per_device_batch_sizes,
 )
 from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
+from opensportslib.models.utils.vqa_prompting import build_xvars_prompt
 
 
 class TinyTokenizer:
@@ -75,12 +76,27 @@ class TinyLM(torch.nn.Module):
         self.emb = torch.nn.Embedding(64, 4)
         self.lm = torch.nn.Linear(4, 64)
         self.seen_inputs_embeds = None
+        self.gradient_checkpointing_kwargs = None
+        self.gradient_checkpointing_disabled = False
+        self.input_require_grads = False
 
     def get_input_embeddings(self):
         return self.emb
 
     def resize_token_embeddings(self, size):
         return self.emb
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        self.gradient_checkpointing_kwargs = gradient_checkpointing_kwargs
+
+    def gradient_checkpointing_disable(self):
+        self.gradient_checkpointing_disabled = True
+
+    def enable_input_require_grads(self):
+        self.input_require_grads = True
+
+    def disable_input_require_grads(self):
+        self.input_require_grads = False
 
     def forward(self, input_ids=None, inputs_embeds=None, attention_mask=None, labels=None, **kwargs):
         del input_ids, attention_mask, kwargs
@@ -93,6 +109,27 @@ class TinyLM(torch.nn.Module):
 
     def save_pretrained(self, output_dir):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+
+class TinyHalfEmbeddingLM(TinyLM):
+    def __init__(self):
+        super().__init__()
+        self.emb = self.emb.to(torch.float16)
+
+    def forward(self, input_ids=None, inputs_embeds=None, attention_mask=None, labels=None, **kwargs):
+        del input_ids, attention_mask, labels, kwargs
+        self.seen_inputs_embeds = inputs_embeds.detach().clone()
+        return SimpleNamespace(loss=inputs_embeds.float().sum() * 0 + 0.123, logits=inputs_embeds.float())
+
+
+class TinyGenerateLM(TinyLM):
+    def __init__(self):
+        super().__init__()
+        self.generate_kwargs = None
+
+    def generate(self, **kwargs):
+        self.generate_kwargs = kwargs
+        return torch.tensor([[1, 2, 3, 4]])
 
 
 def _sample():
@@ -213,6 +250,67 @@ def test_xvars_model_forward_injects_video_features_at_patch_tokens():
     assert torch.all(base.seen_inputs_embeds[0, patch_positions, :] == 7.0)
 
 
+def test_xvars_wrapper_delegates_gradient_checkpointing_to_decoder():
+    base = TinyLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    model.enable_input_require_grads()
+    assert base.gradient_checkpointing_kwargs == {"use_reentrant": False}
+    assert base.input_require_grads is True
+
+    model.gradient_checkpointing_disable()
+    model.disable_input_require_grads()
+    assert base.gradient_checkpointing_disabled is True
+    assert base.input_require_grads is False
+
+
+def test_xvars_wrapper_reuses_embedded_videochatgpt_projector():
+    base = TinyLM()
+    base.model = SimpleNamespace(mm_projector=torch.nn.Linear(1024, 4))
+    with torch.no_grad():
+        base.model.mm_projector.weight.fill_(0.25)
+        base.model.mm_projector.bias.fill_(2.0)
+
+    model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(base, mm_hidden_size=1024)
+
+    assert torch.all(model.mm_projector.weight == 0.25)
+    assert torch.all(model.mm_projector.bias == 2.0)
+
+
+def test_xvars_wrapper_loads_raw_projector_when_embedded_copy_is_quantized(tmp_path):
+    safetensors = pytest.importorskip("safetensors.torch")
+    checkpoint = tmp_path / "videochatgpt"
+    checkpoint.mkdir()
+    shard_name = "model-00001-of-00001.safetensors"
+    safetensors.save_file(
+        {
+            "model.mm_projector.weight": torch.full((4, 1024), 0.5, dtype=torch.float16),
+            "model.mm_projector.bias": torch.full((4,), 1.5, dtype=torch.float16),
+        },
+        checkpoint / shard_name,
+    )
+    (checkpoint / "model.safetensors.index.json").write_text(
+        json.dumps(
+            {
+                "weight_map": {
+                    "model.mm_projector.weight": shard_name,
+                    "model.mm_projector.bias": shard_name,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    base = TinyLM()
+    base.config._name_or_path = str(checkpoint)
+    base.model = SimpleNamespace(mm_projector=torch.nn.Linear(1, 1))
+    model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(base, mm_hidden_size=1024)
+
+    assert torch.all(model.mm_projector.weight == 0.5)
+    assert torch.all(model.mm_projector.bias == 1.5)
+
+
 def test_xvars_model_forward_ignores_peft_inputs_embeds_kwarg():
     tok = TinyTokenizer()
     base = TinyLM()
@@ -235,6 +333,27 @@ def test_xvars_model_forward_ignores_peft_inputs_embeds_kwarg():
     assert float(out.loss) > 0
     patch_positions = (input_ids[0] == tok.convert_tokens_to_ids("<vid_patch>")).nonzero(as_tuple=False).flatten()
     assert torch.all(base.seen_inputs_embeds[0, patch_positions, :] == 5.0)
+
+
+def test_xvars_model_projects_float_features_for_half_embeddings_without_dtype_mismatch():
+    tok = TinyTokenizer()
+    base = TinyHalfEmbeddingLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+    assert model.mm_projector.weight.dtype == torch.float32
+
+    with torch.no_grad():
+        model.mm_projector.weight.fill_(0.0)
+        model.mm_projector.bias.fill_(3.0)
+    encoded = tok("USER: q <vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT: a", padding="max_length", max_length=16)
+    input_ids = torch.tensor([encoded["input_ids"]])
+    features = torch.ones((1, 3, 1024), dtype=torch.float32)
+
+    out = model(input_ids=input_ids, labels=input_ids.clone(), video_spatio_temporal_features=features, tokenizer=tok)
+
+    assert float(out.loss) > 0
+    assert base.seen_inputs_embeds.dtype == torch.float16
+    patch_positions = (input_ids[0] == tok.convert_tokens_to_ids("<vid_patch>")).nonzero(as_tuple=False).flatten()
+    assert torch.all(base.seen_inputs_embeds[0, patch_positions, :] == torch.tensor(3.0, dtype=torch.float16))
 
 
 def test_xvars_model_backward_with_video_features_avoids_in_place_leaf_error():
@@ -283,6 +402,30 @@ def test_xvars_model_prepare_inputs_for_generation_keeps_video_features():
     assert next_step["input_ids"].tolist() == [[7]]
     assert next_step["video_spatio_temporal_features"] is features
     assert next_step["_xvars_tokenizer"] is tok
+
+
+def test_xvars_model_generate_preserves_input_ids_with_inputs_embeds():
+    tok = TinyTokenizer()
+    base = TinyGenerateLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+    encoded = tok("USER: q <vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT: a", padding="max_length", max_length=16)
+    input_ids = torch.tensor([encoded["input_ids"]])
+    attention_mask = torch.ones_like(input_ids)
+    features = torch.ones((1, 3, 1024))
+
+    output = model.generate(
+        input_ids,
+        tokenizer=tok,
+        video_spatio_temporal_features=features,
+        attention_mask=attention_mask,
+        max_new_tokens=2,
+    )
+
+    assert output.tolist() == [[1, 2, 3, 4]]
+    assert torch.equal(base.generate_kwargs["input_ids"], input_ids)
+    assert base.generate_kwargs["inputs_embeds"].shape == (1, input_ids.shape[1], 4)
+    assert torch.equal(base.generate_kwargs["attention_mask"], attention_mask)
+    assert base.generate_kwargs["max_new_tokens"] == 2
 
 
 def test_xvars_videochatgpt_lora_dry_run_marks_multimodal(tmp_path):
@@ -443,6 +586,102 @@ def test_xvars_model_init_uses_explicit_feature_mode_token_len(monkeypatch, tmp_
     assert captured["tokenizer"] == "LLaVA-7B-Lightening-v1-1"
     assert captured["mm_hidden_size"] == 1024
     assert model.video_token_len == 300
+
+
+def test_xvars_prompt_places_prior_and_video_tokens_in_user_turn():
+    prompt = build_xvars_prompt(
+        system_prompt="System.",
+        question="What card?",
+        prior_text="a tackle, foul and a yellow card",
+        video_token_len=2,
+    )
+
+    assert prompt == (
+        "System.\n"
+        "USER: What card? The prediction for this video is a tackle, foul and a yellow card.\n"
+        "<vid_start><vid_patch><vid_patch><vid_end>\n"
+        "ASSISTANT:"
+    )
+
+
+def test_xvars_model_init_uses_quantized_device_map_for_inference(monkeypatch, tmp_path):
+    from opensportslib.models.base import xvars_videochatgpt as mod
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    captured = {}
+    bnb_config = object()
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "</s>"
+
+    class FakeProjector:
+        def to(self, device):
+            captured["projector_device"] = str(device)
+            return self
+
+    class FakeWrappedModel:
+        def __init__(self):
+            self.mm_projector = FakeProjector()
+
+        def to(self, device):
+            captured["wrapper_to"] = str(device)
+            return self
+
+        def eval(self):
+            captured["eval"] = True
+            return self
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.TRAIN.execution["hf"] = {
+        "local_files_only": True,
+        "prefer_cuda": True,
+        "cuda_device_index": 1,
+        "tokenizer_id": "/tmp/tokenizer",
+    }
+    cfg.TRAIN.execution["quantization"] = {"enabled": True, "load_in_4bit": True}
+
+    def _load_tok(model_id, **kwargs):
+        captured["tokenizer"] = model_id
+        captured["tokenizer_kwargs"] = kwargs
+        return FakeTokenizer()
+
+    def _load_model(model_id, **kwargs):
+        captured["model"] = model_id
+        captured["model_kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=_load_tok),
+        ),
+    )
+    monkeypatch.setattr(mod, "build_bitsandbytes_config", lambda quant_cfg: bnb_config)
+    monkeypatch.setattr(mod.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(mod.torch.cuda, "set_device", lambda idx: captured.__setitem__("set_device", idx))
+    monkeypatch.setattr(mod.torch.cuda, "current_device", lambda: 1)
+    monkeypatch.setattr(mod, "load_videochatgpt_compatible_causal_lm", _load_model)
+    monkeypatch.setattr(mod, "_ensure_video_special_tokens", lambda tokenizer, model=None: 0)
+    monkeypatch.setattr(
+        XVarsVideoChatGPTCausalLM,
+        "from_pretrained_projector",
+        staticmethod(lambda base_lm, projector_path, mm_hidden_size=1024: FakeWrappedModel()),
+    )
+
+    model = XVarsVideoChatGPTModel(cfg, model_id="quantized_xvars", projector_params={"input_dim": 1024})
+
+    assert model._ready is True
+    assert captured["tokenizer"] == "/tmp/tokenizer"
+    assert captured["set_device"] == 1
+    assert captured["model"] == "quantized_xvars"
+    assert captured["model_kwargs"]["local_files_only"] is True
+    assert captured["model_kwargs"]["quantization_config"] is bnb_config
+    assert captured["model_kwargs"]["device_map"] == {"": 1}
+    assert captured["projector_device"] == "cuda:1"
+    assert "wrapper_to" not in captured
+    assert captured["eval"] is True
 
 
 def test_xvars_dataset_rejects_feature_mode_shape_mismatch(tmp_path):
