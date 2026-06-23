@@ -46,12 +46,15 @@ def _normalize_candidates(row: dict[str, Any], base_dir: str) -> list[str]:
     return candidates
 
 
-def load_feature_index(index_path: str) -> dict[str, list[str]]:
+def load_feature_index(index_path: str, *, split: str | None = None) -> dict[str, list[str]]:
     payload = _load_json(index_path)
     rows = _as_rows(payload)
     root = os.path.dirname(os.path.abspath(index_path))
     out: dict[str, list[str]] = {}
     for row in rows:
+        row_split = str(row.get("split") or "").strip().lower()
+        if split and row_split and row_split != str(split).lower():
+            continue
         rid = str(row.get("id") or row.get("sample_id") or row.get("clip_id") or "").strip()
         if not rid:
             continue
@@ -61,11 +64,14 @@ def load_feature_index(index_path: str) -> dict[str, list[str]]:
     return out
 
 
-def load_prediction_index(index_path: str) -> dict[str, dict[str, Any]]:
+def load_prediction_index(index_path: str, *, split: str | None = None) -> dict[str, dict[str, Any]]:
     payload = _load_json(index_path)
     rows = _as_rows(payload)
     out: dict[str, dict[str, Any]] = {}
     for row in rows:
+        row_split = str(row.get("split") or "").strip().lower()
+        if split and row_split and row_split != str(split).lower():
+            continue
         rid = str(row.get("id") or row.get("sample_id") or row.get("clip_id") or "").strip()
         if not rid:
             continue

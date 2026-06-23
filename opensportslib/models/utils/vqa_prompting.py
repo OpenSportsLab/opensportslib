@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 
+VIDEO_CHATGPT_SYSTEM_PROMPT = (
+    "You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that "
+    "the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions "
+    "carefully and explain your answers in detail based on the provided video."
+)
+
+
 def build_prior_text(
     labels: dict[str, Any] | None,
     metadata: dict[str, Any] | None = None,
@@ -42,14 +49,9 @@ def build_xvars_prompt(
 
     user_turn = f"USER: {question_text}"
     if prior_text:
-        user_turn = f"{user_turn} The prediction for this video is {prior_text}."
+        user_turn = f"{user_turn} The prediction for this video is {prior_text}"
     if video_token_len > 0:
         user_turn = f"{user_turn}\n<vid_start>{'<vid_patch>' * video_token_len}<vid_end>"
 
-    return "\n".join(
-        [
-            str(system_prompt).strip(),
-            user_turn,
-            "ASSISTANT:",
-        ]
-    )
+    resolved_system_prompt = str(system_prompt).strip() or VIDEO_CHATGPT_SYSTEM_PROMPT
+    return f"{resolved_system_prompt} {user_turn} ASSISTANT:"

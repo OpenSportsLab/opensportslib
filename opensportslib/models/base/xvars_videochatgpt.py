@@ -149,6 +149,14 @@ class XVarsVideoChatGPTCausalLM(nn.Module):
         return self.base_lm.config
 
     @property
+    def generation_config(self):
+        return self.base_lm.generation_config
+
+    @generation_config.setter
+    def generation_config(self, value):
+        self.base_lm.generation_config = value
+
+    @property
     def device(self):
         return next(self.parameters()).device
 
@@ -500,7 +508,8 @@ class XVarsVideoChatGPTModel(nn.Module):
             if bnb_config is not None and hasattr(self.model, "mm_projector"):
                 self.model.mm_projector = self.model.mm_projector.to(device)
             if adapter_path:
-                self.model, _status = load_peft_adapter_if_available(self.model, adapter_path)
+                self.model, adapter_status = load_peft_adapter_if_available(self.model, adapter_path)
+                logger.info("X-VARS PEFT adapter | status=%s | path=%s", adapter_status, adapter_path)
             if bnb_config is None:
                 self.model = self.model.to(device)
             self.model = self.model.eval()
@@ -572,8 +581,21 @@ class XVarsVideoChatGPTModel(nn.Module):
         attention_mask = encoded.get("attention_mask")
         if attention_mask is not None:
             attention_mask = attention_mask.to(device)
-        max_new_tokens = int(generation_cfg.get("max_new_tokens", 1024))
+        max_new_tokens = int(generation_cfg.get("max_new_tokens", 128))
+        max_new_tokens_cap = generation_cfg.get("max_new_tokens_cap")
+        if max_new_tokens_cap is not None:
+            max_new_tokens = min(max_new_tokens, int(max_new_tokens_cap))
         temperature = float(generation_cfg.get("temperature", 0.2))
+        generation_kwargs = {
+            "do_sample": temperature > 0,
+            "max_new_tokens": max_new_tokens,
+            "pad_token_id": self.tokenizer.eos_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "repetition_penalty": float(generation_cfg.get("repetition_penalty", 1.0)),
+            "no_repeat_ngram_size": int(generation_cfg.get("no_repeat_ngram_size", 0)),
+        }
+        if temperature > 0:
+            generation_kwargs["temperature"] = temperature
         try:
             with torch.inference_mode():
                 output_ids = self.model.generate(
@@ -581,10 +603,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                     tokenizer=self.tokenizer,
                     attention_mask=attention_mask,
                     video_spatio_temporal_features=features.unsqueeze(0),
-                    do_sample=temperature > 0,
-                    temperature=temperature if temperature > 0 else None,
-                    max_new_tokens=max_new_tokens,
-                    pad_token_id=self.tokenizer.eos_token_id,
+                    **generation_kwargs,
                 )
             if output_ids.shape[-1] > input_ids.shape[-1]:
                 decoded = self.tokenizer.batch_decode(output_ids[:, input_ids.shape[-1]:], skip_special_tokens=True)[0]

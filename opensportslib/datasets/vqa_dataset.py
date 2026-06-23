@@ -62,12 +62,12 @@ class VQADataset(Dataset):
         self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
         self.expected_feature_tokens = get_xvars_train_video_token_len(config)
         self.feature_index = (
-            load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)))
+            load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)), split=split)
             if feature_index_path
             else {}
         )
         self.prediction_index = (
-            load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)))
+            load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)), split=split)
             if prediction_index_path
             else {}
         )

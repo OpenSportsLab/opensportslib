@@ -10,14 +10,17 @@ from opensportslib.core.trainer.vqa_trainer import (
     VQAXVarsVideoChatGPTSFTDataset,
     XVarsVideoChatGPTDataCollator,
     _resolve_sft_per_device_batch_sizes,
+    _score_xvars_generated_answers,
 )
 from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
-from opensportslib.models.utils.vqa_prompting import build_xvars_prompt
+from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_xvars_prompt
+from opensportslib.models.utils.xvars_clip_index import load_feature_index, load_prediction_index
 
 
 class TinyTokenizer:
     pad_token_id = 0
     eos_token_id = 1
+    eos_token = "</s>"
 
     def __init__(self):
         self.vocab = {
@@ -36,7 +39,7 @@ class TinyTokenizer:
         i = 0
         while i < len(text):
             matched = False
-            for tok in ("<vid_start>", "<vid_patch>", "<vid_end>"):
+            for tok in ("<vid_start>", "<vid_patch>", "<vid_end>", "</s>"):
                 if text.startswith(tok, i):
                     toks.append(tok)
                     i += len(tok)
@@ -48,7 +51,9 @@ class TinyTokenizer:
                 i += 1
                 continue
             j = i
-            while j < len(text) and not text[j].isspace() and not any(text.startswith(t, j) for t in ("<vid_start>", "<vid_patch>", "<vid_end>")):
+            while j < len(text) and not text[j].isspace() and not any(
+                text.startswith(t, j) for t in ("<vid_start>", "<vid_patch>", "<vid_end>", "</s>")
+            ):
                 j += 1
             toks.append(text[i:j])
             i = j
@@ -126,6 +131,7 @@ class TinyGenerateLM(TinyLM):
     def __init__(self):
         super().__init__()
         self.generate_kwargs = None
+        self.generation_config = SimpleNamespace(marker="original")
 
     def generate(self, **kwargs):
         self.generate_kwargs = kwargs
@@ -231,6 +237,25 @@ def test_xvars_sft_dataset_and_collator_keep_video_features():
     batch = XVarsVideoChatGPTDataCollator(tok)([ds[0]])
     assert tuple(batch["video_spatio_temporal_features"].shape) == (1, 3, 1024)
     assert batch["labels"].shape == batch["input_ids"].shape
+    eos_positions = (batch["input_ids"] == tok.eos_token_id).nonzero(as_tuple=False)
+    assert eos_positions.numel() > 0
+    assert all(batch["labels"][tuple(position)] == tok.eos_token_id for position in eos_positions)
+
+
+def test_xvars_sft_dataset_flattens_all_reference_answers():
+    tok = TinyTokenizer()
+    sample = _sample()
+    sample["references"] = ["First referee answer.", "Second referee answer."]
+
+    ds = VQAXVarsVideoChatGPTSFTDataset(
+        [sample],
+        tokenizer=tok,
+        prompt_cfg={"include_priors": True, "video_token_len": 3},
+        sft_cfg={"max_seq_length": 64, "reference_mode": "all", "append_eos_token": True},
+        xvars_cfg={},
+    )
+
+    assert len(ds) == 2
 
 
 def test_xvars_model_forward_injects_video_features_at_patch_tokens():
@@ -428,6 +453,51 @@ def test_xvars_model_generate_preserves_input_ids_with_inputs_embeds():
     assert base.generate_kwargs["max_new_tokens"] == 2
 
 
+def test_xvars_wrapper_delegates_generation_config_to_decoder():
+    base = TinyGenerateLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+
+    assert model.generation_config is base.generation_config
+    replacement = SimpleNamespace(marker="replacement")
+    model.generation_config = replacement
+
+    assert model.generation_config is replacement
+    assert base.generation_config is replacement
+
+
+def test_xvars_peft_generate_uses_delegated_generation_config():
+    peft = pytest.importorskip("peft")
+    tok = TinyTokenizer()
+    base = TinyGenerateLM()
+    model = XVarsVideoChatGPTCausalLM(base, mm_hidden_size=1024)
+    model = peft.get_peft_model(
+        model,
+        peft.LoraConfig(
+            r=2,
+            lora_alpha=4,
+            task_type="CAUSAL_LM",
+            target_modules=["mm_projector"],
+        ),
+    )
+    encoded = tok(
+        "USER: q <vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT: a",
+        padding="max_length",
+        max_length=16,
+    )
+    input_ids = torch.tensor([encoded["input_ids"]])
+
+    output = model.generate(
+        input_ids,
+        tokenizer=tok,
+        video_spatio_temporal_features=torch.ones((1, 3, 1024)),
+        attention_mask=torch.ones_like(input_ids),
+        max_new_tokens=2,
+    )
+
+    assert output.tolist() == [[1, 2, 3, 4]]
+    assert model.generation_config is base.generation_config
+
+
 def test_xvars_videochatgpt_lora_dry_run_marks_multimodal(tmp_path):
     out = VQAXVarsVideoChatGPTLoraTrainer(_cfg(tmp_path, dry_run=True)).train([_sample()], [_sample()])
     metadata = Path(out) / "training_metadata.json"
@@ -595,14 +665,101 @@ def test_xvars_prompt_places_prior_and_video_tokens_in_user_turn():
         prior_text="a tackle, foul and a yellow card",
         video_token_len=2,
     )
-
     assert prompt == (
-        "System.\n"
-        "USER: What card? The prediction for this video is a tackle, foul and a yellow card.\n"
-        "<vid_start><vid_patch><vid_patch><vid_end>\n"
-        "ASSISTANT:"
+        "System. USER: What card? The prediction for this video is a tackle, foul and a yellow card\n"
+        "<vid_start><vid_patch><vid_patch><vid_end> ASSISTANT:"
     )
 
+
+def test_xvars_prompt_matches_upstream_videochatgpt_v1_system_prefix():
+    prompt = build_xvars_prompt(
+        system_prompt=VIDEO_CHATGPT_SYSTEM_PROMPT,
+        question="What card?",
+        prior_text="a shoulder challenge, foul, yellow card",
+        video_token_len=1,
+    )
+
+    assert prompt == (
+        f"{VIDEO_CHATGPT_SYSTEM_PROMPT} USER: What card? The prediction for this video is "
+        "a shoulder challenge, foul, yellow card\n<vid_start><vid_patch><vid_end> ASSISTANT:"
+    )
+
+
+def test_xvars_truncation_preserves_supervised_eos():
+    tokenizer = TinyTokenizer()
+    row = {
+        "prompt": "USER: question ASSISTANT:",
+        "completion": "one two three four five six seven eight</s>",
+    }
+
+    tokenized = VQAXVarsVideoChatGPTSFTDataset._tokenize_row(
+        row,
+        tokenizer=tokenizer,
+        max_seq_length=7,
+    )
+
+    assert tokenized is not None
+    assert tokenized["input_ids"][-1] == tokenizer.eos_token_id
+    assert tokenized["labels"][-1] == tokenizer.eos_token_id
+
+
+def test_xvars_eos_remains_supervised_when_pad_and_eos_ids_match():
+    tokenizer = TinyTokenizer()
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    row = {"prompt": "USER: question ASSISTANT:", "completion": "answer</s>"}
+
+    tokenized = VQAXVarsVideoChatGPTSFTDataset._tokenize_row(
+        row,
+        tokenizer=tokenizer,
+        max_seq_length=12,
+    )
+
+    assert tokenized is not None
+    supervised = [label for label in tokenized["labels"] if label != -100]
+    assert supervised[-1] == tokenizer.eos_token_id
+
+
+def test_xvars_generated_answer_relevance_score_rejects_code_domain_text():
+    score = _score_xvars_generated_answers(
+        ["It is a foul.", "Yellow card.", "No DOGSO.", "Advantage was possible."],
+        required_terms=["foul", "card", "dogso", "advantage"],
+        forbidden_terms=["get_children", "django"],
+    )
+    rejected = _score_xvars_generated_answers(
+        ["Use get_children to inspect the node."],
+        required_terms=["foul", "card"],
+        forbidden_terms=["get_children"],
+    )
+
+    assert score["accepted"] is True
+    assert rejected["accepted"] is False
+    assert rejected["forbidden_count"] == 1
+
+
+def test_xvars_indexes_are_split_aware(tmp_path):
+    feature_index = tmp_path / "features.json"
+    prediction_index = tmp_path / "predictions.json"
+    feature_index.write_text(
+        json.dumps(
+            [
+                {"id": "action_0", "split": "train", "feature_paths": ["train.pkl"]},
+                {"id": "action_0", "split": "test", "feature_paths": ["test.pkl"]},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prediction_index.write_text(
+        json.dumps(
+            [
+                {"id": "action_0", "split": "train", "Action class": "Challenge"},
+                {"id": "action_0", "split": "test", "Action class": "Tackling"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_feature_index(str(feature_index), split="train")["action_0"][0].endswith("train.pkl")
+    assert load_prediction_index(str(prediction_index), split="train")["action_0"]["Action class"] == "Challenge"
 
 def test_xvars_model_init_uses_quantized_device_map_for_inference(monkeypatch, tmp_path):
     from opensportslib.models.base import xvars_videochatgpt as mod

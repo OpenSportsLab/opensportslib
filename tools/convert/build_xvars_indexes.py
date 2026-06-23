@@ -110,17 +110,18 @@ def _feature_candidates(dirs: list[Path]) -> list[Path]:
     return out
 
 
-def _build_prediction_row(item: dict[str, Any]) -> dict[str, Any]:
+def _build_prediction_row(item: dict[str, Any], *, split: str) -> dict[str, Any]:
     labels = item.get("labels") or {}
     action = str(((labels.get("action") or {}).get("label")) or "").strip()
     offence = str(((labels.get("offence") or {}).get("label")) or "").strip()
-    card = str(((labels.get("card") or {}).get("label")) or "").strip()
+    card = str(((labels.get("card") or {}).get("label")) or offence).strip()
     row = {
         "id": str(item.get("id", "")).strip(),
         "Action class": action,
         "Offence": _norm_offence(offence),
         "Severity": _norm_severity(card),
         "source": "osl_labels",
+        "split": split,
     }
     return row
 
@@ -179,7 +180,7 @@ def main() -> None:
                 missing_features += 1
             else:
                 missing_features += 1
-            pred_rows.append(_build_prediction_row(item))
+            pred_rows.append(_build_prediction_row(item, split=split))
 
     feat_path = output_dir / "feature_index.json"
     pred_path = output_dir / "prediction_index.json"

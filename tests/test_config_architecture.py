@@ -81,7 +81,7 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert cfg["TRAIN"]["epochs"] == 3
     assert cfg["TRAIN"]["optimizer"]["lr"] == 0.0002
     assert cfg["TRAIN"]["optimizer"]["weight_decay"] == 0.001
-    assert cfg["TRAIN"]["execution"]["acc_grad_iter"] == 16
+    assert cfg["TRAIN"]["execution"]["acc_grad_iter"] == 8
     assert cfg["TRAIN"]["execution"]["log_interval"] == 1
     assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
     assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
@@ -96,12 +96,18 @@ def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
     assert "fp16" not in cfg["TRAIN"]["execution"]["sft"]
     assert "bf16" not in cfg["TRAIN"]["execution"]["sft"]
     assert "video_token_len" not in cfg["TRAIN"]["execution"]["sft"]
-    assert cfg["TRAIN"]["execution"]["lora"]["r"] == 8
-    assert cfg["TRAIN"]["execution"]["lora"]["alpha"] == 16
+    assert cfg["TRAIN"]["execution"]["sft"]["reference_mode"] == "all"
+    assert cfg["TRAIN"]["execution"]["sft"]["append_eos_token"] is True
+    assert cfg["TRAIN"]["execution"]["lora"]["r"] == 16
+    assert cfg["TRAIN"]["execution"]["lora"]["alpha"] == 32
     assert cfg["TRAIN"]["execution"]["lora"]["target_modules"] == [
         "mm_projector",
-        "q_proj",
+        "upsample_features",
+        "up_proj",
+        "down_proj",
+        "gate_proj",
         "k_proj",
+        "q_proj",
         "v_proj",
         "o_proj",
     ]

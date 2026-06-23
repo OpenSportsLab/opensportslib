@@ -147,7 +147,7 @@ TRAIN:
     training_backend: xvars_videochatgpt_lora
     feature_backend: xvars_clip
     view_sampling_policy: random_train_deterministic_eval
-    acc_grad_iter: 16
+    acc_grad_iter: 8
     log_interval: 1
     dry_run: false
     xvars:
@@ -156,13 +156,23 @@ TRAIN:
       conv_mode: video-chatgpt_v1
     prompt:
       style: detailed
-      system_prompt: You are an artificial intelligence assistant for visual football referee questions. Give short and helpful answers.
+      system_prompt: You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions carefully and explain your answers in detail based on the provided video.
       include_priors: true
       prior_fields: [action, offence, contact, bodypart]
       video_token_len: 300
     generation:
-      max_new_tokens: 1024
-      temperature: 0.2
+      max_new_tokens: 128
+      temperature: 0.0
+      repetition_penalty: 1.1
+      no_repeat_ngram_size: 3
+    generated_validation:
+      enabled: true
+      sample_id: action_0
+      every_steps: 25
+      max_new_tokens: 128
+      require_relevance: true
+      required_terms: [foul, card, challenge, spa, dogso, advantage]
+      forbidden_terms: [get_children, django, httpclient, "```python", "```php"]
     # OpenSportsLib-native VQA evaluation config. This does not correspond to
     # an upstream X-VARS benchmark scorer.
     eval_profile:
@@ -174,27 +184,30 @@ TRAIN:
       retry_count: 1
       retry_backoff_s: 0.5
       fallback_policy: none
-      max_new_tokens_cap: 1024
+      max_new_tokens_cap: 128
     sft:
       max_seq_length: 480
       answer_field: references
       include_video_tokens: true
       disable_tqdm: false
       completion_only_loss: true
+      reference_mode: all
+      append_eos_token: true
       gradient_checkpointing: true
       save_strategy: "epoch"
+      max_steps: null
     hf:
       local_files_only: false
       prefer_cuda: true
       cuda_device_index: 1
       tokenizer_id: /home/vorajv/xvars-weights/base_model_videoChatGPT
     lora:
-      r: 8
-      alpha: 16
+      r: 16
+      alpha: 32
       dropout: 0.05
       bias: none
       prepare_kbit: true
-      target_modules: [mm_projector, q_proj, k_proj, v_proj, o_proj]
+      target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
       exclude_modules: '^base_lm\.model\.mm_projector$'
     quantization:
       enabled: true

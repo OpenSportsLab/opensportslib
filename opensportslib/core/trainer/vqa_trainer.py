@@ -169,12 +169,13 @@ def build_vqa_sft_text(
     config=None,
     prompt_cfg: dict[str, Any] | None = None,
     sft_cfg: dict[str, Any] | None = None,
+    reference: str | None = None,
 ) -> dict[str, str]:
     """Convert a VQADataset sample into prompt/answer/text fields for SFT."""
     prompt_cfg = prompt_cfg or {}
     sft_cfg = sft_cfg or {}
     refs = sample.get("references") or []
-    answer = str(refs[0]).strip() if refs else ""
+    answer = str(reference).strip() if reference is not None else (str(refs[0]).strip() if refs else "")
     question = str(sample.get("question", "")).strip()
     system_prompt = str(
         prompt_cfg.get(
@@ -203,11 +204,13 @@ def build_vqa_sft_text(
         prior_text=prior_text,
         video_token_len=token_len,
     )
+    append_eos = bool(sft_cfg.get("append_eos_token", True))
+    completion = f"{answer}</s>" if answer and append_eos else answer
     return {
         "prompt": prompt,
         "answer": answer,
-        "completion": answer,
-        "text": f"{prompt} {answer}".strip(),
+        "completion": completion,
+        "text": f"{prompt} {completion}".strip(),
     }
 
 
@@ -484,7 +487,7 @@ class XVarsVideoChatGPTDataCollator:
 class XVarsVideoChatGPTTrainer:
     """Minimal Trainer wrapper that passes the tokenizer into the X-VARS model."""
 
-    def __init__(self, *, model, tokenizer, args, train_dataset, eval_dataset=None, data_collator=None):
+    def __init__(self, *, model, tokenizer, args, train_dataset, eval_dataset=None, data_collator=None, callbacks=None):
         from transformers import Trainer
 
         class _Trainer(Trainer):
@@ -500,6 +503,7 @@ class XVarsVideoChatGPTTrainer:
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             data_collator=data_collator or XVarsVideoChatGPTDataCollator(tokenizer),
+            callbacks=callbacks,
         )
         self.model = model
         self.tokenizer = tokenizer
@@ -533,17 +537,25 @@ class VQAXVarsVideoChatGPTSFTDataset:
                 expected_tokens=token_len,
                 context=f"X-VARS training features for sample '{sample.get('id', 'unknown')}'",
             )
-            row = build_vqa_sft_text(
-                sample,
-                config=config,
-                prompt_cfg=prompt_cfg,
-                sft_cfg={**sft_cfg, "include_video_tokens": True, "video_token_len": token_len},
-            )
-            tokenized = self._tokenize_row(row, tokenizer=tokenizer, max_seq_length=max_seq_length)
-            if tokenized is None:
-                continue
-            tokenized["video_spatio_temporal_features"] = features
-            self.rows.append(tokenized)
+            references = refs if str(sft_cfg.get("reference_mode", "all")).lower() == "all" else refs[:1]
+            for reference in references:
+                if not str(reference).strip():
+                    continue
+                row = build_vqa_sft_text(
+                    sample,
+                    config=config,
+                    prompt_cfg=prompt_cfg,
+                    sft_cfg={**sft_cfg, "include_video_tokens": True, "video_token_len": token_len},
+                    reference=str(reference),
+                )
+                tokenized = self._tokenize_row(row, tokenizer=tokenizer, max_seq_length=max_seq_length)
+                if tokenized is None:
+                    continue
+                tokenized["video_spatio_temporal_features"] = features
+                tokenized["id"] = str(sample.get("id", ""))
+                tokenized["question"] = str(sample.get("question", ""))
+                tokenized["prompt"] = row["prompt"]
+                self.rows.append(tokenized)
 
     def __len__(self):
         return len(self.rows)
@@ -554,7 +566,6 @@ class VQAXVarsVideoChatGPTSFTDataset:
     @staticmethod
     def _tokenize_row(row, *, tokenizer, max_seq_length: int):
         ignore_index = -100
-        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
         prompt = str(row.get("prompt", "")).strip()
         completion = str(row.get("completion", "")).strip()
         if not prompt or not completion:
@@ -569,13 +580,147 @@ class VQAXVarsVideoChatGPTSFTDataset:
         prompt_len = int(sum(enc_prompt["attention_mask"]))
         if full_len <= prompt_len or input_ids[:prompt_len] != prompt_ids[:prompt_len]:
             return None
+        eos_token = str(getattr(tokenizer, "eos_token", "") or "")
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        if completion.endswith(eos_token) and eos_token and eos_token_id is not None:
+            input_ids[full_len - 1] = int(eos_token_id)
         labels = list(input_ids)
         for i in range(len(labels)):
-            if i < prompt_len or attn[i] == 0 or input_ids[i] == pad_id:
+            if i < prompt_len or attn[i] == 0:
                 labels[i] = ignore_index
         if all(x == ignore_index for x in labels):
             return None
         return {"input_ids": input_ids, "attention_mask": attn, "labels": labels}
+
+
+def _score_xvars_generated_answers(
+    answers: list[str],
+    *,
+    required_terms: list[str],
+    forbidden_terms: list[str],
+) -> dict[str, Any]:
+    normalized = [str(answer).lower() for answer in answers]
+    relevant = [any(term.lower() in answer for term in required_terms) for answer in normalized]
+    forbidden = [any(term.lower() in answer for term in forbidden_terms) for answer in normalized]
+    accepted_count = sum(ok and not bad for ok, bad in zip(relevant, forbidden))
+    return {
+        "accepted": bool(answers) and accepted_count == len(answers),
+        "accepted_count": accepted_count,
+        "answer_count": len(answers),
+        "forbidden_count": sum(forbidden),
+    }
+
+
+def _build_xvars_generated_validation_callback(
+    *,
+    tokenizer,
+    rows: list[dict[str, Any]],
+    output_dir: str,
+    validation_cfg: dict[str, Any],
+    use_step_schedule: bool,
+):
+    from transformers import TrainerCallback
+
+    sample_id = str(validation_cfg.get("sample_id", "action_0"))
+    selected = []
+    seen_questions = set()
+    for row in rows:
+        if str(row.get("id")) != sample_id or row.get("question") in seen_questions:
+            continue
+        selected.append(row)
+        seen_questions.add(row.get("question"))
+    if not selected:
+        logging.warning("Generated validation disabled: sample id '%s' was not found.", sample_id)
+        return None
+
+    required_terms = list(validation_cfg.get("required_terms") or ["foul", "card", "challenge", "spa", "dogso", "advantage"])
+    forbidden_terms = list(validation_cfg.get("forbidden_terms") or ["get_children", "django", "httpclient", "```python", "```php"])
+    every_steps = max(1, int(validation_cfg.get("every_steps", 25)))
+    max_new_tokens = max(1, int(validation_cfg.get("max_new_tokens", 128)))
+
+    class _GeneratedValidationCallback(TrainerCallback):
+        def __init__(self):
+            self.history = []
+            self.best_score = (-1, 0, float("-inf"))
+
+        def _consider_checkpoint(self, *, model, record: dict[str, Any]):
+            eval_loss = record.get("eval_loss")
+            loss_score = -float(eval_loss) if eval_loss is not None else float("-inf")
+            rank_score = (record["accepted_count"], -record["forbidden_count"], loss_score)
+            if rank_score <= self.best_score:
+                return
+            self.best_score = rank_score
+            best_dir = os.path.join(output_dir, "generated_validation_best")
+            model.save_pretrained(best_dir)
+            tokenizer.save_pretrained(best_dir)
+
+        def _run(self, *, model, step: int, epoch: float | None):
+            was_training = model.training
+            previous_use_cache = getattr(model.config, "use_cache", None)
+            model.eval()
+            model.config.use_cache = True
+            answers = []
+            try:
+                for row in selected:
+                    encoded = tokenizer([row["prompt"]], return_tensors="pt")
+                    device = next(model.parameters()).device
+                    input_ids = encoded["input_ids"].to(device)
+                    attention_mask = encoded.get("attention_mask")
+                    if attention_mask is not None:
+                        attention_mask = attention_mask.to(device)
+                    features = torch.as_tensor(row["video_spatio_temporal_features"], dtype=torch.float32).unsqueeze(0)
+                    with torch.inference_mode():
+                        output_ids = model.generate(
+                            input_ids,
+                            tokenizer=tokenizer,
+                            attention_mask=attention_mask,
+                            video_spatio_temporal_features=features,
+                            do_sample=False,
+                            max_new_tokens=max_new_tokens,
+                            pad_token_id=tokenizer.eos_token_id,
+                            eos_token_id=tokenizer.eos_token_id,
+                        )
+                    generated = output_ids[:, input_ids.shape[-1]:] if output_ids.shape[-1] > input_ids.shape[-1] else output_ids
+                    answers.append(tokenizer.batch_decode(generated, skip_special_tokens=True)[0].strip())
+            finally:
+                if previous_use_cache is not None:
+                    model.config.use_cache = previous_use_cache
+                if was_training:
+                    model.train()
+
+            score = _score_xvars_generated_answers(
+                answers,
+                required_terms=required_terms,
+                forbidden_terms=forbidden_terms,
+            )
+            record = {"step": int(step), "epoch": epoch, "sample_id": sample_id, "answers": answers, **score}
+            self.history.append(record)
+            logging.info("X-VARS generated validation | %s", json.dumps(record, ensure_ascii=True))
+            self._consider_checkpoint(model=model, record=record)
+
+        def on_step_end(self, args, state, control, model=None, **kwargs):
+            del args, kwargs
+            if use_step_schedule and state.is_world_process_zero and state.global_step % every_steps == 0:
+                self._run(model=model, step=state.global_step, epoch=state.epoch)
+            return control
+
+        def on_epoch_end(self, args, state, control, model=None, **kwargs):
+            del args, kwargs
+            if not use_step_schedule and state.is_world_process_zero:
+                self._run(model=model, step=state.global_step, epoch=state.epoch)
+            return control
+
+        def on_evaluate(self, args, state, control, metrics=None, model=None, **kwargs):
+            del args, kwargs
+            if not state.is_world_process_zero or not self.history or not metrics or "eval_loss" not in metrics:
+                return control
+            record = self.history[-1]
+            if record["step"] == int(state.global_step):
+                record["eval_loss"] = float(metrics["eval_loss"])
+                self._consider_checkpoint(model=model, record=record)
+            return control
+
+    return _GeneratedValidationCallback()
 
 
 class VQAXVarsVideoChatGPTLoraTrainer:
@@ -593,6 +738,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         quant_cfg = _as_dict(execution.get("quantization"))
         checkpoint_cfg = _as_dict(execution.get("checkpoint"))
         xvars_cfg = _as_dict(execution.get("xvars"))
+        generated_validation_cfg = _as_dict(execution.get("generated_validation"))
 
         save_root = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
         output_dir = os.path.join(save_root, "xvars_videochatgpt_lora")
@@ -718,10 +864,22 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
             "ddp_find_unused_parameters": False,
         }
+        max_steps = sft_cfg.get("max_steps")
+        if max_steps is not None and int(max_steps) > 0:
+            training_kwargs["max_steps"] = int(max_steps)
         if int(world_size) > 1:
             training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
         training_kwargs[eval_strategy_key] = str(sft_cfg.get("evaluation_strategy", "epoch"))
         args = TrainingArguments(**training_kwargs)
+        generated_callback = None
+        if bool(generated_validation_cfg.get("enabled", False)):
+            generated_callback = _build_xvars_generated_validation_callback(
+                tokenizer=tokenizer,
+                rows=train_sft.rows,
+                output_dir=output_dir,
+                validation_cfg=generated_validation_cfg,
+                use_step_schedule=bool(training_kwargs.get("max_steps", 0)),
+            )
         trainer = XVarsVideoChatGPTTrainer(
             model=model,
             tokenizer=tokenizer,
@@ -729,6 +887,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             train_dataset=train_sft,
             eval_dataset=valid_sft,
             data_collator=XVarsVideoChatGPTDataCollator(tokenizer),
+            callbacks=[generated_callback] if generated_callback is not None else None,
         )
         logging.info(
             "Starting X-VARS trainer.train | rank=%s | world_size=%s | precision=%s | "
@@ -747,8 +906,29 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             trainer.model.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)
         metadata["status"] = "trained"
+        selected_output_dir = output_dir
+        if rank == 0 and generated_callback is not None:
+            generated_path = os.path.join(output_dir, "generated_validation.json")
+            with open(generated_path, "w", encoding="utf-8") as f:
+                json.dump(generated_callback.history, f, indent=2)
+            accepted = any(record.get("accepted") for record in generated_callback.history)
+            metadata["generated_validation_accepted"] = accepted
+            metadata["generated_validation_history"] = generated_path
+            if generated_callback.history:
+                selected_output_dir = os.path.join(output_dir, "generated_validation_best")
+                metadata["best_generated_checkpoint"] = selected_output_dir
         if rank == 0:
-            return self._write_artifacts(output_dir, metadata)
+            self._write_artifacts(output_dir, metadata)
+            if selected_output_dir != output_dir:
+                self._write_artifacts(selected_output_dir, metadata)
+            if bool(generated_validation_cfg.get("require_relevance", False)) and not metadata.get(
+                "generated_validation_accepted", False
+            ):
+                raise RuntimeError(
+                    "X-VARS generated-answer relevance gate failed. Inspect generated_validation.json before "
+                    "starting or accepting a full training run."
+                )
+            return selected_output_dir
         return output_dir
 
     def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:

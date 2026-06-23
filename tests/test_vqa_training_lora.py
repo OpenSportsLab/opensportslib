@@ -80,8 +80,8 @@ def test_build_vqa_sft_text_uses_priors_and_video_tokens():
     assert "action=Challenge" in row["prompt"]
     assert "<vid_start><vid_patch><vid_patch><vid_end>" in row["prompt"]
     assert row["answer"] == "No card, because contact was low intensity."
-    assert row["completion"] == row["answer"]
-    assert row["text"].endswith(row["answer"])
+    assert row["completion"] == f'{row["answer"]}</s>'
+    assert row["text"].endswith(f'{row["answer"]}</s>')
 
 
 def test_lora_trainer_dry_run_writes_checkpoint_artifacts(tmp_path):
@@ -433,14 +433,25 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
     }
     cfg.TRAIN.execution["sft"] = {
         "max_seq_length": 480,
+        "max_steps": 50,
         "save_strategy": "epoch",
         "disable_tqdm": True,
         "gradient_checkpointing": True,
     }
     cfg.TRAIN.execution["lora"] = {
-        "r": 8,
-        "alpha": 16,
-        "target_modules": ["mm_projector", "q_proj", "k_proj", "v_proj", "o_proj"],
+        "r": 16,
+        "alpha": 32,
+        "target_modules": [
+            "mm_projector",
+            "upsample_features",
+            "up_proj",
+            "down_proj",
+            "gate_proj",
+            "k_proj",
+            "q_proj",
+            "v_proj",
+            "o_proj",
+        ],
     }
 
     monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
@@ -498,9 +509,20 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
     assert captured["fp16"] is True
     assert captured["bf16"] is False
     assert captured["gradient_checkpointing"] is True
+    assert captured["max_steps"] == 50
     assert captured["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
     assert captured["ddp_find_unused_parameters"] is False
-    assert captured["lora_cfg"]["target_modules"] == ["mm_projector", "q_proj", "k_proj", "v_proj", "o_proj"]
+    assert captured["lora_cfg"]["target_modules"] == [
+        "mm_projector",
+        "upsample_features",
+        "up_proj",
+        "down_proj",
+        "gate_proj",
+        "k_proj",
+        "q_proj",
+        "v_proj",
+        "o_proj",
+    ]
     assert captured["lora_distributed"] is True
     assert FakeModel.config.use_cache is False
     assert captured_sources["model"] == "base_model_videoChatGPT"
