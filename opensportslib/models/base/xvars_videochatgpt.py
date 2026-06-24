@@ -837,6 +837,14 @@ class XVarsVideoChatGPTModel(nn.Module):
                 self.model = self.model.to(device)
             self.model = self.model.eval()
             self._ready = True
+            logger.info("===== XVARS DEBUG =====")
+            logger.info("native_generation=%s", self.native_generation)
+            logger.info("feature_mode=%s", self.feature_mode)
+            logger.info("feature_source=%s", self.feature_source)
+            logger.info("video_token_len=%s", self.video_token_len)
+            logger.info("vision_weights_path=%s", self.vision_weights_path)
+            logger.info("model_class=%s", self.model.__class__.__name__)
+            logger.info("=======================")
         except Exception as exc:
             self._error = str(exc)
             logger.warning("X-VARS VideoChatGPT backend unavailable | model_id=%s | reason=%s", model_id, self._error)
@@ -873,6 +881,11 @@ class XVarsVideoChatGPTModel(nn.Module):
                 if self.raw_extractor is None:
                     exec_cfg = get_train_execution(self.config)
                     hf_cfg = _as_dict(exec_cfg.get("hf"))
+                    logger.info(
+                        "feature_mode=%s feature_source=%s",
+                        self.feature_mode,
+                        self.feature_source,
+                    )
                     if self.feature_mode == "strict_xvars":
                         self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
                             weights_path=self.vision_weights_path,
@@ -885,6 +898,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                             prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
                         )
                 if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
+                    logger.info("USING STRICT XVARS EXTRACTOR")
                     features, classifier_prior = self.raw_extractor.extract_with_prior(video_path)
                     if classifier_prior:
                         sample["prior_prediction_text"] = classifier_prior
@@ -895,6 +909,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                         classifier_prior,
                     )
                 else:
+                    logger.info("USING GENERIC CLIP EXTRACTOR")
                     features = self.raw_extractor.extract(video_path, num_frames=self.raw_num_frames)
         if features is None:
             raise ValueError("Missing X-VARS video features and raw-video extraction was not available.")
@@ -915,7 +930,14 @@ class XVarsVideoChatGPTModel(nn.Module):
             raise RuntimeError(self._error or "X-VARS VideoChatGPT backend is not ready")
         resolved_sample = dict(sample)
         features = self._features_for_sample(resolved_sample, prompt_cfg)
+        logger.info(
+            "XVARS_FEATURES shape=%s mean=%f std=%f",
+            tuple(features.shape),
+            features.mean().item(),
+            features.std().item(),
+        )
         prompt = self._build_prompt(resolved_sample, prompt_cfg=prompt_cfg)
+        logger.info("XVARS_PROMPT=%s", prompt)
         logger.info(
             "X-VARS prompt context | id=%s | video_tokens=%s | question=%s | prior=%s",
             resolved_sample.get("id"),
@@ -940,6 +962,10 @@ class XVarsVideoChatGPTModel(nn.Module):
             with torch.inference_mode():
                 if self.native_generation:
                     projector = _get_embedded_mm_projector(self.model)
+                    logger.info(
+                        "PROJECTOR=%s",
+                        projector.__class__.__name__ if projector is not None else None
+                    )
                     if projector is None:
                         raise RuntimeError("Native VideoChatGPT model is missing mm_projector.")
                     projector_param = next(projector.parameters())
