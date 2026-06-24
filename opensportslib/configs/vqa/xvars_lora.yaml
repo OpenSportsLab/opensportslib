@@ -93,8 +93,11 @@ MODEL:
         provider: opensportslib
         registry: backbone
         name: xvars_clip_features
+      load:
+        weights_path: /home/vorajv/xvars-weights/14_model.pth.tar
       params:
         feature_source: indexed_or_raw_clip
+        vision_tower: openai/clip-vit-large-patch14
         feature_dim: 1024
       overrides: {}
     mm_projector:
@@ -163,8 +166,8 @@ TRAIN:
     generation:
       max_new_tokens: 128
       temperature: 0.0
-      repetition_penalty: 1.1
-      no_repeat_ngram_size: 3
+      repetition_penalty: 1.0
+      no_repeat_ngram_size: 0
     generated_validation:
       enabled: true
       sample_id: action_0
@@ -200,7 +203,7 @@ TRAIN:
       local_files_only: false
       prefer_cuda: true
       cuda_device_index: 1
-      tokenizer_id: /home/vorajv/xvars-weights/base_model_videoChatGPT
+      tokenizer_id: /home/vorajv/xvars-weights/llava
     lora:
       r: 16
       alpha: 32

@@ -199,6 +199,8 @@ class VQAModel(BaseTaskModel):
         test_set: str | None = None,
         weights: str | None = None,
         use_wandb: bool = True,
+        video_path: str | None = None,
+        question: str | None = None,
         **kwargs,
     ) -> dict:
         del kwargs
@@ -207,16 +209,42 @@ class VQAModel(BaseTaskModel):
         from opensportslib.models.builder import build_model
         from opensportslib.core.utils.config import select_device
 
+        direct_requested = video_path is not None or question is not None
+        if direct_requested and test_set is not None:
+            raise ValueError("Provide either `test_set` or `video_path`/`question`, not both.")
+        if direct_requested and (not video_path or not str(question or "").strip()):
+            raise ValueError("Direct VQA inference requires both `video_path` and a non-empty `question`.")
+
         self.config = resolve_config_omega(self.config, weights=weights)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         _set_model_checkpoint_path(self.config, effective_weights)
-        test_set = self._resolve_split_path("test", test_set)
-        device = select_device(self.config.SYSTEM)
-        model, _ = build_model(self.config, device)
-        test_data = build_dataset(self.config, test_set, None, split="test")
         self.trainer = Trainer_VQA(self.config)
         if effective_weights is not None:
+            # Validate OpenSportsLib adapter metadata before allocating the base model.
             self.trainer.load(effective_weights)
+        resolved_video_path = None
+        if direct_requested:
+            resolved_video_path = expand(str(video_path))
+            if not os.path.isfile(resolved_video_path):
+                raise FileNotFoundError(f"Video file not found: {resolved_video_path}")
+        device = select_device(self.config.SYSTEM)
+        model, _ = build_model(self.config, device)
+        if direct_requested:
+            test_data = [
+                {
+                    "id": os.path.splitext(os.path.basename(resolved_video_path))[0],
+                    "question": str(question).strip(),
+                    "references": [],
+                    "video_path": resolved_video_path,
+                    "video_spatio_temporal_features": None,
+                    "prior_prediction_text": "",
+                    "labels": {},
+                    "metadata": {},
+                }
+            ]
+        else:
+            test_set = self._resolve_split_path("test", test_set)
+            test_data = build_dataset(self.config, test_set, None, split="test")
         self._init_wandb(use_wandb=use_wandb)
         return self.trainer.infer(model, test_data, use_wandb=use_wandb)
 

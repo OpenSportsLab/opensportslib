@@ -956,6 +956,11 @@ class Trainer_VQA:
         if metadata_path and os.path.exists(metadata_path):
             with open(metadata_path, encoding="utf-8") as f:
                 self.loaded_checkpoint_metadata = json.load(f)
+            if self.loaded_checkpoint_metadata.get("generated_validation_accepted") is False:
+                raise ValueError(
+                    "Refusing to load a rejected VQA adapter: generated validation did not pass. "
+                    f"Checkpoint: {weights}. Use the configured base model or a validated adapter."
+                )
         self.best_checkpoint_path = weights
         return weights
 

@@ -120,9 +120,13 @@ class VQADataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = dict(self.samples[idx])
+        if self.feature_source == "raw_video":
+            sample["selected_feature_path"] = None
+            sample["video_spatio_temporal_features"] = None
+            return sample
         feature_path = self._choose_feature_path(sample.get("feature_candidates") or [])
         if not feature_path or not os.path.exists(feature_path):
-            if self.feature_source in {"raw_video", "auto"}:
+            if self.feature_source in {"raw_video", "auto", "indexed_or_raw", "indexed_or_raw_clip"}:
                 sample["selected_feature_path"] = None
                 sample["video_spatio_temporal_features"] = None
                 return sample

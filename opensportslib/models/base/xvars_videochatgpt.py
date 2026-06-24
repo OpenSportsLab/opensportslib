@@ -17,10 +17,13 @@ import torch
 import torch.nn as nn
 
 from opensportslib.core.config.accessors import (
+    get_component_load_by_kind,
+    get_component_params_by_kind,
     get_data_sampling,
     get_xvars_infer_tokenizer_id,
     get_xvars_infer_video_token_len,
     get_model_load,
+    get_model_runtime_dtype,
     get_train_execution,
     get_vqa_feature_source,
     get_vqa_mm_hidden_size,
@@ -39,6 +42,126 @@ from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xva
 from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
 
 logger = logging.getLogger(__name__)
+
+XVARS_BASE_TOKEN_IDS = {
+    "<vid_patch>": 32003,
+    "<vid_start>": 32004,
+    "<vid_end>": 32005,
+}
+
+
+_XVARS_ACTION_PRIORS = {
+    0: "a tackle",
+    1: "a foot duel",
+    2: "a high leg",
+    3: "holding",
+    4: "pushing",
+    5: "using his elbows or arms",
+    6: "a shoulder challenge",
+    7: "a simulation",
+}
+
+_XVARS_OFFENCE_PRIORS = {
+    0: "and no foul",
+    1: "foul and no card",
+    2: "foul and a yellow card",
+    3: "foul and a red card",
+}
+
+
+def build_xvars_classifier_prior(action_index: int, offence_index: int) -> str:
+    """Translate the original X-VARS classifier outputs into its prompt prior."""
+
+    action = _XVARS_ACTION_PRIORS.get(int(action_index), "")
+    offence = _XVARS_OFFENCE_PRIORS.get(int(offence_index), "")
+    if not action:
+        return offence
+    if offence.startswith("and "):
+        return f"{action} {offence}"
+    return f"{action}, {offence}" if offence else action
+
+
+class _KeywordsStoppingCriteria:
+    """Original VideoChatGPT string stopping behavior without a UI dependency."""
+
+    def __init__(self, keywords: list[str], tokenizer, input_ids: torch.Tensor):
+        self.keywords = keywords
+        self.keyword_ids = []
+        for keyword in keywords:
+            encoded = tokenizer(keyword).input_ids
+            if isinstance(encoded, list) and len(encoded) == 1:
+                self.keyword_ids.append(encoded[0])
+        self.tokenizer = tokenizer
+        self.input_ids = input_ids
+        self.start_len = None
+
+    def __call__(self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        del scores, kwargs
+        if self.start_len is None:
+            self.start_len = self.input_ids.shape[1]
+            return False
+        if any(int(output_ids[0, -1]) == int(keyword_id) for keyword_id in self.keyword_ids):
+            return True
+        output = self.tokenizer.batch_decode(output_ids[:, self.start_len :], skip_special_tokens=True)[0]
+        return any(keyword in output for keyword in self.keywords)
+
+
+def _configure_native_videochatgpt(base_lm, tokenizer, model_id: str) -> bool:
+    """Configure the loaded checkpoint exactly as ``initialize_model`` does upstream."""
+
+    token_ids = {token: int(tokenizer.convert_tokens_to_ids(token)) for token in VIDEO_SPECIAL_TOKENS}
+    if os.path.isabs(os.path.expanduser(str(model_id))) and os.path.basename(os.path.normpath(str(model_id))) == "base_model_videoChatGPT":
+        if token_ids != XVARS_BASE_TOKEN_IDS:
+            raise ValueError(
+                "X-VARS base tokenizer IDs do not match the demo checkpoint: "
+                f"expected {XVARS_BASE_TOKEN_IDS}, got {token_ids}."
+            )
+
+    get_model = getattr(base_lm, "get_model", None)
+    native_model = get_model() if callable(get_model) else getattr(base_lm, "model", None)
+    vision_config = getattr(native_model, "vision_config", None)
+    if vision_config is None:
+        return False
+    vision_config.vid_patch_token = token_ids["<vid_patch>"]
+    vision_config.use_vid_start_end = True
+    vision_config.vid_start_token = token_ids["<vid_start>"]
+    vision_config.vid_end_token = token_ids["<vid_end>"]
+    logger.info("Configured native X-VARS token IDs | %s", token_ids)
+    return True
+
+
+def _restore_native_mm_projector(base_lm, device: torch.device) -> bool:
+    """Restore the demo projector in fp16 when the decoder itself is quantized."""
+
+    raw_state = _load_raw_mm_projector_state(base_lm)
+    if raw_state is None:
+        return False
+    get_model = getattr(base_lm, "get_model", None)
+    native_model = get_model() if callable(get_model) else getattr(base_lm, "model", None)
+    if native_model is None or not hasattr(native_model, "mm_projector"):
+        return False
+    weight = raw_state["weight"]
+    projector = nn.Linear(int(weight.shape[1]), int(weight.shape[0]), bias="bias" in raw_state)
+    projector.load_state_dict(raw_state, strict=True)
+    native_model.mm_projector = projector.to(device=device, dtype=weight.dtype)
+    logger.info("Restored native X-VARS mm_projector from unquantized checkpoint tensors.")
+    return True
+
+
+def _module_execution_device(module: nn.Module, fallback: torch.device) -> torch.device:
+    """Resolve Accelerate's real execution device for CPU/disk-offloaded modules."""
+
+    hook = getattr(module, "_hf_hook", None)
+    execution_device = getattr(hook, "execution_device", None)
+    if execution_device is not None:
+        return torch.device(execution_device)
+    try:
+        parameter_device = next(module.parameters()).device
+    except (StopIteration, AttributeError):
+        parameter_device = fallback
+    if parameter_device.type == "meta":
+        return fallback
+    return parameter_device
 
 
 DEFAULT_XVARS_TARGET_MODULES = [
@@ -69,6 +192,17 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except Exception:
         return None
+
+
+def _runtime_torch_dtype(config) -> torch.dtype:
+    return {
+        "fp16": torch.float16,
+        "float16": torch.float16,
+        "bf16": torch.bfloat16,
+        "bfloat16": torch.bfloat16,
+        "fp32": torch.float32,
+        "float32": torch.float32,
+    }.get(get_model_runtime_dtype(config, default="fp16").lower(), torch.float16)
 
 
 def _get_embedded_mm_projector(base_lm) -> nn.Module | None:
@@ -444,6 +578,151 @@ class XVarsRawVideoFeatureExtractor:
         return self.spatio_temporal_tokens(frame_features).cpu().to(torch.float32)
 
 
+class _XVarsClassifierVisionTower(nn.Module):
+    """Original X-VARS CLIP classifier architecture used by the demo."""
+
+    def __init__(self, vision_tower: str):
+        super().__init__()
+        from transformers import CLIPVisionModel
+
+        self.vision_tower = CLIPVisionModel.from_pretrained(vision_tower, low_cpu_mem_usage=True)
+        self.inter = nn.Sequential(
+            nn.LayerNorm(1024),
+            nn.Linear(1024, 1024),
+            nn.Linear(1024, 1024),
+        )
+        self.fc_offence = nn.Sequential(
+            nn.LayerNorm(1024),
+            nn.Linear(1024, 1024),
+            nn.Linear(1024, 4),
+        )
+        self.fc_action = nn.Sequential(
+            nn.LayerNorm(1024),
+            nn.Linear(1024, 1024),
+            nn.Linear(1024, 8),
+        )
+
+    def forward(self, video: torch.Tensor):
+        output = self.vision_tower(video, output_hidden_states=True)
+        frame_features = output.hidden_states[-2][:, 1:]
+        pooled = self.inter(torch.mean(output.pooler_output, dim=0).unsqueeze(0))
+        return self.fc_offence(pooled).squeeze(0), self.fc_action(pooled).squeeze(0), frame_features
+
+
+def _normalize_xvars_vision_state_dict(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    normalized = {}
+    for key, value in state_dict.items():
+        key = str(key)
+        if key.startswith("module."):
+            key = key[len("module.") :]
+        if key.startswith("vision_model."):
+            key = "vision_tower.vision_model." + key[len("vision_model.") :]
+        if key.startswith("text_model.") or key in {
+            "visual_projection.weight",
+            "text_projection.weight",
+            "logit_scale",
+        }:
+            continue
+        normalized[key] = value
+    return normalized
+
+
+class XVarsStrictRawVideoFeatureExtractor:
+    """Headless equivalent of ``x_vars_demo.py`` video upload and CLIP inference."""
+
+    def __init__(
+        self,
+        *,
+        weights_path: str,
+        vision_tower: str = "openai/clip-vit-large-patch14",
+        prefer_cuda: bool = True,
+    ):
+        if not weights_path:
+            raise ValueError(
+                "Strict X-VARS raw-video inference requires the visual encoder weights_path "
+                "(14_model.pth.tar)."
+            )
+        self.weights_path = os.path.abspath(os.path.expanduser(str(weights_path)))
+        self.vision_tower = vision_tower
+        self._device = torch.device("cuda" if prefer_cuda and torch.cuda.is_available() else "cpu")
+        self._model = None
+        self._processor = None
+
+    def _ensure_loaded(self) -> None:
+        if self._model is not None:
+            return
+        if not os.path.isfile(self.weights_path):
+            raise FileNotFoundError(f"X-VARS visual encoder checkpoint not found: {self.weights_path}")
+        from transformers import CLIPImageProcessor
+
+        self._processor = CLIPImageProcessor.from_pretrained(self.vision_tower)
+        model = _XVarsClassifierVisionTower(self.vision_tower)
+        checkpoint = torch.load(self.weights_path, map_location="cpu")
+        state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+        if not isinstance(state_dict, dict):
+            raise ValueError(f"Unsupported X-VARS visual checkpoint format: {self.weights_path}")
+        missing, unexpected = model.load_state_dict(_normalize_xvars_vision_state_dict(state_dict), strict=False)
+        required_prefixes = ("vision_tower.", "inter.", "fc_offence.", "fc_action.")
+        blocking_missing = [key for key in missing if key.startswith(required_prefixes)]
+        if blocking_missing:
+            raise RuntimeError(
+                "X-VARS visual checkpoint is incompatible; missing required weights such as "
+                f"{blocking_missing[:8]}"
+            )
+        if unexpected:
+            logger.info("Ignored unexpected X-VARS visual checkpoint keys: %s", unexpected[:8])
+        # The working X-VARS demo runs this classifier in float32 on CUDA.
+        self._model = model.to(device=self._device, dtype=torch.float32).eval()
+
+    @staticmethod
+    def _strict_frame_window(frames: list) -> list:
+        window = frames[63:87]
+        if not window:
+            return frames
+        factor = 25.0 / 17.0
+        sampled = [frame for index, frame in enumerate(window) if index % factor < 1]
+        return sampled or window
+
+    @staticmethod
+    def spatio_temporal_tokens(frame_features: torch.Tensor) -> torch.Tensor:
+        temporal = torch.mean(frame_features, dim=1)
+        if temporal.shape[0] < 44:
+            padding = torch.zeros(
+                44 - temporal.shape[0],
+                temporal.shape[1],
+                device=temporal.device,
+                dtype=temporal.dtype,
+            )
+            temporal = torch.cat((temporal, padding), dim=0)
+        else:
+            temporal = temporal[:44]
+        spatial = torch.mean(frame_features, dim=0)
+        return torch.cat((temporal, spatial), dim=0)
+
+    def extract_with_prior(self, video_path: str) -> tuple[torch.Tensor, str]:
+        self._ensure_loaded()
+        loader = XVarsRawVideoFeatureExtractor(
+            vision_tower=self.vision_tower,
+            prefer_cuda=self._device.type == "cuda",
+        )
+        frames = loader.load_video(video_path, num_frames=100)
+        frames = self._strict_frame_window(frames)
+        image_tensor = self._processor.preprocess(frames, return_tensors="pt")["pixel_values"]
+        image_tensor = image_tensor.to(device=self._device, dtype=torch.float32)
+        with torch.inference_mode():
+            offence_logits, action_logits, frame_features = self._model(image_tensor)
+        features = self.spatio_temporal_tokens(frame_features)
+        prior = build_xvars_classifier_prior(
+            int(torch.argmax(action_logits).item()),
+            int(torch.argmax(offence_logits).item()),
+        )
+        return features.detach().cpu().to(torch.float32), prior
+
+    def extract(self, video_path: str) -> torch.Tensor:
+        features, _prior = self.extract_with_prior(video_path)
+        return features
+
+
 class XVarsVideoChatGPTModel(nn.Module):
     """OpenSportsLib VQA model using the X-VARS multimodal tensor contract."""
 
@@ -456,6 +735,8 @@ class XVarsVideoChatGPTModel(nn.Module):
         self._error = None
         self.tokenizer = None
         self.model = None
+        self.native_generation = False
+        self.inference_device = torch.device("cpu")
 
         exec_cfg = get_train_execution(config)
         xvars_cfg = _as_dict(exec_cfg.get("xvars"))
@@ -469,6 +750,18 @@ class XVarsVideoChatGPTModel(nn.Module):
         self.raw_num_frames = resolve_xvars_raw_num_frames(config, xvars_cfg)
         self.raw_extractor = None
 
+        encoder_params = get_component_params_by_kind(config, "encoder")
+        encoder_load = get_component_load_by_kind(config, "encoder")
+        self.vision_tower_name = str(
+            encoder_params.get("vision_tower") or "openai/clip-vit-large-patch14"
+        )
+        self.vision_weights_path = str(
+            encoder_load.get("weights_path")
+            or encoder_params.get("weights_path")
+            or xvars_cfg.get("vision_weights_path")
+            or ""
+        )
+
         local_files_only = bool(hf_cfg.get("local_files_only", False))
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
         cuda_device_index = _optional_int(hf_cfg.get("cuda_device_index"))
@@ -481,14 +774,35 @@ class XVarsVideoChatGPTModel(nn.Module):
         device = torch.device(
             f"cuda:{cuda_device_index}" if use_cuda and cuda_device_index is not None else ("cuda" if use_cuda else "cpu")
         )
+        self.inference_device = device
         try:
             from transformers import AutoTokenizer
 
             bnb_config = build_bitsandbytes_config(quant_cfg)
-            model_kwargs = {"local_files_only": local_files_only}
+            model_kwargs = {"local_files_only": local_files_only, "low_cpu_mem_usage": True, "use_cache": True}
+            dispatched_model = False
             if bnb_config is not None:
                 model_kwargs["quantization_config"] = bnb_config
                 model_kwargs["device_map"] = {"": torch.cuda.current_device()} if use_cuda else None
+            else:
+                model_kwargs["torch_dtype"] = _runtime_torch_dtype(config)
+                requested_device_map = hf_cfg.get("device_map")
+                if requested_device_map:
+                    model_kwargs["device_map"] = requested_device_map
+                    dispatched_model = True
+                    max_memory = {}
+                    if use_cuda and hf_cfg.get("max_gpu_memory"):
+                        max_memory[torch.cuda.current_device()] = str(hf_cfg["max_gpu_memory"])
+                    if hf_cfg.get("max_cpu_memory"):
+                        max_memory["cpu"] = str(hf_cfg["max_cpu_memory"])
+                    if max_memory:
+                        model_kwargs["max_memory"] = max_memory
+                    offload_folder = hf_cfg.get("offload_folder")
+                    if offload_folder:
+                        offload_folder = os.path.abspath(os.path.expanduser(str(offload_folder)))
+                        os.makedirs(offload_folder, exist_ok=True)
+                        model_kwargs["offload_folder"] = offload_folder
+                        model_kwargs["offload_state_dict"] = True
 
             with hf_offline_if_requested(local_files_only):
                 self.tokenizer = AutoTokenizer.from_pretrained(
@@ -500,17 +814,26 @@ class XVarsVideoChatGPTModel(nn.Module):
                     self.tokenizer.pad_token = self.tokenizer.eos_token
                 base_lm = load_videochatgpt_compatible_causal_lm(model_id, **model_kwargs)
             _ensure_video_special_tokens(self.tokenizer, base_lm)
-            self.model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(
-                base_lm,
-                projection_path,
-                mm_hidden_size=mm_hidden_size,
-            )
-            if bnb_config is not None and hasattr(self.model, "mm_projector"):
-                self.model.mm_projector = self.model.mm_projector.to(device)
+            native_configured = _configure_native_videochatgpt(base_lm, self.tokenizer, model_id)
             if adapter_path:
+                self.model = XVarsVideoChatGPTCausalLM.from_pretrained_projector(
+                    base_lm,
+                    projection_path,
+                    mm_hidden_size=mm_hidden_size,
+                )
+                if bnb_config is not None and hasattr(self.model, "mm_projector"):
+                    self.model.mm_projector = self.model.mm_projector.to(device)
                 self.model, adapter_status = load_peft_adapter_if_available(self.model, adapter_path)
                 logger.info("X-VARS PEFT adapter | status=%s | path=%s", adapter_status, adapter_path)
-            if bnb_config is None:
+            else:
+                if not native_configured:
+                    raise RuntimeError("Loaded X-VARS decoder does not expose native VideoChatGPT vision configuration.")
+                self.model = base_lm
+                self.native_generation = True
+                if bnb_config is not None and not _restore_native_mm_projector(base_lm, device):
+                    raise RuntimeError("Could not restore the native X-VARS mm_projector for quantized inference.")
+                logger.info("Using native VideoChatGPT generation path | model_id=%s", model_id)
+            if bnb_config is None and not dispatched_model:
                 self.model = self.model.to(device)
             self.model = self.model.eval()
             self._ready = True
@@ -543,19 +866,36 @@ class XVarsVideoChatGPTModel(nn.Module):
 
     def _features_for_sample(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None):
         features = sample.get("video_spatio_temporal_features")
-        if features is None and self.feature_source in {"raw_video", "auto"}:
+        raw_sources = {"raw_video", "auto", "indexed_or_raw", "indexed_or_raw_clip"}
+        if features is None and self.feature_source in raw_sources:
             video_path = sample.get("video_path")
             if video_path:
                 if self.raw_extractor is None:
                     exec_cfg = get_train_execution(self.config)
                     hf_cfg = _as_dict(exec_cfg.get("hf"))
                     if self.feature_mode == "strict_xvars":
-                        raise ValueError(
-                            "Strict X-VARS mode requires indexed 300-token features extracted with the parity extractor; "
-                            "raw-video fallback is only supported for clip_compat mode."
+                        self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
+                            weights_path=self.vision_weights_path,
+                            vision_tower=self.vision_tower_name,
+                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
                         )
-                    self.raw_extractor = XVarsRawVideoFeatureExtractor(prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)))
-                features = self.raw_extractor.extract(video_path, num_frames=self.raw_num_frames)
+                    else:
+                        self.raw_extractor = XVarsRawVideoFeatureExtractor(
+                            vision_tower=self.vision_tower_name,
+                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                        )
+                if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
+                    features, classifier_prior = self.raw_extractor.extract_with_prior(video_path)
+                    if classifier_prior:
+                        sample["prior_prediction_text"] = classifier_prior
+                    logger.info(
+                        "X-VARS demo-parity visual context | video=%s | feature_shape=%s | prior=%s",
+                        video_path,
+                        tuple(features.shape),
+                        classifier_prior,
+                    )
+                else:
+                    features = self.raw_extractor.extract(video_path, num_frames=self.raw_num_frames)
         if features is None:
             raise ValueError("Missing X-VARS video features and raw-video extraction was not available.")
         token_len = int((prompt_cfg or {}).get("video_token_len", self.video_token_len))
@@ -573,10 +913,20 @@ class XVarsVideoChatGPTModel(nn.Module):
             if fallback_policy == "baseline_on_failure":
                 return self.baseline.generate_answer(sample, prompt_cfg=prompt_cfg, generation_cfg=generation_cfg)
             raise RuntimeError(self._error or "X-VARS VideoChatGPT backend is not ready")
-        prompt = self._build_prompt(sample, prompt_cfg=prompt_cfg)
-        features = self._features_for_sample(sample, prompt_cfg)
+        resolved_sample = dict(sample)
+        features = self._features_for_sample(resolved_sample, prompt_cfg)
+        prompt = self._build_prompt(resolved_sample, prompt_cfg=prompt_cfg)
+        logger.info(
+            "X-VARS prompt context | id=%s | video_tokens=%s | question=%s | prior=%s",
+            resolved_sample.get("id"),
+            int(features.shape[0]),
+            resolved_sample.get("question"),
+            resolved_sample.get("prior_prediction_text", ""),
+        )
         encoded = self.tokenizer([prompt], return_tensors="pt")
-        device = next(self.model.parameters()).device
+        input_embeddings = self.model.get_input_embeddings()
+        inference_device = getattr(self, "inference_device", torch.device("cpu"))
+        device = _module_execution_device(input_embeddings, inference_device)
         input_ids = encoded["input_ids"].to(device)
         attention_mask = encoded.get("attention_mask")
         if attention_mask is not None:
@@ -586,25 +936,45 @@ class XVarsVideoChatGPTModel(nn.Module):
         if max_new_tokens_cap is not None:
             max_new_tokens = min(max_new_tokens, int(max_new_tokens_cap))
         temperature = float(generation_cfg.get("temperature", 0.2))
-        generation_kwargs = {
-            "do_sample": temperature > 0,
-            "max_new_tokens": max_new_tokens,
-            "pad_token_id": self.tokenizer.eos_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id,
-            "repetition_penalty": float(generation_cfg.get("repetition_penalty", 1.0)),
-            "no_repeat_ngram_size": int(generation_cfg.get("no_repeat_ngram_size", 0)),
-        }
-        if temperature > 0:
-            generation_kwargs["temperature"] = temperature
         try:
             with torch.inference_mode():
-                output_ids = self.model.generate(
-                    input_ids,
-                    tokenizer=self.tokenizer,
-                    attention_mask=attention_mask,
-                    video_spatio_temporal_features=features.unsqueeze(0),
-                    **generation_kwargs,
-                )
+                if self.native_generation:
+                    projector = _get_embedded_mm_projector(self.model)
+                    if projector is None:
+                        raise RuntimeError("Native VideoChatGPT model is missing mm_projector.")
+                    projector_param = next(projector.parameters())
+                    projector_device = _module_execution_device(projector, inference_device)
+                    native_features = features.unsqueeze(0).to(
+                        device=projector_device,
+                        dtype=projector_param.dtype,
+                    )
+                    stopping_criteria = _KeywordsStoppingCriteria(["</s>"], self.tokenizer, input_ids)
+                    output_ids = self.model.generate(
+                        input_ids,
+                        video_spatio_temporal_features=native_features,
+                        do_sample=False,
+                        temperature=temperature,
+                        max_new_tokens=max_new_tokens,
+                        stopping_criteria=[stopping_criteria],
+                    )
+                else:
+                    generation_kwargs = {
+                        "do_sample": temperature > 0,
+                        "max_new_tokens": max_new_tokens,
+                        "pad_token_id": self.tokenizer.eos_token_id,
+                        "eos_token_id": self.tokenizer.eos_token_id,
+                        "repetition_penalty": float(generation_cfg.get("repetition_penalty", 1.0)),
+                        "no_repeat_ngram_size": int(generation_cfg.get("no_repeat_ngram_size", 0)),
+                    }
+                    if temperature > 0:
+                        generation_kwargs["temperature"] = temperature
+                    output_ids = self.model.generate(
+                        input_ids,
+                        tokenizer=self.tokenizer,
+                        attention_mask=attention_mask,
+                        video_spatio_temporal_features=features.unsqueeze(0),
+                        **generation_kwargs,
+                    )
             if output_ids.shape[-1] > input_ids.shape[-1]:
                 decoded = self.tokenizer.batch_decode(output_ids[:, input_ids.shape[-1]:], skip_special_tokens=True)[0]
             else:
@@ -634,7 +1004,9 @@ __all__ = [
     "DEFAULT_XVARS_TARGET_MODULES",
     "resolve_xvars_raw_num_frames",
     "XVarsRawVideoFeatureExtractor",
+    "XVarsStrictRawVideoFeatureExtractor",
     "XVarsVideoChatGPTCausalLM",
     "XVarsVideoChatGPTModel",
+    "build_xvars_classifier_prior",
     "_get_embedded_mm_projector",
 ]

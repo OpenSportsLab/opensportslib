@@ -12,7 +12,9 @@ from typing import Any
 import torch
 
 logger = logging.getLogger(__name__)
-VIDEO_SPECIAL_TOKENS = ("<vid_start>", "<vid_patch>", "<vid_end>")
+# Registration order is checkpoint-significant. The original VideoChatGPT/X-VARS
+# demo adds the patch token first, followed by the start/end delimiters.
+VIDEO_SPECIAL_TOKENS = ("<vid_patch>", "<vid_start>", "<vid_end>")
 
 
 @contextmanager

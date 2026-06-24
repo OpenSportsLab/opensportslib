@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 import torch
 
 
@@ -165,6 +166,7 @@ def test_ensure_video_special_tokens_resizes_embeddings():
     added = _ensure_video_special_tokens(tok, model)
     assert added == 3
     assert model.resized_to == len(tok)
+    assert tok._added == ["<vid_patch>", "<vid_start>", "<vid_end>"]
 
 
 def test_hf_backend_generation_mismatch_falls_back(monkeypatch):

@@ -129,6 +129,11 @@ predictions = m.infer(
     test_set="/path/to/test_annotations.json",
 )
 
+single_prediction = m.infer(
+    video_path="/path/to/video.mp4",
+    question="What card would you give? Why?",
+)
+
 metrics = m.evaluate(
     test_set="/path/to/test_annotations.json",
     predictions=predictions,
@@ -144,6 +149,13 @@ X-VARS-compatible multimodal path. This backend preserves
 `<vid_patch>` token positions at inference. In OpenSportsLib, X-VARS parity is
 claimed through training, inference, and X-VARS-style prediction export; VQA
 evaluation remains OpenSportsLib-native.
+
+For headless parity with the original X-VARS demo, configure the encoder with
+`feature_source: indexed_or_raw_clip` and set its `load.weights_path` to
+`14_model.pth.tar`. Indexed 300-token features are used when available;
+otherwise `infer()` extracts them from the raw video and adds the visual
+classifier's action/offence/card prior. Supplying `weights=` optionally applies
+a PEFT/LoRA adapter over the configured base VideoChatGPT model.
 
 The older `xvars_hf` backend remains available as a lightweight HuggingFace
 fallback, but it is not full X-VARS parity.

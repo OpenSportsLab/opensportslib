@@ -260,6 +260,12 @@ predictions = my_model.infer(
     test_set="/path/to/test_annotations.json",
 )
 
+# Headless single-video VQA uses the same prediction payload shape.
+single_prediction = my_model.infer(
+    video_path="/path/to/video.mp4",
+    question="What card would you give? Why?",
+)
+
 metrics = my_model.evaluate(
     test_set="/path/to/test_annotations.json",
     predictions=predictions,
