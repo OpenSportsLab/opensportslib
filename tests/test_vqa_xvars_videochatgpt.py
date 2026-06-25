@@ -12,7 +12,10 @@ from opensportslib.core.trainer.vqa_trainer import (
     _resolve_sft_per_device_batch_sizes,
     _score_xvars_generated_answers,
 )
-from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
+from opensportslib.models.base.xvars_videochatgpt import (
+    XVarsVideoChatGPTCausalLM,
+    _build_direct_demo_parity_prompt_and_stop,
+)
 from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_xvars_prompt
 from opensportslib.models.utils.xvars_clip_index import load_feature_index, load_prediction_index
 
@@ -687,8 +690,16 @@ def test_xvars_demo_token_ids_match_base_checkpoint():
     from opensportslib.core.utils.hf_runtime import _ensure_video_special_tokens
     from opensportslib.models.base.xvars_videochatgpt import XVARS_BASE_TOKEN_IDS
 
+    candidates = [
+        Path("/home/vorajv/X-VARS/weights/LLaVA-7B-Lightening-v1-1"),
+        Path("/home/vorajv/xvars-weights/llava"),
+    ]
+    tokenizer_path = next((path for path in candidates if path.exists()), None)
+    if tokenizer_path is None:
+        pytest.skip("No local X-VARS tokenizer checkpoint available for token ID parity test.")
+
     tokenizer = AutoTokenizer.from_pretrained(
-        "/home/vorajv/xvars-weights/llava",
+        str(tokenizer_path),
         use_fast=False,
         local_files_only=True,
     )
@@ -750,6 +761,7 @@ def test_xvars_base_inference_uses_native_videochatgpt_generate():
             "question": "What card?",
             "prior_prediction_text": "a tackle, foul and no card",
             "video_spatio_temporal_features": torch.ones((300, 1024)),
+            "_xvars_demo_parity_direct_infer": True,
         },
         prompt_cfg={"video_token_len": 300, "include_priors": True},
         generation_cfg={"temperature": 0.2, "max_new_tokens": 16},
@@ -765,6 +777,148 @@ def test_xvars_base_inference_uses_native_videochatgpt_generate():
     assert "tokenizer" not in captured
     assert "eos_token_id" not in captured
     assert "pad_token_id" not in captured
+
+
+def test_xvars_base_inference_direct_demo_parity_recovers_from_zero_temperature():
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    captured = {}
+
+    class NativeModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embeddings = torch.nn.Embedding(16, 4)
+            self.mm_projector = torch.nn.Linear(1024, 4).half()
+
+        def get_input_embeddings(self):
+            return self.embeddings
+
+        def generate(self, input_ids, **kwargs):
+            captured.update(kwargs)
+            return torch.cat((input_ids, torch.tensor([[9]], device=input_ids.device)), dim=1)
+
+    class NativeTokenizer:
+        eos_token_id = 2
+
+        def __call__(self, value, return_tensors=None):
+            if isinstance(value, str):
+                return SimpleNamespace(input_ids=[2])
+            assert return_tensors == "pt"
+            return {"input_ids": torch.tensor([[1, 5, 6]]), "attention_mask": torch.ones((1, 3), dtype=torch.long)}
+
+        def batch_decode(self, values, skip_special_tokens=True):
+            del values, skip_special_tokens
+            return ["football answer</s>"]
+
+    model = XVarsVideoChatGPTModel.__new__(XVarsVideoChatGPTModel)
+    torch.nn.Module.__init__(model)
+    model._ready = True
+    model._error = None
+    model.native_generation = True
+    model.model = NativeModel()
+    model.tokenizer = NativeTokenizer()
+    model.feature_source = "indexed"
+    model.feature_mode = "strict_xvars"
+    model.video_token_len = 300
+    model.baseline = SimpleNamespace(generate_answer=lambda *args, **kwargs: "fallback")
+
+    answer = model.generate_answer(
+        {
+            "id": "action_0",
+            "question": "What card?",
+            "prior_prediction_text": "a tackle, foul and no card",
+            "video_spatio_temporal_features": torch.ones((300, 1024)),
+            "_xvars_demo_parity_direct_infer": True,
+        },
+        prompt_cfg={"video_token_len": 300, "include_priors": True},
+        generation_cfg={"temperature": 0.0, "max_new_tokens": 16},
+    )
+
+    assert answer == "football answer"
+    assert captured["do_sample"] is False
+    assert captured["temperature"] == 0.2
+
+
+def test_direct_demo_parity_prompt_matches_upstream_order_and_stop_string():
+    prompt, stop_str = _build_direct_demo_parity_prompt_and_stop(
+        {
+            "question": "Is it a foul or not? Why?",
+            "prior_prediction_text": "a tackle, foul and no card",
+        },
+        system_prompt=VIDEO_CHATGPT_SYSTEM_PROMPT,
+        prior_text="a tackle, foul and no card",
+        video_token_len=3,
+    )
+
+    assert stop_str == "</s>"
+    assert prompt == (
+        f"{VIDEO_CHATGPT_SYSTEM_PROMPT} USER: Is it a foul or not? Why? "
+        "The prediction for this video is a tackle, foul and no card\n"
+        "<vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT:"
+    )
+
+
+def test_native_direct_inference_prompt_places_prior_before_video_tokens():
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    class PromptTokenizer:
+        eos_token_id = 2
+
+        def __init__(self):
+            self.last_prompt = None
+
+        def __call__(self, value, return_tensors=None):
+            if isinstance(value, str):
+                return SimpleNamespace(input_ids=[2])
+            self.last_prompt = value[0]
+            assert return_tensors == "pt"
+            return {"input_ids": torch.tensor([[1, 5, 6]]), "attention_mask": torch.ones((1, 3), dtype=torch.long)}
+
+        def batch_decode(self, values, skip_special_tokens=True):
+            del values, skip_special_tokens
+            return ["football answer</s>"]
+
+    class NativeModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embeddings = torch.nn.Embedding(16, 4)
+            self.mm_projector = torch.nn.Linear(1024, 4).half()
+
+        def get_input_embeddings(self):
+            return self.embeddings
+
+        def generate(self, input_ids, **kwargs):
+            del kwargs
+            return torch.cat((input_ids, torch.tensor([[9]], device=input_ids.device)), dim=1)
+
+    tokenizer = PromptTokenizer()
+    model = XVarsVideoChatGPTModel.__new__(XVarsVideoChatGPTModel)
+    torch.nn.Module.__init__(model)
+    model._ready = True
+    model._error = None
+    model.native_generation = True
+    model.model = NativeModel()
+    model.tokenizer = tokenizer
+    model.feature_source = "indexed"
+    model.feature_mode = "strict_xvars"
+    model.video_token_len = 3
+    model.baseline = SimpleNamespace(generate_answer=lambda *args, **kwargs: "fallback")
+
+    model.generate_answer(
+        {
+            "id": "clip_0",
+            "question": "Is it a foul or not? Why?",
+            "prior_prediction_text": "a tackle, foul and no card",
+            "video_spatio_temporal_features": torch.ones((3, 1024)),
+            "_xvars_demo_parity_direct_infer": True,
+        },
+        prompt_cfg={"video_token_len": 3, "include_priors": True, "system_prompt": VIDEO_CHATGPT_SYSTEM_PROMPT},
+        generation_cfg={"temperature": 0.2, "max_new_tokens": 16},
+    )
+
+    assert tokenizer.last_prompt is not None
+    assert "USER: Is it a foul or not? Why? The prediction for this video is a tackle, foul and no card\n" in tokenizer.last_prompt
+    assert "<vid_start><vid_patch><vid_patch><vid_patch><vid_end> ASSISTANT:" in tokenizer.last_prompt
 
 
 def test_restore_native_projector_preserves_checkpoint_tensors(monkeypatch):

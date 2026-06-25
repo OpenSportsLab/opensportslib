@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
-from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution
+from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution, get_vqa_backend
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
 
@@ -227,6 +227,26 @@ class VQAModel(BaseTaskModel):
             resolved_video_path = expand(str(video_path))
             if not os.path.isfile(resolved_video_path):
                 raise FileNotFoundError(f"Video file not found: {resolved_video_path}")
+            if get_vqa_backend(self.config) == "xvars_videochatgpt":
+                from opensportslib.models.base.xvars_videochatgpt import run_upstream_xvars_demo_direct_infer
+
+                self._init_wandb(use_wandb=use_wandb)
+                answer = run_upstream_xvars_demo_direct_infer(
+                    self.config,
+                    video_path=resolved_video_path,
+                    question=str(question).strip(),
+                )
+                return {
+                    "task": "vqa",
+                    "data": [
+                        {
+                            "id": os.path.splitext(os.path.basename(resolved_video_path))[0],
+                            "question": str(question).strip(),
+                            "answer_text": answer,
+                            "video_path": resolved_video_path,
+                        }
+                    ],
+                }
         device = select_device(self.config.SYSTEM)
         model, _ = build_model(self.config, device)
         if direct_requested:
@@ -240,6 +260,7 @@ class VQAModel(BaseTaskModel):
                     "prior_prediction_text": "",
                     "labels": {},
                     "metadata": {},
+                    "_xvars_demo_parity_direct_infer": True,
                 }
             ]
         else:

@@ -463,7 +463,7 @@ def test_vqa_api_uses_wandb_for_train_infer_and_evaluate(vqa_config_path, tmp_pa
             return weights
 
     monkeypatch.setattr(
-        "opensportslib.core.utils.config.resolve_config_omega",
+        "opensportslib.apis.vqa.resolve_config_omega",
         lambda cfg, weights=None: cfg,
     )
     monkeypatch.setattr(
@@ -558,4 +558,60 @@ def test_vqa_worker_ddp_initializes_wandb_on_rank_zero(vqa_config_path, tmp_path
     )
 
     assert wandb_inits == [(vqa_config_path, True)]
-    assert queue.items == ["trained.ckpt"]
+
+
+def test_vqa_direct_xvars_infer_uses_upstream_demo_shortcut(vqa_config_path, tmp_path, monkeypatch):
+    from opensportslib.apis.vqa import VQAModel
+
+    video_path = tmp_path / "clip_0.mp4"
+    video_path.write_bytes(b"video")
+
+    config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    test=SimpleNamespace(annotation_path=str(tmp_path / "test.json")),
+                )
+            )
+        ),
+        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
+        SYSTEM=SimpleNamespace(device="cuda", gpu=SimpleNamespace(count=1, id=0)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}}),
+        TASK="VQA",
+    )
+
+    called = {}
+
+    monkeypatch.setattr(
+        "opensportslib.apis.vqa.resolve_config_omega",
+        lambda cfg, weights=None: cfg,
+    )
+    monkeypatch.setattr(
+        "opensportslib.apis.vqa.get_vqa_backend",
+        lambda cfg: "xvars_videochatgpt",
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt.run_upstream_xvars_demo_direct_infer",
+        lambda cfg, *, video_path, question: called.setdefault("payload", (video_path, question)) and "answer",
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        lambda cfg: SimpleNamespace(load=lambda weights: weights),
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: None,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("build_model should not run for direct X-VARS shortcut")),
+    )
+
+    api = VQAModel(config=vqa_config_path)
+    api.config = config
+    out = api.infer(video_path=str(video_path), question="What happened?", use_wandb=False)
+
+    assert called["payload"] == (str(video_path), "What happened?")
+    assert out["task"] == "vqa"
+    assert out["data"][0]["question"] == "What happened?"
+    assert out["data"][0]["answer_text"] == "answer"

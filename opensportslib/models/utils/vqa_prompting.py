@@ -47,13 +47,12 @@ def build_xvars_prompt(
     question_text = str(question).strip()
     prior_text = str(prior_text).strip()
 
-    video_block = ""
-    if video_token_len > 0:
-        video_block = f"<vid_start>{'<vid_patch>' * video_token_len}<vid_end>\n"
-
-    user_turn = f"USER: {video_block}{question_text}"
+    user_turn = f"USER: {question_text}"
     if prior_text:
         user_turn = f"{user_turn} The prediction for this video is {prior_text}"
+
+    if video_token_len > 0:
+        user_turn = f"{user_turn}\n<vid_start>{'<vid_patch>' * video_token_len}<vid_end>"
 
     resolved_system_prompt = str(system_prompt).strip() or VIDEO_CHATGPT_SYSTEM_PROMPT
     return f"{resolved_system_prompt} {user_turn} ASSISTANT:"

@@ -94,7 +94,7 @@ MODEL:
         registry: backbone
         name: xvars_clip_features
       load:
-        weights_path: /home/vorajv/xvars-weights/14_model.pth.tar
+        weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
       params:
         feature_source: indexed_or_raw_clip
         vision_tower: openai/clip-vit-large-patch14
@@ -113,9 +113,9 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: /home/vorajv/xvars-weights/base_model_videoChatGPT
+        name: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
       params:
-        repo_id: /home/vorajv/xvars-weights/base_model_videoChatGPT
+        repo_id: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
       overrides: {}
   topology:
     - from: video_encoder
@@ -203,7 +203,7 @@ TRAIN:
       local_files_only: false
       prefer_cuda: true
       cuda_device_index: 1
-      tokenizer_id: /home/vorajv/xvars-weights/llava
+      tokenizer_id: /home/vorajv/X-VARS/weights/LLaVA-7B-Lightening-v1-1
     lora:
       r: 16
       alpha: 32

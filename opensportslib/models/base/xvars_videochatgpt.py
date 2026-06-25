@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import json
 import os
+import sys
 from typing import Any
 
 import torch
@@ -68,6 +69,10 @@ _XVARS_OFFENCE_PRIORS = {
     3: "foul and a red card",
 }
 
+_XVARS_DIRECT_PARITY_SAMPLE_FLAG = "_xvars_demo_parity_direct_infer"
+_XVARS_DIRECT_STOP_STR = "</s>"
+_UPSTREAM_XVARS_REPO_ROOT = "/home/vorajv/X-VARS/X-VARS"
+
 
 def build_xvars_classifier_prior(action_index: int, offence_index: int) -> str:
     """Translate the original X-VARS classifier outputs into its prompt prior."""
@@ -79,6 +84,145 @@ def build_xvars_classifier_prior(action_index: int, offence_index: int) -> str:
     if offence.startswith("and "):
         return f"{action} {offence}"
     return f"{action}, {offence}" if offence else action
+
+
+def _is_direct_demo_parity_sample(sample: dict[str, Any]) -> bool:
+    return bool(sample.get(_XVARS_DIRECT_PARITY_SAMPLE_FLAG))
+
+
+def _build_direct_demo_parity_prompt_and_stop(
+    sample: dict[str, Any],
+    *,
+    system_prompt: str,
+    prior_text: str,
+    video_token_len: int,
+) -> tuple[str, str]:
+    prompt = build_xvars_prompt(
+        system_prompt=system_prompt,
+        question=str(sample.get("question", "")),
+        prior_text=prior_text,
+        video_token_len=video_token_len,
+    )
+    return prompt, _XVARS_DIRECT_STOP_STR
+
+
+def _upstream_chat_demo_prior(action_logits: torch.Tensor, offence_logits: torch.Tensor) -> str:
+    action_index = int(torch.argmax(action_logits.detach().cpu(), dim=0).item())
+    offence_index = int(torch.argmax(offence_logits.detach().cpu(), dim=0).item())
+    return build_xvars_classifier_prior(action_index, offence_index)
+
+
+def _upstream_chat_demo_spatio_temporal_features(frame_features) -> torch.Tensor:
+    import numpy as np
+
+    temporal_tokens = np.mean(frame_features, axis=1)
+    padding_size = 44 - int(temporal_tokens.shape[0])
+    if padding_size > 0:
+        temporal_tokens = np.pad(temporal_tokens, ((0, padding_size), (0, 0)), mode="constant")
+    spatial_tokens = np.mean(frame_features, axis=0)
+    concat_tokens = np.concatenate([temporal_tokens, spatial_tokens], axis=0).astype("float16")
+    return torch.from_numpy(concat_tokens).unsqueeze(0)
+
+
+def run_upstream_xvars_demo_direct_infer(config, *, video_path: str, question: str) -> str:
+    repo_root = os.path.abspath(os.path.expanduser(_UPSTREAM_XVARS_REPO_ROOT))
+    if not os.path.isdir(repo_root):
+        raise FileNotFoundError(f"Local X-VARS repo not found: {repo_root}")
+
+    sys.path.insert(0, repo_root)
+    try:
+        from conversation_discussion import conv_templates, SeparatorStyle
+        from video_chatgpt.constants import (
+            DEFAULT_VIDEO_TOKEN,
+            DEFAULT_VIDEO_PATCH_TOKEN,
+            DEFAULT_VID_START_TOKEN,
+            DEFAULT_VID_END_TOKEN,
+        )
+        from video_chatgpt.eval.model_utils import initialize_model, load_video
+        from video_chatgpt.model.utils import KeywordsStoppingCriteria
+        from video_chatgpt.utils import disable_torch_init
+        from visual_encoder.clip_model import CLIPNetwork
+    finally:
+        try:
+            sys.path.remove(repo_root)
+        except ValueError:
+            pass
+
+    disable_torch_init()
+    encoder_load = get_component_load_by_kind(config, "encoder")
+    vision_weights_path = str(encoder_load.get("weights_path") or "")
+    if not vision_weights_path:
+        raise ValueError("X-VARS direct demo inference requires encoder load.weights_path.")
+    decoder_params = get_component_params_by_kind(config, "decoder")
+    model_id = str(decoder_params.get("repo_id") or "")
+    if not model_id:
+        raise ValueError("X-VARS direct demo inference requires decoder repo_id.")
+
+    model, _vision_tower_unused, tokenizer, image_processor, _token_len_unused = initialize_model(model_id, None)
+    vision_tower = CLIPNetwork().cuda().eval()
+    checkpoint = torch.load(os.path.abspath(os.path.expanduser(vision_weights_path)))
+    vision_tower.load_state_dict(checkpoint["state_dict"], strict=False)
+
+    frames = load_video(video_path)
+    start_frame = 63
+    end_frame = 87
+    fps = 17
+    fps_beginning = 25
+    factor = (end_frame - start_frame) / (((end_frame - start_frame) / fps_beginning) * fps)
+    frames = frames[start_frame:end_frame]
+    frames = image_processor.preprocess(frames, return_tensors="pt")["pixel_values"]
+
+    final_frames = None
+    for idx in range(len(frames)):
+        if idx % factor < 1:
+            current = frames[idx, :, :, :].unsqueeze(0)
+            final_frames = current if final_frames is None else torch.cat((final_frames, current), 0)
+    if final_frames is None:
+        raise ValueError(f"Could not extract demo-parity frames from video: {video_path}")
+
+    image_tensor = final_frames.cuda()
+    with torch.no_grad():
+        offence_logits, action_logits, frame_features = vision_tower(image_tensor)
+
+    prior_text = _upstream_chat_demo_prior(action_logits, offence_logits)
+    if ", " in prior_text:
+        action_text, offence_text = prior_text.split(", ", 1)
+        offence_suffix = f", {offence_text}"
+    else:
+        action_text, offence_suffix = prior_text, ""
+
+    conv = conv_templates["video-chatgpt_v1"].copy()
+    conv.append_message(conv.roles[0], f"{str(question).strip()}\n<video>")
+    conv.append_message(conv.roles[1], None)
+    conv.set_predictions(action_text, offence_suffix)
+    prompt = conv.get_prompt()
+    replace_token = DEFAULT_VID_START_TOKEN + DEFAULT_VIDEO_PATCH_TOKEN * 300 + DEFAULT_VID_END_TOKEN
+    prompt = prompt.replace(DEFAULT_VIDEO_TOKEN, replace_token, 1)
+
+    inputs = tokenizer([prompt])
+    input_ids = torch.as_tensor(inputs.input_ids).cuda()
+    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+    stopping_criteria = KeywordsStoppingCriteria([stop_str], tokenizer, input_ids)
+
+    video_spatio_temporal_features = _upstream_chat_demo_spatio_temporal_features(
+        frame_features.numpy().astype("float16")
+    ).cuda()
+    with torch.inference_mode():
+        output_ids = model.generate(
+            input_ids,
+            video_spatio_temporal_features=video_spatio_temporal_features,
+            do_sample=False,
+            temperature=0.2,
+            max_new_tokens=128,
+            stopping_criteria=[stopping_criteria],
+        )
+
+    input_token_len = input_ids.shape[1]
+    outputs = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=True)[0]
+    outputs = outputs.strip()
+    if outputs.endswith(stop_str):
+        outputs = outputs[: -len(stop_str)]
+    return outputs.strip()
 
 
 class _KeywordsStoppingCriteria:
@@ -615,8 +759,10 @@ def _normalize_xvars_vision_state_dict(state_dict: dict[str, torch.Tensor]) -> d
         key = str(key)
         if key.startswith("module."):
             key = key[len("module.") :]
+        if key.startswith("vision_tower.vision_model."):
+            key = "vision_tower." + key[len("vision_tower.vision_model.") :]
         if key.startswith("vision_model."):
-            key = "vision_tower.vision_model." + key[len("vision_model.") :]
+            key = "vision_tower." + key[len("vision_model.") :]
         if key.startswith("text_model.") or key in {
             "visual_projection.weight",
             "text_projection.weight",
@@ -850,6 +996,10 @@ class XVarsVideoChatGPTModel(nn.Module):
             logger.warning("X-VARS VideoChatGPT backend unavailable | model_id=%s | reason=%s", model_id, self._error)
 
     def _build_prompt(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None = None) -> str:
+        prompt, _stop_str = self._build_prompt_and_stop(sample, prompt_cfg=prompt_cfg)
+        return prompt
+
+    def _build_prompt_and_stop(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None = None) -> tuple[str, str]:
         prompt_cfg = prompt_cfg or {}
         system_prompt = str(
             prompt_cfg.get(
@@ -865,11 +1015,21 @@ class XVarsVideoChatGPTModel(nn.Module):
                 include_fields=prompt_cfg.get("prior_fields"),
             )
         token_len = int(prompt_cfg.get("video_token_len", self.video_token_len))
-        return build_xvars_prompt(
-            system_prompt=system_prompt,
-            question=str(sample.get("question", "")),
-            prior_text=prior_text,
-            video_token_len=token_len,
+        if self.native_generation and _is_direct_demo_parity_sample(sample):
+            return _build_direct_demo_parity_prompt_and_stop(
+                sample,
+                system_prompt=system_prompt,
+                prior_text=prior_text,
+                video_token_len=token_len,
+            )
+        return (
+            build_xvars_prompt(
+                system_prompt=system_prompt,
+                question=str(sample.get("question", "")),
+                prior_text=prior_text,
+                video_token_len=token_len,
+            ),
+            _XVARS_DIRECT_STOP_STR,
         )
 
     def _features_for_sample(self, sample: dict[str, Any], prompt_cfg: dict[str, Any] | None):
@@ -936,7 +1096,7 @@ class XVarsVideoChatGPTModel(nn.Module):
             features.mean().item(),
             features.std().item(),
         )
-        prompt = self._build_prompt(resolved_sample, prompt_cfg=prompt_cfg)
+        prompt, stop_str = self._build_prompt_and_stop(resolved_sample, prompt_cfg=prompt_cfg)
         logger.info("XVARS_PROMPT=%s", prompt)
         logger.info(
             "X-VARS prompt context | id=%s | video_tokens=%s | question=%s | prior=%s",
@@ -961,6 +1121,12 @@ class XVarsVideoChatGPTModel(nn.Module):
         try:
             with torch.inference_mode():
                 if self.native_generation:
+                    use_demo_parity_sampling = _is_direct_demo_parity_sample(resolved_sample)
+                    effective_temperature = temperature
+                    if use_demo_parity_sampling:
+                        # The working x_vars_demo.py path uses greedy decoding and
+                        # still passes a positive temperature value from the UI.
+                        effective_temperature = effective_temperature if effective_temperature > 0 else 0.2
                     projector = _get_embedded_mm_projector(self.model)
                     logger.info(
                         "PROJECTOR=%s",
@@ -974,12 +1140,12 @@ class XVarsVideoChatGPTModel(nn.Module):
                         device=projector_device,
                         dtype=projector_param.dtype,
                     )
-                    stopping_criteria = _KeywordsStoppingCriteria(["</s>"], self.tokenizer, input_ids)
+                    stopping_criteria = _KeywordsStoppingCriteria([stop_str], self.tokenizer, input_ids)
                     output_ids = self.model.generate(
                         input_ids,
                         video_spatio_temporal_features=native_features,
-                        do_sample=False,
-                        temperature=temperature,
+                        do_sample=False if use_demo_parity_sampling else False,
+                        temperature=effective_temperature,
                         max_new_tokens=max_new_tokens,
                         stopping_criteria=[stopping_criteria],
                     )
@@ -1006,9 +1172,8 @@ class XVarsVideoChatGPTModel(nn.Module):
             else:
                 decoded = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
             decoded = decoded.strip()
-            for stop_str in ("</s>",):
-                if decoded.endswith(stop_str):
-                    decoded = decoded[: -len(stop_str)].strip()
+            if decoded.endswith(stop_str):
+                decoded = decoded[: -len(stop_str)].strip()
             return decoded
         except Exception:
             if fallback_policy == "baseline_on_failure":
