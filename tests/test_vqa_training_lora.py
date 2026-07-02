@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -208,7 +209,7 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
 
 
 def test_xvars_lora_excludes_inactive_embedded_projector():
-    pytest.importorskip("peft")
+    peft = pytest.importorskip("peft")
 
     class TinyCausalLM(torch.nn.Module):
         def __init__(self):
@@ -236,7 +237,61 @@ def test_xvars_lora_excludes_inactive_embedded_projector():
     trainable = [name for name, param in wrapped.named_parameters() if param.requires_grad]
 
     assert any("base_model.model.mm_projector.lora_" in name for name in trainable)
-    assert not any("base_lm.model.mm_projector.lora_" in name for name in trainable)
+    supports_exclude_modules = "exclude_modules" in inspect.signature(peft.LoraConfig.__init__).parameters
+    if supports_exclude_modules:
+        assert not any("base_lm.model.mm_projector.lora_" in name for name in trainable)
+    else:
+        assert any("base_lm.model.mm_projector.lora_" in name for name in trainable)
+
+
+def test_apply_lora_for_causal_lm_skips_exclude_modules_for_older_peft(monkeypatch):
+    import opensportslib.core.utils.hf_runtime as mod
+
+    captured = {}
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(4, 4)
+            self.v_proj = torch.nn.Linear(4, 4)
+
+        def named_modules(self, memo=None, prefix="", remove_duplicate=True):
+            yield "", self
+            yield "q_proj", self.q_proj
+            yield "v_proj", self.v_proj
+
+    class FakeLoraConfig:
+        def __init__(self, r, lora_alpha, lora_dropout, bias, task_type, target_modules):
+            captured["kwargs"] = {
+                "r": r,
+                "lora_alpha": lora_alpha,
+                "lora_dropout": lora_dropout,
+                "bias": bias,
+                "task_type": task_type,
+                "target_modules": target_modules,
+            }
+
+    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "peft",
+        SimpleNamespace(
+            LoraConfig=FakeLoraConfig,
+            get_peft_model=lambda model, peft_config: ("wrapped", model, peft_config),
+            prepare_model_for_kbit_training=lambda model, use_gradient_checkpointing=True: model,
+        ),
+    )
+
+    wrapped = mod.apply_lora_for_causal_lm(
+        TinyModel(),
+        {
+            "target_modules": ["q_proj", "v_proj"],
+            "exclude_modules": r"^base_lm\.model\.mm_projector$",
+        },
+    )
+
+    assert wrapped[0] == "wrapped"
+    assert "exclude_modules" not in captured["kwargs"]
 
 
 def test_vqa_lora_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
@@ -511,7 +566,7 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
     assert captured["gradient_checkpointing"] is True
     assert captured["max_steps"] == 50
     assert captured["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
-    assert captured["ddp_find_unused_parameters"] is False
+    assert captured["ddp_find_unused_parameters"] is True
     assert captured["lora_cfg"]["target_modules"] == [
         "mm_projector",
         "upsample_features",
@@ -527,6 +582,120 @@ def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_pat
     assert FakeModel.config.use_cache is False
     assert captured_sources["model"] == "base_model_videoChatGPT"
     assert captured_sources["tokenizer"] == "base_model_videoChatGPT"
+
+
+def test_vqa_xvars_videochatgpt_lora_single_process_omits_ddp_only_args(monkeypatch, tmp_path):
+    import opensportslib.core.trainer.vqa_trainer as mod
+
+    captured = {}
+
+    class FakeTrainingArguments:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "</s>"
+        pad_token_id = 0
+        eos_token_id = 0
+
+        def save_pretrained(self, output_dir):
+            del output_dir
+
+        def __call__(self, text, truncation=True, max_length=768, padding="max_length"):
+            del truncation, max_length, padding
+            toks = list(range(1, len(text.split()) + 1))
+            return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
+
+    class FakeModel:
+        config = SimpleNamespace(use_cache=True)
+
+        def save_pretrained(self, output_dir):
+            del output_dir
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            self.model = kwargs["model"]
+
+        def train(self):
+            return None
+
+    sample = _sample() | {"video_spatio_temporal_features": [[0.1] * 4] * 300}
+    cfg = _cfg(tmp_path, dry_run=False)
+    cfg.TRAIN.execution["training_backend"] = "xvars_videochatgpt_lora"
+    cfg.MODEL = SimpleNamespace(
+        runtime=SimpleNamespace(dtype="fp16"),
+        components=SimpleNamespace(
+            video_encoder=SimpleNamespace(params=SimpleNamespace(feature_source="indexed")),
+            mm_projector=SimpleNamespace(params=SimpleNamespace(input_dim=4)),
+            llm_decoder=SimpleNamespace(
+                source=SimpleNamespace(provider="huggingface", name="base_model_videoChatGPT"),
+                params=SimpleNamespace(repo_id="base_model_videoChatGPT"),
+                overrides=SimpleNamespace(),
+            ),
+        ),
+    )
+    cfg.TRAIN.epochs = 3
+    cfg.TRAIN.optimizer.lr = 2e-4
+    cfg.TRAIN.optimizer.weight_decay = 0.001
+    cfg.TRAIN.execution["acc_grad_iter"] = 1
+    cfg.TRAIN.execution["log_interval"] = 1
+    cfg.TRAIN.execution["prompt"]["video_token_len"] = 300
+    cfg.TRAIN.execution["xvars"] = {
+        "projection_path": None,
+    }
+    cfg.TRAIN.execution["sft"] = {
+        "max_seq_length": 480,
+        "max_steps": 50,
+        "save_strategy": "epoch",
+        "disable_tqdm": True,
+        "gradient_checkpointing": True,
+    }
+    cfg.TRAIN.execution["lora"] = {
+        "r": 16,
+        "alpha": 32,
+        "target_modules": [
+            "mm_projector",
+            "upsample_features",
+            "up_proj",
+            "down_proj",
+            "gate_proj",
+            "k_proj",
+            "q_proj",
+            "v_proj",
+            "o_proj",
+        ],
+    }
+
+    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=lambda model_id, **kwargs: FakeTokenizer()),
+            TrainingArguments=FakeTrainingArguments,
+        ),
+    )
+    monkeypatch.setattr(mod, "build_bitsandbytes_config", lambda cfg: None)
+    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
+    monkeypatch.setattr(mod, "load_videochatgpt_compatible_causal_lm", lambda model_id, **kwargs: object())
+    monkeypatch.setattr(
+        "opensportslib.core.utils.hf_runtime._ensure_video_special_tokens",
+        lambda tokenizer, model=None: 0,
+    )
+    monkeypatch.setattr(
+        mod.XVarsVideoChatGPTCausalLM,
+        "from_pretrained_projector",
+        staticmethod(lambda base_lm, projection_path, mm_hidden_size=1024: FakeModel()),
+    )
+    monkeypatch.setattr(mod, "XVarsVideoChatGPTTrainer", FakeTrainer)
+
+    trainer = VQAXVarsVideoChatGPTLoraTrainer(cfg)
+    trainer.train([sample], [sample], rank=0, world_size=1, use_wandb=False)
+
+    assert captured["gradient_checkpointing"] is True
+    assert "ddp_find_unused_parameters" not in captured
+    assert "gradient_checkpointing_kwargs" not in captured
 
 
 def test_vqa_lora_train_checkpoint_round_trip(vqa_config_path, tmp_path):

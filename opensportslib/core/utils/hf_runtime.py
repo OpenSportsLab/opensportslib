@@ -180,15 +180,27 @@ def apply_lora_for_causal_lm(
             matched = ["c_attn"]
         else:
             matched = ["q_proj", "v_proj"]
-    peft_config = LoraConfig(
-        r=int(lora_cfg.get("r", 16)),
-        lora_alpha=int(lora_cfg.get("alpha", 32)),
-        lora_dropout=float(lora_cfg.get("dropout", 0.05)),
-        bias=str(lora_cfg.get("bias", "none")),
-        task_type="CAUSAL_LM",
-        target_modules=list(matched),
-        exclude_modules=lora_cfg.get("exclude_modules"),
-    )
+    lora_config_kwargs = {
+        "r": int(lora_cfg.get("r", 16)),
+        "lora_alpha": int(lora_cfg.get("alpha", 32)),
+        "lora_dropout": float(lora_cfg.get("dropout", 0.05)),
+        "bias": str(lora_cfg.get("bias", "none")),
+        "task_type": "CAUSAL_LM",
+        "target_modules": list(matched),
+    }
+    exclude_modules = lora_cfg.get("exclude_modules")
+    if exclude_modules is not None:
+        try:
+            lora_config_params = inspect.signature(LoraConfig.__init__).parameters
+        except (TypeError, ValueError):
+            lora_config_params = {}
+        if "exclude_modules" in lora_config_params:
+            lora_config_kwargs["exclude_modules"] = exclude_modules
+        else:
+            logger.info(
+                "Installed PEFT does not support exclude_modules; continuing without that filter."
+            )
+    peft_config = LoraConfig(**lora_config_kwargs)
     model = get_peft_model(model, peft_config)
     if distributed and hasattr(model, "gradient_checkpointing_enable"):
         try:

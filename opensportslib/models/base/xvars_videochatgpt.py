@@ -125,6 +125,8 @@ def _upstream_chat_demo_spatio_temporal_features(frame_features) -> torch.Tensor
 
 
 def run_upstream_xvars_demo_direct_infer(config, *, video_path: str, question: str) -> str:
+    # Retained for upstream parity/debugging experiments; the public VQA infer()
+    # path intentionally uses the OpenSportsLib-native runtime instead.
     repo_root = os.path.abspath(os.path.expanduser(_UPSTREAM_XVARS_REPO_ROOT))
     if not os.path.isdir(repo_root):
         raise FileNotFoundError(f"Local X-VARS repo not found: {repo_root}")
@@ -759,17 +761,23 @@ def _normalize_xvars_vision_state_dict(state_dict: dict[str, torch.Tensor]) -> d
         key = str(key)
         if key.startswith("module."):
             key = key[len("module.") :]
-        if key.startswith("vision_tower.vision_model."):
-            key = "vision_tower." + key[len("vision_tower.vision_model.") :]
-        if key.startswith("vision_model."):
-            key = "vision_tower." + key[len("vision_model.") :]
         if key.startswith("text_model.") or key in {
             "visual_projection.weight",
             "text_projection.weight",
             "logit_scale",
         }:
             continue
-        normalized[key] = value
+
+        aliases = [key]
+        if key.startswith("vision_model."):
+            aliases.append("vision_tower." + key)
+        elif key.startswith("vision_tower.vision_model."):
+            aliases.append("vision_tower." + key[len("vision_tower.vision_model.") :])
+        elif key.startswith("vision_tower.") and not key.startswith(("vision_tower.vision_model.", "vision_tower.inter.", "vision_tower.fc_")):
+            aliases.append("vision_tower.vision_model." + key[len("vision_tower.") :])
+
+        for alias in aliases:
+            normalized.setdefault(alias, value)
     return normalized
 
 
@@ -1097,7 +1105,7 @@ class XVarsVideoChatGPTModel(nn.Module):
             features.std().item(),
         )
         prompt, stop_str = self._build_prompt_and_stop(resolved_sample, prompt_cfg=prompt_cfg)
-        logger.info("XVARS_PROMPT=%s", prompt)
+        #logger.info("XVARS_PROMPT=%s", prompt)
         logger.info(
             "X-VARS prompt context | id=%s | video_tokens=%s | question=%s | prior=%s",
             resolved_sample.get("id"),

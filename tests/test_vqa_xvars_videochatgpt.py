@@ -1195,3 +1195,28 @@ def test_videochatgpt_loader_raises_clear_xvars_error(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="root cause"):
         compat.load_videochatgpt_compatible_causal_lm(str(ckpt_dir), local_files_only=True)
+
+
+def test_upstream_xvars_demo_helper_is_retained():
+    from opensportslib.models.base.xvars_videochatgpt import run_upstream_xvars_demo_direct_infer
+
+    assert callable(run_upstream_xvars_demo_direct_infer)
+
+
+def test_normalize_xvars_vision_state_dict_accepts_both_clip_key_layouts():
+    from opensportslib.models.base.xvars_videochatgpt import _normalize_xvars_vision_state_dict
+
+    tensor = torch.ones((1,), dtype=torch.float32)
+    normalized = _normalize_xvars_vision_state_dict(
+        {
+            "vision_tower.vision_model.embeddings.class_embedding": tensor,
+            "vision_model.encoder.layers.0.self_attn.k_proj.weight": tensor,
+            "text_model.embeddings.word_embeddings.weight": tensor,
+        }
+    )
+
+    assert "vision_tower.vision_model.embeddings.class_embedding" in normalized
+    assert "vision_tower.embeddings.class_embedding" in normalized
+    assert "vision_model.encoder.layers.0.self_attn.k_proj.weight" in normalized
+    assert "vision_tower.vision_model.encoder.layers.0.self_attn.k_proj.weight" in normalized
+    assert "text_model.embeddings.word_embeddings.weight" not in normalized

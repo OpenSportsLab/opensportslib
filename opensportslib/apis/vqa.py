@@ -75,8 +75,16 @@ class VQAModel(BaseTaskModel):
             os.environ["RANK"] = str(rank)
             os.environ["WORLD_SIZE"] = str(world_size)
             os.environ["LOCAL_RANK"] = str(rank)
+            if "TORCH_DISTRIBUTED_DEBUG" not in os.environ:
+                os.environ["TORCH_DISTRIBUTED_DEBUG"] = "INFO"
             torch.cuda.set_device(rank)
             ddp_setup(rank, world_size)
+            logging.info(
+                "Initialized VQA DDP worker | rank=%s | world_size=%s | torch_distributed_debug=%s",
+                rank,
+                world_size,
+                os.environ.get("TORCH_DISTRIBUTED_DEBUG"),
+            )
 
         try:
             if rank == 0:
@@ -227,26 +235,6 @@ class VQAModel(BaseTaskModel):
             resolved_video_path = expand(str(video_path))
             if not os.path.isfile(resolved_video_path):
                 raise FileNotFoundError(f"Video file not found: {resolved_video_path}")
-            if get_vqa_backend(self.config) == "xvars_videochatgpt":
-                from opensportslib.models.base.xvars_videochatgpt import run_upstream_xvars_demo_direct_infer
-
-                self._init_wandb(use_wandb=use_wandb)
-                answer = run_upstream_xvars_demo_direct_infer(
-                    self.config,
-                    video_path=resolved_video_path,
-                    question=str(question).strip(),
-                )
-                return {
-                    "task": "vqa",
-                    "data": [
-                        {
-                            "id": os.path.splitext(os.path.basename(resolved_video_path))[0],
-                            "question": str(question).strip(),
-                            "answer_text": answer,
-                            "video_path": resolved_video_path,
-                        }
-                    ],
-                }
         device = select_device(self.config.SYSTEM)
         model, _ = build_model(self.config, device)
         if direct_requested:

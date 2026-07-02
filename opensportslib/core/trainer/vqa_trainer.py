@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 import torch
+from tqdm.auto import tqdm
 
 from opensportslib.core.config.accessors import (
     get_xvars_train_model_id,
@@ -862,12 +863,12 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "fp16": fp16,
             "bf16": bf16,
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
-            "ddp_find_unused_parameters": False,
         }
         max_steps = sft_cfg.get("max_steps")
         if max_steps is not None and int(max_steps) > 0:
             training_kwargs["max_steps"] = int(max_steps)
         if int(world_size) > 1:
+            training_kwargs["ddp_find_unused_parameters"] = True
             training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
         training_kwargs[eval_strategy_key] = str(sft_cfg.get("evaluation_strategy", "epoch"))
         args = TrainingArguments(**training_kwargs)
@@ -891,13 +892,15 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         )
         logging.info(
             "Starting X-VARS trainer.train | rank=%s | world_size=%s | precision=%s | "
-            "max_seq_length=%s | lora_targets=%s | gradient_checkpointing=%s | use_cache=%s",
+            "max_seq_length=%s | lora_targets=%s | gradient_checkpointing=%s | "
+            "ddp_find_unused_parameters=%s | use_cache=%s",
             rank,
             world_size,
             "fp16" if fp16 else "bf16" if bf16 else "fp32",
             int(sft_cfg.get("max_seq_length", 768)),
             list(lora_cfg["target_modules"]),
             training_kwargs["gradient_checkpointing"],
+            training_kwargs.get("ddp_find_unused_parameters"),
             model.config.use_cache,
         )
         trainer.train()
@@ -1004,41 +1007,34 @@ class Trainer_VQA:
         generation_cfg = get_vqa_generation_cfg(self.config)
 
         preds = []
-        log_interval = max(1, int(exec_cfg.get("log_interval", 10) if isinstance(exec_cfg, dict) else 10))
+        disable_tqdm = bool(exec_cfg.get("disable_tqdm", False) if isinstance(exec_cfg, dict) else False)
         try:
             total = len(dataset)
         except Exception:
             total = None
         logging.info(
-            "Starting VQA inference | samples=%s | log_interval=%s | max_new_tokens=%s",
+            "Starting VQA inference | samples=%s | max_new_tokens=%s",
             total if total is not None else "unknown",
-            log_interval,
             generation_cfg.get("max_new_tokens"),
         )
         started_at = time.perf_counter()
-        for idx, sample in enumerate(dataset, start=1):
-            if idx == 1 or idx % log_interval == 0:
-                logging.info(
-                    "VQA inference generating | sample=%s/%s | id=%s | question=%s",
-                    idx,
-                    total if total is not None else "?",
-                    sample.get("id"),
-                    sample.get("question"),
-                )
+        iterator = tqdm(
+            dataset,
+            total=total,
+            desc="VQA inference",
+            unit="sample",
+            disable=disable_tqdm,
+            leave=False,
+        )
+        for sample in iterator:
             sample_started_at = time.perf_counter()
             answer = model.generate_answer(
                 sample,
                 prompt_cfg=prompt_cfg,
                 generation_cfg=generation_cfg,
             )
-            if idx == 1 or idx % log_interval == 0:
-                logging.info(
-                    "VQA inference generated | sample=%s/%s | id=%s | elapsed_s=%.2f",
-                    idx,
-                    total if total is not None else "?",
-                    sample.get("id"),
-                    time.perf_counter() - sample_started_at,
-                )
+            if not disable_tqdm:
+                iterator.set_postfix_str(f"id={sample.get('id')} elapsed={time.perf_counter() - sample_started_at:.2f}s")
             preds.append(
                 {
                     "id": sample.get("id"),

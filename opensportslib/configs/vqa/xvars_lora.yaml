@@ -213,7 +213,7 @@ TRAIN:
       target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
       exclude_modules: '^base_lm\.model\.mm_projector$'
     quantization:
-      enabled: true
+      enabled: false
       load_in_4bit: true
       bnb_4bit_quant_type: nf4
       compute_dtype: float16
