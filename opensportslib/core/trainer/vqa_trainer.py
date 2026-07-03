@@ -16,6 +16,7 @@ from opensportslib.core.config.accessors import (
     get_xvars_train_model_id,
     get_xvars_train_tokenizer_id,
     get_xvars_train_video_token_len,
+    get_hf_cuda_device_index,
     is_xvars_videochatgpt_backend,
     get_model_runtime_dtype,
     get_split_dataloader_cfg,
@@ -65,30 +66,6 @@ def _resolve_sft_per_device_batch_sizes(config, sft_cfg: dict[str, Any]) -> tupl
     train_bs = sft_cfg.get("per_device_train_batch_size", train_default)
     eval_bs = sft_cfg.get("per_device_eval_batch_size", valid_default)
     return int(train_bs or 1), int(eval_bs or 1)
-
-
-def _extract_cuda_device_index(config, hf_cfg: dict[str, Any]) -> int | None:
-    # If CUDA_VISIBLE_DEVICES is set, CUDA indices are remapped; let runtime use
-    # torch.cuda.current_device() to avoid 4-bit device mismatch with Accelerate.
-    if os.environ.get("CUDA_VISIBLE_DEVICES"):
-        return None
-
-    explicit = hf_cfg.get("cuda_device_index")
-    if explicit is not None:
-        try:
-            return int(explicit)
-        except Exception:
-            return None
-    system = getattr(config, "SYSTEM", None)
-    gpu = getattr(system, "gpu", None) if system is not None else None
-    if gpu is not None:
-        gid = getattr(gpu, "id", None)
-        if gid is not None:
-            try:
-                return int(gid)
-            except Exception:
-                return None
-    return None
 
 
 def _resolve_vqa_video_token_len(config, prompt_cfg: dict[str, Any] | None = None, sft_cfg: dict[str, Any] | None = None) -> int:
@@ -541,10 +518,15 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             tokenizer.pad_token = tokenizer.eos_token
         bnb_config = build_bitsandbytes_config(quant_cfg)
         model_kwargs = {"local_files_only": local_files_only}
+        cuda_device_index = get_hf_cuda_device_index(self.config, hf_cfg)
         if bnb_config is not None:
             model_kwargs["quantization_config"] = bnb_config
             if bool(hf_cfg.get("prefer_cuda", True)) and torch.cuda.is_available():
-                model_kwargs["device_map"] = {"": torch.cuda.current_device()}
+                if cuda_device_index is not None:
+                    torch.cuda.set_device(cuda_device_index)
+                    model_kwargs["device_map"] = {"": cuda_device_index}
+                else:
+                    model_kwargs["device_map"] = {"": torch.cuda.current_device()}
         base_lm = load_videochatgpt_compatible_causal_lm(model_id, **model_kwargs)
         from opensportslib.core.utils.hf_runtime import _ensure_video_special_tokens
 

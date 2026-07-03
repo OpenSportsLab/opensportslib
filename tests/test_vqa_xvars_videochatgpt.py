@@ -1117,10 +1117,10 @@ def test_xvars_model_init_uses_quantized_device_map_for_inference(monkeypatch, t
             return self
 
     cfg = _cfg(tmp_path, dry_run=True)
+    cfg.SYSTEM.gpu = SimpleNamespace(id=1)
     cfg.TRAIN.execution["hf"] = {
         "local_files_only": True,
         "prefer_cuda": True,
-        "cuda_device_index": 1,
         "tokenizer_id": "/tmp/tokenizer",
     }
     cfg.TRAIN.execution["quantization"] = {"enabled": True, "load_in_4bit": True}
@@ -1146,6 +1146,7 @@ def test_xvars_model_init_uses_quantized_device_map_for_inference(monkeypatch, t
     monkeypatch.setattr(mod.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(mod.torch.cuda, "set_device", lambda idx: captured.__setitem__("set_device", idx))
     monkeypatch.setattr(mod.torch.cuda, "current_device", lambda: 1)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     monkeypatch.setattr(mod, "load_videochatgpt_compatible_causal_lm", _load_model)
     monkeypatch.setattr(mod, "_ensure_video_special_tokens", lambda tokenizer, model=None: 0)
     monkeypatch.setattr(mod, "_configure_native_videochatgpt", lambda base_lm, tokenizer, model_id: True)

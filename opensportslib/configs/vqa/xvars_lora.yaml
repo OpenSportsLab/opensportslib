@@ -91,11 +91,11 @@ MODEL:
       kind: encoder
       source:
         provider: opensportslib
-        registry: backbone
-        name: xvars_clip_features
+      # XVARS-trained classifier weights to load into that architecture
       load:
         weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
       params:
+        # CLIP architecture and image processor to instantiate.
         feature_source: indexed_or_raw_clip
         vision_tower: openai/clip-vit-large-patch14
         feature_dim: 1024
@@ -104,16 +104,13 @@ MODEL:
       kind: projector
       source:
         provider: opensportslib
-        registry: adapter
-        name: xvars_mm_projector
       params:
         input_dim: 1024
       overrides: {}
     llm_decoder:
       kind: decoder
       source:
-        provider: huggingface
-        name: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
+        provider: opensportslib
       params:
         repo_id: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
       overrides: {}
@@ -136,15 +133,20 @@ IO:
 TRAIN:
   trainer:
     type: vqa
+
   epochs: 3
+
   criterion:
     type: CrossEntropyLoss
+
   optimizer:
     type: AdamW
     lr: 0.0002
     weight_decay: 0.001
+
   scheduler:
     type: constant
+
   execution:
     enabled: true
     training_backend: xvars_videochatgpt_lora
@@ -153,10 +155,13 @@ TRAIN:
     acc_grad_iter: 8
     log_interval: 1
     dry_run: false
+
     xvars:
       feature_mode: strict_xvars
+      # Optional: path to a separate mm_projector checkpoint.
+      # null means use the projector already embedded in base_model_videoChatGPT.
       projection_path: null
-      conv_mode: video-chatgpt_v1
+
     prompt:
       style: detailed
       system_prompt: You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions carefully and explain your answers in detail based on the provided video.
@@ -164,11 +169,15 @@ TRAIN:
       prediction_prior_adapter: xvars_referee
       prior_fields: [action, offence, contact, bodypart]
       video_token_len: 300
+
     generation:
       max_new_tokens: 128
       temperature: 0.0
-      repetition_penalty: 1.0
-      no_repeat_ngram_size: 0
+
+    # Optional XFoul-only generated-answer smoke test.
+    # During LoRA training, this runs generation on one known training sample and
+    # checks that the answer still contains referee-domain terms and avoids known
+    # code-like failure strings. Disable or replace these values for non-XFoul data.
     generated_validation:
       enabled: true
       sample_id: action_0
@@ -177,34 +186,26 @@ TRAIN:
       require_relevance: true
       required_terms: [foul, card, challenge, spa, dogso, advantage]
       forbidden_terms: [get_children, django, httpclient, "```python", "```php"]
+    
     # OpenSportsLib-native VQA evaluation config. This does not correspond to
     # an upstream X-VARS benchmark scorer.
     eval_profile:
       metric_set: [exact_match, contains_match, token_f1, referee_semantic]
       aggregation: mean
       exclusions: []
-    production:
-      timeout_s: 30
-      retry_count: 1
-      retry_backoff_s: 0.5
-      fallback_policy: none
-      max_new_tokens_cap: 128
+
     sft:
       max_seq_length: 480
-      answer_field: references
       include_video_tokens: true
       disable_tqdm: false
-      completion_only_loss: true
       reference_mode: all
       append_eos_token: true
       gradient_checkpointing: true
       save_strategy: "epoch"
-      max_steps: null
+
     hf:
-      local_files_only: false
-      prefer_cuda: true
-      cuda_device_index: 1
-      tokenizer_id: /home/vorajv/X-VARS/weights/LLaVA-7B-Lightening-v1-1
+      tokenizer_id: ${MODEL.components.llm_decoder.params.repo_id}
+
     lora:
       r: 16
       alpha: 32
@@ -213,18 +214,26 @@ TRAIN:
       prepare_kbit: true
       target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
       exclude_modules: '^base_lm\.model\.mm_projector$'
+
     quantization:
       enabled: false
       load_in_4bit: true
       bnb_4bit_quant_type: nf4
       compute_dtype: float16
       bnb_4bit_use_double_quant: true
+
+    # LoRA adapter save policy:
+    # save_adapter: true saves the LoRA adapter artifacts.
+    # merge_and_save: false keeps the base model and adapter separate.
+    # If you set merge_and_save: true, it would export a merged model for standalone inference.
     checkpoint:
       save_adapter: true
       merge_and_save: false
+
   selection:
     monitor: loss
     mode: min
+
   checkpoint:
     save_every: 1
     save_best: true

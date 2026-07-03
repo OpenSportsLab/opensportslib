@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -340,6 +341,31 @@ def get_train_execution(cfg: Any) -> dict[str, Any]:
     return _as_dict(train.get("execution"))
 
 
+def get_hf_cuda_device_index(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> int | None:
+    """Resolve the CUDA device index used by HuggingFace runtime helpers."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES"):
+        return None
+
+    hf_cfg = _as_dict(hf_cfg) if hf_cfg is not None else _as_dict(get_train_execution(cfg).get("hf"))
+    explicit = hf_cfg.get("cuda_device_index")
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except Exception:
+            return None
+
+    system = _as_dict(getattr(cfg, "SYSTEM", None))
+    gpu = _as_dict(system.get("gpu"))
+    gid = gpu.get("id")
+    if gid is not None:
+        try:
+            return int(gid)
+        except Exception:
+            return None
+
+    return None
+
+
 def get_train_optimizer(cfg: Any) -> dict[str, Any]:
     train = _as_dict(getattr(cfg, "TRAIN", None))
     return _as_dict(train.get("optimizer"))
@@ -541,7 +567,7 @@ def get_xvars_train_tokenizer_id(cfg: Any) -> str:
     return get_xvars_train_model_id(cfg, default="base_model_videoChatGPT")
 
 
-def get_xvars_infer_tokenizer_id(cfg: Any, default: str = "LLaVA-7B-Lightening-v1-1") -> str:
+def get_xvars_infer_tokenizer_id(cfg: Any, default: str = "base_model_videoChatGPT") -> str:
     execution = get_train_execution(cfg)
     hf_cfg = _as_dict(execution.get("hf"))
     tokenizer_id = hf_cfg.get("tokenizer_id")

@@ -19,6 +19,7 @@ import torch.nn as nn
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_params_by_kind,
+    get_hf_cuda_device_index,
     get_data_sampling,
     get_xvars_infer_tokenizer_id,
     get_xvars_infer_video_token_len,
@@ -217,15 +218,6 @@ def resolve_xvars_raw_num_frames(config, xvars_cfg: dict[str, Any] | None = None
     xvars_cfg = xvars_cfg or {}
     video_sampling = get_data_sampling(config)
     return int(video_sampling.get("num_frames", xvars_cfg.get("raw_num_frames", 100)))
-
-
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except Exception:
-        return None
 
 
 def _runtime_torch_dtype(config) -> torch.dtype:
@@ -806,7 +798,7 @@ class XVarsVideoChatGPTModel(nn.Module):
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
         prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
-        cuda_device_index = _optional_int(hf_cfg.get("cuda_device_index"))
+        cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         adapter_path = get_model_load(config).get("checkpoint_path")
         projection_path = xvars_cfg.get("projection_path")
         mm_hidden_size = get_vqa_mm_hidden_size(config, default=1024)
