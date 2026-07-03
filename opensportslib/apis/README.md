@@ -157,9 +157,6 @@ otherwise `infer()` extracts them from the raw video and adds the visual
 classifier's action/offence/card prior. Supplying `weights=` optionally applies
 a PEFT/LoRA adapter over the configured base VideoChatGPT model.
 
-The older `xvars_hf` backend remains available as a lightweight HuggingFace
-fallback, but it is not full X-VARS parity.
-
 For upstream-style inference JSON, save VQA predictions with:
 
 ```python

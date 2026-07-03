@@ -17,20 +17,18 @@ def build_prior_text(
     metadata: dict[str, Any] | None = None,
     include_fields: list[str] | None = None,
 ) -> str:
-    """Build compact prior text from structured labels/metadata."""
+    """Build compact prior text from explicitly requested label/metadata fields."""
     labels = labels or {}
     metadata = metadata or {}
-    include_fields = include_fields or ["action", "offence", "contact", "bodypart"]
+    include_fields = [str(field).strip() for field in (include_fields or []) if str(field).strip()]
 
     chunks: list[str] = []
     for field in include_fields:
         value = ((labels.get(field) or {}).get("label")) if isinstance(labels.get(field), dict) else None
+        if not value:
+            value = metadata.get(field)
         if value:
             chunks.append(f"{field}={value}")
-
-    league = metadata.get("league")
-    if league:
-        chunks.append(f"league={league}")
 
     return "; ".join(chunks)
 

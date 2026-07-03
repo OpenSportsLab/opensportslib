@@ -16,8 +16,12 @@ from opensportslib.models.base.xvars_videochatgpt import (
     XVarsVideoChatGPTCausalLM,
     _build_direct_demo_parity_prompt_and_stop,
 )
-from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_xvars_prompt
-from opensportslib.models.utils.xvars_clip_index import load_feature_index, load_prediction_index
+from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_prior_text, build_xvars_prompt
+from opensportslib.models.utils.vqa_prediction_priors import build_prediction_prior_text
+from opensportslib.models.utils.xvars_clip_index import (
+    load_feature_index,
+    load_prediction_index,
+)
 
 
 class TinyTokenizer:
@@ -576,7 +580,7 @@ def test_xvars_dataset_and_model_prefer_canonical_vqa_fields(tmp_path):
     cfg = _cfg(tmp_path, dry_run=True)
     indexed_feature = tmp_path / "indexed.pkl"
     with indexed_feature.open("wb") as f:
-        pickle.dump(torch.ones((300, 1024)).numpy(), f)
+        pickle.dump(torch.ones((300, 1024), dtype=torch.float32), f)
     feature_index = tmp_path / "feature_index.json"
     feature_index.write_text(
         json.dumps([{"id": "action_0", "feature_paths": [str(indexed_feature)]}]),
@@ -1018,6 +1022,47 @@ def test_xvars_generated_answer_relevance_score_rejects_code_domain_text():
     assert rejected["forbidden_count"] == 1
 
 
+def test_xvars_generated_answer_score_can_skip_relevance_gating():
+    score = _score_xvars_generated_answers(
+        ["This answer avoids the banned tokens."],
+        required_terms=[],
+        forbidden_terms=["get_children"],
+        enforce_relevance=False,
+    )
+
+    assert score["accepted"] is True
+    assert score["forbidden_count"] == 0
+
+
+def test_build_prior_text_requires_explicit_fields():
+    prior_text = build_prior_text(
+        {"event_type": {"label": "Jump shot"}},
+        {"phase": "Second half"},
+    )
+    configured_prior_text = build_prior_text(
+        {"event_type": {"label": "Jump shot"}},
+        {"phase": "Second half"},
+        include_fields=["event_type", "phase"],
+    )
+
+    assert prior_text == ""
+    assert configured_prior_text == "event_type=Jump shot; phase=Second half"
+
+
+def test_prediction_prior_text_supports_generic_configured_fields():
+    pred = {"event_type": "Jump shot", "confidence": 0.91, "ignored": "not used"}
+
+    assert build_prediction_prior_text(pred) == ""
+    assert build_prediction_prior_text(pred, fields=["event_type", "confidence"]) == "event_type=Jump shot; confidence=0.91"
+
+
+def test_prediction_prior_text_uses_explicit_xvars_referee_adapter():
+    pred = {"Action class": "Tackling", "Offence": "Offence", "Severity": "3.0"}
+
+    assert build_prediction_prior_text(pred) == ""
+    assert build_prediction_prior_text(pred, adapter="xvars_referee") == "a tackle, foul, yellow card"
+
+
 def test_xvars_indexes_are_split_aware(tmp_path):
     feature_index = tmp_path / "features.json"
     prediction_index = tmp_path / "predictions.json"
@@ -1145,7 +1190,7 @@ def test_xvars_dataset_rejects_feature_mode_shape_mismatch(tmp_path):
     )
     feature_dir = tmp_path / "features" / "action_0"
     feature_dir.mkdir(parents=True, exist_ok=True)
-    bad_features = torch.ones((356, 1024), dtype=torch.float32).numpy()
+    bad_features = torch.ones((356, 1024), dtype=torch.float32)
     with (feature_dir / "PRE_CLIP_feature_clip_1.pkl").open("wb") as f:
         import pickle
 
@@ -1195,13 +1240,6 @@ def test_videochatgpt_loader_raises_clear_xvars_error(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="root cause"):
         compat.load_videochatgpt_compatible_causal_lm(str(ckpt_dir), local_files_only=True)
-
-
-def test_upstream_xvars_demo_helper_is_retained():
-    from opensportslib.models.base.xvars_videochatgpt import run_upstream_xvars_demo_direct_infer
-
-    assert callable(run_upstream_xvars_demo_direct_infer)
-
 
 def test_normalize_xvars_vision_state_dict_accepts_both_clip_key_layouts():
     from opensportslib.models.base.xvars_videochatgpt import _normalize_xvars_vision_state_dict

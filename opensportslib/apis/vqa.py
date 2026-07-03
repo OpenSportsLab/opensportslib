@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
-from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution, get_vqa_backend
+from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
 
@@ -151,7 +151,7 @@ class VQAModel(BaseTaskModel):
         valid_set = self._resolve_split_path("valid", valid_set)
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
-        if backend in {"xvars_lora", "xvars_videochatgpt_lora"}:
+        if backend == "xvars_videochatgpt_lora":
             world_size = torch.cuda.device_count() or get_system_gpu_count(self.config)
             requested_gpus = get_system_gpu_count(self.config)
             use_ddp = world_size > 1 and int(requested_gpus) > 1
@@ -185,22 +185,10 @@ class VQAModel(BaseTaskModel):
             self.last_loaded_weights = ckpt
             return ckpt
 
-        from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
-        from opensportslib.datasets.builder import build_dataset
-        from opensportslib.models.builder import build_model
-        from opensportslib.core.utils.config import select_device
-
-        model = None
-        device = select_device(self.config.SYSTEM)
-        model, _ = build_model(self.config, device)
-        train_data = build_dataset(self.config, train_set, None, split="train")
-        valid_data = build_dataset(self.config, valid_set, None, split="valid")
-        self.trainer = Trainer_VQA(self.config)
-        self._init_wandb(use_wandb=use_wandb)
-        ckpt = self.trainer.train(model, train_data, valid_data, rank=0, world_size=1, use_wandb=use_wandb)
-        self.best_checkpoint = ckpt
-        self.last_loaded_weights = ckpt
-        return ckpt
+        raise ValueError(
+            f"Unsupported VQA training backend '{backend}'. "
+            "Only 'xvars_videochatgpt_lora' is supported."
+        )
 
     def infer(
         self,

@@ -23,7 +23,6 @@ from opensportslib.core.config.accessors import (
     get_train_epochs,
     get_train_execution,
     get_train_optimizer,
-    get_vqa_decoder_model_id,
     get_vqa_eval_profile_cfg,
     get_vqa_generation_cfg,
     get_vqa_mm_hidden_size,
@@ -34,9 +33,6 @@ from opensportslib.core.utils.hf_runtime import (
     OptionalDependencyError,
     apply_lora_for_causal_lm,
     build_bitsandbytes_config,
-    build_trl_sft_trainer,
-    load_hf_causal_lm_for_training,
-    optional_package_available,
     require_optional_package,
 )
 from opensportslib.metrics.vqa_metric import compute_vqa_metrics
@@ -46,7 +42,7 @@ from opensportslib.models.base.xvars_videochatgpt import (
     XVarsVideoChatGPTCausalLM,
 )
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
-from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
+from opensportslib.models.utils.xvars_clip_index import validate_xvars_feature_tensor
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
@@ -181,7 +177,7 @@ def build_vqa_sft_text(
     system_prompt = str(
         prompt_cfg.get(
             "system_prompt",
-            "You are an artificial intelligence assistant for visual football referee questions.",
+            "You are an artificial intelligence assistant for visual question answering.",
         )
     ).strip()
 
@@ -213,257 +209,6 @@ def build_vqa_sft_text(
         "completion": completion,
         "text": f"{prompt} {completion}".strip(),
     }
-
-
-class VQALoraSFTDataset:
-    """Small adapter expected by TRL SFTTrainer."""
-
-    def __init__(self, dataset, config, prompt_cfg: dict[str, Any], sft_cfg: dict[str, Any]):
-        self.rows = [
-            build_vqa_sft_text(sample, config=config, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
-            for sample in dataset
-            if sample.get("references")
-        ]
-
-    def __len__(self):
-        return len(self.rows)
-
-    def __getitem__(self, idx):
-        return self.rows[idx]
-
-
-class VQALoraTrainer:
-    """LoRA/QLoRA trainer wrapper for VQA SFT."""
-
-    def __init__(self, config):
-        self.config = config
-
-    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
-        execution = get_train_execution(self.config)
-        prompt_cfg = _as_dict(execution.get("prompt"))
-        sft_cfg = _as_dict(execution.get("sft"))
-        hf_cfg = _as_dict(execution.get("hf"))
-        lora_cfg = _as_dict(execution.get("lora"))
-        quant_cfg = _as_dict(execution.get("quantization"))
-        checkpoint_cfg = _as_dict(execution.get("checkpoint"))
-
-        is_ddp = int(world_size) > 1
-        if is_ddp:
-            logging.info("VQA LoRA trainer | mode=ddp | world_size=%s | rank=%s", world_size, rank)
-        else:
-            logging.info("VQA LoRA trainer | mode=single | rank=%s", rank)
-
-        save_root = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
-        output_dir = os.path.join(save_root, "xvars_lora")
-        os.makedirs(output_dir, exist_ok=True)
-
-        train_sft = VQALoraSFTDataset(train_data, self.config, prompt_cfg, sft_cfg)
-        valid_sft = VQALoraSFTDataset(valid_data, self.config, prompt_cfg, sft_cfg) if valid_data is not None else None
-        model_id = get_vqa_decoder_model_id(self.config, default=str(hf_cfg.get("model_id", "distilgpt2")))
-
-        metadata = {
-            "backend": "xvars_lora",
-            "model_id": model_id,
-            "num_train_samples": len(train_sft),
-            "num_valid_samples": len(valid_sft) if valid_sft is not None else 0,
-            "status": "metadata_only",
-            "optional_dependencies": {
-                "trl": optional_package_available("trl"),
-                "peft": optional_package_available("peft"),
-                "bitsandbytes": optional_package_available("bitsandbytes"),
-            },
-            "data_quality": {
-                "train_total_rows": len(train_sft),
-                "valid_total_rows": len(valid_sft) if valid_sft is not None else 0,
-                "train_dropped_tokenization_mismatch": 0,
-                "valid_dropped_tokenization_mismatch": 0,
-            },
-        }
-
-        if bool(execution.get("dry_run", False)):
-            return self._write_artifacts(output_dir, metadata)
-
-        require_optional_package("trl", "pip install trl")
-        require_optional_package("datasets", "pip install datasets")
-        from datasets import Dataset
-        from transformers import TrainingArguments
-
-        tokenizer, model, _device = load_hf_causal_lm_for_training(
-            model_id,
-            local_files_only=bool(hf_cfg.get("local_files_only", False)),
-            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
-            quantization_cfg=quant_cfg,
-            cuda_device_index=rank if is_ddp else _extract_cuda_device_index(self.config, hf_cfg),
-        )
-        model = apply_lora_for_causal_lm(model, lora_cfg, distributed=is_ddp)
-        max_seq_length = int(sft_cfg.get("max_seq_length", 512))
-        train_rows, dropped_train = self._tokenize_and_mask_rows_xvars_style(
-            train_sft.rows,
-            tokenizer=tokenizer,
-            max_seq_length=max_seq_length,
-        )
-        valid_rows = []
-        dropped_valid = 0
-        if valid_sft is not None:
-            valid_rows, dropped_valid = self._tokenize_and_mask_rows_xvars_style(
-                valid_sft.rows,
-                tokenizer=tokenizer,
-                max_seq_length=max_seq_length,
-            )
-        metadata["data_quality"]["train_dropped_tokenization_mismatch"] = int(dropped_train)
-        metadata["data_quality"]["valid_dropped_tokenization_mismatch"] = int(dropped_valid)
-        metadata["data_quality"]["train_kept_rows"] = int(len(train_rows))
-        metadata["data_quality"]["valid_kept_rows"] = int(len(valid_rows))
-        if len(train_rows) == 0:
-            raise ValueError(
-                "All training rows were dropped by tokenization/masking checks. "
-                "Increase sft.max_seq_length or reduce prompt/video token length."
-            )
-
-        hf_train_sft = Dataset.from_list(train_rows)
-        hf_valid_sft = Dataset.from_list(valid_rows) if valid_sft is not None else None
-        train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
-
-        fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
-        optimizer_cfg = get_train_optimizer(self.config)
-        execution_cfg = get_train_execution(self.config)
-        training_kwargs = {
-            "output_dir": output_dir,
-            "per_device_train_batch_size": train_bs,
-            "per_device_eval_batch_size": eval_bs,
-            "gradient_accumulation_steps": int(execution_cfg.get("acc_grad_iter", sft_cfg.get("gradient_accumulation_steps", 1))),
-            "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
-            "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
-            "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
-            "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
-            "report_to": ["wandb"] if use_wandb else [],
-            "fp16": fp16,
-            "bf16": bf16,
-            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
-            "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
-            "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
-        }
-        ta_params = inspect.signature(TrainingArguments.__init__).parameters
-        if is_ddp and "ddp_find_unused_parameters" in ta_params:
-            training_kwargs["ddp_find_unused_parameters"] = False
-        if is_ddp and "gradient_checkpointing_kwargs" in ta_params:
-            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
-        args = TrainingArguments(**training_kwargs)
-        trainer = build_trl_sft_trainer(
-            model=model,
-            train_dataset=hf_train_sft,
-            eval_dataset=hf_valid_sft,
-            tokenizer=tokenizer,
-            args=args,
-            dataset_text_field=None,
-            max_seq_length=max_seq_length,
-            completion_only_loss=bool(sft_cfg.get("completion_only_loss", True)),
-        )
-        trainer.train()
-
-        if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
-            trainer.model.save_pretrained(output_dir)
-            tokenizer.save_pretrained(output_dir)
-        metadata["status"] = "trained"
-        if rank == 0:
-            return self._write_artifacts(output_dir, metadata)
-        return output_dir
-
-    def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:
-        save_config(self.config, os.path.join(output_dir, "config.yaml"))
-        with open(os.path.join(output_dir, "training_metadata.json"), "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2)
-        marker = os.path.join(output_dir, "adapter_model")
-        os.makedirs(marker, exist_ok=True)
-        with open(os.path.join(marker, "README.txt"), "w", encoding="utf-8") as f:
-            f.write("VQA LoRA adapter artifacts are stored in the parent directory when training runs.\n")
-        return output_dir
-
-    @staticmethod
-    def _filter_tokenization_mismatch(rows, *, tokenizer, max_seq_length: int):
-        kept = []
-        dropped = 0
-        for row in rows:
-            prompt = str(row.get("prompt", ""))
-            completion = str(row.get("completion", ""))
-            if not prompt or not completion:
-                dropped += 1
-                continue
-
-            prompt_ids = tokenizer(prompt, truncation=True, max_length=max_seq_length).input_ids
-            full_ids = tokenizer(
-                f"{prompt} {completion}".strip(),
-                truncation=True,
-                max_length=max_seq_length,
-            ).input_ids
-            # Prompt must be a prefix and completion must contribute at least one token.
-            if len(full_ids) <= len(prompt_ids):
-                dropped += 1
-                continue
-            if full_ids[: len(prompt_ids)] != prompt_ids:
-                dropped += 1
-                continue
-            kept.append(row)
-        return kept, dropped
-
-    @staticmethod
-    def _tokenize_and_mask_rows_xvars_style(rows, *, tokenizer, max_seq_length: int):
-        """Tokenize prompt+completion and mask prompt tokens (answer-only loss)."""
-        kept = []
-        dropped = 0
-        ignore_index = -100
-        pad_id = tokenizer.pad_token_id
-        if pad_id is None:
-            pad_id = tokenizer.eos_token_id
-        for row in rows:
-            prompt = str(row.get("prompt", "")).strip()
-            completion = str(row.get("completion", "")).strip()
-            if not prompt or not completion:
-                dropped += 1
-                continue
-            full_text = f"{prompt} {completion}".strip()
-            enc_full = tokenizer(
-                full_text,
-                truncation=True,
-                max_length=max_seq_length,
-                padding="max_length",
-            )
-            enc_prompt = tokenizer(
-                prompt,
-                truncation=True,
-                max_length=max_seq_length,
-                padding="max_length",
-            )
-            input_ids = list(enc_full["input_ids"])
-            attn = list(enc_full["attention_mask"])
-            prompt_ids = list(enc_prompt["input_ids"])
-            full_len = int(sum(attn))
-            prompt_len = int(sum(enc_prompt["attention_mask"]))
-            if full_len <= prompt_len or prompt_len <= 0:
-                dropped += 1
-                continue
-            if input_ids[:prompt_len] != prompt_ids[:prompt_len]:
-                dropped += 1
-                continue
-            labels = list(input_ids)
-            for i in range(len(labels)):
-                if i < prompt_len:
-                    labels[i] = ignore_index
-                elif attn[i] == 0:
-                    labels[i] = ignore_index
-                elif input_ids[i] == pad_id:
-                    labels[i] = ignore_index
-            if all(x == ignore_index for x in labels):
-                dropped += 1
-                continue
-            kept.append(
-                {
-                    "input_ids": input_ids,
-                    "attention_mask": attn,
-                    "labels": labels,
-                }
-            )
-        return kept, dropped
 
 
 class XVarsVideoChatGPTDataCollator:
@@ -599,9 +344,14 @@ def _score_xvars_generated_answers(
     *,
     required_terms: list[str],
     forbidden_terms: list[str],
+    enforce_relevance: bool = True,
 ) -> dict[str, Any]:
     normalized = [str(answer).lower() for answer in answers]
-    relevant = [any(term.lower() in answer for term in required_terms) for answer in normalized]
+    relevant = (
+        [any(term.lower() in answer for term in required_terms) for answer in normalized]
+        if enforce_relevance and required_terms
+        else [True] * len(normalized)
+    )
     forbidden = [any(term.lower() in answer for term in forbidden_terms) for answer in normalized]
     accepted_count = sum(ok and not bad for ok, bad in zip(relevant, forbidden))
     return {
@@ -622,7 +372,10 @@ def _build_xvars_generated_validation_callback(
 ):
     from transformers import TrainerCallback
 
-    sample_id = str(validation_cfg.get("sample_id", "action_0"))
+    sample_id = str(validation_cfg.get("sample_id") or "").strip()
+    if not sample_id:
+        logging.warning("Generated validation disabled: missing generated_validation.sample_id.")
+        return None
     selected = []
     seen_questions = set()
     for row in rows:
@@ -634,8 +387,15 @@ def _build_xvars_generated_validation_callback(
         logging.warning("Generated validation disabled: sample id '%s' was not found.", sample_id)
         return None
 
-    required_terms = list(validation_cfg.get("required_terms") or ["foul", "card", "challenge", "spa", "dogso", "advantage"])
-    forbidden_terms = list(validation_cfg.get("forbidden_terms") or ["get_children", "django", "httpclient", "```python", "```php"])
+    require_relevance = bool(validation_cfg.get("require_relevance", False))
+    required_terms = list(validation_cfg.get("required_terms") or [])
+    forbidden_terms = list(validation_cfg.get("forbidden_terms") or [])
+    if require_relevance and not required_terms:
+        logging.warning(
+            "Generated validation relevance checks requested for sample id '%s' but no required_terms were configured; "
+            "relevance gating will be skipped.",
+            sample_id,
+        )
     every_steps = max(1, int(validation_cfg.get("every_steps", 25)))
     max_new_tokens = max(1, int(validation_cfg.get("max_new_tokens", 128)))
 
@@ -693,6 +453,7 @@ def _build_xvars_generated_validation_callback(
                 answers,
                 required_terms=required_terms,
                 forbidden_terms=forbidden_terms,
+                enforce_relevance=require_relevance,
             )
             record = {"step": int(step), "epoch": epoch, "sample_id": sample_id, "answers": answers, **score}
             self.history.append(record)
@@ -981,25 +742,10 @@ class Trainer_VQA:
             )
             self.best_checkpoint_path = ckpt
             return ckpt
-        if backend == "xvars_lora":
-            ckpt = VQALoraTrainer(self.config).train(
-                train_data,
-                valid_data,
-                rank=rank,
-                world_size=world_size,
-                use_wandb=use_wandb,
-            )
-            self.best_checkpoint_path = ckpt
-            return ckpt
-
-        del train_data, valid_data
-        save_dir = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
-        os.makedirs(save_dir, exist_ok=True)
-        ckpt = os.path.join(save_dir, "vqa-best.ckpt")
-        with open(ckpt, "w", encoding="utf-8") as f:
-            f.write("vqa placeholder checkpoint")
-        self.best_checkpoint_path = ckpt
-        return ckpt
+        raise ValueError(
+            f"Unsupported VQA training backend '{backend}'. "
+            "Only 'xvars_videochatgpt_lora' is supported."
+        )
 
     def infer(self, model, dataset, *, use_wandb: bool = False) -> dict[str, Any]:
         exec_cfg = get_train_execution(self.config)
@@ -1063,8 +809,6 @@ __all__ = [
     "Trainer_VQA",
     "XVarsVideoChatGPTDataCollator",
     "XVarsVideoChatGPTTrainer",
-    "VQALoraSFTDataset",
-    "VQALoraTrainer",
     "VQAXVarsVideoChatGPTLoraTrainer",
     "VQAXVarsVideoChatGPTSFTDataset",
     "build_vqa_sft_text",

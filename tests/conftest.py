@@ -1,10 +1,13 @@
 from pathlib import Path
 import json
 import pickle
+import random
 
 import pytest
-import yaml
-import numpy as np
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - test env compatibility
+    import yaml_compat as yaml
 
 
 def _write_config(path: Path, payload: dict) -> str:
@@ -388,7 +391,8 @@ def make_vqa_config(tmp_path: Path) -> str:
     annotation = _write_vqa_annotation(tmp_path / "vqa-test.json")
     feature_dir = data_dir / "features" / "action_0"
     feature_dir.mkdir(parents=True, exist_ok=True)
-    feat = np.random.default_rng(7).normal(size=(356, 1024)).astype("float32")
+    rng = random.Random(7)
+    feat = [[rng.uniform(-1.0, 1.0) for _ in range(1024)] for _ in range(356)]
     with (feature_dir / "PRE_CLIP_feature_clip_1.pkl").open("wb") as f:
         pickle.dump(feat, f)
     pred_path = tmp_path / "vqa-predictions.json"
@@ -422,11 +426,29 @@ def make_vqa_config(tmp_path: Path) -> str:
         "MODEL": {
             "runtime": {"dtype": "fp32", "device": "auto", "compile": False, "freeze": False},
             "load": {"checkpoint_path": None, "pretrained": False, "strict": True, "map_location": None, "format": "auto"},
+            "metadata": {"backend": "xvars_videochatgpt"},
             "components": {
-                "video_encoder": {"kind": "encoder", "source": {"provider": "opensportslib", "registry": "backbone", "name": "vqa_video_encoder"}, "params": {}, "overrides": {}},
-                "llm_decoder": {"kind": "decoder", "source": {"provider": "huggingface", "name": "distilgpt2"}, "params": {"repo_id": "distilgpt2"}, "overrides": {}},
+                "video_encoder": {
+                    "kind": "encoder",
+                    "source": {"provider": "opensportslib", "registry": "backbone", "name": "xvars_clip_features"},
+                    "load": {"weights_path": str(tmp_path / "vision_weights.pth.tar")},
+                    "params": {"feature_source": "indexed", "vision_tower": "openai/clip-vit-large-patch14", "feature_dim": 1024},
+                    "overrides": {},
+                },
+                "mm_projector": {
+                    "kind": "projector",
+                    "source": {"provider": "opensportslib", "registry": "adapter", "name": "xvars_mm_projector"},
+                    "params": {"input_dim": 1024},
+                    "overrides": {},
+                },
+                "llm_decoder": {
+                    "kind": "decoder",
+                    "source": {"provider": "huggingface", "name": "base_model_videoChatGPT"},
+                    "params": {"repo_id": "base_model_videoChatGPT"},
+                    "overrides": {},
+                },
             },
-            "topology": [{"from": "video_encoder", "to": "llm_decoder"}],
+            "topology": [{"from": "video_encoder", "to": "mm_projector"}, {"from": "mm_projector", "to": "llm_decoder"}],
         },
         "IO": {"inputs": {"video": "video_encoder", "question": "llm_decoder"}, "outputs": {"answer_text": "llm_decoder"}},
         "TRAIN": {
@@ -437,18 +459,18 @@ def make_vqa_config(tmp_path: Path) -> str:
             "scheduler": {"type": "StepLR"},
             "execution": {
                 "enabled": True,
-                "backend": "xvars_hf",
-                "training_backend": "xvars_lora",
+                "backend": "xvars_videochatgpt",
+                "training_backend": "xvars_videochatgpt_lora",
                 "feature_backend": "xvars_clip",
                 "view_sampling_policy": "random_train_deterministic_eval",
                 "acc_grad_iter": 1,
                 "log_interval": 1,
                 "dry_run": True,
                 "prompt": {"style": "short", "video_token_len": 8},
-                "xvars": {"feature_mode": "clip_compat"},
+                "xvars": {"feature_mode": "strict_xvars", "projection_path": None, "conv_mode": "video-chatgpt_v1"},
                 "generation": {"fallback_policy": "baseline_on_failure"},
                 "hf": {"local_files_only": True, "prefer_cuda": False},
-                "lora": {"target_modules": ["q_proj", "v_proj"]},
+                "lora": {"target_modules": ["mm_projector", "q_proj", "v_proj"]},
                 "quantization": {"enabled": False},
                 "sft": {"include_video_tokens": True},
                 "checkpoint": {"save_adapter": True, "merge_and_save": False},

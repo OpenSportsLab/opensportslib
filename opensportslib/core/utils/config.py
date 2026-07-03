@@ -2,7 +2,10 @@ import os
 import re
 import json
 import gzip
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - runtime compatibility
+    import yaml_compat as yaml
 
 from opensportslib.core.config import (
     load_config as _load_config,

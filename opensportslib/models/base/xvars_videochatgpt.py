@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import json
 import os
-import sys
 from typing import Any
 
 import torch
@@ -38,9 +37,9 @@ from opensportslib.core.utils.hf_runtime import (
     load_peft_adapter_if_available,
 )
 from opensportslib.models.base.video_chatgpt_compat import load_videochatgpt_compatible_causal_lm
-from opensportslib.models.base.vqa import VQABaselineModel
+from opensportslib.models.utils.vqa_prediction_priors import build_xvars_classifier_prior
+from opensportslib.models.utils.xvars_clip_index import validate_xvars_feature_tensor
 from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xvars_prompt
-from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -51,39 +50,49 @@ XVARS_BASE_TOKEN_IDS = {
 }
 
 
-_XVARS_ACTION_PRIORS = {
-    0: "a tackle",
-    1: "a foot duel",
-    2: "a high leg",
-    3: "holding",
-    4: "pushing",
-    5: "using his elbows or arms",
-    6: "a shoulder challenge",
-    7: "a simulation",
-}
-
-_XVARS_OFFENCE_PRIORS = {
-    0: "and no foul",
-    1: "foul and no card",
-    2: "foul and a yellow card",
-    3: "foul and a red card",
-}
-
 _XVARS_DIRECT_PARITY_SAMPLE_FLAG = "_xvars_demo_parity_direct_infer"
 _XVARS_DIRECT_STOP_STR = "</s>"
-_UPSTREAM_XVARS_REPO_ROOT = "/home/vorajv/X-VARS/X-VARS"
 
 
-def build_xvars_classifier_prior(action_index: int, offence_index: int) -> str:
-    """Translate the original X-VARS classifier outputs into its prompt prior."""
+class _BaselineFallback:
+    """Deterministic fallback answer builder for XVARS runtime failures."""
 
-    action = _XVARS_ACTION_PRIORS.get(int(action_index), "")
-    offence = _XVARS_OFFENCE_PRIORS.get(int(offence_index), "")
-    if not action:
-        return offence
-    if offence.startswith("and "):
-        return f"{action} {offence}"
-    return f"{action}, {offence}" if offence else action
+    def generate_answer(
+        self,
+        sample: dict[str, Any],
+        prompt_cfg: dict[str, Any] | None = None,
+        generation_cfg: dict[str, Any] | None = None,
+    ) -> str:
+        del generation_cfg
+        prompt_cfg = prompt_cfg or {}
+        style = str(prompt_cfg.get("style", "short")).lower()
+
+        question = str(sample.get("question", "")).strip()
+        labels = sample.get("labels", {}) or {}
+        include_priors = bool(prompt_cfg.get("include_priors", True))
+        priors = (
+            build_prior_text(
+                labels,
+                sample.get("metadata", {}) or {},
+                include_fields=prompt_cfg.get("prior_fields"),
+            )
+            if include_priors
+            else ""
+        )
+
+        refs = sample.get("references") or []
+        if refs:
+            base = str(refs[0]).strip()
+        elif priors:
+            base = f"Available priors: {priors}."
+        else:
+            base = "Insufficient evidence to provide a definitive answer."
+
+        if style == "detailed" and question:
+            if priors:
+                return f"Question: {question} Priors: {priors} Answer: {base}"
+            return f"Question: {question} Answer: {base}"
+        return base
 
 
 def _is_direct_demo_parity_sample(sample: dict[str, Any]) -> bool:
@@ -104,127 +113,6 @@ def _build_direct_demo_parity_prompt_and_stop(
         video_token_len=video_token_len,
     )
     return prompt, _XVARS_DIRECT_STOP_STR
-
-
-def _upstream_chat_demo_prior(action_logits: torch.Tensor, offence_logits: torch.Tensor) -> str:
-    action_index = int(torch.argmax(action_logits.detach().cpu(), dim=0).item())
-    offence_index = int(torch.argmax(offence_logits.detach().cpu(), dim=0).item())
-    return build_xvars_classifier_prior(action_index, offence_index)
-
-
-def _upstream_chat_demo_spatio_temporal_features(frame_features) -> torch.Tensor:
-    import numpy as np
-
-    temporal_tokens = np.mean(frame_features, axis=1)
-    padding_size = 44 - int(temporal_tokens.shape[0])
-    if padding_size > 0:
-        temporal_tokens = np.pad(temporal_tokens, ((0, padding_size), (0, 0)), mode="constant")
-    spatial_tokens = np.mean(frame_features, axis=0)
-    concat_tokens = np.concatenate([temporal_tokens, spatial_tokens], axis=0).astype("float16")
-    return torch.from_numpy(concat_tokens).unsqueeze(0)
-
-
-def run_upstream_xvars_demo_direct_infer(config, *, video_path: str, question: str) -> str:
-    # Retained for upstream parity/debugging experiments; the public VQA infer()
-    # path intentionally uses the OpenSportsLib-native runtime instead.
-    repo_root = os.path.abspath(os.path.expanduser(_UPSTREAM_XVARS_REPO_ROOT))
-    if not os.path.isdir(repo_root):
-        raise FileNotFoundError(f"Local X-VARS repo not found: {repo_root}")
-
-    sys.path.insert(0, repo_root)
-    try:
-        from conversation_discussion import conv_templates, SeparatorStyle
-        from video_chatgpt.constants import (
-            DEFAULT_VIDEO_TOKEN,
-            DEFAULT_VIDEO_PATCH_TOKEN,
-            DEFAULT_VID_START_TOKEN,
-            DEFAULT_VID_END_TOKEN,
-        )
-        from video_chatgpt.eval.model_utils import initialize_model, load_video
-        from video_chatgpt.model.utils import KeywordsStoppingCriteria
-        from video_chatgpt.utils import disable_torch_init
-        from visual_encoder.clip_model import CLIPNetwork
-    finally:
-        try:
-            sys.path.remove(repo_root)
-        except ValueError:
-            pass
-
-    disable_torch_init()
-    encoder_load = get_component_load_by_kind(config, "encoder")
-    vision_weights_path = str(encoder_load.get("weights_path") or "")
-    if not vision_weights_path:
-        raise ValueError("X-VARS direct demo inference requires encoder load.weights_path.")
-    decoder_params = get_component_params_by_kind(config, "decoder")
-    model_id = str(decoder_params.get("repo_id") or "")
-    if not model_id:
-        raise ValueError("X-VARS direct demo inference requires decoder repo_id.")
-
-    model, _vision_tower_unused, tokenizer, image_processor, _token_len_unused = initialize_model(model_id, None)
-    vision_tower = CLIPNetwork().cuda().eval()
-    checkpoint = torch.load(os.path.abspath(os.path.expanduser(vision_weights_path)))
-    vision_tower.load_state_dict(checkpoint["state_dict"], strict=False)
-
-    frames = load_video(video_path)
-    start_frame = 63
-    end_frame = 87
-    fps = 17
-    fps_beginning = 25
-    factor = (end_frame - start_frame) / (((end_frame - start_frame) / fps_beginning) * fps)
-    frames = frames[start_frame:end_frame]
-    frames = image_processor.preprocess(frames, return_tensors="pt")["pixel_values"]
-
-    final_frames = None
-    for idx in range(len(frames)):
-        if idx % factor < 1:
-            current = frames[idx, :, :, :].unsqueeze(0)
-            final_frames = current if final_frames is None else torch.cat((final_frames, current), 0)
-    if final_frames is None:
-        raise ValueError(f"Could not extract demo-parity frames from video: {video_path}")
-
-    image_tensor = final_frames.cuda()
-    with torch.no_grad():
-        offence_logits, action_logits, frame_features = vision_tower(image_tensor)
-
-    prior_text = _upstream_chat_demo_prior(action_logits, offence_logits)
-    if ", " in prior_text:
-        action_text, offence_text = prior_text.split(", ", 1)
-        offence_suffix = f", {offence_text}"
-    else:
-        action_text, offence_suffix = prior_text, ""
-
-    conv = conv_templates["video-chatgpt_v1"].copy()
-    conv.append_message(conv.roles[0], f"{str(question).strip()}\n<video>")
-    conv.append_message(conv.roles[1], None)
-    conv.set_predictions(action_text, offence_suffix)
-    prompt = conv.get_prompt()
-    replace_token = DEFAULT_VID_START_TOKEN + DEFAULT_VIDEO_PATCH_TOKEN * 300 + DEFAULT_VID_END_TOKEN
-    prompt = prompt.replace(DEFAULT_VIDEO_TOKEN, replace_token, 1)
-
-    inputs = tokenizer([prompt])
-    input_ids = torch.as_tensor(inputs.input_ids).cuda()
-    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
-    stopping_criteria = KeywordsStoppingCriteria([stop_str], tokenizer, input_ids)
-
-    video_spatio_temporal_features = _upstream_chat_demo_spatio_temporal_features(
-        frame_features.numpy().astype("float16")
-    ).cuda()
-    with torch.inference_mode():
-        output_ids = model.generate(
-            input_ids,
-            video_spatio_temporal_features=video_spatio_temporal_features,
-            do_sample=False,
-            temperature=0.2,
-            max_new_tokens=128,
-            stopping_criteria=[stopping_criteria],
-        )
-
-    input_token_len = input_ids.shape[1]
-    outputs = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=True)[0]
-    outputs = outputs.strip()
-    if outputs.endswith(stop_str):
-        outputs = outputs[: -len(stop_str)]
-    return outputs.strip()
 
 
 class _KeywordsStoppingCriteria:
@@ -884,7 +772,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         super().__init__()
         self.config = config
         self.model_id = model_id
-        self.baseline = VQABaselineModel(config)
+        self.baseline = _BaselineFallback()
         self._ready = False
         self._error = None
         self.tokenizer = None
@@ -1012,7 +900,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         system_prompt = str(
             prompt_cfg.get(
                 "system_prompt",
-                "You are an artificial intelligence assistant for visual football referee questions. Give short and helpful answers.",
+                "You are an artificial intelligence assistant for visual question answering. Give short and helpful answers.",
             )
         )
         prior_text = ""

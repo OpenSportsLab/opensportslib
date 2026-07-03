@@ -436,7 +436,7 @@ def test_vqa_api_uses_wandb_for_train_infer_and_evaluate(vqa_config_path, tmp_pa
         ),
         MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
         SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "baseline", "prompt": {}, "generation": {}}),
+        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}}),
         TASK="VQA",
     )
 
@@ -668,12 +668,6 @@ def test_vqa_direct_xvars_infer_uses_native_model_path(vqa_config_path, tmp_path
         lambda cfg: "xvars_videochatgpt",
     )
     monkeypatch.setattr(
-        "opensportslib.models.base.xvars_videochatgpt.run_upstream_xvars_demo_direct_infer",
-        lambda cfg, *, video_path, question: (_ for _ in ()).throw(
-            AssertionError("upstream demo helper should not run from public infer()")
-        ),
-    )
-    monkeypatch.setattr(
         "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
         lambda cfg: SimpleNamespace(
             load=lambda weights: weights,
@@ -759,16 +753,6 @@ def test_vqa_xvars_test_set_infer_uses_native_model_and_not_upstream_repo(vqa_co
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
     monkeypatch.setattr("opensportslib.core.utils.config.select_device", lambda cfg: "cpu")
-    monkeypatch.setattr(
-        "opensportslib.models.base.xvars_videochatgpt._UPSTREAM_XVARS_REPO_ROOT",
-        str(tmp_path / "missing-xvars-repo"),
-    )
-    monkeypatch.setattr(
-        "opensportslib.models.base.xvars_videochatgpt.run_upstream_xvars_demo_direct_infer",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("upstream helper should not run for test_set inference")
-        ),
-    )
     monkeypatch.setattr(
         "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
         lambda cfg: SimpleNamespace(

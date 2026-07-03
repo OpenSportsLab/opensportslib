@@ -3,7 +3,6 @@
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_name_by_kind,
-    get_component_provider_by_kind,
     get_component_params_by_kind,
     get_vqa_backend,
     get_vqa_decoder_model_id,
@@ -112,7 +111,6 @@ def build_model_canonical(config, device):
         )
     if task == "vqa":
         backend = get_vqa_backend(config)
-        decoder_provider = (get_component_provider_by_kind(config, "decoder") or "").lower()
 
         if backend == "xvars_videochatgpt":
             from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
@@ -125,19 +123,10 @@ def build_model_canonical(config, device):
                 projector_params=projector_params,
             ), None
 
-        if backend == "xvars_hf" or decoder_provider == "huggingface":
-            from opensportslib.models.base.vqa import MultimodalHFVQAModel
-
-            projector_params = get_component_params_by_kind(config, "projector")
-            model_id = get_vqa_decoder_model_id(config, default="distilgpt2")
-            return MultimodalHFVQAModel(
-                config,
-                model_id=model_id,
-                projector_params=projector_params,
-            ), None
-
-        from opensportslib.models.base.vqa import VQABaselineModel
-        return VQABaselineModel(config), None
+        raise ValueError(
+            f"Unsupported VQA backend '{backend}'. "
+            "Only 'xvars_videochatgpt' is supported."
+        )
     else:
         raise ValueError(f"Unsupported model family for task: {task}")
 

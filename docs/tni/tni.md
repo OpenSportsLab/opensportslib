@@ -32,7 +32,7 @@ Use source-of-truth runnable configs from `opensportslib/configs/`.
 
 ### 4. VQA
 
-- Source: [`opensportslib/configs/vqa/default.yaml`](../../opensportslib/configs/vqa/default.yaml)
+- Source: [`opensportslib/configs/vqa/xvars_lora.yaml`](../../opensportslib/configs/vqa/xvars_lora.yaml)
 
 For canonical key definitions and migration-safe authoring rules, use the
 [Configuration Guide](../config/configuration-guide.md).

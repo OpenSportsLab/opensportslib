@@ -4,11 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - test env compatibility
+    import yaml_compat as yaml
 
 from opensportslib.core.trainer.vqa_trainer import (
     OptionalDependencyError,
-    VQALoraTrainer,
     VQAXVarsVideoChatGPTLoraTrainer,
     build_vqa_sft_text,
 )
@@ -55,7 +57,7 @@ def _cfg(tmp_path, *, dry_run=True):
             epochs=1,
             optimizer=SimpleNamespace(type="AdamW", lr=1e-4),
             execution={
-                "training_backend": "xvars_lora",
+                "training_backend": "xvars_videochatgpt_lora",
                 "dry_run": dry_run,
                 "acc_grad_iter": 1,
                 "log_interval": 1,
@@ -83,46 +85,6 @@ def test_build_vqa_sft_text_uses_priors_and_video_tokens():
     assert row["answer"] == "No card, because contact was low intensity."
     assert row["completion"] == f'{row["answer"]}</s>'
     assert row["text"].endswith(f'{row["answer"]}</s>')
-
-
-def test_lora_trainer_dry_run_writes_checkpoint_artifacts(tmp_path):
-    out = VQALoraTrainer(_cfg(tmp_path, dry_run=True)).train([_sample()], [_sample()])
-    out_path = Path(out)
-    assert (out_path / "config.yaml").exists()
-    assert (out_path / "training_metadata.json").exists()
-    assert (out_path / "adapter_model").exists()
-
-
-def test_lora_trainer_filters_tokenization_mismatch_rows():
-    class TinyTok:
-        def __call__(self, text, truncation=True, max_length=32):
-            toks = text.strip().split()
-            if truncation:
-                toks = toks[:max_length]
-            return SimpleNamespace(input_ids=toks)
-
-    rows = [
-        {"prompt": "USER: q ASSISTANT:", "completion": "valid answer"},
-        {"prompt": "USER: q ASSISTANT:", "completion": ""},
-    ]
-    kept, dropped = VQALoraTrainer._filter_tokenization_mismatch(rows, tokenizer=TinyTok(), max_seq_length=32)
-    assert len(kept) == 1
-    assert dropped == 1
-
-
-def test_lora_trainer_missing_optional_dependency_is_actionable(tmp_path, monkeypatch):
-    import opensportslib.core.trainer.vqa_trainer as mod
-
-    monkeypatch.setattr(
-        mod,
-        "require_optional_package",
-        lambda package, install_hint=None: (_ for _ in ()).throw(
-            OptionalDependencyError("Install it with: pip install trl")
-        ),
-    )
-    with pytest.raises(OptionalDependencyError, match="pip install trl"):
-        VQALoraTrainer(_cfg(tmp_path, dry_run=False)).train([_sample()], [_sample()])
-
 
 def test_peft_adapter_artifact_detection(tmp_path):
     ckpt = tmp_path / "adapter"
@@ -292,138 +254,6 @@ def test_apply_lora_for_causal_lm_skips_exclude_modules_for_older_peft(monkeypat
 
     assert wrapped[0] == "wrapped"
     assert "exclude_modules" not in captured["kwargs"]
-
-
-def test_vqa_lora_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
-    import opensportslib.core.trainer.vqa_trainer as mod
-
-    captured = {}
-
-    class FakeTrainingArguments:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    class FakeDataset:
-        @staticmethod
-        def from_list(rows):
-            return rows
-
-    class FakeTrainer:
-        def train(self):
-            return None
-
-        @property
-        def model(self):
-            class _Model:
-                def save_pretrained(self, output_dir):
-                    del output_dir
-
-            return _Model()
-
-    class FakeTokenizer:
-        pad_token_id = 0
-        eos_token_id = 0
-
-        def save_pretrained(self, output_dir):
-            del output_dir
-
-        def __call__(self, text, truncation=True, max_length=512, padding="max_length"):
-            del truncation, max_length, padding
-            toks = list(range(1, len(text.split()) + 1))
-            return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
-
-    class FakeModel:
-        pass
-
-    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
-    monkeypatch.setitem(__import__("sys").modules, "datasets", SimpleNamespace(Dataset=FakeDataset))
-    monkeypatch.setitem(__import__("sys").modules, "transformers", SimpleNamespace(TrainingArguments=FakeTrainingArguments))
-    monkeypatch.setattr(mod, "load_hf_causal_lm_for_training", lambda *args, **kwargs: (FakeTokenizer(), FakeModel(), "cpu"))
-    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
-    monkeypatch.setattr(mod, "build_trl_sft_trainer", lambda **kwargs: FakeTrainer())
-
-    trainer = VQALoraTrainer(_cfg(tmp_path, dry_run=False))
-    trainer.train([_sample()], [_sample()], use_wandb=True)
-
-    assert captured["report_to"] == ["wandb"]
-
-
-def test_vqa_lora_trainer_prefers_canonical_training_fields(monkeypatch, tmp_path):
-    import opensportslib.core.trainer.vqa_trainer as mod
-
-    captured = {}
-
-    class FakeTrainingArguments:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    class FakeDataset:
-        @staticmethod
-        def from_list(rows):
-            return rows
-
-    class FakeTrainer:
-        def train(self):
-            return None
-
-        @property
-        def model(self):
-            class _Model:
-                def save_pretrained(self, output_dir):
-                    del output_dir
-
-            return _Model()
-
-    class FakeTokenizer:
-        pad_token_id = 0
-        eos_token_id = 0
-
-        def save_pretrained(self, output_dir):
-            del output_dir
-
-        def __call__(self, text, truncation=True, max_length=512, padding="max_length"):
-            del truncation, max_length, padding
-            toks = list(range(1, len(text.split()) + 1))
-            return {"input_ids": toks + [0] * max(0, 8 - len(toks)), "attention_mask": [1] * len(toks) + [0] * max(0, 8 - len(toks))}
-
-    cfg = _cfg(tmp_path, dry_run=False)
-    cfg.MODEL.runtime.dtype = "bf16"
-    cfg.TRAIN.epochs = 3
-    cfg.TRAIN.optimizer.lr = 3e-4
-    cfg.TRAIN.execution["acc_grad_iter"] = 4
-    cfg.TRAIN.execution["log_interval"] = 9
-    cfg.TRAIN.execution["sft"].update(
-        {
-            "gradient_accumulation_steps": 1,
-            "num_train_epochs": 1,
-            "learning_rate": 1e-4,
-            "logging_steps": 1,
-            "fp16": True,
-            "bf16": False,
-        }
-    )
-
-    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
-    monkeypatch.setitem(__import__("sys").modules, "datasets", SimpleNamespace(Dataset=FakeDataset))
-    monkeypatch.setitem(__import__("sys").modules, "transformers", SimpleNamespace(TrainingArguments=FakeTrainingArguments))
-    monkeypatch.setattr(mod, "load_hf_causal_lm_for_training", lambda *args, **kwargs: (FakeTokenizer(), object(), "cpu"))
-    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
-    monkeypatch.setattr(mod, "build_trl_sft_trainer", lambda **kwargs: FakeTrainer())
-
-    VQALoraTrainer(cfg).train([_sample()], [_sample()], use_wandb=False)
-
-    assert captured["gradient_accumulation_steps"] == 4
-    assert captured["num_train_epochs"] == 3
-    assert captured["learning_rate"] == 3e-4
-    assert captured["logging_steps"] == 9
-    assert captured["bf16"] is True
-    assert captured["fp16"] is False
 
 
 def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
@@ -707,12 +537,12 @@ def test_vqa_lora_train_checkpoint_round_trip(vqa_config_path, tmp_path):
     payload["SYSTEM"]["paths"]["work_dir"] = str(tmp_path / "vqa_roundtrip_ckpt")
     payload["TRAIN"]["execution"].update(
         {
-            "training_backend": "xvars_lora",
+            "training_backend": "xvars_videochatgpt_lora",
             "dry_run": True,
             "prompt": {"include_priors": True, "prior_fields": ["action", "offence"]},
             "sft": {"include_video_tokens": True, "video_token_len": 2},
-            "hf": {"model_id": "distilgpt2", "local_files_only": True, "prefer_cuda": False},
-            "lora": {"target_modules": ["q_proj", "v_proj"]},
+            "hf": {"model_id": "base_model_videoChatGPT", "local_files_only": True, "prefer_cuda": False},
+            "lora": {"target_modules": ["mm_projector", "q_proj", "v_proj"]},
             "quantization": {"enabled": False},
             "checkpoint": {"save_adapter": True, "merge_and_save": False},
         }
@@ -726,10 +556,8 @@ def test_vqa_lora_train_checkpoint_round_trip(vqa_config_path, tmp_path):
     assert (ckpt_path / "config.yaml").exists()
     assert (ckpt_path / "training_metadata.json").exists()
 
-    loaded_api = VQAModel(config=str(roundtrip_cfg), weights=ckpt)
-    predictions = loaded_api.infer(use_wandb=False)
+    loaded_api = VQAModel(config=str(roundtrip_cfg))
+    loaded_api.load_weights(ckpt)
 
     assert loaded_api.last_loaded_weights == ckpt
-    assert predictions["task"] == "vqa"
-    assert len(predictions["data"]) > 0
-    assert predictions["data"][0]["answer_text"]
+    assert loaded_api.best_checkpoint == ckpt

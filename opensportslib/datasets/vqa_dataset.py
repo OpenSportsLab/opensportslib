@@ -18,12 +18,8 @@ from opensportslib.core.config.accessors import (
     get_vqa_xvars_feature_mode,
     get_xvars_train_video_token_len,
 )
-from opensportslib.models.utils.xvars_clip_index import (
-    build_xvars_prior_from_prediction,
-    load_feature_index,
-    load_prediction_index,
-)
-from opensportslib.models.utils.vqa_xvars_features import validate_xvars_feature_tensor
+from opensportslib.models.utils.vqa_prediction_priors import build_prediction_prior_text
+from opensportslib.models.utils.xvars_clip_index import load_feature_index, load_prediction_index, validate_xvars_feature_tensor
 
 
 class VQADataset(Dataset):
@@ -33,6 +29,7 @@ class VQADataset(Dataset):
         self.config = config
         self.split = split
         self._train_execution = self._as_dict(getattr(getattr(config, "TRAIN", None), "execution", None))
+        self._prompt_cfg = self._as_dict(self._train_execution.get("prompt"))
         self._view_policy = str(self._train_execution.get("view_sampling_policy", "random_train_deterministic_eval")).lower()
         self._rng = random.Random(42)
         self.annotation_path = annotation_file or get_split_annotation_path(config, split)
@@ -99,7 +96,11 @@ class VQADataset(Dataset):
                 refs = qa.get("answers", []) or []
                 if not question:
                     continue
-                prior_prediction_text = build_xvars_prior_from_prediction(pred_row)
+                prior_prediction_text = build_prediction_prior_text(
+                    pred_row,
+                    adapter=self._prompt_cfg.get("prediction_prior_adapter"),
+                    fields=self._prompt_cfg.get("prediction_prior_fields"),
+                )
                 self.samples.append(
                     {
                         "id": item_id,

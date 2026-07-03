@@ -1,10 +1,12 @@
-"""X-VARS CLIP feature/prediction index helpers."""
+"""Shared VQA feature and prediction index helpers."""
 
 from __future__ import annotations
 
 import json
 import os
 from typing import Any
+
+import torch
 
 
 def _load_json(path: str) -> Any:
@@ -79,33 +81,19 @@ def load_prediction_index(index_path: str, *, split: str | None = None) -> dict[
     return out
 
 
-def build_xvars_prior_from_prediction(pred: dict[str, Any] | None) -> str:
-    pred = pred or {}
-    action = str(pred.get("Action class") or pred.get("action") or "").strip()
-    offence = str(pred.get("Offence") or pred.get("offence") or "").strip()
-    severity = str(pred.get("Severity") or pred.get("severity") or "").strip()
-
-    action_map = {
-        "tackling": "a tackle",
-        "standing tackling": "a foot duel",
-        "elbowing": "using his elbows or arms",
-        "holding": "holding",
-        "high leg": "a high leg",
-        "pushing": "pushing",
-        "challenge": "a shoulder challenge",
-        "dive": "a simulation",
-    }
-    action = action_map.get(action.lower(), action)
-
-    if offence.lower() == "offence":
-        offence = "foul"
-    elif offence.lower() == "no offence":
-        offence = "no foul"
-    if severity == "3.0":
-        severity = "yellow card"
-    elif severity == "5.0":
-        severity = "red card"
-    elif severity == "1.0":
-        severity = "no card"
-    parts = [p for p in (action, offence, severity) if p]
-    return ", ".join(parts)
+def validate_xvars_feature_tensor(
+    features: torch.Tensor,
+    *,
+    expected_tokens: int | None = None,
+    context: str = "X-VARS features",
+) -> torch.Tensor:
+    if not isinstance(features, torch.Tensor):
+        features = torch.as_tensor(features, dtype=torch.float32)
+    if features.ndim != 2:
+        raise ValueError(f"{context} must be a 2D tensor [tokens, dim], got shape {tuple(features.shape)}")
+    if expected_tokens is not None and int(features.shape[0]) != int(expected_tokens):
+        raise ValueError(
+            f"{context} token count mismatch: expected {int(expected_tokens)}, got {int(features.shape[0])}. "
+            "Check that the configured X-VARS feature mode matches the extracted feature files."
+        )
+    return features

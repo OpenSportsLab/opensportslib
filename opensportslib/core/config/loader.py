@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - runtime compatibility
+    import yaml_compat as yaml
 
 from .conflicts import assert_no_legacy_aliases
 from .migrate import migrate_config

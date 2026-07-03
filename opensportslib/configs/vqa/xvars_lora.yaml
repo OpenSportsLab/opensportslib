@@ -161,6 +161,7 @@ TRAIN:
       style: detailed
       system_prompt: You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions carefully and explain your answers in detail based on the provided video.
       include_priors: true
+      prediction_prior_adapter: xvars_referee
       prior_fields: [action, offence, contact, bodypart]
       video_token_len: 300
     generation:
@@ -179,7 +180,7 @@ TRAIN:
     # OpenSportsLib-native VQA evaluation config. This does not correspond to
     # an upstream X-VARS benchmark scorer.
     eval_profile:
-      metric_set: [exact_match, contains_match, token_f1, semantic]
+      metric_set: [exact_match, contains_match, token_f1, referee_semantic]
       aggregation: mean
       exclusions: []
     production:

@@ -16,7 +16,7 @@ def _dataset():
     ]
 
 
-def test_vqa_metrics_include_strict_and_semantic_groups():
+def test_vqa_metrics_include_strict_and_referee_semantic_groups_when_requested():
     predictions = {
         "task": "vqa",
         "data": [
@@ -33,16 +33,16 @@ def test_vqa_metrics_include_strict_and_semantic_groups():
         ],
     }
 
-    metrics = compute_vqa_metrics(predictions, _dataset(), eval_profile={"metric_set": ["semantic"]})
+    metrics = compute_vqa_metrics(predictions, _dataset(), eval_profile={"metric_set": ["referee_semantic"]})
 
     assert "strict" in metrics
-    assert "semantic" in metrics
+    assert "referee_semantic" in metrics
     assert "token_f1" in metrics
     assert "exact_match" in metrics
-    assert metrics["semantic"]["overlap_score"] > 0.0
-    assert metrics["semantic"]["card_match"] > 0.0
-    assert metrics["semantic"]["foul_consistency"] > 0.0
-    assert metrics["semantic"]["rationale_quality"] > 0.0
+    assert metrics["referee_semantic"]["overlap_score"] > 0.0
+    assert metrics["referee_semantic"]["card_match"] > 0.0
+    assert metrics["referee_semantic"]["foul_consistency"] > 0.0
+    assert metrics["referee_semantic"]["rationale_quality"] > 0.0
 
 
 def test_semantic_overlap_handles_partial_match():
@@ -62,12 +62,12 @@ def test_semantic_overlap_handles_partial_match():
         ],
     }
 
-    metrics = compute_vqa_metrics(predictions, _dataset())
+    metrics = compute_vqa_metrics(predictions, _dataset(), eval_profile={"metric_set": ["referee_semantic"]})
 
-    assert metrics["semantic"]["overlap_score"] >= 0.0
-    assert metrics["semantic"]["card_match"] >= 0.0
-    assert metrics["semantic"]["foul_consistency"] >= 0.0
-    assert metrics["semantic"]["rationale_quality"] >= 0.0
+    assert metrics["referee_semantic"]["overlap_score"] >= 0.0
+    assert metrics["referee_semantic"]["card_match"] >= 0.0
+    assert metrics["referee_semantic"]["foul_consistency"] >= 0.0
+    assert metrics["referee_semantic"]["rationale_quality"] >= 0.0
 
 
 def test_semantic_penalizes_contradictory_answer():
@@ -81,5 +81,42 @@ def test_semantic_penalizes_contradictory_answer():
             }
         ],
     }
+    metrics = compute_vqa_metrics(predictions, _dataset(), eval_profile={"metric_set": ["referee_semantic"]})
+    assert metrics["referee_semantic"]["foul_consistency"] == 0.0
+
+
+def test_default_metrics_stay_generic_without_referee_semantics():
+    predictions = {
+        "task": "vqa",
+        "data": [
+            {
+                "id": "action_1",
+                "question": "What card would you give? Why?",
+                "answer_text": "Yellow card.",
+            }
+        ],
+    }
+
     metrics = compute_vqa_metrics(predictions, _dataset())
-    assert metrics["semantic"]["foul_consistency"] == 0.0
+
+    assert "semantic" not in metrics
+    assert "referee_semantic" not in metrics
+    assert metrics["eval_profile"]["metric_set"] == ["exact_match", "contains_match", "token_f1"]
+
+
+def test_generic_semantic_metric_name_does_not_enable_referee_scoring():
+    predictions = {
+        "task": "vqa",
+        "data": [
+            {
+                "id": "action_1",
+                "question": "What card would you give? Why?",
+                "answer_text": "Yellow card.",
+            }
+        ],
+    }
+
+    metrics = compute_vqa_metrics(predictions, _dataset(), eval_profile={"metric_set": ["semantic"]})
+
+    assert "semantic" not in metrics
+    assert "referee_semantic" not in metrics
