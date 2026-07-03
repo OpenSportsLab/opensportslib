@@ -9,6 +9,14 @@ CUDA_SUPPORT = [
     "cpu"
 ]
 
+XVARS_DEPENDENCY_PINS = {
+    "transformers": "4.38.2",
+    "peft": "0.9.0",
+    "tokenizers": "0.15.2",
+    "accelerate": "0.27.2",
+    "trl": "0.10.1",
+}
+
 def get_cuda_version():
     try:
         output = subprocess.check_output(["nvidia-smi"]).decode()
@@ -27,6 +35,18 @@ CUDA_VERSION = get_cuda_version()
 def get_cpu_tag():
     if not CUDA_VERSION:
         return "cpu"
+
+
+def install_xvars_dependencies():
+    python = sys.executable
+    packages = list(XVARS_DEPENDENCY_PINS)
+    pinned_packages = [f"{name}=={version}" for name, version in XVARS_DEPENDENCY_PINS.items()]
+
+    print("\nInstalling XVars VQA dependency overrides...\n")
+    print("This overrides the default Hugging Face dependency set with XVars-compatible versions.")
+    subprocess.call([python, "-m", "pip", "uninstall", "-y", *packages])
+    subprocess.check_call([python, "-m", "pip", "install", *pinned_packages])
+    print("XVars dependencies installed successfully.")
 
 def install_torch():
     python = sys.executable
@@ -155,9 +175,11 @@ def verify():
     else:
         print("Running on CPU")
 
-def setup(dali=False, pyg=False):
+def setup(dali=False, pyg=False, xvars=False):
     install_torch()
     install_extras(dali=dali, pyg=pyg)
+    if xvars:
+        install_xvars_dependencies()
     verify()
 
 
@@ -170,7 +192,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--pyg", action="store_true")
+    parser.add_argument("--xvars", action="store_true")
 
     args = parser.parse_args()
 
-    setup(dali=args.dali, pyg=args.pyg)
+    setup(dali=args.dali, pyg=args.pyg, xvars=args.xvars)
