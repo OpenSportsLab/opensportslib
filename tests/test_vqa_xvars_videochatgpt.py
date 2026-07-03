@@ -13,8 +13,10 @@ from opensportslib.core.trainer.vqa_trainer import (
     _score_xvars_generated_answers,
 )
 from opensportslib.models.base.xvars_videochatgpt import (
+    XVarsStrictRawVideoFeatureExtractor,
     XVarsVideoChatGPTCausalLM,
     _build_direct_demo_parity_prompt_and_stop,
+    resolve_xvars_strict_sampling_cfg,
 )
 from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_prior_text, build_xvars_prompt
 from opensportslib.models.utils.vqa_prediction_priors import build_prediction_prior_text
@@ -781,6 +783,66 @@ def test_xvars_base_inference_uses_native_videochatgpt_generate():
     assert "tokenizer" not in captured
     assert "eos_token_id" not in captured
     assert "pad_token_id" not in captured
+
+
+def test_xvars_strict_sampling_cfg_uses_canonical_data_sampling_only():
+    cfg = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                inputs=SimpleNamespace(
+                    video=SimpleNamespace(
+                        sampling={
+                            "start_frame": 63,
+                            "end_frame": 87,
+                            "input_fps": 25,
+                            "target_fps": 17,
+                        }
+                    )
+                )
+            )
+        ),
+        TRAIN=SimpleNamespace(
+            execution={
+                "xvars": {
+                    "sampling": {
+                        "start_frame": 11,
+                        "end_frame": 21,
+                        "input_fps": 20,
+                        "target_fps": 10,
+                    }
+                }
+            }
+        ),
+    )
+
+    merged = resolve_xvars_strict_sampling_cfg(cfg)
+
+    assert merged["start_frame"] == 63
+    assert merged["end_frame"] == 87
+    assert merged["input_fps"] == 25
+    assert merged["target_fps"] == 17
+
+
+def test_xvars_strict_extractor_uses_configured_window_and_packing():
+    extractor = XVarsStrictRawVideoFeatureExtractor(
+        weights_path="/tmp/weights.pth.tar",
+        prefer_cuda=False,
+        start_frame=10,
+        end_frame=20,
+        input_fps=10,
+        target_fps=5,
+        temporal_size=44,
+    )
+
+    frames = list(range(40))
+    cropped = extractor._strict_frame_window(frames)
+    assert frames[10] in cropped
+    assert frames[19] in cropped
+    assert len(cropped) == 5
+    assert extractor._strict_frame_window([]) == []
+
+    packed = extractor.spatio_temporal_tokens(torch.ones((24, 256, 1024), dtype=torch.float32))
+    assert packed.shape == (300, 1024)
 
 
 def test_xvars_base_inference_direct_demo_parity_recovers_from_zero_temperature():

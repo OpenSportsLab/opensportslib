@@ -220,6 +220,10 @@ def resolve_xvars_raw_num_frames(config, xvars_cfg: dict[str, Any] | None = None
     return int(video_sampling.get("num_frames", xvars_cfg.get("raw_num_frames", 100)))
 
 
+def resolve_xvars_strict_sampling_cfg(config) -> dict[str, Any]:
+    return dict(get_data_sampling(config))
+
+
 def _runtime_torch_dtype(config) -> torch.dtype:
     return {
         "fp16": torch.float16,
@@ -670,6 +674,11 @@ class XVarsStrictRawVideoFeatureExtractor:
         weights_path: str,
         vision_tower: str = "openai/clip-vit-large-patch14",
         prefer_cuda: bool = True,
+        start_frame: int | None = None,
+        end_frame: int | None = None,
+        input_fps: float | None = None,
+        target_fps: float | None = None,
+        temporal_size: int = 44,
     ):
         if not weights_path:
             raise ValueError(
@@ -679,6 +688,11 @@ class XVarsStrictRawVideoFeatureExtractor:
         self.weights_path = os.path.abspath(os.path.expanduser(str(weights_path)))
         self.vision_tower = vision_tower
         self._device = torch.device("cuda" if prefer_cuda and torch.cuda.is_available() else "cpu")
+        self.start_frame = int(start_frame) if start_frame is not None else 63
+        self.end_frame = int(end_frame) if end_frame is not None else 87
+        self.input_fps = float(input_fps) if input_fps is not None else 25.0
+        self.target_fps = float(target_fps) if target_fps is not None else 17.0
+        self.temporal_size = int(temporal_size)
         self._model = None
         self._processor = None
 
@@ -708,28 +722,30 @@ class XVarsStrictRawVideoFeatureExtractor:
         # The working X-VARS demo runs this classifier in float32 on CUDA.
         self._model = model.to(device=self._device, dtype=torch.float32).eval()
 
-    @staticmethod
-    def _strict_frame_window(frames: list) -> list:
-        window = frames[63:87]
+    def _strict_frame_window(self, frames: list, *, start_frame: int | None = None, end_frame: int | None = None, input_fps: float | None = None, target_fps: float | None = None) -> list:
+        start_frame = self.start_frame if start_frame is None else int(start_frame)
+        end_frame = self.end_frame if end_frame is None else int(end_frame)
+        window = frames[start_frame:end_frame]
         if not window:
             return frames
-        factor = 25.0 / 17.0
+        input_fps = self.input_fps if input_fps is None else float(input_fps)
+        target_fps = self.target_fps if target_fps is None else float(target_fps)
+        factor = input_fps / target_fps if target_fps else 1.0
         sampled = [frame for index, frame in enumerate(window) if index % factor < 1]
         return sampled or window
 
-    @staticmethod
-    def spatio_temporal_tokens(frame_features: torch.Tensor) -> torch.Tensor:
+    def spatio_temporal_tokens(self, frame_features: torch.Tensor) -> torch.Tensor:
         temporal = torch.mean(frame_features, dim=1)
-        if temporal.shape[0] < 44:
+        if temporal.shape[0] < self.temporal_size:
             padding = torch.zeros(
-                44 - temporal.shape[0],
+                self.temporal_size - temporal.shape[0],
                 temporal.shape[1],
                 device=temporal.device,
                 dtype=temporal.dtype,
             )
             temporal = torch.cat((temporal, padding), dim=0)
         else:
-            temporal = temporal[:44]
+            temporal = temporal[: self.temporal_size]
         spatial = torch.mean(frame_features, dim=0)
         return torch.cat((temporal, spatial), dim=0)
 
@@ -782,6 +798,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         self.conv_mode = str(xvars_cfg.get("conv_mode", "video-chatgpt_v1"))
         self.feature_source = get_vqa_feature_source(config, default="auto")
         self.raw_num_frames = resolve_xvars_raw_num_frames(config, xvars_cfg)
+        self.strict_sampling_cfg = resolve_xvars_strict_sampling_cfg(config)
         self.raw_extractor = None
 
         encoder_params = get_component_params_by_kind(config, "encoder")
@@ -939,6 +956,11 @@ class XVarsVideoChatGPTModel(nn.Module):
                             weights_path=self.vision_weights_path,
                             vision_tower=self.vision_tower_name,
                             prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            start_frame=self.strict_sampling_cfg.get("start_frame"),
+                            end_frame=self.strict_sampling_cfg.get("end_frame"),
+                            input_fps=self.strict_sampling_cfg.get("input_fps"),
+                            target_fps=self.strict_sampling_cfg.get("target_fps"),
+                            temporal_size=self.strict_sampling_cfg.get("temporal_size", 44),
                         )
                     else:
                         self.raw_extractor = XVarsRawVideoFeatureExtractor(

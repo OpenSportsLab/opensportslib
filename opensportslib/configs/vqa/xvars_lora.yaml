@@ -61,6 +61,10 @@ DATA:
         format: mp4
       sampling:
         num_frames: 100
+        input_fps: 25
+        target_fps: 17
+        start_frame: 63
+        end_frame: 87
       transform: {}
       augmentations: {}
       params: {}
