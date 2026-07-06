@@ -18,7 +18,7 @@ from .migrate import migrate_config
 from .runtime_adapter import maybe_namespace, namespace_to_plain_dict
 
 _YAML_SUFFIXES = {".yaml", ".yml"}
-_TASK_DIRS = {"classification", "localization"}
+_TASK_DIRS = {"classification", "localization", "vqa"}
 _INTERPOLATION_RE = re.compile(r"\$\{([^}]+)\}")
 
 

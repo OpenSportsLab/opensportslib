@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import yaml
 
 from opensportslib.core.config import load_config, migrate_config, validate_config
 from opensportslib.core.config.accessors import (
@@ -25,16 +24,19 @@ def test_public_config_api_is_canonical_first():
 def test_legacy_inputs_route_through_migration(tmp_path):
     config_path = tmp_path / "legacy.yaml"
     config_path.write_text(
-        yaml.safe_dump(
-            {
-                "DATA": {
-                    "data_dir": str(tmp_path / "data"),
-                    "annotations": {"train": str(tmp_path / "train.json")},
-                },
-                "MODEL": {"backbone": {"type": "smoke_backbone"}},
-                "SYSTEM": {"save_dir": str(tmp_path / "ckpt")},
-            },
-            sort_keys=False,
+        "\n".join(
+            [
+                "DATA:",
+                f"  data_dir: {tmp_path / 'data'}",
+                "  annotations:",
+                f"    train: {tmp_path / 'train.json'}",
+                "MODEL:",
+                "  backbone:",
+                "    type: smoke_backbone",
+                "SYSTEM:",
+                f"  save_dir: {tmp_path / 'ckpt'}",
+                "",
+            ]
         ),
         encoding="utf-8",
     )
@@ -81,6 +83,33 @@ def test_localization_experiment_composes_all_layers():
     assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints"
     assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
     assert cfg["MODEL"]["components"]["video_encoder"]["source"]["name"] == "rny008_gsm"
+
+
+def test_vqa_xvars_experiment_composes_all_layers():
+    cfg = load_config("opensportslib/configs/vqa/xvars.yaml", as_namespace=False)
+
+    assert cfg["VERSION"] == 2
+    assert cfg["TASK"] == "vqa"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints_vqa_lora"
+    assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints_vqa_lora"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert cfg["MODEL"]["metadata"]["backend"] == "xvars_videochatgpt"
+    assert cfg["TRAIN"]["execution"]["hf"]["tokenizer_id"] == "/home/vorajv/X-VARS/weights/base_model_videoChatGPT"
+
+
+def test_vqa_qwen_experiment_composes_all_layers():
+    cfg = load_config("opensportslib/configs/vqa/qwen.yaml", as_namespace=False)
+
+    assert cfg["VERSION"] == 2
+    assert cfg["TASK"] == "vqa"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints_vqa_qwen"
+    assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints_vqa_qwen"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert cfg["MODEL"]["metadata"]["backend"] == "qwen_xvars_infer"
+    assert cfg["MODEL"]["components"]["llm_decoder"]["source"]["name"] == "Qwen/Qwen3.5-9B-Base"
+    assert cfg["TRAIN"]["execution"]["hf"]["offload_folder"] == "./hf_offload_qwen"
 
 
 def test_validation_accepts_canonical_schema():

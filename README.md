@@ -58,12 +58,25 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
-``` 
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
+```
 ---
 
 **Note:**  
 Run `opensportslib setup` to automatically configure dependencies.  
 If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
+
+For VQA, use exactly one backend-specific dependency profile:
+
+- `--vqa_xvars` installs the X-VARS-compatible Hugging Face stack from `XVARS_DEPENDENCY_PINS`
+- `--vqa_qwen` installs the Qwen-compatible Hugging Face stack from `QWEN_DEPENDENCY_PINS`
+
+The `vqa_qwen` config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
 
 ---
 
@@ -252,7 +265,7 @@ metrics_from_file = my_model.evaluate(
 from opensportslib.apis import VQAModel
 
 my_model = VQAModel(
-    config="/path/to/vqa.yaml",
+    config="opensportslib/configs/vqa/qwen.yaml",
     weights=None,  # optional: path or Hugging Face model ID
 )
 
@@ -265,12 +278,19 @@ single_prediction = my_model.infer(
     video_path="/path/to/video.mp4",
     question="What card would you give? Why?",
 )
-
-metrics = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=predictions,
-)
 ```
+
+Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
+for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
+`opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
+backend currently supports `Qwen/Qwen2.5-7B-Instruct` and
+`Qwen/Qwen3.5-9B-Base`.
+
+For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
+when available and falls back to extracting CLIP features from raw video during
+`infer()`. Pre-extracted features remain the preferred path for parity, speed,
+and reproducibility. See [docs/xvars_integration_phases.md](docs/xvars_integration_phases.md)
+for the full X-VARS setup workflow.
 
 
 ---
@@ -379,6 +399,12 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
 ```
 
 ### Git workflow
