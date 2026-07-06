@@ -12,6 +12,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--pyg", action="store_true")
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--xvars", action="store_true")
+    parser.add_argument("--qwen", action="store_true")
 
     args = parser.parse_args(argv)
 
@@ -20,6 +21,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             pyg=args.pyg,
             dali=args.dali,
             xvars=args.xvars,
+            qwen=args.qwen
         )
         return 0
 

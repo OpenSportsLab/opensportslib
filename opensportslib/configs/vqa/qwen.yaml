@@ -115,10 +115,10 @@ MODEL:
       source:
         provider: huggingface
         # Qwen/Qwen2.5-7B-Instruct or Qwen/Qwen3.5-9B-Base 
-        name: Qwen/Qwen2.5-7B-Instruct
+        name: Qwen/Qwen3.5-9B-Base
       params:
         # Qwen/Qwen2.5-7B-Instruct or Qwen/Qwen3.5-9B-Base        
-        repo_id: Qwen/Qwen2.5-7B-Instruct
+        repo_id: Qwen/Qwen3.5-9B-Base
       overrides: {}
   topology:
     - from: video_encoder
