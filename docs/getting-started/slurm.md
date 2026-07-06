@@ -191,5 +191,6 @@ For interactive sessions, `exit` releases the `salloc` allocation.
   - use `bash -lc 'source ~/miniconda3/etc/profile.d/conda.sh && conda activate ... && ...'`
 - CUDA mismatch:
   - verify environment setup and run `opensportslib setup` in your env.
+  - for VQA, also install the matching backend profile with `--vqa_xvars` or `--vqa_qwen`.
 
 Cluster policies vary. If your site has required flags, treat them as mandatory defaults in all examples above.

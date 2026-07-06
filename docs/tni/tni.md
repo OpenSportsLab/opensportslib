@@ -32,7 +32,12 @@ Use source-of-truth runnable configs from `opensportslib/configs/`.
 
 ### 4. VQA
 
-- Source: [`opensportslib/configs/vqa/xvars_lora.yaml`](../../opensportslib/configs/vqa/xvars_lora.yaml)
+- Source configs:
+  - [`opensportslib/configs/vqa/xvars.yaml`](../../opensportslib/configs/vqa/xvars.yaml)
+  - [`opensportslib/configs/vqa/qwen.yaml`](../../opensportslib/configs/vqa/qwen.yaml)
+- Example mirrors:
+  - [`examples/configs/vqa_xvars.yaml`](../../examples/configs/vqa_xvars.yaml)
+  - [`examples/configs/vqa_qwen.yaml`](../../examples/configs/vqa_qwen.yaml)
 
 For canonical key definitions and migration-safe authoring rules, use the
 [Configuration Guide](../config/configuration-guide.md).
@@ -290,7 +295,7 @@ that payload to disk.
 from opensportslib.apis import VQAModel
 
 myModel = VQAModel(
-    config="/path/to/vqa.yaml",
+    config="opensportslib/configs/vqa/qwen.yaml",
     weights=None,  # optional: path or Hugging Face model ID
 )
 
@@ -298,11 +303,19 @@ predictions = myModel.infer(
     test_set="/path/to/test_annotations.json",
 )
 
-metrics = myModel.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=predictions,
-)
 ```
+
+
+Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
+for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
+`opensportslib setup --vqa_qwen` for the Qwen backend. The Qwen backend
+supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+
+For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
+when available and falls back to raw-video CLIP extraction during `infer()`.
+Pre-extracted features are still the preferred path for parity and throughput.
+See [docs/xvars_integration_phases.md](../xvars_integration_phases.md) for the
+full X-VARS setup workflow.
 
 ## Test / Inference on Multiple GPU (DDP)
 ```python
@@ -324,11 +337,6 @@ def main():
         use_ddp=True,   # optional (usually not needed)
     )
 
-    metrics = myModel.evaluate(
-        test_set="/path/to/test_annotations.json",
-    )
-
-    print(metrics)
 
 if __name__ == "__main__":
     main()

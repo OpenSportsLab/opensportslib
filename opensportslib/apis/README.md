@@ -121,7 +121,7 @@ metrics = m.evaluate(
 from opensportslib.apis import VQAModel
 
 m = VQAModel(
-    config="/path/to/vqa.yaml",
+    config="opensportslib/configs/vqa/qwen.yaml",
     weights=None,  # optional: path or Hugging Face model ID
 )
 
@@ -140,6 +140,11 @@ metrics = m.evaluate(
 )
 ```
 
+Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
+for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
+`opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
+config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+
 ### X-VARS Backends
 
 Use `MODEL.metadata.backend: xvars_videochatgpt` with
@@ -152,10 +157,13 @@ evaluation remains OpenSportsLib-native.
 
 For headless parity with the original X-VARS demo, configure the encoder with
 `feature_source: indexed_or_raw_clip` and set its `load.weights_path` to
-`14_model.pth.tar`. Indexed 300-token features are used when available;
-otherwise `infer()` extracts them from the raw video and adds the visual
-classifier's action/offence/card prior. Supplying `weights=` optionally applies
-a PEFT/LoRA adapter over the configured base VideoChatGPT model.
+`14_model.pth.tar`. Indexed 300-token features are preferred when available;
+otherwise `infer()` can extract CLIP features from raw video on the fly and add
+the visual classifier's action/offence/card prior. Supplying `weights=`
+optionally applies a PEFT/LoRA adapter over the configured base
+`base_model_videoChatGPT` model bundle. For the full X-VARS weight download,
+feature extraction, and index-building workflow, see
+[`docs/xvars_integration_phases.md`](../../docs/xvars_integration_phases.md).
 
 For upstream-style inference JSON, save VQA predictions with:
 

@@ -183,12 +183,12 @@ def verify():
     else:
         print("Running on CPU")
 
-def setup(dali=False, pyg=False, xvars=False, qwen=False):
+def setup(dali=False, pyg=False, vqa_xvars=False, vqa_qwen=False):
     install_torch()
     install_extras(dali=dali, pyg=pyg)
-    if xvars:
+    if vqa_xvars:
         install_xvars_dependencies(XVARS_DEPENDENCY_PINS)
-    if qwen:
+    if vqa_qwen:
         install_xvars_dependencies(QWEN_DEPENDENCY_PINS)
     verify()
 
@@ -202,9 +202,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--pyg", action="store_true")
-    parser.add_argument("--xvars", action="store_true")
-    parser.add_argument("--qwen", action="store_true")
+    parser.add_argument("--vqa_xvars", action="store_true")
+    parser.add_argument("--vqa_qwen", action="store_true")
 
     args = parser.parse_args()
 
-    setup(dali=args.dali, pyg=args.pyg, xvars=args.xvars, qwen=args.qwen)
+    setup(dali=args.dali, pyg=args.pyg, vqa_xvars=args.vqa_xvars, vqa_qwen=args.vqa_qwen)

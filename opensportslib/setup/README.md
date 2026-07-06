@@ -238,6 +238,46 @@ print("CUDA devices:", cp.cuda.runtime.getDeviceCount())
 PY
 ```
 
+## 7. Optional VQA dependency profiles
+
+If you want to use OpenSportsLib VQA, install one backend-specific Hugging Face
+dependency profile after the base Torch setup:
+
+### X-VARS-compatible VQA
+
+Use:
+
+```bash
+opensportslib setup --vqa_xvars
+```
+
+This installs the pinned versions from `XVARS_DEPENDENCY_PINS`:
+
+- `transformers==4.38.2`
+- `peft==0.9.0`
+- `tokenizers==0.15.2`
+- `accelerate==0.27.2`
+- `trl==0.10.1`
+
+### Qwen-compatible VQA
+
+Use:
+
+```bash
+opensportslib setup --vqa_qwen
+```
+
+This installs the pinned versions from `QWEN_DEPENDENCY_PINS`:
+
+- `transformers==5.13.0`
+- `peft==0.19.0`
+- `tokenizers==0.22.1`
+- `accelerate==1.14.0`
+- `trl==1.7.1`
+
+The `vqa_qwen` config supports `Qwen/Qwen2.5-7B-Instruct` and
+`Qwen/Qwen3.5-9B-Base`.
+
 ### Verify PyTorch Geometric
 
 ```bash

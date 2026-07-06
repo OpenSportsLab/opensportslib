@@ -13,6 +13,7 @@ Use production-ready canonical templates from:
 - [opensportslib/configs/](../../opensportslib/configs/)
 - [opensportslib/configs/classification/](../../opensportslib/configs/classification/)
 - [opensportslib/configs/localization/](../../opensportslib/configs/localization/)
+- [opensportslib/configs/vqa/](../../opensportslib/configs/vqa/)
 
 ## 1) Canonical Contract
 
@@ -23,7 +24,7 @@ Use production-ready canonical templates from:
 ## 2) Top-Level Schema
 
 ```yaml
-TASK: <classification|localization|retrieval|captioning|reasoning>
+TASK: <classification|localization|vqa|retrieval|captioning|reasoning>
 VERSION: 2
 
 SYSTEM: <SystemSchema>
@@ -37,7 +38,7 @@ IO: <IoSchema>
 
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |
 |---|---|---|---|---|---|---|
-| `TASK` | string | yes | none | `classification`, `localization`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
+| `TASK` | string | yes | none | `classification`, `localization`, `vqa`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
 | `VERSION` | int | yes | none | currently canonical payloads use `2` | config policy | Required section by validator; compatibility marker retained. |
 | `SYSTEM` | object | yes | none | see SYSTEM section | platform/runtime | Required section by validator. |
 | `DATA` | object | yes | none | see DATA section | data pipeline | Required section by validator. |
