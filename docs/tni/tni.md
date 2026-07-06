@@ -314,8 +314,7 @@ supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
 For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
 when available and falls back to raw-video CLIP extraction during `infer()`.
 Pre-extracted features are still the preferred path for parity and throughput.
-See [docs/xvars_integration_phases.md](../xvars_integration_phases.md) for the
-full X-VARS setup workflow.
+See [tools/vqa.md](../tools/vqa.md) for the full VQA setup workflow.
 
 ## Test / Inference on Multiple GPU (DDP)
 ```python

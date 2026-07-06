@@ -42,7 +42,7 @@ From action recognition, temporal event spotting, and visual question answering 
 
 The authoritative X-VARS parity ledger lives in:
 
-- [docs/xvars_integration_phases.md](xvars_integration_phases.md)
+- [VQA Setup Guide](tools/vqa.md)
 
 Use that document as the single source of truth for phase status, parity checklist, evidence paths, and verification dates.
 

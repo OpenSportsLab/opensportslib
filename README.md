@@ -289,8 +289,8 @@ backend currently supports `Qwen/Qwen2.5-7B-Instruct` and
 For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
 when available and falls back to extracting CLIP features from raw video during
 `infer()`. Pre-extracted features remain the preferred path for parity, speed,
-and reproducibility. See [docs/xvars_integration_phases.md](docs/xvars_integration_phases.md)
-for the full X-VARS setup workflow.
+and reproducibility. See [docs/tools/vqa.md](docs/tools/vqa.md) for the full
+VQA setup workflow.
 
 
 ---

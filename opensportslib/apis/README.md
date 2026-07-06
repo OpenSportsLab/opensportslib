@@ -162,8 +162,8 @@ otherwise `infer()` can extract CLIP features from raw video on the fly and add
 the visual classifier's action/offence/card prior. Supplying `weights=`
 optionally applies a PEFT/LoRA adapter over the configured base
 `base_model_videoChatGPT` model bundle. For the full X-VARS weight download,
-feature extraction, and index-building workflow, see
-[`docs/xvars_integration_phases.md`](../../docs/xvars_integration_phases.md).
+feature extraction, and index-building workflow, see the
+[`docs/tools/vqa.md`](../../docs/tools/vqa.md) VQA setup guide.
 
 For upstream-style inference JSON, save VQA predictions with:
 
