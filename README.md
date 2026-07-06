@@ -278,14 +278,8 @@ single_prediction = my_model.infer(
     video_path="/path/to/video.mp4",
     question="What card would you give? Why?",
 )
-
-metrics = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=predictions,
-)
 ```
 
-`infer()` and `evaluate()` are the shared public VQA APIs for both backends.
 Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
 for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
 `opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
