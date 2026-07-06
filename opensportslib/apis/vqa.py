@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
-from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution
+from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution, get_vqa_backend
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
 
@@ -147,6 +147,8 @@ class VQAModel(BaseTaskModel):
         import torch.multiprocessing as mp
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        if get_vqa_backend(self.config) == "qwen_xvars_infer":
+            raise ValueError("The 'qwen_xvars_infer' backend is inference-only and does not support train().")
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
         execution = get_train_execution(self.config)
@@ -212,7 +214,10 @@ class VQAModel(BaseTaskModel):
             raise ValueError("Direct VQA inference requires both `video_path` and a non-empty `question`.")
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        backend = get_vqa_backend(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
+        if backend == "qwen_xvars_infer" and effective_weights is not None:
+            raise ValueError("The 'qwen_xvars_infer' backend does not support adapter weights for infer().")
         _set_model_checkpoint_path(self.config, effective_weights)
         self.trainer = Trainer_VQA(self.config)
         if effective_weights is not None:

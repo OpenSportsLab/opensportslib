@@ -34,6 +34,7 @@ from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
     _ensure_video_special_tokens,
     build_bitsandbytes_config,
+    configure_generation_cache,
     hf_offline_if_requested,
     load_peft_adapter_if_available,
 )
@@ -830,7 +831,7 @@ class XVarsVideoChatGPTModel(nn.Module):
             from transformers import AutoTokenizer
 
             bnb_config = build_bitsandbytes_config(quant_cfg)
-            model_kwargs = {"local_files_only": local_files_only, "low_cpu_mem_usage": True, "use_cache": True}
+            model_kwargs = {"local_files_only": local_files_only, "low_cpu_mem_usage": True}
             dispatched_model = False
             if bnb_config is not None:
                 model_kwargs["quantization_config"] = bnb_config
@@ -864,6 +865,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
                 base_lm = load_videochatgpt_compatible_causal_lm(model_id, **model_kwargs)
+            configure_generation_cache(base_lm, enabled=True)
             _ensure_video_special_tokens(self.tokenizer, base_lm)
             native_configured = _configure_native_videochatgpt(base_lm, self.tokenizer, model_id)
             if adapter_path:

@@ -133,6 +133,18 @@ def test_vqa_xvars_config_uses_canonical_topology():
     assert "feature_source" not in cfg["TRAIN"]["execution"]["xvars"]
 
 
+def test_vqa_qwen_config_is_additive_and_inference_friendly():
+    cfg = load_config("opensportslib/configs/vqa/qwen.yaml", as_namespace=False)
+
+    assert cfg["MODEL"]["metadata"]["backend"] == "qwen_xvars_infer"
+    assert cfg["MODEL"]["components"]["llm_decoder"]["params"]["repo_id"] == "Qwen/Qwen3.5-9B-Base"
+    assert cfg["TRAIN"]["execution"]["hf"]["tokenizer_id"] == "Qwen/Qwen3.5-9B-Base"
+    assert cfg["TRAIN"]["execution"]["hf"]["device_map"] == "auto"
+    assert cfg["MODEL"]["components"]["video_encoder"]["params"]["feature_source"] == "indexed_or_raw_clip"
+    assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
+    assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
+
+
 def test_builder_exposes_version_neutral_dispatcher():
     assert callable(build_model_from_config)
 

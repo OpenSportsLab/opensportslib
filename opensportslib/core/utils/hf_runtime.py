@@ -149,6 +149,17 @@ def _ensure_video_special_tokens(tokenizer, model=None) -> int:
     return int(added)
 
 
+def configure_generation_cache(model, enabled: bool = True):
+    """Enable generation cache on loaded HF models without assuming a constructor kwarg."""
+    config = getattr(model, "config", None)
+    if config is not None and hasattr(config, "use_cache"):
+        config.use_cache = enabled
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is not None and hasattr(generation_config, "use_cache"):
+        generation_config.use_cache = enabled
+    return model
+
+
 def apply_lora_for_causal_lm(
     model,
     lora_cfg: dict[str, Any] | None = None,

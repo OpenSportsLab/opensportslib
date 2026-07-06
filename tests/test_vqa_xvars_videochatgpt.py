@@ -678,6 +678,70 @@ def test_xvars_model_init_uses_explicit_feature_mode_token_len(monkeypatch, tmp_
     assert model.video_token_len == 300
 
 
+def test_xvars_loader_does_not_pass_use_cache_to_model_load(monkeypatch, tmp_path):
+    from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+    captured = {}
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "</s>"
+
+    class FakeWrappedModel:
+        def __init__(self):
+            self.config = SimpleNamespace(use_cache=False)
+            self.generation_config = SimpleNamespace(use_cache=False)
+
+        def to(self, device):
+            del device
+            return self
+
+        def eval(self):
+            return self
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    base_model = FakeWrappedModel()
+
+    def _load_tok(model_id, **kwargs):
+        del model_id, kwargs
+        return FakeTokenizer()
+
+    def _load_model(model_id, **kwargs):
+        captured["model_id"] = model_id
+        captured["model_kwargs"] = dict(kwargs)
+        if "use_cache" in kwargs:
+            raise TypeError("unexpected load kwarg")
+        return base_model
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=_load_tok),
+        ),
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt.load_videochatgpt_compatible_causal_lm",
+        _load_model,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt._ensure_video_special_tokens",
+        lambda tokenizer, model=None: 0,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.base.xvars_videochatgpt._configure_native_videochatgpt",
+        lambda base_lm, tokenizer, model_id: True,
+    )
+
+    model = XVarsVideoChatGPTModel(cfg, model_id="base_model_videoChatGPT", projector_params={"input_dim": 1024})
+
+    assert model._ready is True
+    assert captured["model_id"] == "base_model_videoChatGPT"
+    assert "use_cache" not in captured["model_kwargs"]
+    assert base_model.config.use_cache is True
+    assert base_model.generation_config.use_cache is True
+
+
 def test_xvars_prompt_places_prior_and_video_tokens_in_user_turn():
     prompt = build_xvars_prompt(
         system_prompt="System.",

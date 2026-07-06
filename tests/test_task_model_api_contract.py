@@ -783,3 +783,137 @@ def test_vqa_xvars_test_set_infer_uses_native_model_and_not_upstream_repo(vqa_co
     assert infer_use_wandb is False
     assert out["task"] == "vqa"
     assert out["data"][0]["answer_text"] == "dataset-native-answer"
+
+
+def test_vqa_direct_qwen_infer_uses_standard_model_path(vqa_config_path, tmp_path, monkeypatch):
+    from opensportslib.apis.vqa import VQAModel
+
+    video_path = tmp_path / "clip_0.mp4"
+    video_path.write_bytes(b"video")
+
+    config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    test=SimpleNamespace(annotation_path=str(tmp_path / "test.json")),
+                )
+            )
+        ),
+        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
+        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}}),
+        TASK="VQA",
+    )
+
+    fake_model = object()
+    captured = {}
+
+    def fake_trainer_infer(model, dataset, use_wandb=False):
+        captured["infer"] = (model, list(dataset), use_wandb)
+        return {
+            "task": "vqa",
+            "data": [
+                {
+                    "id": "clip_0",
+                    "question": "Was it a foul?",
+                    "answer_text": "qwen-answer",
+                    "video_path": str(video_path),
+                }
+            ],
+        }
+
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
+    monkeypatch.setattr("opensportslib.core.utils.config.select_device", lambda cfg: "cpu")
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        lambda cfg: SimpleNamespace(
+            infer=fake_trainer_infer,
+        ),
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: None,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda *args, **kwargs: (fake_model, None),
+    )
+
+    api = VQAModel(config=vqa_config_path)
+    api.config = config
+    out = api.infer(video_path=str(video_path), question="Was it a foul?", use_wandb=False)
+
+    infer_model, infer_dataset, infer_use_wandb = captured["infer"]
+    assert infer_model is fake_model
+    assert infer_use_wandb is False
+    assert infer_dataset[0]["id"] == "clip_0"
+    assert infer_dataset[0]["question"] == "Was it a foul?"
+    assert out["data"][0]["answer_text"] == "qwen-answer"
+
+
+def test_vqa_qwen_test_set_infer_preserves_prediction_shape(vqa_config_path, tmp_path, monkeypatch):
+    from opensportslib.apis.vqa import VQAModel
+
+    test_path = tmp_path / "test.json"
+    test_path.write_text("{}", encoding="utf-8")
+
+    config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    test=SimpleNamespace(annotation_path=str(test_path)),
+                )
+            )
+        ),
+        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
+        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}}),
+        TASK="VQA",
+    )
+
+    dataset_rows = [{"id": "action_0", "question": "What happened?", "video_path": str(tmp_path / "clip_0.mp4")}]
+    fake_model = object()
+
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
+    monkeypatch.setattr("opensportslib.core.utils.config.select_device", lambda cfg: "cpu")
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        lambda cfg: SimpleNamespace(
+            infer=lambda model, dataset, use_wandb=False: {
+                "task": "vqa",
+                "data": [
+                    {
+                        "id": row["id"],
+                        "question": row["question"],
+                        "answer_text": "qwen-dataset-answer",
+                        "video_path": row["video_path"],
+                    }
+                    for row in dataset
+                ],
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "opensportslib.datasets.builder.build_dataset",
+        lambda cfg, path, weights, split="test": dataset_rows,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda *args, **kwargs: (fake_model, None),
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: None,
+    )
+
+    api = VQAModel(config=vqa_config_path)
+    api.config = config
+    out = api.infer(test_set=str(test_path), use_wandb=False)
+
+    assert out["task"] == "vqa"
+    assert len(out["data"]) == 1
+    assert out["data"][0]["id"] == "action_0"
+    assert out["data"][0]["question"] == "What happened?"
+    assert out["data"][0]["answer_text"] == "qwen-dataset-answer"
