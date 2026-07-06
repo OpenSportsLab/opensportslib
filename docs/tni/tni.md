@@ -17,18 +17,18 @@ Use source-of-truth runnable configs from `opensportslib/configs/`.
 
 ### 1. Classification (Video)
 
-- Source: [`opensportslib/configs/classification/video/classification.yaml`](../../opensportslib/configs/classification/video/classification.yaml)
+- Source: [`opensportslib/configs/classification/video.yaml`](../../opensportslib/configs/classification/video.yaml)
 - Example mirror: [`examples/configs/classification_video.yaml`](../../examples/configs/classification_video.yaml)
 
 ### 2. Classification (Tracking)
 
-- Source: [`opensportslib/configs/classification/tracking/sngar-tracking.yaml`](../../opensportslib/configs/classification/tracking/sngar-tracking.yaml)
-- Example mirror: [`examples/configs/classification_tracking.yaml`](../../examples/configs/classification_tracking.yaml)
+- Source: [`opensportslib/configs/classification/sngar_tracking.yaml`](../../opensportslib/configs/classification/sngar_tracking.yaml)
+- Example mirror: [`examples/configs/classification_sngar_tracking.yaml`](../../examples/configs/classification_sngar_tracking.yaml)
 
 ### 3. Localization (DALI)
 
-- Source: [`opensportslib/configs/localization/video/localization-dali.yaml`](../../opensportslib/configs/localization/video/localization-dali.yaml)
-- Example mirror: [`examples/configs/localization.yaml`](../../examples/configs/localization.yaml)
+- Source: [`opensportslib/configs/localization/video_dali.yaml`](../../opensportslib/configs/localization/video_dali.yaml)
+- Example mirror: [`examples/configs/localization_video_dali.yaml`](../../examples/configs/localization_video_dali.yaml)
 
 ### 4. VQA
 
@@ -209,7 +209,7 @@ myModel = model.ClassificationModel(
 
 ## Localization ##
 # myModel = model.LocalizationModel(
-#     config="/path/to/localization.yaml"
+#     config="/path/to/localization_video_dali.yaml"
 # )
 
 # Train on your dataset

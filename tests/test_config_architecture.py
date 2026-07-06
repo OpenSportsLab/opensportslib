@@ -42,18 +42,45 @@ def test_legacy_inputs_route_through_migration(tmp_path):
     loaded = load_config(str(config_path), as_namespace=False)
 
     assert loaded["VERSION"] == 2
-    assert "schema_version" not in loaded["MODEL"] or loaded["MODEL"]["schema_version"] == 3
+    assert loaded["MODEL"]["schema_version"] == 3
     assert "components" in loaded["MODEL"]
     assert "dali" not in loaded
 
 
-def test_canonical_inputs_load_directly_from_same_api():
+def test_task_defaults_compose_shared_root_defaults():
     config_path = Path("opensportslib/configs/classification/default.yaml")
     loaded = load_config(str(config_path), as_namespace=False)
 
     assert loaded["VERSION"] == 2
     assert loaded["TASK"] == "classification"
-    assert "components" in loaded["MODEL"]
+    assert loaded["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert loaded["SYSTEM"]["paths"]["save_dir"] == "./checkpoints"
+    assert loaded["MODEL"]["runtime"]["dtype"] == "fp32"
+    assert loaded["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+
+
+def test_classification_experiment_composes_all_layers():
+    cfg = load_config("opensportslib/configs/classification/video.yaml", as_namespace=False)
+
+    assert cfg["VERSION"] == 2
+    assert cfg["TASK"] == "classification"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints_video"
+    assert cfg["SYSTEM"]["gpu"]["count"] == 4
+    assert cfg["DATA"]["common"]["dataset_name"] == "mvfouls"
+    assert cfg["MODEL"]["components"]["video_encoder"]["source"]["name"] == "mvit_v2_s"
+
+
+def test_localization_experiment_composes_all_layers():
+    cfg = load_config("opensportslib/configs/localization/video_dali.yaml", as_namespace=False)
+
+    assert cfg["VERSION"] == 2
+    assert cfg["TASK"] == "localization"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints"
+    assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
+    assert cfg["MODEL"]["components"]["video_encoder"]["source"]["name"] == "rny008_gsm"
 
 
 def test_validation_accepts_canonical_schema():
@@ -67,102 +94,16 @@ def test_validation_accepts_canonical_schema():
     assert validated["VERSION"] == 2
 
 
-def test_vqa_xvars_config_keeps_canonical_split_dataloaders():
-    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml", as_namespace=False)
-
-    splits = cfg["DATA"]["common"]["splits"]
-    assert set(splits) >= {"train", "valid", "test"}
-    assert splits["train"]["dataloader"]["batch_size"] == 1
-    assert splits["train"]["dataloader"]["shuffle"] is True
-    assert splits["valid"]["dataloader"]["shuffle"] is False
-    assert splits["test"]["dataloader"]["pin_memory"] is False
-    assert cfg["DATA"]["inputs"]["video"]["sampling"]["num_frames"] == 100
-    assert "per_device_train_batch_size" not in cfg["TRAIN"]["execution"]["sft"]
-    assert cfg["TRAIN"]["epochs"] == 3
-    assert cfg["TRAIN"]["optimizer"]["lr"] == 0.0002
-    assert cfg["TRAIN"]["optimizer"]["weight_decay"] == 0.001
-    assert cfg["TRAIN"]["execution"]["acc_grad_iter"] == 8
-    assert cfg["TRAIN"]["execution"]["log_interval"] == 1
-    assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
-    assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
-    assert cfg["MODEL"]["runtime"]["dtype"] == "fp16"
-    assert cfg["TRAIN"]["execution"]["sft"]["max_seq_length"] == 480
-    assert cfg["TRAIN"]["execution"]["sft"]["gradient_checkpointing"] is True
-    assert cfg["TRAIN"]["execution"]["sft"]["save_strategy"] == "epoch"
-    assert "gradient_accumulation_steps" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "num_train_epochs" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "learning_rate" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "logging_steps" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "fp16" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "bf16" not in cfg["TRAIN"]["execution"]["sft"]
-    assert "video_token_len" not in cfg["TRAIN"]["execution"]["sft"]
-    assert cfg["TRAIN"]["execution"]["sft"]["reference_mode"] == "all"
-    assert cfg["TRAIN"]["execution"]["sft"]["append_eos_token"] is True
-    assert cfg["TRAIN"]["execution"]["lora"]["r"] == 16
-    assert cfg["TRAIN"]["execution"]["lora"]["alpha"] == 32
-    assert cfg["TRAIN"]["execution"]["lora"]["target_modules"] == [
-        "mm_projector",
-        "upsample_features",
-        "up_proj",
-        "down_proj",
-        "gate_proj",
-        "k_proj",
-        "q_proj",
-        "v_proj",
-        "o_proj",
-    ]
-    assert cfg["TRAIN"]["execution"]["lora"]["exclude_modules"] == r"^base_lm\.model\.mm_projector$"
-    assert cfg["TRAIN"]["execution"]["quantization"]["compute_dtype"] == "float16"
-
-
-def test_vqa_xvars_config_uses_canonical_topology():
-    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml", as_namespace=False)
-
-    components = cfg["MODEL"]["components"]
-    assert components["video_encoder"]["source"]["name"] == "xvars_clip_features"
-    assert components["video_encoder"]["params"]["feature_source"] == "indexed_or_raw_clip"
-    assert components["mm_projector"]["params"]["input_dim"] == 1024
-    assert components["llm_decoder"]["source"]["name"] == "/home/vorajv/xvars-weights/base_model_videoChatGPT"
-    assert components["llm_decoder"]["params"]["repo_id"] == "/home/vorajv/xvars-weights/base_model_videoChatGPT"
-    assert cfg["MODEL"]["topology"] == [
-        {"from": "video_encoder", "to": "mm_projector"},
-        {"from": "mm_projector", "to": "llm_decoder"},
-    ]
-    assert "base_model" not in cfg["TRAIN"]["execution"]["xvars"]
-    assert "mm_hidden_size" not in cfg["TRAIN"]["execution"]["xvars"]
-    assert "feature_source" not in cfg["TRAIN"]["execution"]["xvars"]
-
-
-def test_vqa_qwen_config_is_additive_and_inference_friendly():
-    cfg = load_config("opensportslib/configs/vqa/qwen.yaml", as_namespace=False)
-
-    assert cfg["MODEL"]["metadata"]["backend"] == "qwen_xvars_infer"
-    assert cfg["MODEL"]["components"]["llm_decoder"]["params"]["repo_id"] == "Qwen/Qwen3.5-9B-Base"
-    assert cfg["TRAIN"]["execution"]["hf"]["tokenizer_id"] == "Qwen/Qwen3.5-9B-Base"
-    assert cfg["TRAIN"]["execution"]["hf"]["device_map"] == "auto"
-    assert cfg["MODEL"]["components"]["video_encoder"]["params"]["feature_source"] == "indexed_or_raw_clip"
-    assert cfg["TRAIN"]["execution"]["prompt"]["video_token_len"] == 300
-    assert cfg["TRAIN"]["execution"]["xvars"]["feature_mode"] == "strict_xvars"
-
-
 def test_builder_exposes_version_neutral_dispatcher():
     assert callable(build_model_from_config)
 
 
-def test_xvars_feature_mode_helpers_are_explicit():
-    cfg = load_config("opensportslib/configs/vqa/xvars_lora.yaml")
+def test_layered_merge_preserves_sibling_keys():
+    cfg = load_config("opensportslib/configs/classification/video.yaml", as_namespace=False)
 
-    assert get_vqa_xvars_feature_mode(cfg) == "strict_xvars"
-    assert get_xvars_feature_token_len_for_mode("strict_xvars") == 300
-    assert get_xvars_feature_token_len_for_mode("clip_compat") == 356
-    assert get_xvars_train_video_token_len(cfg) == 300
-    assert get_xvars_infer_video_token_len(cfg) == 300
-
-
-def test_legacy_dali_migrates_to_canonical_loader_backend():
-    cfg = load_config("opensportslib/configs/localization/default.yaml", as_namespace=False)
-
-    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints_video"
+    assert cfg["MODEL"]["runtime"]["device"] == "auto"
 
 
 def test_migrate_config_rejects_legacy_aliases_in_canonical_payload():

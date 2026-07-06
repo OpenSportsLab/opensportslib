@@ -7,8 +7,8 @@ These examples are meant to help users and contributors understand the expected 
 ## Recommended contents
 
 - `classification_video.yaml`
-- `classification_tracking.yaml`
-- `localization.yaml`
+- `classification_sngar_tracking.yaml`
+- `localization_video_dali.yaml`
 - additional task specific configs as the library grows
 
 ## Usage

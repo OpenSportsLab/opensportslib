@@ -134,7 +134,7 @@ Templates and configuration files defining task parameters.
 - **`classification.yaml`**  
   Configuration template for foul classification tasks.
 
-- **`localization.yaml`**  
+- **`localization_video_dali.yaml`**  
   Configuration template for action spotting tasks.
 
 - **`graph_tracking_classification/`**  
