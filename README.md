@@ -7,6 +7,7 @@ It provides a unified framework to **train, evaluate, and run inference** for ke
 
 - **Action classification**
 - **Action localization / spotting**
+- **Visual Question Answering (VQA)**
 - **Action retrieval**
 - **Action description / captioning**
 
@@ -245,6 +246,32 @@ metrics_from_file = my_model.evaluate(
 )
 ```
 
+### VQA example
+
+```python
+from opensportslib.apis import VQAModel
+
+my_model = VQAModel(
+    config="/path/to/vqa.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = my_model.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+# Headless single-video VQA uses the same prediction payload shape.
+single_prediction = my_model.infer(
+    video_path="/path/to/video.mp4",
+    question="What card would you give? Why?",
+)
+
+metrics = my_model.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=predictions,
+)
+```
+
 
 ---
 
@@ -280,6 +307,9 @@ Classify clips or event centered samples into predefined categories.
 
 ### Action Localization / Spotting
 Predict when key events happen in long untrimmed sports videos.
+
+### Visual Question Answering (VQA)
+Answer natural-language questions about sports video clips.
 
 ### Action Retrieval
 Search and retrieve relevant clips or moments from a collection of sports videos.

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from types import SimpleNamespace
+
+from opensportslib.core.config.accessors import get_hf_cuda_device_index
 from opensportslib.core.utils.config import (
     dict_to_namespace,
     expand,
@@ -44,3 +47,38 @@ def test_dict_to_namespace_preserves_classes_shape():
 
     assert ns.DATA.classes == ["A", "B"]
     assert ns.DATA.num_classes == 2
+
+
+def test_get_hf_cuda_device_index_prefers_explicit_value(monkeypatch):
+    cfg = SimpleNamespace(
+        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(id=3)),
+        TRAIN=SimpleNamespace(execution={"hf": {"cuda_device_index": 1}}),
+    )
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    assert get_hf_cuda_device_index(cfg, {"cuda_device_index": "2"}) == 2
+
+
+def test_get_hf_cuda_device_index_falls_back_to_system_gpu(monkeypatch):
+    cfg = SimpleNamespace(SYSTEM=SimpleNamespace(gpu=SimpleNamespace(id=4)), TRAIN=SimpleNamespace(execution={"hf": {}}))
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    assert get_hf_cuda_device_index(cfg, {}) == 4
+
+
+def test_get_hf_cuda_device_index_ignores_cuda_when_visible_devices_is_set(monkeypatch):
+    cfg = SimpleNamespace(SYSTEM=SimpleNamespace(gpu=SimpleNamespace(id=4)), TRAIN=SimpleNamespace(execution={"hf": {"cuda_device_index": 1}}))
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+
+    assert get_hf_cuda_device_index(cfg, {"cuda_device_index": 1}) is None
+
+
+def test_get_hf_cuda_device_index_returns_none_when_unset(monkeypatch):
+    cfg = SimpleNamespace(SYSTEM=SimpleNamespace(), TRAIN=SimpleNamespace(execution={"hf": {}}))
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    assert get_hf_cuda_device_index(cfg, {}) is None

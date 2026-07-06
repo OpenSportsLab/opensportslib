@@ -30,6 +30,10 @@ Use source-of-truth runnable configs from `opensportslib/configs/`.
 - Source: [`opensportslib/configs/localization/video_dali.yaml`](../../opensportslib/configs/localization/video_dali.yaml)
 - Example mirror: [`examples/configs/localization_video_dali.yaml`](../../examples/configs/localization_video_dali.yaml)
 
+### 4. VQA
+
+- Source: [`opensportslib/configs/vqa/xvars_lora.yaml`](../../opensportslib/configs/vqa/xvars_lora.yaml)
+
 For canonical key definitions and migration-safe authoring rules, use the
 [Configuration Guide](../config/configuration-guide.md).
 
@@ -111,6 +115,36 @@ Localization samples use `data[].events[]`. OpenSportsLib prefers
           "label": "pass",
           "position_ms": 1240,
           "gameTime": "1 - 00:01"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### VQA annotations
+
+VQA samples use `data[].answers[]` with a question and one or more reference
+answers.
+
+```json
+{
+  "version": "2.0",
+  "task": "vqa",
+  "data": [
+    {
+      "id": "clip_0001",
+      "inputs": [
+        {
+          "type": "video",
+          "path": "clips/clip_0001.mp4",
+          "fps": 25.0
+        }
+      ],
+      "answers": [
+        {
+          "question": "What card would you give? Why?",
+          "answers": ["No card, because this is a fair challenge."]
         }
       ]
     }
@@ -249,6 +283,26 @@ metrics_from_saved_predictions = myModel.evaluate(
 `infer()` returns an in-memory OSL JSON-style prediction payload. It does not
 require an output path. `save_predictions(...)` is the explicit API for writing
 that payload to disk.
+
+## VQA Inference and Evaluation
+
+```python
+from opensportslib.apis import VQAModel
+
+myModel = VQAModel(
+    config="/path/to/vqa.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = myModel.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+metrics = myModel.evaluate(
+    test_set="/path/to/test_annotations.json",
+    predictions=predictions,
+)
+```
 
 ## Test / Inference on Multiple GPU (DDP)
 ```python

@@ -4,6 +4,7 @@
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.apis.classification import ClassificationModel
 from opensportslib.apis.localization import LocalizationModel
+from opensportslib.apis.vqa import VQAModel
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -12,4 +13,5 @@ __all__ = [
     "BaseTaskModel",
     "ClassificationModel",
     "LocalizationModel",
+    "VQAModel",
 ]

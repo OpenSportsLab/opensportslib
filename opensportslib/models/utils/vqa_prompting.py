@@ -1,0 +1,56 @@
+"""Reusable VQA prompt and prior-text helpers."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+VIDEO_CHATGPT_SYSTEM_PROMPT = (
+    "You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that "
+    "the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions "
+    "carefully and explain your answers in detail based on the provided video."
+)
+
+
+def build_prior_text(
+    labels: dict[str, Any] | None,
+    metadata: dict[str, Any] | None = None,
+    include_fields: list[str] | None = None,
+) -> str:
+    """Build compact prior text from explicitly requested label/metadata fields."""
+    labels = labels or {}
+    metadata = metadata or {}
+    include_fields = [str(field).strip() for field in (include_fields or []) if str(field).strip()]
+
+    chunks: list[str] = []
+    for field in include_fields:
+        value = ((labels.get(field) or {}).get("label")) if isinstance(labels.get(field), dict) else None
+        if not value:
+            value = metadata.get(field)
+        if value:
+            chunks.append(f"{field}={value}")
+
+    return "; ".join(chunks)
+
+
+def build_xvars_prompt(
+    *,
+    system_prompt: str,
+    question: str,
+    prior_text: str = "",
+    video_token_len: int = 300,
+) -> str:
+    """Build a shared X-VARS/Video-ChatGPT-style prompt contract."""
+    video_token_len = max(int(video_token_len), 0)
+    question_text = str(question).strip()
+    prior_text = str(prior_text).strip()
+
+    user_turn = f"USER: {question_text}"
+    if prior_text:
+        user_turn = f"{user_turn} The prediction for this video is {prior_text}"
+
+    if video_token_len > 0:
+        user_turn = f"{user_turn}\n<vid_start>{'<vid_patch>' * video_token_len}<vid_end>"
+
+    resolved_system_prompt = str(system_prompt).strip() or VIDEO_CHATGPT_SYSTEM_PROMPT
+    return f"{resolved_system_prompt} {user_turn} ASSISTANT:"

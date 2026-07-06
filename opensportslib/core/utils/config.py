@@ -2,7 +2,10 @@ import os
 import re
 import json
 import gzip
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - runtime compatibility
+    import yaml_compat as yaml
 
 from opensportslib.core.config import (
     load_config as _load_config,
@@ -241,7 +244,8 @@ def fetch_and_merge_config_from_HF(
     loaded_cfg = None
 
     if is_local_path(weights):
-        dir_name = os.path.dirname(os.path.abspath(weights))
+        abs_weights = os.path.abspath(weights)
+        dir_name = abs_weights if os.path.isdir(abs_weights) else os.path.dirname(abs_weights)
         yaml_path = os.path.join(dir_name, "config.yaml")
         json_path = os.path.join(dir_name, "config.json")
         if os.path.exists(yaml_path):

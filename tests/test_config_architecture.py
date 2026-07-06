@@ -4,6 +4,12 @@ import pytest
 import yaml
 
 from opensportslib.core.config import load_config, migrate_config, validate_config
+from opensportslib.core.config.accessors import (
+    get_vqa_xvars_feature_mode,
+    get_xvars_feature_token_len_for_mode,
+    get_xvars_infer_video_token_len,
+    get_xvars_train_video_token_len,
+)
 from opensportslib.core.config.conflicts import assert_no_legacy_aliases
 from opensportslib.models.builder import build_model_from_config
 

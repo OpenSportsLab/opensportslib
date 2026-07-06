@@ -9,6 +9,22 @@ CUDA_SUPPORT = [
     "cpu"
 ]
 
+XVARS_DEPENDENCY_PINS = {
+    "transformers": "4.38.2",
+    "peft": "0.9.0",
+    "tokenizers": "0.15.2",
+    "accelerate": "0.27.2",
+    "trl": "0.10.1",
+}
+
+QWEN_DEPENDENCY_PINS = {
+    "transformers": "5.13.0",
+    "peft": "0.19.0",
+    "tokenizers": "0.22.1",
+    "accelerate": "1.14.0",
+    "trl": "1.7.1",
+}
+
 def get_cuda_version():
     try:
         output = subprocess.check_output(["nvidia-smi"]).decode()
@@ -27,6 +43,18 @@ CUDA_VERSION = get_cuda_version()
 def get_cpu_tag():
     if not CUDA_VERSION:
         return "cpu"
+
+
+def install_xvars_dependencies(DEPENDENCY_PINS):
+    python = sys.executable
+    packages = list(DEPENDENCY_PINS)
+    pinned_packages = [f"{name}=={version}" for name, version in DEPENDENCY_PINS.items()]
+
+    print(f"\nInstalling {list(DEPENDENCY_PINS.keys())} dependency overrides...\n")
+    print("This overrides the default Hugging Face dependency set with XVars-compatible versions.")
+    subprocess.call([python, "-m", "pip", "uninstall", "-y", *packages])
+    subprocess.check_call([python, "-m", "pip", "install", *pinned_packages])
+    print("Dependencies installed successfully.")
 
 def install_torch():
     python = sys.executable
@@ -155,9 +183,13 @@ def verify():
     else:
         print("Running on CPU")
 
-def setup(dali=False, pyg=False):
+def setup(dali=False, pyg=False, xvars=False, qwen=False):
     install_torch()
     install_extras(dali=dali, pyg=pyg)
+    if xvars:
+        install_xvars_dependencies(XVARS_DEPENDENCY_PINS)
+    if qwen:
+        install_xvars_dependencies(QWEN_DEPENDENCY_PINS)
     verify()
 
 
@@ -170,7 +202,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--pyg", action="store_true")
+    parser.add_argument("--xvars", action="store_true")
+    parser.add_argument("--qwen", action="store_true")
 
     args = parser.parse_args()
 
-    setup(dali=args.dali, pyg=args.pyg)
+    setup(dali=args.dali, pyg=args.pyg, xvars=args.xvars, qwen=args.qwen)
