@@ -4,6 +4,8 @@ from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_name_by_kind,
     get_component_params_by_kind,
+    get_vqa_backend,
+    get_vqa_decoder_model_id,
     get_data_classes,
     get_data_num_classes,
     get_data_modality,
@@ -107,6 +109,34 @@ def build_model_canonical(config, device):
             f"Unsupported localization model family: {model_family!r}. "
             "Expected one of: E2E, ContextAware, LearnablePooling."
         )
+    if task == "vqa":
+        backend = get_vqa_backend(config)
+
+        if backend == "xvars_videochatgpt":
+            from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
+
+            projector_params = get_component_params_by_kind(config, "projector")
+            model_id = get_vqa_decoder_model_id(config, default="base_model_videoChatGPT")
+            return XVarsVideoChatGPTModel(
+                config,
+                model_id=model_id,
+                projector_params=projector_params,
+            ), None
+        if backend == "qwen_xvars_infer":
+            from opensportslib.models.base.qwen_xvars import QwenXVarsModel
+
+            projector_params = get_component_params_by_kind(config, "projector")
+            model_id = get_vqa_decoder_model_id(config, default="Qwen/Qwen3.5-9B-Base")
+            return QwenXVarsModel(
+                config,
+                model_id=model_id,
+                projector_params=projector_params,
+            ), None
+
+        raise ValueError(
+            f"Unsupported VQA backend '{backend}'. "
+            "Only 'xvars_videochatgpt' and 'qwen_xvars_infer' are supported."
+        )
     else:
         raise ValueError(f"Unsupported model family for task: {task}")
 
@@ -143,3 +173,7 @@ def _resolve_model_route(payload):
         if not model.get("metadata", {}).get("family"):
             # Family inference fallback remains in runtime adapter.
             return
+    if task == "vqa":
+        decoders = [c for c in components.values() if c.get("kind") in {"decoder", "head"}]
+        if not decoders:
+            raise ValueError("Canonical VQA config must define a decoder or head component.")

@@ -7,6 +7,7 @@ It provides a unified framework to **train, evaluate, and run inference** for ke
 
 - **Action classification**
 - **Action localization / spotting**
+- **Visual Question Answering (VQA)**
 - **Action retrieval**
 - **Action description / captioning**
 
@@ -57,12 +58,25 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
-``` 
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
+```
 ---
 
 **Note:**  
 Run `opensportslib setup` to automatically configure dependencies.  
 If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
+
+For VQA, use exactly one backend-specific dependency profile:
+
+- `--vqa_xvars` installs the X-VARS-compatible Hugging Face stack from `XVARS_DEPENDENCY_PINS`
+- `--vqa_qwen` installs the Qwen-compatible Hugging Face stack from `QWEN_DEPENDENCY_PINS`
+
+The `vqa_qwen` config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
 
 ---
 
@@ -222,7 +236,7 @@ print(metrics)
 from opensportslib.apis import LocalizationModel
 
 my_model = LocalizationModel(
-    config="/path/to/localization.yaml",
+    config="/path/to/localization_video_dali.yaml",
     weights=None,  # optional: path or Hugging Face model ID
 )
 
@@ -244,6 +258,39 @@ metrics_from_file = my_model.evaluate(
     predictions=saved_predictions,
 )
 ```
+
+### VQA example
+
+```python
+from opensportslib.apis import VQAModel
+
+my_model = VQAModel(
+    config="opensportslib/configs/vqa/qwen.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = my_model.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+# Headless single-video VQA uses the same prediction payload shape.
+single_prediction = my_model.infer(
+    video_path="/path/to/video.mp4",
+    question="What card would you give? Why?",
+)
+```
+
+Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
+for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
+`opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
+backend currently supports `Qwen/Qwen2.5-7B-Instruct` and
+`Qwen/Qwen3.5-9B-Base`.
+
+For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
+when available and falls back to extracting CLIP features from raw video during
+`infer()`. Pre-extracted features remain the preferred path for parity, speed,
+and reproducibility. See [docs/tools/vqa.md](docs/tools/vqa.md) for the full
+VQA setup workflow.
 
 
 ---
@@ -280,6 +327,9 @@ Classify clips or event centered samples into predefined categories.
 
 ### Action Localization / Spotting
 Predict when key events happen in long untrimmed sports videos.
+
+### Visual Question Answering (VQA)
+Answer natural-language questions about sports video clips.
 
 ### Action Retrieval
 Search and retrieve relevant clips or moments from a collection of sports videos.
@@ -349,6 +399,12 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
 ```
 
 ### Git workflow

@@ -17,18 +17,27 @@ Use source-of-truth runnable configs from `opensportslib/configs/`.
 
 ### 1. Classification (Video)
 
-- Source: [`opensportslib/configs/classification/video/classification.yaml`](../../opensportslib/configs/classification/video/classification.yaml)
+- Source: [`opensportslib/configs/classification/video.yaml`](../../opensportslib/configs/classification/video.yaml)
 - Example mirror: [`examples/configs/classification_video.yaml`](../../examples/configs/classification_video.yaml)
 
 ### 2. Classification (Tracking)
 
-- Source: [`opensportslib/configs/classification/tracking/sngar-tracking.yaml`](../../opensportslib/configs/classification/tracking/sngar-tracking.yaml)
-- Example mirror: [`examples/configs/classification_tracking.yaml`](../../examples/configs/classification_tracking.yaml)
+- Source: [`opensportslib/configs/classification/sngar_tracking.yaml`](../../opensportslib/configs/classification/sngar_tracking.yaml)
+- Example mirror: [`examples/configs/classification_sngar_tracking.yaml`](../../examples/configs/classification_sngar_tracking.yaml)
 
 ### 3. Localization (DALI)
 
-- Source: [`opensportslib/configs/localization/video/localization-dali.yaml`](../../opensportslib/configs/localization/video/localization-dali.yaml)
-- Example mirror: [`examples/configs/localization.yaml`](../../examples/configs/localization.yaml)
+- Source: [`opensportslib/configs/localization/video_dali.yaml`](../../opensportslib/configs/localization/video_dali.yaml)
+- Example mirror: [`examples/configs/localization_video_dali.yaml`](../../examples/configs/localization_video_dali.yaml)
+
+### 4. VQA
+
+- Source configs:
+  - [`opensportslib/configs/vqa/xvars.yaml`](../../opensportslib/configs/vqa/xvars.yaml)
+  - [`opensportslib/configs/vqa/qwen.yaml`](../../opensportslib/configs/vqa/qwen.yaml)
+- Example mirrors:
+  - [`examples/configs/vqa_xvars.yaml`](../../examples/configs/vqa_xvars.yaml)
+  - [`examples/configs/vqa_qwen.yaml`](../../examples/configs/vqa_qwen.yaml)
 
 For canonical key definitions and migration-safe authoring rules, use the
 [Configuration Guide](../config/configuration-guide.md).
@@ -118,6 +127,36 @@ Localization samples use `data[].events[]`. OpenSportsLib prefers
 }
 ```
 
+### VQA annotations
+
+VQA samples use `data[].answers[]` with a question and one or more reference
+answers.
+
+```json
+{
+  "version": "2.0",
+  "task": "vqa",
+  "data": [
+    {
+      "id": "clip_0001",
+      "inputs": [
+        {
+          "type": "video",
+          "path": "clips/clip_0001.mp4",
+          "fps": 25.0
+        }
+      ],
+      "answers": [
+        {
+          "question": "What card would you give? Why?",
+          "answers": ["No card, because this is a fair challenge."]
+        }
+      ]
+    }
+  ]
+}
+```
+
 ### Public example datasets
 
 Download or inspect annotation files from:
@@ -175,7 +214,7 @@ myModel = model.ClassificationModel(
 
 ## Localization ##
 # myModel = model.LocalizationModel(
-#     config="/path/to/localization.yaml"
+#     config="/path/to/localization_video_dali.yaml"
 # )
 
 # Train on your dataset
@@ -250,6 +289,33 @@ metrics_from_saved_predictions = myModel.evaluate(
 require an output path. `save_predictions(...)` is the explicit API for writing
 that payload to disk.
 
+## VQA Inference and Evaluation
+
+```python
+from opensportslib.apis import VQAModel
+
+myModel = VQAModel(
+    config="opensportslib/configs/vqa/qwen.yaml",
+    weights=None,  # optional: path or Hugging Face model ID
+)
+
+predictions = myModel.infer(
+    test_set="/path/to/test_annotations.json",
+)
+
+```
+
+
+Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
+for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
+`opensportslib setup --vqa_qwen` for the Qwen backend. The Qwen backend
+supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+
+For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
+when available and falls back to raw-video CLIP extraction during `infer()`.
+Pre-extracted features are still the preferred path for parity and throughput.
+See [tools/vqa.md](../tools/vqa.md) for the full VQA setup workflow.
+
 ## Test / Inference on Multiple GPU (DDP)
 ```python
 from opensportslib import model
@@ -270,11 +336,6 @@ def main():
         use_ddp=True,   # optional (usually not needed)
     )
 
-    metrics = myModel.evaluate(
-        test_set="/path/to/test_annotations.json",
-    )
-
-    print(metrics)
 
 if __name__ == "__main__":
     main()

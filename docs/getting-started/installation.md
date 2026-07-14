@@ -41,6 +41,12 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
 ```
 
 ---
@@ -48,6 +54,10 @@ opensportslib setup --dali
 !!! note   
     Run `opensportslib setup` to automatically configure dependencies.
     If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
+    For VQA, choose `--vqa_xvars` for the X-VARS-compatible dependency pins or
+    `--vqa_qwen` for the Qwen-compatible dependency pins. The `vqa_qwen`
+    configuration supports `Qwen/Qwen2.5-7B-Instruct` and
+    `Qwen/Qwen3.5-9B-Base`.
 
 
 ## Verify installation
@@ -92,4 +102,10 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
 ```

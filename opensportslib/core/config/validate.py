@@ -60,6 +60,21 @@ def _validate_canonical(cfg: dict[str, Any]) -> None:
                     f"IO.{section}.{public_name} references unknown component {component_id}"
                 )
 
+    task = str(cfg.get("TASK", "")).lower()
+    if task == "vqa":
+        data_inputs = cfg.get("DATA", {}).get("inputs", {})
+        if "video" not in data_inputs:
+            raise ValueError("VQA config must define DATA.inputs.video.")
+        if "question" not in data_inputs:
+            raise ValueError("VQA config must define DATA.inputs.question.")
+
+        has_decoder = any(
+            (component.get("kind") in {"decoder", "head"})
+            for component in components.values()
+        )
+        if not has_decoder:
+            raise ValueError("VQA config must define at least one decoder/head component.")
+
 
 def _validate_topology(components: dict[str, Any], topology: list[dict[str, Any]]) -> None:
     if not topology:

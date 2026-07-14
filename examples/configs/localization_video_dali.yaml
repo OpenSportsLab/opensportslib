@@ -107,9 +107,9 @@ DATA:
         dilate_len: 0
 
 MODEL:
-  metadata: 
+  metadata:
     family: E2E
-    runner: 
+    runner:
       type: runner_e2e
   runtime:
     dtype: fp32

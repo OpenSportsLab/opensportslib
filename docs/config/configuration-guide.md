@@ -9,9 +9,11 @@ See also:
 ## Canonical Config Examples
 
 Use production-ready canonical templates from:
+- [opensportslib/configs/default.yaml](../../opensportslib/configs/default.yaml)
 - [opensportslib/configs/](../../opensportslib/configs/)
 - [opensportslib/configs/classification/](../../opensportslib/configs/classification/)
 - [opensportslib/configs/localization/](../../opensportslib/configs/localization/)
+- [opensportslib/configs/vqa/](../../opensportslib/configs/vqa/)
 
 ## 1) Canonical Contract
 
@@ -22,7 +24,7 @@ Use production-ready canonical templates from:
 ## 2) Top-Level Schema
 
 ```yaml
-TASK: <classification|localization|retrieval|captioning|reasoning>
+TASK: <classification|localization|vqa|retrieval|captioning|reasoning>
 VERSION: 2
 
 SYSTEM: <SystemSchema>
@@ -36,7 +38,7 @@ IO: <IoSchema>
 
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |
 |---|---|---|---|---|---|---|
-| `TASK` | string | yes | none | `classification`, `localization`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
+| `TASK` | string | yes | none | `classification`, `localization`, `vqa`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
 | `VERSION` | int | yes | none | currently canonical payloads use `2` | config policy | Required section by validator; compatibility marker retained. |
 | `SYSTEM` | object | yes | none | see SYSTEM section | platform/runtime | Required section by validator. |
 | `DATA` | object | yes | none | see DATA section | data pipeline | Required section by validator. |
@@ -341,6 +343,12 @@ TRAIN:
 | `start_valid_epoch` | int | task-dependent | `>=0` | First epoch to run validation. |
 | `valid_map_every` | int | task-dependent | `>=1` | Localization mAP evaluation cadence. |
 | `criterion_valid` | string | `loss` | `loss`, `map` | Validation criterion selector. |
+
+Authoring rule:
+- Keep general hyperparameters in canonical `TRAIN` keys such as `TRAIN.epochs`, `TRAIN.optimizer`, and `TRAIN.scheduler`.
+- Keep model identity and architecture values in `MODEL.components.*` and `MODEL.runtime`.
+- Use `TRAIN.execution` only for runtime/backend-specific controls; do not duplicate learning rate, epoch count, model id, hidden size, or precision here when a canonical owner already exists.
+- Backend adapters may translate canonical values into backend-specific runtime defaults. For the X-VARS VideoChatGPT backend, canonical prompt/video-token authoring can remain single-source while train and infer adapters preserve the original upstream defaults where they differ.
 
 CPU behavior note:
 `TRAIN.execution.multi_gpu` requires CUDA. If effective runtime device is CPU,

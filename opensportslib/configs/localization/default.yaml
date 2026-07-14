@@ -3,24 +3,15 @@ VERSION: 2
 
 SYSTEM:
   paths:
-    log_dir: ./logs
-    save_dir: ./checkpoints
     work_dir: ${SYSTEM.paths.save_dir}
-  device: cuda
   gpu:
     count: 4
-    id: 0
-  reproducibility:
-    use_seed: true
-    seed: 42
 
 DATA:
   common:
     dataset_name: SoccerNet
     data_root: /path/to/data
     classes: []
-    runtime:
-      loader_backend: opencv
     splits:
       train:
         annotation_path: /path/to/train.json
@@ -74,17 +65,10 @@ DATA:
         dilate_len: 0
 
 MODEL:
-  runtime:
-    dtype: fp32
-    device: auto
-    compile: false
-    freeze: false
-  load:
-    checkpoint_path: null
-    pretrained: false
-    strict: true
-    map_location: null
-    format: auto
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
   components:
     video_encoder:
       kind: encoder
@@ -115,7 +99,7 @@ IO:
 
 TRAIN:
   trainer:
-    type: localization
+    type: trainer_e2e
   epochs: 10
   criterion:
     type: CrossEntropyLoss
@@ -124,8 +108,17 @@ TRAIN:
     lr: 0.01
   scheduler:
     type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: ${TRAIN.epochs}
+    warm_up_epochs: 3
   execution:
     enabled: true
+    multi_gpu: true
+    acc_grad_iter: 1
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 1
+    criterion_valid: map
   sampling: {}
   selection:
     monitor: valid_loss

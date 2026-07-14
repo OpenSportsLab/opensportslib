@@ -35,6 +35,12 @@ opensportslib setup --pyg
 
 # Optional: install for DALI support
 opensportslib setup --dali
+
+# Optional: install the X-VARS-compatible VQA dependency profile
+opensportslib setup --vqa_xvars
+
+# Optional: install the Qwen-compatible VQA dependency profile
+opensportslib setup --vqa_qwen
 ```
 
 ## 2. Branching and Merging - Daily workflow for developers

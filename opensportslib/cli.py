@@ -11,6 +11,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("command", choices=["setup"])
     parser.add_argument("--pyg", action="store_true")
     parser.add_argument("--dali", action="store_true")
+    parser.add_argument("--vqa_xvars", action="store_true")
+    parser.add_argument("--vqa_qwen", action="store_true")
 
     args = parser.parse_args(argv)
 
@@ -18,6 +20,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         setup(
             pyg=args.pyg,
             dali=args.dali,
+            vqa_xvars=args.vqa_xvars,
+            vqa_qwen=args.vqa_qwen
         )
         return 0
 

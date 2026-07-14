@@ -1,0 +1,212 @@
+TASK: vqa
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_vqa_lora
+    work_dir: ./checkpoints_vqa_lora
+  device: cuda
+  gpu:
+    count: 4
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: OSL-XFoul
+    data_root: /home/vorajv/dataset/OSL-XFoul
+    feature_index: /home/vorajv/dataset/OSL-XFoul/feature_index.json
+    prediction_index: /home/vorajv/dataset/OSL-XFoul/prediction_index.json
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/train.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 1
+          shuffle: true
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+      valid:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/valid.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+      test:
+        annotation_path: /home/vorajv/dataset/OSL-XFoul/test.json
+        source_path: /home/vorajv/dataset/OSL-XFoul
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 100
+        input_fps: 25
+        target_fps: 17
+        start_frame: 63
+        end_frame: 87
+      transform: {}
+      augmentations: {}
+      params: {}
+    question:
+      modality: text
+      representation: raw
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  runtime:
+    dtype: fp16
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+      load:
+        weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
+      params:
+        feature_source: indexed_or_raw_clip
+        vision_tower: openai/clip-vit-large-patch14
+        feature_dim: 1024
+      overrides: {}
+    mm_projector:
+      kind: projector
+      source:
+        provider: opensportslib
+      params:
+        input_dim: 1024
+      overrides: {}
+    llm_decoder:
+      kind: decoder
+      source:
+        provider: opensportslib
+      params:
+        repo_id: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
+      overrides: {}
+  topology:
+    - from: video_encoder
+      to: mm_projector
+    - from: mm_projector
+      to: llm_decoder
+  metadata:
+    backend: xvars_videochatgpt
+
+IO:
+  inputs:
+    video: video_encoder
+    question: llm_decoder
+  outputs:
+    answer_text: llm_decoder
+    explanation_text: llm_decoder
+
+TRAIN:
+  trainer:
+    type: vqa
+  epochs: 3
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamW
+    lr: 0.0002
+    weight_decay: 0.001
+  scheduler:
+    type: constant
+  execution:
+    enabled: true
+    training_backend: xvars_videochatgpt_lora
+    feature_backend: xvars_clip
+    view_sampling_policy: random_train_deterministic_eval
+    acc_grad_iter: 8
+    log_interval: 1
+    dry_run: false
+    xvars:
+      feature_mode: strict_xvars
+      projection_path: null
+    prompt:
+      style: detailed
+      system_prompt: You are Video-ChatGPT, a large vision-language assistant. You are able to understand the video content that the user provides, and assist the user with a variety of tasks using natural language.Follow the instructions carefully and explain your answers in detail based on the provided video.
+      include_priors: true
+      prediction_prior_adapter: xvars_referee
+      prior_fields: [action, offence, contact, bodypart]
+      video_token_len: 300
+    generation:
+      max_new_tokens: 128
+      temperature: 0.0
+    generated_validation:
+      enabled: true
+      sample_id: action_0
+      every_steps: 25
+      max_new_tokens: 128
+      require_relevance: true
+      required_terms: [foul, card, challenge, spa, dogso, advantage]
+      forbidden_terms: [get_children, django, httpclient, "```python", "```php"]
+    eval_profile:
+      metric_set: [exact_match, contains_match, token_f1, referee_semantic]
+      aggregation: mean
+      exclusions: []
+    sft:
+      max_seq_length: 480
+      include_video_tokens: true
+      disable_tqdm: false
+      reference_mode: all
+      append_eos_token: true
+      gradient_checkpointing: true
+      save_strategy: epoch
+    hf:
+      tokenizer_id: ${MODEL.components.llm_decoder.params.repo_id}
+    lora:
+      r: 16
+      alpha: 32
+      dropout: 0.05
+      bias: none
+      prepare_kbit: true
+      target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
+      exclude_modules: '^base_lm\.model\.mm_projector$'
+    quantization:
+      enabled: false
+      load_in_4bit: true
+      bnb_4bit_quant_type: nf4
+      compute_dtype: float16
+      bnb_4bit_use_double_quant: true
+    checkpoint:
+      save_adapter: true
+      merge_and_save: false
+  selection:
+    monitor: loss
+    mode: min
+  checkpoint:
+    save_every: 1
+    save_best: true

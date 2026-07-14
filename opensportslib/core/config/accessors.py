@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -305,6 +306,11 @@ def get_model_load(cfg: Any) -> dict[str, Any]:
     return _as_dict(model.get("load"))
 
 
+def get_model_runtime(cfg: Any) -> dict[str, Any]:
+    model = _as_dict(getattr(cfg, "MODEL", None))
+    return _as_dict(model.get("runtime"))
+
+
 def get_model_family(cfg: Any) -> str:
     model = _as_dict(getattr(cfg, "MODEL", None))
     metadata = _as_dict(model.get("metadata"))
@@ -333,6 +339,36 @@ def get_train_epochs(cfg: Any) -> int:
 def get_train_execution(cfg: Any) -> dict[str, Any]:
     train = _as_dict(getattr(cfg, "TRAIN", None))
     return _as_dict(train.get("execution"))
+
+
+def get_hf_cuda_device_index(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> int | None:
+    """Resolve the CUDA device index used by HuggingFace runtime helpers."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES"):
+        return None
+
+    hf_cfg = _as_dict(hf_cfg) if hf_cfg is not None else _as_dict(get_train_execution(cfg).get("hf"))
+    explicit = hf_cfg.get("cuda_device_index")
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except Exception:
+            return None
+
+    system = _as_dict(getattr(cfg, "SYSTEM", None))
+    gpu = _as_dict(system.get("gpu"))
+    gid = gpu.get("id")
+    if gid is not None:
+        try:
+            return int(gid)
+        except Exception:
+            return None
+
+    return None
+
+
+def get_train_optimizer(cfg: Any) -> dict[str, Any]:
+    train = _as_dict(getattr(cfg, "TRAIN", None))
+    return _as_dict(train.get("optimizer"))
 
 
 def get_train_sampling(cfg: Any) -> dict[str, Any]:
@@ -371,4 +407,202 @@ def get_runner_type(cfg: Any) -> str:
         return "runner_CALF"
     if trainer_type == "trainer_pooling":
         return "runner_pooling"
+    if trainer_type == "vqa":
+        return "runner_vqa"
     return "runner_classification"
+
+
+def get_vqa_prompt_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    prompt = execution.get("prompt", {})
+    return _as_dict(prompt)
+
+
+def get_vqa_generation_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    generation = _as_dict(execution.get("generation", {}))
+    production = _as_dict(execution.get("production", {}))
+    out = dict(generation)
+    if production:
+        out.setdefault("max_new_tokens_cap", production.get("max_new_tokens_cap"))
+        out.setdefault("retry_count", production.get("retry_count"))
+        out.setdefault("retry_backoff_s", production.get("retry_backoff_s"))
+        out.setdefault("timeout_s", production.get("timeout_s"))
+        out.setdefault("fallback_policy", production.get("fallback_policy"))
+    return out
+
+
+def get_vqa_eval_profile_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    profile = execution.get("eval_profile", {})
+    return _as_dict(profile)
+
+
+def get_vqa_backend(cfg: Any) -> str:
+    model = _as_dict(getattr(cfg, "MODEL", None))
+    metadata = _as_dict(model.get("metadata"))
+    backend = metadata.get("backend")
+    if backend:
+        return str(backend).lower()
+
+    execution = get_train_execution(cfg)
+    backend = execution.get("backend")
+    if backend:
+        return str(backend).lower()
+    return "baseline"
+
+
+def is_xvars_videochatgpt_backend(cfg: Any) -> bool:
+    return get_vqa_backend(cfg) == "xvars_videochatgpt"
+
+
+def normalize_xvars_feature_mode(mode: Any, default: str = "strict_xvars") -> str:
+    value = str(mode or "").strip().lower()
+    if not value:
+        return str(default)
+    aliases = {
+        "strict": "strict_xvars",
+        "strict_xvars": "strict_xvars",
+        "original": "strict_xvars",
+        "original_xvars": "strict_xvars",
+        "clip": "clip_compat",
+        "clip_compat": "clip_compat",
+        "compat": "clip_compat",
+        "compatibility": "clip_compat",
+    }
+    if value in aliases:
+        return aliases[value]
+    raise ValueError(f"Unsupported X-VARS feature mode '{mode}'. Expected 'strict_xvars' or 'clip_compat'.")
+
+
+def get_xvars_feature_token_len_for_mode(mode: Any) -> int:
+    normalized = normalize_xvars_feature_mode(mode)
+    if normalized == "strict_xvars":
+        return 300
+    if normalized == "clip_compat":
+        return 356
+    raise ValueError(f"Unsupported X-VARS feature mode '{mode}'.")
+
+
+def get_vqa_xvars_feature_mode(cfg: Any, default: str = "strict_xvars") -> str:
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    mode = xvars_cfg.get("feature_mode")
+    if mode:
+        return normalize_xvars_feature_mode(mode, default=default)
+
+    token_len = None
+    try:
+        token_len = get_vqa_prompt_video_token_len(cfg, default=get_xvars_feature_token_len_for_mode(default))
+    except Exception:
+        token_len = None
+    if int(token_len or 0) == 356:
+        return "clip_compat"
+    return normalize_xvars_feature_mode(default, default=default)
+
+
+def has_explicit_xvars_feature_mode(cfg: Any) -> bool:
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    return xvars_cfg.get("feature_mode") is not None
+
+
+def get_vqa_prompt_video_token_len(cfg: Any, default: int = 300) -> int:
+    prompt_cfg = get_vqa_prompt_cfg(cfg)
+    token_len = prompt_cfg.get("video_token_len")
+    if token_len is not None:
+        return int(token_len)
+
+    execution = get_train_execution(cfg)
+    sft_cfg = _as_dict(execution.get("sft"))
+    if sft_cfg.get("video_token_len") is not None:
+        return int(sft_cfg["video_token_len"])
+
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("video_token_len") is not None:
+        return int(xvars_cfg["video_token_len"])
+    if xvars_cfg.get("feature_mode") is not None:
+        return get_xvars_feature_token_len_for_mode(xvars_cfg.get("feature_mode"))
+
+    return int(default)
+
+
+def get_xvars_train_video_token_len(cfg: Any) -> int:
+    return get_xvars_feature_token_len_for_mode(get_vqa_xvars_feature_mode(cfg, default="strict_xvars"))
+
+
+def get_xvars_infer_video_token_len(cfg: Any) -> int:
+    return get_xvars_feature_token_len_for_mode(get_vqa_xvars_feature_mode(cfg, default="strict_xvars"))
+
+
+def get_vqa_decoder_model_id(cfg: Any, default: str = "distilgpt2") -> str:
+    decoder = get_component_by_kind(cfg, "decoder") or {}
+    decoder = _as_dict(decoder)
+    source = _as_dict(decoder.get("source"))
+    params = get_component_params_by_kind(cfg, "decoder")
+    model_id = params.get("repo_id") or source.get("repo_id")
+    if model_id:
+        return str(model_id)
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("base_model"):
+        return str(xvars_cfg["base_model"])
+    hf_cfg = _as_dict(execution.get("hf"))
+    if hf_cfg.get("model_id"):
+        return str(hf_cfg["model_id"])
+    if str(source.get("provider", "")).lower() == "huggingface" and source.get("name"):
+        return str(source["name"])
+    if source.get("name"):
+        return str(source["name"])
+    return str(default)
+
+
+def get_xvars_train_model_id(cfg: Any, default: str = "base_model_videoChatGPT") -> str:
+    model_id = get_vqa_decoder_model_id(cfg, default=default)
+    return str(model_id or default)
+
+
+def get_xvars_train_tokenizer_id(cfg: Any) -> str:
+    return get_xvars_train_model_id(cfg, default="base_model_videoChatGPT")
+
+
+def get_xvars_infer_tokenizer_id(cfg: Any, default: str = "base_model_videoChatGPT") -> str:
+    execution = get_train_execution(cfg)
+    hf_cfg = _as_dict(execution.get("hf"))
+    tokenizer_id = hf_cfg.get("tokenizer_id")
+    if tokenizer_id:
+        return str(tokenizer_id)
+    return str(default)
+
+
+def get_vqa_feature_source(cfg: Any, default: str = "indexed") -> str:
+    encoder_params = get_component_params_by_kind(cfg, "encoder")
+    feature_source = encoder_params.get("feature_source")
+    if feature_source is not None:
+        return str(feature_source).lower()
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("feature_source") is not None:
+        return str(xvars_cfg["feature_source"]).lower()
+    return str(default).lower()
+
+
+def get_vqa_mm_hidden_size(cfg: Any, default: int = 1024) -> int:
+    projector_params = get_component_params_by_kind(cfg, "projector")
+    hidden_size = projector_params.get("input_dim") or projector_params.get("mm_hidden_size")
+    if hidden_size is not None:
+        return int(hidden_size)
+
+    execution = get_train_execution(cfg)
+    xvars_cfg = _as_dict(execution.get("xvars"))
+    if xvars_cfg.get("mm_hidden_size") is not None:
+        return int(xvars_cfg["mm_hidden_size"])
+    return int(default)
+
+
+def get_model_runtime_dtype(cfg: Any, default: str = "fp32") -> str:
+    runtime = get_model_runtime(cfg)
+    dtype = runtime.get("dtype", default)
+    return str(dtype).lower()
