@@ -3,16 +3,11 @@ from types import SimpleNamespace
 import inspect
 import json
 import sys
+import types
 
 import pytest
 
 from opensportslib.apis import VQAModel
-from opensportslib.apis._xvars_runtime import (
-    XVarsHeadlessRuntime,
-    XVarsPrediction,
-    _dependency_error,
-    build_xvars_prompt,
-)
 
 
 class _FakeRuntime:
@@ -31,7 +26,7 @@ class _FakeRuntime:
                 "max_new_tokens": max_new_tokens,
             }
         )
-        return XVarsPrediction(
+        return SimpleNamespace(
             answer_text=f"answer::{question}",
             action_class="Tackling",
             offence_class="Offence",
@@ -153,6 +148,8 @@ def test_vqa_dataset_infer_expands_all_questions(vqa_config_path, tmp_path, monk
 
 
 def test_build_xvars_prompt_injects_classifier_priors():
+    from opensportslib.models.utils.vqa_prompting import build_xvars_prompt
+
     class FakeState:
         def __init__(self):
             self.roles = ("USER", "ASSISTANT")
@@ -230,11 +227,137 @@ def test_vqa_import_does_not_pull_gradio_or_demo_modules():
 
 
 def test_vqa_runtime_dependency_error_names_missing_package(monkeypatch):
-    runtime = XVarsHeadlessRuntime()
+    del monkeypatch
 
-    def fail_bootstrap():
-        raise ModuleNotFoundError("No module named 'numpy'", name="numpy")
 
-    monkeypatch.setattr(runtime, "_bootstrap_components", fail_bootstrap)
-    error = _dependency_error(ModuleNotFoundError("No module named 'numpy'", name="numpy"))
-    assert "numpy" in str(error)
+def test_vqa_qwen_train_requires_qwen_training_backend(vqa_config_path, monkeypatch):
+    api = VQAModel(config=vqa_config_path)
+    api.config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    train=SimpleNamespace(annotation_path="/tmp/train.json"),
+                    valid=SimpleNamespace(annotation_path="/tmp/valid.json"),
+                )
+            )
+        ),
+        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(count=0)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora"}),
+        TASK="VQA",
+    )
+
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
+
+    with pytest.raises(ValueError, match="requires TRAIN.execution.training_backend='qwen_xvars_lora'"):
+        api.train(use_wandb=False)
+
+
+def test_vqa_qwen_infer_accepts_adapter_weights(vqa_config_path, tmp_path, monkeypatch):
+    api = VQAModel(config=vqa_config_path)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"fake")
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "training_metadata.json").write_text(json.dumps({"backend": "qwen_xvars_lora"}), encoding="utf-8")
+    api.config = SimpleNamespace(
+        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
+        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_xvars_lora", "prompt": {}, "generation": {}}),
+        TASK="VQA",
+    )
+    captured = {}
+    fake_model = object()
+
+    def _fake_load(weights):
+        captured["loaded_weights"] = weights
+        return weights
+
+    def _fake_infer(model, dataset, use_wandb=False):
+        captured["infer_model"] = model
+        captured["infer_dataset"] = list(dataset)
+        return {"task": "vqa", "data": [{"id": "clip", "question": "Was it a foul?", "answer_text": "yes", "video_path": str(video_path)}]}
+
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
+    monkeypatch.setattr("opensportslib.core.utils.config.select_device", lambda cfg: "cpu")
+    fake_trainer_module = types.ModuleType("opensportslib.core.trainer.vqa_trainer")
+    fake_trainer_module.Trainer_VQA = lambda cfg: SimpleNamespace(load=_fake_load, infer=_fake_infer)
+    monkeypatch.setitem(sys.modules, "opensportslib.core.trainer.vqa_trainer", fake_trainer_module)
+    monkeypatch.setattr(VQAModel, "_init_wandb", lambda self, use_wandb=False: None)
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda *args, **kwargs: (fake_model, None),
+    )
+
+    out = api.infer(video_path=str(video_path), question="Was it a foul?", weights=str(adapter_dir), use_wandb=False)
+
+    assert captured["loaded_weights"] == str(adapter_dir)
+    assert captured["infer_model"] is fake_model
+    assert captured["infer_dataset"][0]["question"] == "Was it a foul?"
+    assert out["data"][0]["answer_text"] == "yes"
+
+
+def test_vqa_train_ddp_uses_requested_gpu_count(vqa_config_path, monkeypatch):
+    api = VQAModel(config=vqa_config_path)
+    api.config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                splits=SimpleNamespace(
+                    train=SimpleNamespace(annotation_path="/tmp/train.json"),
+                    valid=SimpleNamespace(annotation_path="/tmp/valid.json"),
+                )
+            )
+        ),
+        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(count=2)),
+        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_xvars_lora"}),
+        TASK="VQA",
+    )
+
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
+
+    captured = {}
+
+    class _FakeQueue:
+        def __init__(self):
+            self.value = None
+
+        def put(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    fake_queue = _FakeQueue()
+
+    class _FakeContext:
+        def SimpleQueue(self):
+            return fake_queue
+
+    class _FakeMP:
+        @staticmethod
+        def get_context(method):
+            captured["context_method"] = method
+            return _FakeContext()
+
+        @staticmethod
+        def spawn(fn, args=(), nprocs=1):
+            captured["spawn_fn"] = fn
+            captured["spawn_args"] = args
+            captured["nprocs"] = nprocs
+            args[3].put("/tmp/qwen-ddp-ckpt")
+
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(device_count=lambda: 8),
+        multiprocessing=_FakeMP,
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.multiprocessing", _FakeMP)
+
+    ckpt = api.train(use_wandb=False)
+
+    assert ckpt == "/tmp/qwen-ddp-ckpt"
+    assert captured["context_method"] == "spawn"
+    assert captured["nprocs"] == 2
+    assert captured["spawn_args"][0] == 2

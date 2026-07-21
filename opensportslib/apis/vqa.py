@@ -139,37 +139,59 @@ class VQAModel(BaseTaskModel):
         train_set: str | None = None,
         valid_set: str | None = None,
         weights: str | None = None,
+        use_ddp: bool | None = None,
         use_wandb: bool = True,
         **kwargs,
     ) -> str | None:
         del kwargs
+
+        self.config = resolve_config_omega(self.config, weights=weights)
+        execution = get_train_execution(self.config)
+        backend = str(execution.get("training_backend", "placeholder")).lower()
+        vqa_backend = get_vqa_backend(self.config)
+        if vqa_backend == "qwen_xvars_infer" and backend != "qwen_xvars_lora":
+            raise ValueError(
+                "The 'qwen_xvars_infer' backend requires TRAIN.execution.training_backend='qwen_xvars_lora' for train()."
+            )
         import torch
         import torch.multiprocessing as mp
 
-        self.config = resolve_config_omega(self.config, weights=weights)
-        if get_vqa_backend(self.config) == "qwen_xvars_infer":
-            raise ValueError("The 'qwen_xvars_infer' backend is inference-only and does not support train().")
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
-        execution = get_train_execution(self.config)
-        backend = str(execution.get("training_backend", "placeholder")).lower()
-        if backend == "xvars_videochatgpt_lora":
-            world_size = torch.cuda.device_count() or get_system_gpu_count(self.config)
+        if backend in {"xvars_videochatgpt_lora", "qwen_xvars_lora"}:
             requested_gpus = get_system_gpu_count(self.config)
-            use_ddp = world_size > 1 and int(requested_gpus) > 1
+            available_gpus = int(torch.cuda.device_count() or 0)
+            if requested_gpus > 0:
+                world_size = min(available_gpus, int(requested_gpus)) if available_gpus > 0 else int(requested_gpus)
+            else:
+                world_size = available_gpus
+            effective_world_size = max(int(world_size), 1)
+            if use_ddp is None:
+                launch_ddp = effective_world_size > 1
+            else:
+                launch_ddp = bool(use_ddp) and effective_world_size > 1
+            if requested_gpus > 0 and available_gpus > 0 and requested_gpus != available_gpus:
+                logging.info(
+                    "VQA train GPU selection | requested=%s | available=%s | launching=%s",
+                    requested_gpus,
+                    available_gpus,
+                    effective_world_size if launch_ddp else 1,
+                )
             logging.info(
-                "VQA train launch | mode=%s | world_size=%s",
-                "ddp" if use_ddp else "single",
-                world_size if use_ddp else 1,
+                "VQA train launch | mode=%s | requested_gpus=%s | available_gpus=%s | world_size=%s",
+                "ddp" if launch_ddp else "single",
+                requested_gpus,
+                available_gpus,
+                effective_world_size if launch_ddp else 1,
             )
 
             ctx = mp.get_context("spawn")
             queue = ctx.SimpleQueue()
-            if use_ddp:
+            if launch_ddp:
                 mp.spawn(
                     VQAModel._worker_ddp,
-                    args=(world_size, self.config_path, self.config, queue, train_set, valid_set, use_wandb),
-                    nprocs=world_size,
+                    args=(effective_world_size, self.config_path, self.config, queue, train_set, valid_set, use_wandb),
+                    nprocs=effective_world_size,
                 )
             else:
                 VQAModel._worker_ddp(
@@ -189,7 +211,7 @@ class VQAModel(BaseTaskModel):
 
         raise ValueError(
             f"Unsupported VQA training backend '{backend}'. "
-            "Only 'xvars_videochatgpt_lora' is supported."
+            "Only 'xvars_videochatgpt_lora' and 'qwen_xvars_lora' are supported."
         )
 
     def infer(
@@ -216,8 +238,6 @@ class VQAModel(BaseTaskModel):
         self.config = resolve_config_omega(self.config, weights=weights)
         backend = get_vqa_backend(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
-        if backend == "qwen_xvars_infer" and effective_weights is not None:
-            raise ValueError("The 'qwen_xvars_infer' backend does not support adapter weights for infer().")
         _set_model_checkpoint_path(self.config, effective_weights)
         self.trainer = Trainer_VQA(self.config)
         if effective_weights is not None:

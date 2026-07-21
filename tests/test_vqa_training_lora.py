@@ -11,10 +11,14 @@ except ModuleNotFoundError:  # pragma: no cover - test env compatibility
 
 from opensportslib.core.trainer.vqa_trainer import (
     OptionalDependencyError,
+    Trainer_VQA,
+    VQAQwenXVarsLoraTrainer,
+    VQAXVarsVideoChatGPTSFTDataset,
     VQAXVarsVideoChatGPTLoraTrainer,
     build_vqa_sft_text,
 )
 from opensportslib.core.utils.hf_runtime import apply_lora_for_causal_lm, has_peft_adapter_artifacts
+from opensportslib.models.base.qwen_xvars import QwenXVarsCausalLM
 from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
 
 
@@ -72,6 +76,16 @@ def _cfg(tmp_path, *, dry_run=True):
     )
 
 
+def _qwen_cfg(tmp_path, *, dry_run=True):
+    cfg = _cfg(tmp_path, dry_run=dry_run)
+    cfg.MODEL.components.llm_decoder.source.name = "Qwen/Qwen2.5-7B-Instruct"
+    cfg.MODEL.components.llm_decoder.params.repo_id = "Qwen/Qwen2.5-7B-Instruct"
+    cfg.MODEL.metadata = SimpleNamespace(backend="qwen_xvars_infer")
+    cfg.TRAIN.execution["training_backend"] = "qwen_xvars_lora"
+    cfg.TRAIN.execution["lora"] = {"target_modules": ["q_proj", "v_proj"]}
+    return cfg
+
+
 def test_build_vqa_sft_text_uses_priors_and_video_tokens():
     row = build_vqa_sft_text(
         _sample(),
@@ -85,6 +99,44 @@ def test_build_vqa_sft_text_uses_priors_and_video_tokens():
     assert row["answer"] == "No card, because contact was low intensity."
     assert row["completion"] == f'{row["answer"]}</s>'
     assert row["text"].endswith(f'{row["answer"]}</s>')
+
+
+def test_qwen_sft_dataset_emits_masked_labels_and_features(tmp_path):
+    cfg = _qwen_cfg(tmp_path)
+
+    class TinyTokenizer:
+        eos_token = "</s>"
+        eos_token_id = 1
+
+        def __call__(self, text, truncation=True, max_length=32, padding="max_length"):
+            del truncation, padding
+            tokens = text.split()
+            ids = list(range(2, 2 + min(len(tokens), max_length)))
+            attn = [1] * len(ids)
+            if len(ids) < max_length:
+                pad = [0] * (max_length - len(ids))
+                ids.extend(pad)
+                attn.extend(pad)
+            return {"input_ids": ids, "attention_mask": attn}
+
+    dataset = VQAXVarsVideoChatGPTSFTDataset(
+        [
+            {
+                **_sample(),
+                "video_spatio_temporal_features": torch.ones((2, 1024)),
+            }
+        ],
+        config=cfg,
+        tokenizer=TinyTokenizer(),
+        prompt_cfg={"include_priors": True, "video_token_len": 2},
+        sft_cfg={"max_seq_length": 32, "include_video_tokens": True},
+        xvars_cfg={},
+    )
+
+    row = dataset[0]
+    assert tuple(row["video_spatio_temporal_features"].shape) == (2, 1024)
+    assert any(label == -100 for label in row["labels"])
+    assert any(label != -100 for label in row["labels"])
 
 def test_peft_adapter_artifact_detection(tmp_path):
     ckpt = tmp_path / "adapter"
@@ -166,6 +218,82 @@ def test_xvars_videochatgpt_lora_wraps_with_peft_without_missing_generation_hook
     )
 
     assert hasattr(wrapped, "prepare_inputs_for_generation")
+    assert model.base_lm.gradient_checkpointing_kwargs == {"use_reentrant": False}
+    assert float(out.loss) > 0
+
+
+def test_qwen_xvars_lora_wraps_with_peft_when_transformers_reads_base_model_prefix():
+    pytest.importorskip("peft")
+
+    class TinyTokenizer:
+        def __init__(self):
+            self.vocab = {"<vid_start>": 2, "<vid_patch>": 3, "<vid_end>": 4}
+
+        def convert_tokens_to_ids(self, tok):
+            return self.vocab[tok]
+
+    class TinyQwenLM(torch.nn.Module):
+        base_model_prefix = "model"
+
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(hidden_size=4, vocab_size=32, model_type="qwen2")
+            self.emb = torch.nn.Embedding(64, 4)
+            self.q_proj = torch.nn.Linear(4, 4)
+            self.v_proj = torch.nn.Linear(4, 4)
+            self.lm_head = torch.nn.Linear(4, 64)
+            self.gradient_checkpointing_kwargs = None
+
+        def get_input_embeddings(self):
+            return self.emb
+
+        def resize_token_embeddings(self, size):
+            del size
+            return self.emb
+
+        def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+            self.gradient_checkpointing_kwargs = gradient_checkpointing_kwargs
+
+        def forward(self, input_ids=None, inputs_embeds=None, attention_mask=None, labels=None, **kwargs):
+            del input_ids, attention_mask, kwargs
+            hidden = self.v_proj(self.q_proj(inputs_embeds))
+            logits = self.lm_head(hidden)
+            loss = logits.sum() * 0
+            if labels is not None:
+                loss = loss + 0.123
+            return SimpleNamespace(loss=loss, logits=logits)
+
+        def prepare_inputs_for_generation(
+            self,
+            input_ids,
+            past_key_values=None,
+            attention_mask=None,
+            inputs_embeds=None,
+            **kwargs,
+        ):
+            return {
+                "input_ids": input_ids,
+                "past_key_values": past_key_values,
+                "attention_mask": attention_mask,
+                "inputs_embeds": inputs_embeds,
+                **kwargs,
+            }
+
+    model = QwenXVarsCausalLM(TinyQwenLM(), mm_hidden_size=1024)
+    wrapped = apply_lora_for_causal_lm(model, {"target_modules": ["q_proj", "v_proj"]})
+    wrapped.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    input_ids = torch.tensor([[9, 2, 3, 3, 3, 4, 10]])
+    features = torch.ones((1, 3, 1024))
+    out = wrapped(
+        input_ids=input_ids,
+        attention_mask=torch.ones_like(input_ids),
+        labels=input_ids,
+        video_spatio_temporal_features=features,
+        tokenizer=TinyTokenizer(),
+    )
+
+    assert hasattr(wrapped, "prepare_inputs_for_generation")
+    assert model.base_model_prefix == "model"
     assert model.base_lm.gradient_checkpointing_kwargs == {"use_reentrant": False}
     assert float(out.loss) > 0
 
@@ -254,6 +382,36 @@ def test_apply_lora_for_causal_lm_skips_exclude_modules_for_older_peft(monkeypat
 
     assert wrapped[0] == "wrapped"
     assert "exclude_modules" not in captured["kwargs"]
+
+
+def test_qwen_lora_trainer_dry_run_writes_metadata(tmp_path):
+    cfg = _qwen_cfg(tmp_path, dry_run=True)
+    trainer = VQAQwenXVarsLoraTrainer(cfg)
+    ckpt = trainer.train(
+        [{"video_spatio_temporal_features": torch.ones((2, 1024))}],
+        [{"video_spatio_temporal_features": torch.ones((2, 1024))}],
+        use_wandb=False,
+    )
+
+    metadata_path = Path(ckpt) / "training_metadata.json"
+    metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["backend"] == "qwen_xvars_lora"
+    assert metadata["num_train_samples"] == 1
+    assert metadata["num_valid_samples"] == 1
+
+
+def test_trainer_vqa_dispatches_qwen_backend_dry_run(tmp_path):
+    cfg = _qwen_cfg(tmp_path, dry_run=True)
+    trainer = Trainer_VQA(cfg)
+
+    ckpt = trainer.train(
+        None,
+        [{"video_spatio_temporal_features": torch.ones((2, 1024))}],
+        [{"video_spatio_temporal_features": torch.ones((2, 1024))}],
+        use_wandb=False,
+    )
+
+    assert ckpt.endswith("qwen_xvars_lora")
 
 
 def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_path):
