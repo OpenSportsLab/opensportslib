@@ -43,6 +43,12 @@ class VQADataset(Dataset):
             payload = json.load(f)
 
         data = payload.get("data", [])
+        label_space = []
+        payload_labels = payload.get("labels", {})
+        if isinstance(payload_labels, dict):
+            action_spec = payload_labels.get("action", {})
+            if isinstance(action_spec, dict):
+                label_space = [str(label).strip() for label in action_spec.get("labels", []) if str(label).strip()]
         source_root = get_split_source_path(config, split) or ""
         source_root = os.path.abspath(os.path.expanduser(source_root)) if source_root else ""
         common = self._as_dict(self._as_dict(getattr(config, "DATA", None)).get("common"))
@@ -75,14 +81,8 @@ class VQADataset(Dataset):
             item_id_str = str(item_id)
             labels = item.get("labels", {})
             metadata = item.get("metadata", {})
-            inputs = item.get("inputs", [])
-            video_path = None
-            for inp in inputs:
-                if str(inp.get("type", "")).lower() == "video":
-                    rel = inp.get("path")
-                    if rel:
-                        video_path = os.path.join(source_root, rel) if source_root and not os.path.isabs(rel) else rel
-                        break
+            allowed_labels = [str(label).strip() for label in item.get("allowed_labels", []) if str(label).strip()] or label_space
+            video_path = self._resolve_video_path(item, source_root)
 
             feature_candidates = self.feature_index.get(item_id_str, [])
             if require_feature_index and not feature_candidates:
@@ -91,11 +91,10 @@ class VQADataset(Dataset):
                     "Provide DATA.common.feature_index mapping with feature_paths or feature_dir/path."
                 )
             pred_row = self.prediction_index.get(item_id_str, {})
-            for qa in item.get("answers", []):
-                question = qa.get("question")
-                refs = qa.get("answers", []) or []
-                if not question:
-                    continue
+            qa_rows = self._iter_qa_rows(item)
+            for qa in qa_rows:
+                question = qa["question"]
+                refs = qa["references"]
                 prior_prediction_text = build_prediction_prior_text(
                     pred_row,
                     adapter=self._prompt_cfg.get("prediction_prior_adapter"),
@@ -113,6 +112,8 @@ class VQADataset(Dataset):
                         "metadata": metadata,
                         "prediction": pred_row,
                         "prior_prediction_text": prior_prediction_text,
+                        "ground_truth_label": qa["ground_truth_label"],
+                        "allowed_labels": list(allowed_labels),
                     }
                 )
 
@@ -153,6 +154,63 @@ class VQADataset(Dataset):
         if self.split == "train" and self._view_policy == "random_train_deterministic_eval":
             return existing[self._rng.randint(0, len(existing) - 1)]
         return existing[0]
+
+    @staticmethod
+    def _resolve_video_path(item: dict[str, Any], source_root: str) -> str | None:
+        direct_path = item.get("video_path")
+        if direct_path:
+            path = str(direct_path)
+            return os.path.join(source_root, path) if source_root and not os.path.isabs(path) else path
+
+        inputs = item.get("inputs", [])
+        for inp in inputs:
+            input_type = str(inp.get("type", "")).lower()
+            if input_type not in {"video", "frames_npy", "frames"}:
+                continue
+            rel = inp.get("path")
+            if rel:
+                rel = str(rel)
+                return os.path.join(source_root, rel) if source_root and not os.path.isabs(rel) else rel
+        return None
+
+    @staticmethod
+    def _iter_qa_rows(item: dict[str, Any]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        direct_question = str(item.get("question", "")).strip()
+        if direct_question:
+            refs = item.get("references", []) or []
+            if isinstance(refs, str):
+                refs = [refs]
+            ground_truth_label = str(item.get("ground_truth_label", "")).strip()
+            if not ground_truth_label and refs:
+                ground_truth_label = str(refs[0]).strip()
+            rows.append(
+                {
+                    "question": direct_question,
+                    "references": [str(ref).strip() for ref in refs if str(ref).strip()],
+                    "ground_truth_label": ground_truth_label,
+                }
+            )
+            return rows
+
+        for qa in item.get("answers", []):
+            question = str(qa.get("question", "")).strip()
+            refs = qa.get("answers", []) or []
+            if isinstance(refs, str):
+                refs = [refs]
+            if not question:
+                continue
+            ground_truth_label = str(item.get("ground_truth_label", "")).strip()
+            if not ground_truth_label and refs:
+                ground_truth_label = str(refs[0]).strip()
+            rows.append(
+                {
+                    "question": question,
+                    "references": [str(ref).strip() for ref in refs if str(ref).strip()],
+                    "ground_truth_label": ground_truth_label,
+                }
+            )
+        return rows
 
     @staticmethod
     def _as_dict(obj: Any) -> dict[str, Any]:

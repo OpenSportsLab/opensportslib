@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import inspect
+import re
 import time
 from typing import Any
 
@@ -55,6 +56,39 @@ def _as_dict(obj: Any) -> dict[str, Any]:
     if hasattr(obj, "__dict__"):
         return {k: v for k, v in vars(obj).items()}
     return {}
+
+
+def _normalize_classification_answer(
+    answer_text: str,
+    allowed_labels: list[str] | None,
+    ground_truth_label: str | None = None,
+) -> dict[str, Any]:
+    labels = [str(label).strip() for label in (allowed_labels or []) if str(label).strip()]
+    if not labels:
+        return {}
+
+    raw = str(answer_text or "")
+    trimmed = raw.strip()
+    cleaned = trimmed.strip(" \t\r\n.,;:!?\"'`()[]{}")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().upper()
+    exact_map = {label.upper(): label for label in labels}
+    predicted = exact_map.get(cleaned)
+
+    if predicted is None and cleaned:
+        simplified = re.sub(r"[^A-Z0-9]+", "", cleaned)
+        alias_map = {
+            re.sub(r"[^A-Z0-9]+", "", label.upper()): label
+            for label in labels
+        }
+        predicted = alias_map.get(simplified)
+
+    truth = str(ground_truth_label or "").strip() or None
+    return {
+        "predicted_label": predicted,
+        "ground_truth_label": truth,
+        "is_valid_label": predicted is not None,
+        "is_correct": bool(predicted == truth) if truth else None,
+    }
 
 
 def _resolve_sft_per_device_batch_sizes(config, sft_cfg: dict[str, Any]) -> tuple[int, int]:
@@ -1057,14 +1091,20 @@ class Trainer_VQA:
             )
             if not disable_tqdm:
                 iterator.set_postfix_str(f"id={sample.get('id')} elapsed={time.perf_counter() - sample_started_at:.2f}s")
-            preds.append(
-                {
-                    "id": sample.get("id"),
-                    "question": sample.get("question"),
-                    "answer_text": answer,
-                    "video_path": sample.get("video_path"),
-                }
+            row = {
+                "id": sample.get("id"),
+                "question": sample.get("question"),
+                "answer_text": answer,
+                "video_path": sample.get("video_path"),
+            }
+            row.update(
+                _normalize_classification_answer(
+                    answer,
+                    sample.get("allowed_labels"),
+                    sample.get("ground_truth_label"),
+                )
             )
+            preds.append(row)
         logging.info(
             "Finished VQA inference | samples=%s | elapsed_s=%.2f",
             len(preds),

@@ -571,14 +571,35 @@ class XVarsRawVideoFeatureExtractor:
         import numpy as np
         from decord import VideoReader, cpu
 
-        vr = VideoReader(video_path, ctx=cpu(0))
-        total = len(vr)
-        take = min(total, int(num_frames))
+        if str(video_path).lower().endswith(".npy"):
+            arr = np.load(video_path)
+            if arr.ndim != 4:
+                raise ValueError(f"Expected frames_npy clip with shape (T, H, W, C), got {tuple(arr.shape)}")
+            if np.issubdtype(arr.dtype, np.floating):
+                max_value = float(arr.max()) if arr.size else 0.0
+                scale = 255.0 if max_value <= 1.0 else 1.0
+                arr = np.clip(arr * scale, 0, 255).astype(np.uint8)
+            else:
+                arr = np.clip(arr, 0, 255).astype(np.uint8)
+            total = int(arr.shape[0])
+            take = min(total, int(num_frames))
+            if take <= 0:
+                raise ValueError(f"No frames found in npy clip: {video_path}")
+            seg = float(total - 1) / take
+            idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
+            arr = arr[idx]
+        else:
+            vr = VideoReader(video_path, ctx=cpu(0))
+            total = len(vr)
+            take = min(total, int(num_frames))
+            if take <= 0:
+                raise ValueError(f"No frames found in video: {video_path}")
+            seg = float(total - 1) / take
+            idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
+            arr = vr.get_batch(idx).asnumpy()
+
         if take <= 0:
             raise ValueError(f"No frames found in video: {video_path}")
-        seg = float(total - 1) / take
-        idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
-        arr = vr.get_batch(idx).asnumpy()
         if arr.shape[-3] != 224 or arr.shape[-2] != 224:
             ten = torch.from_numpy(arr).permute(0, 3, 1, 2).float()
             ten = torch.nn.functional.interpolate(ten, size=(224, 224))
