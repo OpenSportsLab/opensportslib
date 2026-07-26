@@ -36,6 +36,9 @@ from opensportslib.core.config.accessors import (
 )
 
 
+H5_TRACKING_MODALITIES = {"player_centroids_h5", "player_joints_h5", "tracking_h5"}
+
+
 # -------------------------------------------------------------
 # factory
 # -------------------------------------------------------------
@@ -59,6 +62,8 @@ def build(config, annotations_path, processor=None, split="train"):
 
     if modality in ("tracking", "tracking_parquet"):
         return TrackingDataset(config, annotations_path, split)
+    elif modality in H5_TRACKING_MODALITIES:
+        return H5TrackingDataset(config, annotations_path, split)
     elif modality in ("video", "frames_npy", "frames"):
         return VideoDataset(config, annotations_path, processor, split)
     else:
@@ -112,6 +117,10 @@ class ClassificationDataset(Dataset):
         annotation_input_type = str(get_data_modality(config)).lower()
         if annotation_input_type == "tracking":
             annotation_input_type = "tracking_parquet"
+        elif annotation_input_type == "tracking_h5":
+            annotation_input_type = get_data_params(config).get(
+                "h5_input_type", "player_centroids_h5"
+            )
         elif annotation_input_type in {"frames", "frames_npy"}:
             annotation_input_type = "frames_npy"
 
@@ -709,3 +718,154 @@ class TrackingDataset(ClassificationDataset):
             out["label"] = label
         return out
         
+
+class H5TrackingDataset(ClassificationDataset):
+    """Graph-based classification dataset for UTC-indexed player/ball H5 files."""
+
+    def __init__(self, config, annotations_path, split="train"):
+        super().__init__(config, annotations_path, processor=None, split=split)
+
+        from opensportslib.datasets.utils.tracking import build_edge_index
+
+        self._build_edge_index = build_edge_index
+        sampling_cfg = get_data_sampling(config)
+        transform_cfg = get_data_transform(config)
+        params_cfg = get_data_params(config)
+        encoder_cfg = get_component_params_by_kind(config, "encoder")
+        objects_cfg = params_cfg.get("objects", {}) or {}
+
+        self.modality = get_data_modality(config).lower()
+        if self.modality == "tracking_h5":
+            self.modality = params_cfg.get("h5_input_type", "player_centroids_h5")
+
+        self.num_frames = sampling_cfg.get("num_frames")
+        self.stride_ms = sampling_cfg.get("stride_ms")
+        self.target_fps = sampling_cfg.get("target_fps")
+        self.normalize = transform_cfg.get("normalize", False)
+        self.edge_type = encoder_cfg.get("edge_type", "full")
+        self.k = encoder_cfg.get("k")
+        self.r = encoder_cfg.get("radius", encoder_cfg.get("r"))
+        self.timestamp_tolerance_ms = float(params_cfg.get("timestamp_tolerance_ms", 50.0))
+        self.missing_value = float(params_cfg.get("missing_value", -200.0))
+        self._pitch_half_length = float(objects_cfg.get("pitch_half_length", 85.0))
+        self._pitch_half_width = float(objects_cfg.get("pitch_half_width", 50.0))
+        self._max_ball_height = float(objects_cfg.get("max_ball_height", 30.0))
+        self._max_displacement = float(objects_cfg.get("max_displacement", 110.0))
+        self.preload_data = params_cfg.get("preload_data", False)
+
+        self.processed_samples = None
+        if self.preload_data:
+            self._preload_all_data()
+
+    def _resolve_input_path(self, path):
+        if os.path.isabs(path):
+            return path
+        return os.path.join(self.video_path, path)
+
+    def _sample_input(self, item):
+        inputs = item.get("inputs") or []
+        for input_obj in inputs:
+            if input_obj.get("type") == self.modality:
+                return input_obj
+        if inputs:
+            return inputs[0]
+        clip_paths = item.get("video_paths") or []
+        if clip_paths:
+            return {"type": self.modality, "path": clip_paths[0]}
+        raise ValueError(f"No H5 input found for sample {item.get('id', '<unknown>')}")
+
+    def _load_h5_frames(self, item):
+        from opensportslib.datasets.utils.h5_tracking import (
+            H5_FEATURE_DIM,
+            H5TrackingReader,
+            normalize_h5_features,
+        )
+
+        input_obj = self._sample_input(item)
+        player_path = self._resolve_input_path(input_obj["path"])
+        ball_path = input_obj.get("ball_path")
+        if ball_path:
+            ball_path = self._resolve_input_path(ball_path)
+
+        reader = H5TrackingReader(
+            player_path,
+            input_obj.get("type", self.modality),
+            ball_path=ball_path,
+            missing_value=self.missing_value,
+            timestamp_tolerance_ms=self.timestamp_tolerance_ms,
+        )
+        metadata = item.get("metadata", {}) or {}
+        timestamps = reader.select_timestamps(
+            start_utc=metadata.get("start_utc"),
+            end_utc=metadata.get("end_utc"),
+            num_frames=self.num_frames,
+            stride_ms=self.stride_ms,
+            target_fps=self.target_fps,
+        )
+        frames = reader.read_sequence(timestamps)
+
+        if self.normalize and frames:
+            frames = [
+                frame.__class__(
+                    frame.timestamp,
+                    normalize_h5_features(
+                        frame.features[None, :, :],
+                        pitch_half_length=self._pitch_half_length,
+                        pitch_half_width=self._pitch_half_width,
+                        max_height=self._max_ball_height,
+                        max_displacement=self._max_displacement,
+                        missing_value=self.missing_value,
+                    )[0],
+                    frame.entity_ids,
+                    frame.positions,
+                )
+                for frame in frames
+            ]
+
+        return frames, H5_FEATURE_DIM
+
+    def _preload_all_data(self):
+        print(f"Preloading {len(self.samples)} {self.split} H5 samples into memory...")
+        self.processed_samples = [self._materialize_sample(item) for item in tqdm(self.samples)]
+
+    def __getitem__(self, idx):
+        if self.preload_data:
+            return self.processed_samples[idx]
+        return self._materialize_sample(self.samples[idx])
+
+    def _materialize_sample(self, item):
+        try:
+            from torch_geometric.data import Data
+        except ImportError as exc:
+            raise ImportError(
+                "torch-geometric is required for H5 tracking graph inputs. "
+                "Run: `opensportslib setup --pyg` to install the correct version "
+                "based on your system (PyTorch & CUDA compatible)."
+            ) from exc
+
+        frames, _ = self._load_h5_frames(item)
+        graphs = []
+        for frame in frames:
+            edge_index = self._build_edge_index(
+                frame.features,
+                frame.positions,
+                self.edge_type,
+                self.k,
+                self.r,
+            )
+            graphs.append(
+                Data(
+                    x=torch.tensor(frame.features, dtype=torch.float),
+                    edge_index=torch.tensor(edge_index, dtype=torch.long),
+                )
+            )
+
+        out = {
+            "graphs": graphs,
+            "seq_len": len(graphs),
+            "id": item["id"],
+        }
+        label = item.get("label", None)
+        if label is not None:
+            out["label"] = label
+        return out

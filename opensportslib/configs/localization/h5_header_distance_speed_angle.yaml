@@ -1,0 +1,93 @@
+TASK: localization
+VERSION: 2
+
+SYSTEM:
+  paths:
+    work_dir: ./outputs/header_spotting_distance_speed_angle
+  device: cpu
+  gpu:
+    count: 0
+
+DATA:
+  common:
+    dataset_name: h5_headers
+    data_root: /Users/giancos/git/VideoAnnotationTool/test_data
+    classes:
+      - header
+    splits:
+      test:
+        type: H5OSLJsonSpotting
+        annotation_path: /Users/giancos/git/VideoAnnotationTool/test_data/h5.json
+        source_path: /Users/giancos/git/VideoAnnotationTool/test_data
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+  inputs:
+    tracking:
+      modality: player_joints_h5
+      representation: raw
+      source:
+        format: h5
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  metadata:
+    family: RuleBased
+    runner:
+      type: runner_h5_header_rule
+  components:
+    rule:
+      kind: algorithm
+      source:
+        provider: opensportslib
+        registry: rule_based
+        name: h5_header_distance_speed_angle
+      params:
+        label: header
+        head_name: action
+        distance_threshold_m: 0.5
+        min_confidence: 0.5
+        confidence_mode: linear_inverse_distance
+        confidence_power: 1.0
+        nms_window_ms: 1000
+        nms_scope: sample
+        ball_tolerance_ms: 60
+        chunk_size: 100000
+        head_joints: [nose, neck, l_eye, r_eye, l_ear, r_ear]
+        required_input_type: player_joints_h5
+        ball_path_field: ball_path
+        timestamp_field: timestamp_utc
+        output_task: action_spotting
+        include_diagnostics: true
+        position_ms_origin: joint_h5_start
+        metadata_start_field: start_utc
+        metadata_end_field: end_utc
+        ball_coordinate_fields: [x, y, z]
+        joint_coordinate_suffixes: [x, y, z]
+        identity_fields: [player_id, jersey_number, team_id, is_home]
+        invalid_coordinate_values: [-200.0]
+        sideline_filter_enabled: true
+        pitch_half_width_m: 50.0
+        sideline_exclusion_m: 1.0
+        sideline_reference: ball_y
+        trajectory_filter_enabled: true
+        trajectory_change_mode: both_angle_and_speed
+        trajectory_pre_window_ms: 200
+        trajectory_post_window_ms: 200
+        trajectory_min_angle_deg: 25.0
+        trajectory_min_speed_delta_ratio: 0.25
+        trajectory_min_vector_norm_m: 0.05
+        trajectory_use_xy_only: false
+        confidence_output_key: confidence_score
+  topology: []
+
+TRAIN:
+  trainer:
+    type: trainer_rule_based
+  execution:
+    enabled: false
