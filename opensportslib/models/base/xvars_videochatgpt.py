@@ -222,7 +222,20 @@ def resolve_xvars_raw_num_frames(config, xvars_cfg: dict[str, Any] | None = None
 
 
 def resolve_xvars_strict_sampling_cfg(config) -> dict[str, Any]:
-    return dict(get_data_sampling(config))
+    sampling = dict(get_data_sampling(config))
+    if sampling:
+        return sampling
+
+    data = getattr(config, "DATA", None)
+    common = getattr(data, "common", None) if data is not None else None
+    common_inputs = getattr(common, "inputs", None) if common is not None else None
+    video = getattr(common_inputs, "video", None) if common_inputs is not None else None
+    nested_sampling = getattr(video, "sampling", None) if video is not None else None
+    if isinstance(nested_sampling, dict):
+        return dict(nested_sampling)
+    if hasattr(nested_sampling, "__dict__"):
+        return dict(vars(nested_sampling))
+    return {}
 
 
 def _runtime_torch_dtype(config) -> torch.dtype:
@@ -752,8 +765,15 @@ class XVarsStrictRawVideoFeatureExtractor:
             return frames
         input_fps = self.input_fps if input_fps is None else float(input_fps)
         target_fps = self.target_fps if target_fps is None else float(target_fps)
-        factor = input_fps / target_fps if target_fps else 1.0
-        sampled = [frame for index, frame in enumerate(window) if index % factor < 1]
+        if not target_fps or input_fps <= 0 or target_fps >= input_fps:
+            return window
+        step = max(int(round(input_fps / target_fps)), 1)
+        sampled = list(window[::step])
+        if window[-1] not in sampled:
+            if sampled:
+                sampled[-1] = window[-1]
+            else:
+                sampled.append(window[-1])
         return sampled or window
 
     def spatio_temporal_tokens(self, frame_features: torch.Tensor) -> torch.Tensor:

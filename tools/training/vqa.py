@@ -8,6 +8,11 @@ def parse_args():
     parser.add_argument("--config", required=True, help="Path to the YAML config file.")
     parser.add_argument("--weights", default=None, help="Optional pretrained weights or adapter path.")
     parser.add_argument(
+        "--resume-from-checkpoint",
+        default=None,
+        help="Optional Hugging Face Trainer checkpoint directory for true optimizer/scheduler resume.",
+    )
+    parser.add_argument(
         "--train-set",
         default=None,
         help="Path to train annotations JSON. Defaults to the config train split.",
@@ -46,6 +51,7 @@ def main():
     best_ckpt = my_model.train(
         train_set=args.train_set,
         valid_set=args.valid_set,
+        resume_from_checkpoint=args.resume_from_checkpoint,
         use_wandb=args.use_wandb,
     )
     print(best_ckpt)

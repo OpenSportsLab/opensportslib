@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import Dataset
 
 from opensportslib.core.config.accessors import (
+    get_vqa_backend,
     get_split_annotation_path,
     get_split_source_path,
     get_vqa_feature_source,
@@ -50,15 +51,22 @@ class VQADataset(Dataset):
             if isinstance(action_spec, dict):
                 label_space = [str(label).strip() for label in action_spec.get("labels", []) if str(label).strip()]
         source_root = get_split_source_path(config, split) or ""
-        source_root = os.path.abspath(os.path.expanduser(source_root)) if source_root else ""
+        source_root = (
+            os.path.abspath(os.path.expanduser(source_root))
+            if source_root
+            else os.path.dirname(self.annotation_path)
+        )
         common = self._as_dict(self._as_dict(getattr(config, "DATA", None)).get("common"))
         feature_index_path = str(common.get("feature_index") or "").strip()
         prediction_index_path = str(common.get("prediction_index") or "").strip()
+        backend = get_vqa_backend(config)
+        self.backend = backend
+        self.native_vl = backend == "qwen_vl_native_infer"
         feature_backend = str(self._train_execution.get("feature_backend", "xvars_clip")).lower()
         feature_source = get_vqa_feature_source(config, default="indexed")
-        if feature_backend != "xvars_clip":
+        if not self.native_vl and feature_backend != "xvars_clip":
             raise ValueError(f"Unsupported VQA feature backend '{feature_backend}'. Expected 'xvars_clip'.")
-        require_feature_index = feature_source in {"indexed", ""}
+        require_feature_index = (not self.native_vl) and feature_source in {"indexed", ""}
         if require_feature_index and not feature_index_path:
             raise ValueError("Missing required config key DATA.common.feature_index for VQA xvars_clip mode.")
         self.feature_source = feature_source
@@ -83,6 +91,7 @@ class VQADataset(Dataset):
             metadata = item.get("metadata", {})
             allowed_labels = [str(label).strip() for label in item.get("allowed_labels", []) if str(label).strip()] or label_space
             video_path = self._resolve_video_path(item, source_root)
+            frame_paths = self._resolve_frame_paths(item, source_root)
 
             feature_candidates = self.feature_index.get(item_id_str, [])
             if require_feature_index and not feature_candidates:
@@ -102,10 +111,12 @@ class VQADataset(Dataset):
                 )
                 self.samples.append(
                     {
-                        "id": item_id,
+                        "id": qa.get("sample_id", item_id),
                         "question": question,
                         "references": refs,
                         "video_path": video_path,
+                        "frame_paths": frame_paths,
+                        "video_frames": list(item.get("video_frames") or []),
                         "feature_candidates": list(feature_candidates),
                         "feature_source": self.feature_source,
                         "labels": labels,
@@ -116,12 +127,24 @@ class VQADataset(Dataset):
                         "allowed_labels": list(allowed_labels),
                     }
                 )
+        if self.native_vl:
+            for sample in self.samples:
+                if sample.get("video_path") or sample.get("frame_paths") or sample.get("video_frames"):
+                    continue
+                raise ValueError(
+                    f"Native Qwen VL sample '{sample.get('id')}' is missing visual input. "
+                    "Expected video_path, frame_paths, or video_frames."
+                )
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = dict(self.samples[idx])
+        if self.native_vl:
+            sample["selected_feature_path"] = None
+            sample["video_spatio_temporal_features"] = None
+            return sample
         if self.feature_source == "raw_video":
             sample["selected_feature_path"] = None
             sample["video_spatio_temporal_features"] = None
@@ -174,6 +197,34 @@ class VQADataset(Dataset):
         return None
 
     @staticmethod
+    def _resolve_frame_paths(item: dict[str, Any], source_root: str) -> list[str]:
+        frame_paths = item.get("frame_paths") or []
+        if frame_paths:
+            out = []
+            for path in frame_paths:
+                path = str(path)
+                out.append(os.path.join(source_root, path) if source_root and not os.path.isabs(path) else path)
+            return out
+
+        inputs = item.get("inputs", [])
+        for inp in inputs:
+            input_type = str(inp.get("type", "")).lower()
+            if input_type not in {"image", "images", "frame", "frames"}:
+                continue
+            path = inp.get("path")
+            if path:
+                path = str(path)
+                return [os.path.join(source_root, path) if source_root and not os.path.isabs(path) else path]
+            paths = inp.get("paths") or []
+            out = []
+            for subpath in paths:
+                subpath = str(subpath)
+                out.append(os.path.join(source_root, subpath) if source_root and not os.path.isabs(subpath) else subpath)
+            if out:
+                return out
+        return []
+
+    @staticmethod
     def _iter_qa_rows(item: dict[str, Any]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         direct_question = str(item.get("question", "")).strip()
@@ -186,12 +237,30 @@ class VQADataset(Dataset):
                 ground_truth_label = str(refs[0]).strip()
             rows.append(
                 {
+                    "sample_id": item.get("id"),
                     "question": direct_question,
                     "references": [str(ref).strip() for ref in refs if str(ref).strip()],
                     "ground_truth_label": ground_truth_label,
                 }
             )
             return rows
+
+        direct_questions = item.get("questions", []) or []
+        if isinstance(direct_questions, list) and direct_questions:
+            for idx, question in enumerate(direct_questions):
+                question = str(question).strip()
+                if not question:
+                    continue
+                rows.append(
+                    {
+                        "sample_id": f"{item.get('id')}:{idx}",
+                        "question": question,
+                        "references": [],
+                        "ground_truth_label": str(item.get("ground_truth_label", "")).strip(),
+                    }
+                )
+            if rows:
+                return rows
 
         for qa in item.get("answers", []):
             question = str(qa.get("question", "")).strip()
@@ -205,6 +274,7 @@ class VQADataset(Dataset):
                 ground_truth_label = str(refs[0]).strip()
             rows.append(
                 {
+                    "sample_id": item.get("id"),
                     "question": question,
                     "references": [str(ref).strip() for ref in refs if str(ref).strip()],
                     "ground_truth_label": ground_truth_label,

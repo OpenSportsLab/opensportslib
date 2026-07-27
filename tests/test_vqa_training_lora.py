@@ -1,4 +1,5 @@
 import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,13 +12,17 @@ except ModuleNotFoundError:  # pragma: no cover - test env compatibility
 
 from opensportslib.core.trainer.vqa_trainer import (
     OptionalDependencyError,
+    VQANativeQwenVLSFTDataset,
+    VQAQwenVLNativeLoraTrainer,
     Trainer_VQA,
     VQAQwenXVarsLoraTrainer,
     VQAXVarsVideoChatGPTSFTDataset,
     VQAXVarsVideoChatGPTLoraTrainer,
+    _prepare_hf_resume_checkpoint,
     build_vqa_sft_text,
 )
 from opensportslib.core.utils.hf_runtime import apply_lora_for_causal_lm, has_peft_adapter_artifacts
+from opensportslib.models.base.qwen_vl_native import NativeQwenVLTrainer
 from opensportslib.models.base.qwen_xvars import QwenXVarsCausalLM
 from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
 
@@ -82,6 +87,24 @@ def _qwen_cfg(tmp_path, *, dry_run=True):
     cfg.MODEL.components.llm_decoder.params.repo_id = "Qwen/Qwen2.5-7B-Instruct"
     cfg.MODEL.metadata = SimpleNamespace(backend="qwen_xvars_infer")
     cfg.TRAIN.execution["training_backend"] = "qwen_xvars_lora"
+    cfg.TRAIN.execution["lora"] = {"target_modules": ["q_proj", "v_proj"]}
+    return cfg
+
+
+def _qwen_vl_cfg(tmp_path, *, dry_run=True, model_id="Qwen/Qwen2.5-VL-7B-Instruct"):
+    cfg = _cfg(tmp_path, dry_run=dry_run)
+    cfg.MODEL.components.video_encoder = SimpleNamespace(
+        kind="encoder",
+        params=SimpleNamespace(
+            feature_source="raw_video",
+            native_vl=SimpleNamespace(visual_input_mode="frames", num_frames=4),
+        ),
+    )
+    cfg.MODEL.components.llm_decoder.source.name = model_id
+    cfg.MODEL.components.llm_decoder.params.repo_id = model_id
+    cfg.MODEL.metadata = SimpleNamespace(backend="qwen_vl_native_infer")
+    cfg.TRAIN.execution["training_backend"] = "qwen_vl_native_lora"
+    cfg.TRAIN.execution["native_vl"] = {"visual_input_mode": "frames", "num_frames": 4}
     cfg.TRAIN.execution["lora"] = {"target_modules": ["q_proj", "v_proj"]}
     return cfg
 
@@ -412,6 +435,301 @@ def test_trainer_vqa_dispatches_qwen_backend_dry_run(tmp_path):
     )
 
     assert ckpt.endswith("qwen_xvars_lora")
+
+
+def test_native_qwen_vl_sft_dataset_emits_masked_labels(tmp_path):
+    class FakeProcessor:
+        def apply_chat_template(self, messages, add_generation_prompt=False, tokenize=False):
+            del tokenize
+            return f"prompt::{len(messages)}::{int(add_generation_prompt)}"
+
+        def __call__(self, text=None, images=None, videos=None, padding=None, truncation=None, max_length=None, return_tensors=None):
+            del images, videos, padding, truncation, max_length, return_tensors
+            size = 10 if "assistant" not in text[0] else 14
+            return {
+                "input_ids": torch.arange(size).unsqueeze(0),
+                "attention_mask": torch.ones((1, size), dtype=torch.long),
+            }
+
+    fake_model = SimpleNamespace(
+        _ready=True,
+        processor=FakeProcessor(),
+        _resolve_visual_inputs=lambda sample: ([torch.zeros((2, 2, 3))], "frames"),
+        _build_messages=lambda sample, prompt_cfg=None, visual_type="frames": [{"role": "user", "content": [{"type": visual_type}, {"type": "text", "text": sample["question"]}]}],
+    )
+    fake_model.build_training_inputs = lambda sample, prompt_cfg=None, answer_text="", max_seq_length=1024: {
+        "input_ids": torch.arange(12),
+        "attention_mask": torch.ones(12, dtype=torch.long),
+        "labels": torch.tensor([-100] * 5 + list(range(7))),
+        "pixel_values": torch.ones((3, 2, 2)),
+    }
+
+    dataset = VQANativeQwenVLSFTDataset(
+        [
+            {
+                **_sample(),
+                "video_path": str(tmp_path / "clip.mp4"),
+            }
+        ],
+        model=fake_model,
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32},
+    )
+    row = dataset[0]
+    assert any(label == -100 for label in row["labels"])
+    assert any(label != -100 for label in row["labels"])
+
+
+def test_native_qwen_vl_sft_dataset_caches_materialized_rows(tmp_path):
+    calls = {"count": 0}
+
+    class FakeProcessor:
+        def apply_chat_template(self, messages, add_generation_prompt=False, tokenize=False):
+            del messages, add_generation_prompt, tokenize
+            return "prompt"
+
+    def _build_training_inputs(sample, prompt_cfg=None, answer_text="", max_seq_length=1024):
+        del sample, prompt_cfg, answer_text, max_seq_length
+        calls["count"] += 1
+        return {
+            "input_ids": torch.arange(6),
+            "attention_mask": torch.ones(6, dtype=torch.long),
+            "labels": torch.tensor([-100, -100, 2, 3, 4, 5]),
+            "pixel_values": torch.ones((3, 2, 2)),
+        }
+
+    fake_model = SimpleNamespace(
+        _ready=True,
+        model_id="Qwen/Qwen2.5-VL-7B-Instruct",
+        visual_input_mode="frames",
+        num_frames=4,
+        processor=FakeProcessor(),
+        build_training_inputs=_build_training_inputs,
+    )
+
+    rows = [
+        {
+            **_sample(),
+            "video_path": str(tmp_path / "clip.mp4"),
+        }
+    ]
+    cache_dir = tmp_path / "native_cache"
+    dataset = VQANativeQwenVLSFTDataset(
+        rows,
+        model=fake_model,
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32},
+        cache_dir=str(cache_dir),
+        split_name="train",
+    )
+
+    first = dataset[0]
+    assert calls["count"] == 1
+    assert any(cache_dir.glob("*.pt"))
+    second = dataset[0]
+    assert calls["count"] == 1
+    assert torch.equal(first["input_ids"], second["input_ids"])
+
+    dataset_reloaded = VQANativeQwenVLSFTDataset(
+        rows,
+        model=fake_model,
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32},
+        cache_dir=str(cache_dir),
+        split_name="train",
+    )
+    cached = dataset_reloaded[0]
+    assert calls["count"] == 1
+    assert torch.equal(cached["labels"], first["labels"])
+
+
+def test_native_qwen_vl_trainer_forwards_resume_checkpoint(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            captured["init"] = kwargs
+
+        def train(self, resume_from_checkpoint=None):
+            captured["resume_from_checkpoint"] = resume_from_checkpoint
+            return "trained"
+
+        def save_state(self):
+            captured["save_state"] = True
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(Trainer=FakeTrainer),
+    )
+
+    trainer = NativeQwenVLTrainer(
+        model=SimpleNamespace(),
+        args=SimpleNamespace(output_dir=str(tmp_path)),
+        train_dataset=[],
+        eval_dataset=None,
+    )
+    out = trainer.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2072"))
+
+    assert out == "trained"
+    assert captured["resume_from_checkpoint"] == str(tmp_path / "checkpoint-2072")
+
+
+def test_prepare_hf_resume_checkpoint_rewrites_training_args(tmp_path):
+    source = tmp_path / "checkpoint-2072"
+    output_dir = tmp_path / "run"
+    source.mkdir()
+    output_dir.mkdir()
+    (source / "trainer_state.json").write_text("{}", encoding="utf-8")
+    (source / "optimizer.pt").write_bytes(b"old-optimizer")
+    (source / "scheduler.pt").write_bytes(b"old-scheduler")
+    (source / "scaler.pt").write_bytes(b"old-scaler")
+    torch.save(SimpleNamespace(ddp_find_unused_parameters=True), source / "training_args.bin")
+    stale_target = output_dir / "_resume_sanitized" / "checkpoint-2072"
+    stale_target.mkdir(parents=True)
+    (stale_target / "optimizer.pt").write_bytes(b"stale-optimizer")
+    (stale_target / "scheduler.pt").write_bytes(b"stale-scheduler")
+    (stale_target / "scaler.pt").write_bytes(b"stale-scaler")
+
+    current_args = SimpleNamespace(ddp_find_unused_parameters=False, eval_strategy="no")
+    sanitized = _prepare_hf_resume_checkpoint(
+        str(source),
+        current_args,
+        str(output_dir),
+        resume_optimizer_state=False,
+    )
+
+    assert sanitized is not None
+    assert Path(sanitized).name == "checkpoint-2072"
+    assert Path(sanitized).parent.name == "_resume_sanitized"
+    assert (Path(sanitized) / "trainer_state.json").exists()
+    assert not (Path(sanitized) / "optimizer.pt").exists()
+    assert not (Path(sanitized) / "scheduler.pt").exists()
+    assert not (Path(sanitized) / "scaler.pt").exists()
+    loaded = torch.load(Path(sanitized) / "training_args.bin", map_location="cpu", weights_only=False)
+    assert loaded.ddp_find_unused_parameters is False
+    assert loaded.eval_strategy == "no"
+
+
+def test_qwen_vl_native_lora_trainer_dry_run_writes_metadata(tmp_path):
+    cfg = _qwen_vl_cfg(tmp_path, dry_run=True)
+    trainer = VQAQwenVLNativeLoraTrainer(cfg)
+    ckpt = trainer.train(
+        [{"video_path": str(tmp_path / "clip.mp4")}],
+        [{"frame_paths": [str(tmp_path / "frame.jpg")]}],
+        use_wandb=False,
+    )
+
+    metadata_path = Path(ckpt) / "training_metadata.json"
+    metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["backend"] == "qwen_vl_native_lora"
+    assert metadata["num_train_samples"] == 1
+    assert metadata["num_valid_samples"] == 1
+
+
+def test_qwen_vl_native_lora_rejects_awq_training(tmp_path):
+    cfg = _qwen_vl_cfg(tmp_path, dry_run=False, model_id="Qwen/Qwen2.5-VL-7B-Instruct-AWQ")
+    trainer = VQAQwenVLNativeLoraTrainer(cfg)
+    with pytest.raises(ValueError, match="inference-only"):
+        trainer.train([{"video_path": str(tmp_path / "clip.mp4"), "references": ["yes"]}], use_wandb=False)
+
+
+def test_qwen_vl_native_lora_ddp_can_disable_unused_parameter_detection(monkeypatch, tmp_path):
+    import opensportslib.core.trainer.vqa_trainer as mod
+
+    captured = {}
+    cfg = _qwen_vl_cfg(tmp_path, dry_run=False)
+    cfg.TRAIN.execution["sft"] = {
+        "max_seq_length": 32,
+        "gradient_checkpointing": True,
+        "ddp_find_unused_parameters": False,
+        "ddp_broadcast_buffers": False,
+        "cache_tokenized_rows": False,
+        "evaluation_strategy": "no",
+        "save_strategy": "steps",
+        "save_steps": 100,
+        "save_total_limit": 3,
+    }
+
+    class FakeTrainingArguments:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    class FakeModel:
+        config = SimpleNamespace(use_cache=True)
+
+        def save_pretrained(self, output_dir):
+            captured["saved"] = output_dir
+
+    class FakeProcessor:
+        def save_pretrained(self, output_dir):
+            captured["processor_saved"] = output_dir
+
+    class FakeNativeModel:
+        def __init__(self, config, model_id):
+            del config
+            self.model_id = model_id
+            self._ready = True
+            self._error = None
+            self.model = FakeModel()
+            self.processor = FakeProcessor()
+            self.visual_input_mode = "frames"
+            self.num_frames = 4
+
+        def prepare_training_sample(self, sample):
+            resolved = dict(sample)
+            resolved["video_frames"] = [torch.zeros((2, 2, 3))]
+            resolved["frame_paths"] = []
+            return resolved
+
+    class FakeNativeTrainer:
+        def __init__(self, **kwargs):
+            captured["trainer_kwargs"] = kwargs
+            self.model = kwargs["model"]
+
+        def train(self, resume_from_checkpoint=None):
+            captured["resume_from_checkpoint"] = resume_from_checkpoint
+
+    monkeypatch.setattr(mod, "require_optional_package", lambda package, install_hint=None: None)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(TrainingArguments=FakeTrainingArguments),
+    )
+    monkeypatch.setattr(mod, "QwenVLNativeModel", FakeNativeModel)
+    monkeypatch.setattr(mod, "apply_lora_for_causal_lm", lambda model, lora_cfg, distributed=False: model)
+    monkeypatch.setattr(mod, "NativeQwenVLTrainer", FakeNativeTrainer)
+
+    trainer = VQAQwenVLNativeLoraTrainer(cfg)
+    trainer.train(
+        [{"video_path": str(tmp_path / "clip.mp4"), "references": ["yes"]}],
+        rank=0,
+        world_size=4,
+        use_wandb=False,
+    )
+
+    assert captured["ddp_find_unused_parameters"] is False
+    assert captured["ddp_broadcast_buffers"] is False
+    assert captured["save_strategy"] == "steps"
+    assert captured["save_steps"] == 100
+    assert captured["save_total_limit"] == 3
+    assert captured["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
+    assert captured["resume_from_checkpoint"] is None
+    assert captured["trainer_kwargs"]["train_dataset"].cache_dir == ""
+
+
+def test_trainer_vqa_dispatches_qwen_vl_native_backend_dry_run(tmp_path):
+    cfg = _qwen_vl_cfg(tmp_path, dry_run=True)
+    trainer = Trainer_VQA(cfg)
+
+    ckpt = trainer.train(
+        None,
+        [{"video_path": str(tmp_path / "clip.mp4")}],
+        [{"video_path": str(tmp_path / "clip_valid.mp4")}],
+        use_wandb=False,
+    )
+
+    assert ckpt.endswith("qwen_vl_native_lora")
 
 
 def test_xvars_videochatgpt_trainer_enables_wandb_reporting(monkeypatch, tmp_path):

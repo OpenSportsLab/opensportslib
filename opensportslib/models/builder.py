@@ -132,10 +132,18 @@ def build_model_canonical(config, device):
                 model_id=model_id,
                 projector_params=projector_params,
             ), None
+        if backend == "qwen_vl_native_infer":
+            from opensportslib.models.base.qwen_vl_native import QwenVLNativeModel
+
+            model_id = get_vqa_decoder_model_id(config, default="Qwen/Qwen2.5-VL-7B-Instruct")
+            return QwenVLNativeModel(
+                config,
+                model_id=model_id,
+            ), None
 
         raise ValueError(
             f"Unsupported VQA backend '{backend}'. "
-            "Only 'xvars_videochatgpt' and 'qwen_xvars_infer' are supported."
+            "Only 'xvars_videochatgpt', 'qwen_xvars_infer', and 'qwen_vl_native_infer' are supported."
         )
     else:
         raise ValueError(f"Unsupported model family for task: {task}")

@@ -51,6 +51,7 @@ class VQAModel(BaseTaskModel):
         return_queue=None,
         train_set=None,
         valid_set=None,
+        resume_from_checkpoint=None,
         use_wandb=False,
     ):
         import torch
@@ -97,14 +98,10 @@ class VQAModel(BaseTaskModel):
             train_data = build_dataset(config, train_set, None, split="train")
             valid_data = build_dataset(config, valid_set, None, split="valid")
             trainer = Trainer_VQA(config)
-            ckpt = trainer.train(
-                None,
-                train_data,
-                valid_data,
-                rank=rank,
-                world_size=world_size,
-                use_wandb=use_wandb,
-            )
+            train_kwargs = {"rank": rank, "world_size": world_size, "use_wandb": use_wandb}
+            if resume_from_checkpoint is not None:
+                train_kwargs["resume_from_checkpoint"] = resume_from_checkpoint
+            ckpt = trainer.train(None, train_data, valid_data, **train_kwargs)
             if rank == 0 and return_queue is not None:
                 return_queue.put(ckpt)
         finally:
@@ -139,6 +136,7 @@ class VQAModel(BaseTaskModel):
         train_set: str | None = None,
         valid_set: str | None = None,
         weights: str | None = None,
+        resume_from_checkpoint: str | None = None,
         use_ddp: bool | None = None,
         use_wandb: bool = True,
         **kwargs,
@@ -153,12 +151,16 @@ class VQAModel(BaseTaskModel):
             raise ValueError(
                 "The 'qwen_xvars_infer' backend requires TRAIN.execution.training_backend='qwen_xvars_lora' for train()."
             )
+        if vqa_backend == "qwen_vl_native_infer" and backend != "qwen_vl_native_lora":
+            raise ValueError(
+                "The 'qwen_vl_native_infer' backend requires TRAIN.execution.training_backend='qwen_vl_native_lora' for train()."
+            )
         import torch
         import torch.multiprocessing as mp
 
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
-        if backend in {"xvars_videochatgpt_lora", "qwen_xvars_lora"}:
+        if backend in {"xvars_videochatgpt_lora", "qwen_xvars_lora", "qwen_vl_native_lora"}:
             requested_gpus = get_system_gpu_count(self.config)
             available_gpus = int(torch.cuda.device_count() or 0)
             if requested_gpus > 0:
@@ -190,7 +192,16 @@ class VQAModel(BaseTaskModel):
             if launch_ddp:
                 mp.spawn(
                     VQAModel._worker_ddp,
-                    args=(effective_world_size, self.config_path, self.config, queue, train_set, valid_set, use_wandb),
+                    args=(
+                        effective_world_size,
+                        self.config_path,
+                        self.config,
+                        queue,
+                        train_set,
+                        valid_set,
+                        resume_from_checkpoint,
+                        use_wandb,
+                    ),
                     nprocs=effective_world_size,
                 )
             else:
@@ -202,6 +213,7 @@ class VQAModel(BaseTaskModel):
                     return_queue=queue,
                     train_set=train_set,
                     valid_set=valid_set,
+                    resume_from_checkpoint=resume_from_checkpoint,
                     use_wandb=use_wandb,
                 )
             ckpt = queue.get()
@@ -257,6 +269,8 @@ class VQAModel(BaseTaskModel):
                     "question": str(question).strip(),
                     "references": [],
                     "video_path": resolved_video_path,
+                    "frame_paths": [],
+                    "video_frames": [],
                     "video_spatio_temporal_features": None,
                     "prior_prediction_text": "",
                     "labels": {},
