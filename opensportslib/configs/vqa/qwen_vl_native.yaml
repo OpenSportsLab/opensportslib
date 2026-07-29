@@ -34,7 +34,9 @@ MODEL:
 
 TRAIN:
   optimizer:
-    hf_optim: adamw_torch
+    type: adamw_torch
+    lr: 0.0002
+    weight_decay: 0.001
   execution:
     acc_grad_iter: 4
     training_backend: qwen_vl_native_lora
@@ -54,6 +56,7 @@ TRAIN:
       per_device_train_batch_size: 1
       per_device_eval_batch_size: 1
       max_seq_length: 1024
+      memory_cache_rows: 0
       gradient_checkpointing: true
       ddp_find_unused_parameters: false
       resume_optimizer_state: false

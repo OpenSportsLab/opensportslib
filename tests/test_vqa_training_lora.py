@@ -22,7 +22,7 @@ from opensportslib.core.trainer.vqa_trainer import (
     build_vqa_sft_text,
 )
 from opensportslib.core.utils.hf_runtime import apply_lora_for_causal_lm, has_peft_adapter_artifacts
-from opensportslib.models.base.qwen_vl_native import NativeQwenVLTrainer
+from opensportslib.models.base.qwen_vl_native import NativeQwenVLInvalidRowError, NativeQwenVLTrainer
 from opensportslib.models.base.qwen_xvars import QwenXVarsCausalLM
 from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTCausalLM
 
@@ -575,6 +575,61 @@ def test_native_qwen_vl_trainer_forwards_resume_checkpoint(monkeypatch, tmp_path
     assert captured["resume_from_checkpoint"] == str(tmp_path / "checkpoint-2072")
 
 
+def test_native_qwen_vl_trainer_warns_once_for_nan_grad_norm_with_finite_gradients(monkeypatch, caplog, tmp_path):
+    records = []
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            self.model = kwargs["model"]
+
+        def training_step(self, model, inputs, *args, **kwargs):
+            del inputs, args, kwargs
+            for _, param in model.named_parameters():
+                param.grad = torch.ones_like(param)
+            return torch.tensor(0.5)
+
+        def log(self, logs, *args, **kwargs):
+            del args, kwargs
+            records.append(dict(logs))
+
+        def train(self, resume_from_checkpoint=None):
+            del resume_from_checkpoint
+            return "trained"
+
+        def save_state(self):
+            return None
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor([1.0]))
+
+        def named_parameters(self, *args, **kwargs):
+            return super().named_parameters(*args, **kwargs)
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "transformers",
+        SimpleNamespace(Trainer=FakeTrainer),
+    )
+
+    trainer = NativeQwenVLTrainer(
+        model=TinyModel(),
+        args=SimpleNamespace(output_dir=str(tmp_path)),
+        train_dataset=[],
+        eval_dataset=None,
+    )
+
+    caplog.set_level("WARNING")
+    trainer._trainer.training_step(trainer.model, {})
+    trainer._trainer.log({"loss": 0.5, "grad_norm": float("nan")})
+    trainer._trainer.log({"loss": 0.4, "grad_norm": float("nan")})
+
+    assert any("grad_norm=nan" in record.getMessage() for record in caplog.records)
+    assert len([record for record in caplog.records if "grad_norm=nan" in record.getMessage()]) == 1
+    assert records[0]["grad_norm"] != records[0]["grad_norm"]
+
+
 def test_prepare_hf_resume_checkpoint_rewrites_training_args(tmp_path):
     source = tmp_path / "checkpoint-2072"
     output_dir = tmp_path / "run"
@@ -634,6 +689,134 @@ def test_qwen_vl_native_lora_rejects_awq_training(tmp_path):
         trainer.train([{"video_path": str(tmp_path / "clip.mp4"), "references": ["yes"]}], use_wandb=False)
 
 
+def test_native_qwen_vl_dataset_skips_and_reports_invalid_rows(tmp_path):
+    class FakeNativeModel:
+        def build_training_inputs(self, sample, **kwargs):
+            del kwargs
+            if str(sample.get("id")) == "bad":
+                raise NativeQwenVLInvalidRowError(
+                    "Native Qwen VL training row has all labels masked after prompt and padding masking.",
+                    context={"prompt_length": 32, "full_length": 32, "max_seq_length": 32},
+                )
+            return {
+                "input_ids": torch.tensor([1, 2, 3], dtype=torch.long),
+                "attention_mask": torch.tensor([1, 1, 1], dtype=torch.long),
+                "labels": torch.tensor([-100, 2, 3], dtype=torch.long),
+            }
+
+    rows = [
+        {"id": "bad", "question": "q1", "references": ["a"], "video_path": str(tmp_path / "bad.mp4")},
+        {"id": "good", "question": "q2", "references": ["b"], "video_path": str(tmp_path / "good.mp4")},
+    ]
+    report_path = tmp_path / "invalid_rows.json"
+    dataset = VQANativeQwenVLSFTDataset(
+        rows,
+        model=FakeNativeModel(),
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32, "disable_tqdm": True},
+        split_name="train",
+        invalid_row_report_path=str(report_path),
+        fail_on_invalid=False,
+        rank=0,
+    )
+
+    row = dataset[0]
+
+    assert row["id"] == "good"
+    assert dataset.invalid_row_count == 1
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["count"] == 1
+    assert report["rows"][0]["sample_id"] == "bad"
+
+
+def test_native_qwen_vl_dataset_fail_fast_on_invalid_rows_for_ddp(tmp_path):
+    class FakeNativeModel:
+        def build_training_inputs(self, sample, **kwargs):
+            del sample, kwargs
+            raise NativeQwenVLInvalidRowError(
+                "Native Qwen VL training row lost assistant supervision after truncation (full_len=16, prompt_len=16).",
+                context={"prompt_length": 16, "full_length": 16, "max_seq_length": 16},
+            )
+
+    dataset = VQANativeQwenVLSFTDataset(
+        [{"id": "bad", "question": "q", "references": ["a"], "video_path": str(tmp_path / "bad.mp4")}],
+        model=FakeNativeModel(),
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 16, "disable_tqdm": True},
+        split_name="train",
+        fail_on_invalid=True,
+        rank=2,
+    )
+
+    with pytest.raises(RuntimeError, match="rank=2"):
+        dataset[0]
+
+
+def test_native_qwen_vl_dataset_disables_memory_cache_when_configured(tmp_path):
+    calls = {"count": 0}
+
+    class FakeNativeModel:
+        def build_training_inputs(self, sample, **kwargs):
+            del sample, kwargs
+            calls["count"] += 1
+            return {
+                "input_ids": torch.tensor([1, 2, 3], dtype=torch.long),
+                "attention_mask": torch.tensor([1, 1, 1], dtype=torch.long),
+                "labels": torch.tensor([-100, 2, 3], dtype=torch.long),
+            }
+
+    dataset = VQANativeQwenVLSFTDataset(
+        [{"id": "good", "question": "q", "references": ["a"], "video_path": str(tmp_path / "good.mp4")}],
+        model=FakeNativeModel(),
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32, "disable_tqdm": True, "memory_cache_rows": 0},
+        split_name="train",
+    )
+
+    _ = dataset[0]
+    assert calls["count"] == 1
+    assert len(dataset._memory_cache) == 0
+
+
+def test_native_qwen_vl_dataset_bounds_memory_cache(tmp_path):
+    calls = {"count": 0}
+
+    class FakeNativeModel:
+        def build_training_inputs(self, sample, **kwargs):
+            del kwargs
+            calls["count"] += 1
+            token = int(str(sample.get("id", "0")).replace("row_", "") or 0)
+            return {
+                "input_ids": torch.tensor([token, token + 1], dtype=torch.long),
+                "attention_mask": torch.tensor([1, 1], dtype=torch.long),
+                "labels": torch.tensor([-100, token + 1], dtype=torch.long),
+            }
+
+    rows = [
+        {"id": "row_0", "question": "q0", "references": ["a"], "video_path": str(tmp_path / "0.mp4")},
+        {"id": "row_1", "question": "q1", "references": ["b"], "video_path": str(tmp_path / "1.mp4")},
+        {"id": "row_2", "question": "q2", "references": ["c"], "video_path": str(tmp_path / "2.mp4")},
+    ]
+    dataset = VQANativeQwenVLSFTDataset(
+        rows,
+        model=FakeNativeModel(),
+        prompt_cfg={},
+        sft_cfg={"max_seq_length": 32, "disable_tqdm": True, "memory_cache_rows": 2},
+        split_name="train",
+    )
+
+    _ = dataset[0]
+    _ = dataset[1]
+    _ = dataset[2]
+
+    assert calls["count"] == 3
+    assert dataset.memory_cache_rows == 2
+    assert len(dataset._memory_cache) == 2
+    assert 0 not in dataset._memory_cache
+    assert 1 in dataset._memory_cache
+    assert 2 in dataset._memory_cache
+
+
 def test_qwen_vl_native_lora_ddp_can_disable_unused_parameter_detection(monkeypatch, tmp_path):
     import opensportslib.core.trainer.vqa_trainer as mod
 
@@ -642,6 +825,8 @@ def test_qwen_vl_native_lora_ddp_can_disable_unused_parameter_detection(monkeypa
     cfg.TRAIN.execution["sft"] = {
         "max_seq_length": 32,
         "gradient_checkpointing": True,
+        "max_grad_norm": 1.0,
+        "memory_cache_rows": 0,
         "ddp_find_unused_parameters": False,
         "ddp_broadcast_buffers": False,
         "cache_tokenized_rows": False,
@@ -710,12 +895,17 @@ def test_qwen_vl_native_lora_ddp_can_disable_unused_parameter_detection(monkeypa
 
     assert captured["ddp_find_unused_parameters"] is False
     assert captured["ddp_broadcast_buffers"] is False
+    assert captured["max_grad_norm"] == 1.0
+    assert captured["learning_rate"] == 1e-4
+    assert captured["optim"] == "adamw_torch"
+    assert captured["weight_decay"] == 0.001
     assert captured["save_strategy"] == "steps"
     assert captured["save_steps"] == 100
     assert captured["save_total_limit"] == 3
     assert captured["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
     assert captured["resume_from_checkpoint"] is None
     assert captured["trainer_kwargs"]["train_dataset"].cache_dir == ""
+    assert captured["trainer_kwargs"]["train_dataset"].memory_cache_rows == 0
 
 
 def test_trainer_vqa_dispatches_qwen_vl_native_backend_dry_run(tmp_path):

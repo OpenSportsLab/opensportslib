@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import json
 import logging
 import os
@@ -46,6 +47,7 @@ from opensportslib.metrics.vqa_metric import compute_vqa_metrics
 from opensportslib.models.base.qwen_xvars import QWEN_MM_PROJECTOR_FILE, QwenXVarsCausalLM
 from opensportslib.models.base.qwen_vl_native import (
     NativeQwenVLDataCollator,
+    NativeQwenVLInvalidRowError,
     NativeQwenVLTrainer,
     QwenVLNativeModel,
 )
@@ -482,18 +484,27 @@ class VQANativeQwenVLSFTDataset:
         sft_cfg: dict[str, Any],
         cache_dir: str | None = None,
         split_name: str = "train",
+        invalid_row_report_path: str | None = None,
+        fail_on_invalid: bool = False,
+        rank: int = 0,
     ):
         self.rows = []
         self.entries = []
-        self._memory_cache = {}
+        self._memory_cache = OrderedDict()
         self._cache_hits = 0
         self._cache_misses = 0
         self._materialized = 0
+        self._invalid_rows: list[dict[str, Any]] = []
+        self._invalid_row_keys: set[tuple[str, int]] = set()
         self.model = model
         self.prompt_cfg = dict(prompt_cfg or {})
         self.sft_cfg = dict(sft_cfg or {})
         self.cache_dir = str(cache_dir).strip() if cache_dir else ""
         self.split_name = str(split_name or "train")
+        self.invalid_row_report_path = str(invalid_row_report_path or "").strip()
+        self.fail_on_invalid = bool(fail_on_invalid)
+        self.rank = int(rank)
+        self.memory_cache_rows = max(0, int(self.sft_cfg.get("memory_cache_rows", 0) or 0))
         max_seq_length = int(sft_cfg.get("max_seq_length", 1024))
         disable_tqdm = bool(sft_cfg.get("disable_tqdm", True))
         self.max_seq_length = max_seq_length
@@ -560,46 +571,136 @@ class VQANativeQwenVLSFTDataset:
         return len(self.entries)
 
     def __getitem__(self, idx):
-        if idx in self._memory_cache:
-            return self._memory_cache[idx]
+        total = len(self.entries)
+        for offset in range(total):
+            current_idx = (idx + offset) % total
+            if current_idx in self._memory_cache:
+                row = self._memory_cache.pop(current_idx)
+                self._memory_cache[current_idx] = row
+                return row
 
-        entry = self.entries[idx]
-        cache_path = entry.get("cache_path") or ""
-        if cache_path and os.path.isfile(cache_path):
-            row = torch.load(cache_path, map_location="cpu", weights_only=False)
-            self._cache_hits += 1
-            self._memory_cache[idx] = row
+            entry = self.entries[current_idx]
+            cache_path = entry.get("cache_path") or ""
+            if cache_path and os.path.isfile(cache_path):
+                row = torch.load(cache_path, map_location="cpu", weights_only=False)
+                self._cache_hits += 1
+                self._remember_row(current_idx, row)
+                return row
+
+            sample = entry["sample"]
+            try:
+                try:
+                    row = self.model.build_training_inputs(
+                        sample,
+                        prompt_cfg=self.prompt_cfg,
+                        answer_text=entry["answer_text"],
+                        max_seq_length=self.max_seq_length,
+                        reference_index=int(entry.get("reference_index", 0)),
+                    )
+                except TypeError as exc:
+                    if "reference_index" not in str(exc):
+                        raise
+                    row = self.model.build_training_inputs(
+                        sample,
+                        prompt_cfg=self.prompt_cfg,
+                        answer_text=entry["answer_text"],
+                        max_seq_length=self.max_seq_length,
+                    )
+            except NativeQwenVLInvalidRowError as exc:
+                invalid_record = self._record_invalid_row(sample, entry, exc)
+                if self.fail_on_invalid:
+                    raise RuntimeError(
+                        "Invalid native Qwen VL training row encountered before backward/allreduce | "
+                        f"rank={self.rank} | split={self.split_name} | id={invalid_record.get('sample_id')} | "
+                        f"reference_index={invalid_record.get('reference_index')} | reason={invalid_record.get('reason')}"
+                    ) from exc
+                continue
+
+            row["id"] = str(sample.get("id", ""))
+            row["question"] = str(sample.get("question", ""))
+            row["reference_index"] = int(entry.get("reference_index", 0))
+
+            if cache_path:
+                tmp_path = f"{cache_path}.tmp"
+                torch.save(row, tmp_path)
+                os.replace(tmp_path, cache_path)
+            self._cache_misses += 1
+            self._materialized += 1
+            if self._materialized <= 3 or self._materialized % 100 == 0:
+                logging.info(
+                    "Materialized native Qwen VL SFT row | split=%s | built=%s/%s | cache_hits=%s | cache_misses=%s | id=%s",
+                    self.split_name,
+                    self._materialized,
+                    len(self.entries),
+                    self._cache_hits,
+                    self._cache_misses,
+                    row.get("id", ""),
+                )
+            self._remember_row(current_idx, row)
             return row
+        raise ValueError(f"No valid native Qwen VL rows remained for split '{self.split_name}'.")
 
-        sample = entry["sample"]
-        row = self.model.build_training_inputs(
-            sample,
-            prompt_cfg=self.prompt_cfg,
-            answer_text=entry["answer_text"],
-            max_seq_length=self.max_seq_length,
-        )
-        row["id"] = str(sample.get("id", ""))
-        row["question"] = str(sample.get("question", ""))
-        row["reference_index"] = int(entry.get("reference_index", 0))
-
-        if cache_path:
-            tmp_path = f"{cache_path}.tmp"
-            torch.save(row, tmp_path)
-            os.replace(tmp_path, cache_path)
-        self._cache_misses += 1
-        self._materialized += 1
-        if self._materialized <= 3 or self._materialized % 100 == 0:
-            logging.info(
-                "Materialized native Qwen VL SFT row | split=%s | built=%s/%s | cache_hits=%s | cache_misses=%s | id=%s",
-                self.split_name,
-                self._materialized,
-                len(self.entries),
-                self._cache_hits,
-                self._cache_misses,
-                row.get("id", ""),
-            )
+    def _remember_row(self, idx: int, row: dict[str, Any]) -> None:
+        if self.memory_cache_rows <= 0:
+            return
         self._memory_cache[idx] = row
-        return row
+        self._memory_cache.move_to_end(idx)
+        while len(self._memory_cache) > self.memory_cache_rows:
+            self._memory_cache.popitem(last=False)
+
+    def _record_invalid_row(
+        self,
+        sample: dict[str, Any],
+        entry: dict[str, Any],
+        exc: NativeQwenVLInvalidRowError,
+    ) -> dict[str, Any]:
+        sample_id = str(sample.get("id", ""))
+        reference_index = int(entry.get("reference_index", 0))
+        key = (sample_id, reference_index)
+        context = dict(getattr(exc, "context", {}) or {})
+        record = {
+            "split": self.split_name,
+            "rank": self.rank,
+            "sample_id": sample_id,
+            "question": str(sample.get("question", "")),
+            "reference_index": reference_index,
+            "reason": str(exc),
+            **context,
+        }
+        if key not in self._invalid_row_keys:
+            self._invalid_row_keys.add(key)
+            self._invalid_rows.append(record)
+            logging.warning(
+                "Skipping invalid native Qwen VL row | split=%s | rank=%s | id=%s | reference_index=%s | reason=%s",
+                self.split_name,
+                self.rank,
+                sample_id,
+                reference_index,
+                record["reason"],
+            )
+            self._write_invalid_row_report()
+        return record
+
+    def _write_invalid_row_report(self) -> None:
+        if not self.invalid_row_report_path:
+            return
+        os.makedirs(os.path.dirname(self.invalid_row_report_path), exist_ok=True)
+        with open(self.invalid_row_report_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "kind": "native_qwen_vl_invalid_rows",
+                    "split": self.split_name,
+                    "count": len(self._invalid_rows),
+                    "rows": self._invalid_rows,
+                },
+                f,
+                indent=2,
+                ensure_ascii=True,
+            )
+
+    @property
+    def invalid_row_count(self) -> int:
+        return len(self._invalid_rows)
 
     def _cache_path(self, sample: dict[str, Any], answer_text: str, reference_idx: int) -> str:
         if not self.cache_dir:
@@ -1290,6 +1391,11 @@ class VQAQwenVLNativeLoraTrainer:
             "visual_config": get_vqa_native_visual_cfg(self.config),
             "num_train_samples": 0,
             "num_valid_samples": 0,
+            "invalid_train_rows": 0,
+            "invalid_valid_rows": 0,
+            "invalid_train_rows_report_path": None,
+            "invalid_valid_rows_report_path": None,
+            "native_memory_cache_rows": 0,
         }
         if bool(execution.get("dry_run", False)):
             metadata["num_train_samples"] = sum(
@@ -1316,6 +1422,8 @@ class VQAQwenVLNativeLoraTrainer:
         native_cache_root = os.path.join(output_dir, "native_sft_cache") if cache_tokenized_rows else ""
         train_cache_dir = os.path.join(native_cache_root, "train") if cache_tokenized_rows else None
         valid_cache_dir = os.path.join(native_cache_root, "valid") if cache_tokenized_rows else None
+        invalid_train_report_path = os.path.join(output_dir, "native_invalid_rows_train.json")
+        invalid_valid_report_path = os.path.join(output_dir, "native_invalid_rows_valid.json")
         metadata["native_sft_cache_enabled"] = cache_tokenized_rows
         metadata["native_sft_cache_dir"] = native_cache_root or None
 
@@ -1326,6 +1434,9 @@ class VQAQwenVLNativeLoraTrainer:
             sft_cfg=sft_cfg,
             cache_dir=train_cache_dir,
             split_name="train",
+            invalid_row_report_path=invalid_train_report_path,
+            fail_on_invalid=int(world_size) > 1,
+            rank=rank,
         )
         valid_sft = (
             VQANativeQwenVLSFTDataset(
@@ -1335,6 +1446,9 @@ class VQAQwenVLNativeLoraTrainer:
                 sft_cfg=sft_cfg,
                 cache_dir=valid_cache_dir,
                 split_name="valid",
+                invalid_row_report_path=invalid_valid_report_path,
+                fail_on_invalid=int(world_size) > 1,
+                rank=rank,
             )
             if valid_data is not None
             else None
@@ -1343,10 +1457,18 @@ class VQAQwenVLNativeLoraTrainer:
             raise ValueError("No multimodal native Qwen VL training rows were usable.")
         metadata["num_train_samples"] = len(train_sft)
         metadata["num_valid_samples"] = len(valid_sft) if valid_sft is not None else 0
+        metadata["native_memory_cache_rows"] = train_sft.memory_cache_rows
         train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
         optimizer_cfg = get_train_optimizer(self.config)
         execution_cfg = get_train_execution(self.config)
         fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
+        effective_optim = str(
+            optimizer_cfg.get("hf_optim")
+            or optimizer_cfg.get("type")
+            or "paged_adamw_8bit"
+        ).strip()
+        if effective_optim.lower() == "adamw":
+            effective_optim = "adamw_torch"
         eval_strategy_key = "evaluation_strategy"
         try:
             if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters:
@@ -1362,7 +1484,7 @@ class VQAQwenVLNativeLoraTrainer:
             "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
             "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
             "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
-            "optim": str(optimizer_cfg.get("hf_optim", "paged_adamw_8bit")),
+            "optim": effective_optim,
             "weight_decay": float(optimizer_cfg.get("weight_decay", 0.001)),
             "lr_scheduler_type": str(sft_cfg.get("lr_scheduler_type", "constant")),
             "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
@@ -1377,6 +1499,9 @@ class VQAQwenVLNativeLoraTrainer:
         max_steps = sft_cfg.get("max_steps")
         if max_steps is not None and int(max_steps) > 0:
             training_kwargs["max_steps"] = int(max_steps)
+        max_grad_norm = sft_cfg.get("max_grad_norm")
+        if max_grad_norm is not None:
+            training_kwargs["max_grad_norm"] = float(max_grad_norm)
         save_steps = sft_cfg.get("save_steps")
         if save_steps is not None and int(save_steps) > 0:
             training_kwargs["save_steps"] = int(save_steps)
@@ -1392,6 +1517,17 @@ class VQAQwenVLNativeLoraTrainer:
         training_kwargs[eval_strategy_key] = _normalize_eval_strategy(
             sft_cfg.get("evaluation_strategy", "epoch"),
             default="epoch",
+        )
+        logging.info(
+            "Starting native Qwen VL trainer.train | rank=%s | world_size=%s | optim=%s | learning_rate=%s | "
+            "weight_decay=%s | memory_cache_rows=%s | disk_cache=%s",
+            rank,
+            world_size,
+            effective_optim,
+            training_kwargs["learning_rate"],
+            training_kwargs["weight_decay"],
+            train_sft.memory_cache_rows,
+            bool(cache_tokenized_rows),
         )
         args = TrainingArguments(**training_kwargs)
         trainer = NativeQwenVLTrainer(
@@ -1417,6 +1553,14 @@ class VQAQwenVLNativeLoraTrainer:
                 resume_optimizer_state,
             )
         trainer.train(resume_from_checkpoint=effective_resume_checkpoint)
+        metadata["invalid_train_rows"] = train_sft.invalid_row_count
+        metadata["invalid_valid_rows"] = valid_sft.invalid_row_count if valid_sft is not None else 0
+        metadata["invalid_train_rows_report_path"] = (
+            invalid_train_report_path if train_sft.invalid_row_count > 0 else None
+        )
+        metadata["invalid_valid_rows_report_path"] = (
+            invalid_valid_report_path if valid_sft is not None and valid_sft.invalid_row_count > 0 else None
+        )
         if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
             trainer.model.save_pretrained(output_dir)
             if getattr(native_model, "processor", None) is not None:

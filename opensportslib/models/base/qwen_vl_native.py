@@ -33,6 +33,14 @@ from opensportslib.models.utils.vqa_prompting import build_prior_text
 logger = logging.getLogger(__name__)
 
 
+class NativeQwenVLInvalidRowError(ValueError):
+    """Raised when a native Qwen VL SFT row carries no usable supervision."""
+
+    def __init__(self, message: str, *, context: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.context = dict(context or {})
+
+
 def _as_dict(obj: Any) -> dict[str, Any]:
     if obj is None:
         return {}
@@ -106,6 +114,28 @@ class NativeQwenVLTrainer:
         from transformers import Trainer
 
         class _Trainer(Trainer):
+            _warned_grad_norm_nan = False
+
+            def _inspect_current_gradients(self) -> dict[str, Any]:
+                finite = True
+                param_name = None
+                grad_count = 0
+                for name, param in model.named_parameters():
+                    grad = getattr(param, "grad", None)
+                    if grad is None:
+                        continue
+                    grad_count += 1
+                    if torch.isfinite(grad).all():
+                        continue
+                    finite = False
+                    param_name = str(name)
+                    break
+                return {
+                    "finite": finite,
+                    "parameter": param_name,
+                    "grad_count": grad_count,
+                }
+
             def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                 del kwargs
                 labels = inputs.get("labels")
@@ -121,6 +151,43 @@ class NativeQwenVLTrainer:
                         ignore_index=-100,
                     )
                 return (loss, outputs) if return_outputs else loss
+
+            def training_step(self, model, inputs, *args, **kwargs):
+                loss = super().training_step(model, inputs, *args, **kwargs)
+                self._last_grad_health = self._inspect_current_gradients()
+                return loss
+
+            def log(self, logs: dict[str, float], *args, **kwargs) -> None:
+                grad_norm = logs.get("grad_norm")
+                loss = logs.get("loss")
+                if grad_norm is not None:
+                    try:
+                        grad_norm_is_finite = torch.isfinite(torch.as_tensor(grad_norm)).item()
+                    except Exception:
+                        grad_norm_is_finite = True
+                    if not grad_norm_is_finite and not self._warned_grad_norm_nan:
+                        loss_is_finite = True
+                        if loss is not None:
+                            try:
+                                loss_is_finite = torch.isfinite(torch.as_tensor(loss)).item()
+                            except Exception:
+                                loss_is_finite = True
+                        grad_health = getattr(self, "_last_grad_health", None) or {}
+                        if loss_is_finite and bool(grad_health.get("finite", False)):
+                            logger.warning(
+                                "Native Qwen VL trainer reported grad_norm=nan while loss remained finite; "
+                                "parameter gradients inspected after backward were finite. Treating this as "
+                                "grad-norm reporting or clipping instability."
+                            )
+                        else:
+                            logger.warning(
+                                "Native Qwen VL trainer reported grad_norm=nan and detected non-finite or unavailable "
+                                "gradients during debug inspection | offending_parameter=%s | grads_seen=%s",
+                                grad_health.get("parameter"),
+                                grad_health.get("grad_count", 0),
+                            )
+                        self._warned_grad_norm_nan = True
+                return super().log(logs, *args, **kwargs)
 
         self._trainer = _Trainer(
             model=model,
@@ -235,10 +302,73 @@ class QwenVLNativeModel(nn.Module):
         finally:
             capture.release()
 
+    def _select_frame_indices(self, frame_count: int, *, num_frames: int | None = None) -> np.ndarray:
+        frame_count = int(frame_count)
+        if frame_count <= 0:
+            raise ValueError("Expected at least one frame for native VL input.")
+        target = max(1, int(num_frames or self.num_frames))
+        sample_count = min(frame_count, target)
+        return np.linspace(0, frame_count - 1, num=sample_count, dtype=int)
+
+    def _normalize_frame_array(self, frame_array: np.ndarray) -> np.ndarray:
+        frame_array = np.asarray(frame_array)
+        if frame_array.ndim == 4 and frame_array.shape[-1] in {1, 3, 4}:
+            return frame_array
+        if frame_array.ndim == 4 and frame_array.shape[1] in {1, 3, 4}:
+            return np.transpose(frame_array, (0, 2, 3, 1))
+        if frame_array.ndim == 3 and frame_array.shape[-1] in {1, 3, 4}:
+            return frame_array[None, ...]
+        if frame_array.ndim == 3 and frame_array.shape[0] in {1, 3, 4}:
+            return np.transpose(frame_array, (1, 2, 0))[None, ...]
+        raise ValueError(
+            "Unsupported native VL .npy shape. Expected frame arrays shaped like "
+            "(T, H, W, C), (T, C, H, W), (H, W, C), or (C, H, W)."
+        )
+
+    def _coerce_rgb_frames(self, frame_array: np.ndarray) -> list[np.ndarray]:
+        normalized = self._normalize_frame_array(frame_array)
+        indices = self._select_frame_indices(normalized.shape[0])
+        selected = normalized[indices]
+        frames: list[np.ndarray] = []
+        for frame in selected:
+            frame = np.asarray(frame)
+            if frame.ndim != 3:
+                raise ValueError("Native VL .npy frame entries must be rank-3 image arrays.")
+            channels = frame.shape[-1]
+            if channels == 1:
+                frame = np.repeat(frame, 3, axis=-1)
+            elif channels == 4:
+                frame = frame[..., :3]
+            elif channels != 3:
+                raise ValueError(
+                    "Unsupported native VL .npy channel count. Expected 1, 3, or 4 channels per frame."
+                )
+            if frame.dtype != np.uint8:
+                if np.issubdtype(frame.dtype, np.floating):
+                    scale = 255.0 if float(np.nanmax(frame)) <= 1.0 else 1.0
+                    frame = np.clip(frame * scale, 0.0, 255.0)
+                else:
+                    frame = np.clip(frame, 0, 255)
+                frame = frame.astype(np.uint8)
+            frames.append(np.ascontiguousarray(frame))
+        if not frames:
+            raise ValueError("Native VL .npy input did not yield any frames.")
+        return frames
+
+    def _load_npy_frames(self, npy_path: str) -> list[np.ndarray]:
+        try:
+            frame_array = np.load(npy_path, allow_pickle=True)
+        except Exception as exc:
+            raise ValueError(f"Could not load native VL .npy frames: {npy_path}") from exc
+        try:
+            return self._coerce_rgb_frames(frame_array)
+        except ValueError as exc:
+            raise ValueError(f"{exc} Path: {npy_path}") from exc
+
     def _resolve_visual_inputs(self, sample: dict[str, Any]) -> tuple[list[np.ndarray], str]:
         frame_arrays = sample.get("video_frames")
         if frame_arrays:
-            return list(frame_arrays), "frames"
+            return self._coerce_rgb_frames(np.asarray(frame_arrays)), "frames"
 
         frame_paths = sample.get("frame_paths") or []
         if frame_paths:
@@ -254,6 +384,8 @@ class QwenVLNativeModel(nn.Module):
         video_path = str(sample.get("video_path") or "").strip()
         if not video_path:
             raise ValueError("Native Qwen VL inference requires either frame_paths, video_frames, or video_path.")
+        if video_path.lower().endswith(".npy"):
+            return self._load_npy_frames(video_path), "frames"
 
         if self.visual_input_mode == "video_with_frames_fallback":
             return [video_path], "video"
@@ -304,6 +436,7 @@ class QwenVLNativeModel(nn.Module):
         prompt_cfg: dict[str, Any] | None = None,
         answer_text: str,
         max_seq_length: int = 1024,
+        reference_index: int = 0,
     ) -> dict[str, Any]:
         if not self._ready:
             raise RuntimeError(self._error or "Qwen VL native backend is not ready")
@@ -320,6 +453,8 @@ class QwenVLNativeModel(nn.Module):
         assistant_answer = str(answer_text).strip()
         if not assistant_answer:
             raise ValueError("Native Qwen VL training row requires a non-empty answer.")
+        sample_id = str(sample.get("id", ""))
+        question = str(sample.get("question", ""))
         full_messages = list(messages) + [{"role": "assistant", "content": [{"type": "text", "text": assistant_answer}]}]
 
         prompt_text = self.processor.apply_chat_template(
@@ -350,8 +485,30 @@ class QwenVLNativeModel(nn.Module):
         prompt_kwargs["text"] = [prompt_text]
         prompt_inputs = self.processor(**prompt_kwargs)
         prompt_len = int(prompt_inputs["attention_mask"][0].sum().item())
+        full_len = int(encoded["attention_mask"][0].sum().item())
+        context = {
+            "sample_id": sample_id,
+            "question": question,
+            "reference_index": int(reference_index),
+            "prompt_length": prompt_len,
+            "full_length": full_len,
+            "max_seq_length": int(max_seq_length),
+            "answer_preview": assistant_answer[:120],
+            "answer_length": len(assistant_answer),
+        }
+        if full_len <= prompt_len:
+            raise NativeQwenVLInvalidRowError(
+                "Native Qwen VL training row lost assistant supervision after truncation "
+                f"(full_len={full_len}, prompt_len={prompt_len}).",
+                context=context,
+            )
         labels[:, :prompt_len] = -100
         labels = labels.masked_fill(encoded["attention_mask"] == 0, -100)
+        if bool(torch.all(labels == -100).item()):
+            raise NativeQwenVLInvalidRowError(
+                "Native Qwen VL training row has all labels masked after prompt and padding masking.",
+                context=context,
+            )
         out = {key: value[0] if torch.is_tensor(value) and value.shape[0] == 1 else value for key, value in encoded.items()}
         out["labels"] = labels[0]
         return out
