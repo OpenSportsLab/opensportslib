@@ -22,12 +22,15 @@ from .hf_transfer import (
 )
 from .osl_json_to_parquet import DEFAULT_SHARD_SIZE, convert_json_to_parquet, parse_shard_size
 from .parquet_to_osl_json import convert_parquet_to_json
+from .sn_vqa_2026_qwen_native import convert_sn_vqa_2026_to_osl, evaluate_sn_vqa_predictions
 
 __all__ = [
     "convert_json_to_parquet",
     "DEFAULT_SHARD_SIZE",
     "parse_shard_size",
     "convert_parquet_to_json",
+    "convert_sn_vqa_2026_to_osl",
+    "evaluate_sn_vqa_predictions",
     "HfTransferCancelled",
     "HF_REPO_ID_KEY",
     "HF_BRANCH_KEY",

@@ -25,7 +25,7 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name: Qwen/Qwen3-VL-8B-Instruct
+        name:  Qwen/Qwen3-VL-8B-Instruct
       params:
         repo_id: Qwen/Qwen3-VL-8B-Instruct
       overrides: {}

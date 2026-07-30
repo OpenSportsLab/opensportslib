@@ -76,10 +76,25 @@ def _runtime_torch_dtype(dtype_name: str) -> torch.dtype:
     }.get(str(dtype_name or "fp16").lower(), torch.float16)
 
 
+def _normalize_native_grid_tensor(value: torch.Tensor, *, key: str, sample_id: str | None = None) -> torch.Tensor:
+    """Normalize Qwen-VL grid metadata to rank-2 `(n, 3)` tensors."""
+
+    if value.ndim == 1 and value.numel() == 3:
+        return value.reshape(1, 3)
+    if value.ndim == 2 and value.shape[-1] == 3:
+        return value
+    sample_suffix = f" for sample '{sample_id}'" if sample_id else ""
+    raise ValueError(
+        f"Malformed native Qwen VL grid tensor '{key}'{sample_suffix}. "
+        f"Expected shape (3,) or (n, 3), got {tuple(value.shape)}."
+    )
+
+
 class NativeQwenVLDataCollator:
     """Collate tokenized native-Qwen-VL rows."""
 
     _CONCAT_KEYS = {"pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"}
+    _GRID_KEYS = {"image_grid_thw", "video_grid_thw"}
 
     def __call__(self, instances):
         if not instances:
@@ -89,6 +104,14 @@ class NativeQwenVLDataCollator:
         for key, value in first.items():
             values = [row[key] for row in instances]
             if torch.is_tensor(value):
+                if key in self._GRID_KEYS:
+                    normalized_values = []
+                    for idx, row_value in enumerate(values):
+                        sample_id = None
+                        if idx < len(instances):
+                            sample_id = str(instances[idx].get("_sample_id") or instances[idx].get("sample_id") or "")
+                        normalized_values.append(_normalize_native_grid_tensor(row_value, key=key, sample_id=sample_id or None))
+                    values = normalized_values
                 if key in self._CONCAT_KEYS:
                     out[key] = torch.cat(values, dim=0)
                 else:
@@ -509,8 +532,19 @@ class QwenVLNativeModel(nn.Module):
                 "Native Qwen VL training row has all labels masked after prompt and padding masking.",
                 context=context,
             )
-        out = {key: value[0] if torch.is_tensor(value) and value.shape[0] == 1 else value for key, value in encoded.items()}
+        out = {}
+        for key, value in encoded.items():
+            if torch.is_tensor(value):
+                if key in {"image_grid_thw", "video_grid_thw"}:
+                    out[key] = _normalize_native_grid_tensor(value[0] if value.shape[0] == 1 else value, key=key, sample_id=sample_id)
+                elif value.shape[0] == 1:
+                    out[key] = value[0]
+                else:
+                    out[key] = value
+            else:
+                out[key] = value
         out["labels"] = labels[0]
+        out["_sample_id"] = sample_id
         return out
 
     def generate_answer(self, sample: dict[str, Any], prompt_cfg=None, generation_cfg=None) -> str:
