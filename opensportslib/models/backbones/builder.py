@@ -81,6 +81,14 @@ def build_backbone(cfg, default_args=None):
             conv_type=cfg.encoder,
             dropout=cfg.dropout,
         )
+    elif cfg.type == "graph_conv_seq":
+        backbone = GraphSequenceEncoder(
+            input_dim=default_args["input_dim"],
+            hidden_dim=cfg.hidden_dim,
+            num_layers=cfg.num_layers,
+            conv_type=cfg.encoder,
+            dropout=cfg.dropout,
+        )
     elif cfg.type == "PreExtactedFeatures":
         backbone = PreExtactedFeatures(
             feature_dim=cfg.feature_dim, output_dim=cfg.output_dim
@@ -474,7 +482,42 @@ class GraphEncoder(nn.Module):
         edge_index = knn_graph(x, k=k, batch=batch, loop=False)
         return edge_index
 
-        
+
+class GraphSequenceEncoder(nn.Module):
+    """Sequence-output wrapper around GraphEncoder, for E2E action spotting.
+
+    GraphEncoder pools per-frame node embeddings down to one vector per
+    graph (num_graphs, H) - exactly what tracking classification needs
+    (one label per clip). Action spotting instead needs a per-frame
+    embedding sequence, so this wraps an unmodified GraphEncoder and
+    reshapes its (B*T, H) output back to (B, T, H) using the clip length
+    (seq_len) the collate attaches to the incoming PyG Batch (see
+    opensportslib.core.utils.data.tracking_spotting_collate_fn). The E2E
+    GRU head then produces per-frame logits. Exposes `_feat_dim` (rather
+    than GraphEncoder's `feat_dim`) to match the convention
+    E2EModel.Impl reads from all its other backbones.
+    """
+
+    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
+        super().__init__()
+        self.encoder = GraphEncoder(input_dim, hidden_dim, num_layers, conv_type, dropout)
+        self._feat_dim = hidden_dim
+
+    def forward(self, data):
+        """
+        Args:
+            data: a PyG Batch of all B*T per-frame graphs for the batch of
+                clips, with a plain int `.seq_len` attribute (T) attached.
+
+        Returns:
+            (B, T, hidden_dim) per-frame embeddings.
+        """
+        graph_emb = self.encoder(data.x, data.edge_index, data.batch)  # (B*T, H)
+        seq_len = data.seq_len
+        batch_size = graph_emb.size(0) // seq_len
+        return graph_emb.view(batch_size, seq_len, -1)
+
+
 # -----------------------------------------------------------------------
 # new custom path: pure feature extractor backbone
 # -----------------------------------------------------------------------

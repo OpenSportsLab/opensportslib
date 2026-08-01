@@ -66,14 +66,23 @@ class E2EModel(BaseRGBModel):
 
         def __init__(self, num_classes, backbone, head, clip_len, modality):
             super().__init__()
-            is_rgb = modality == "rgb"
-            in_channels = {"flow": 2, "bw": 1, "rgb": 3}[modality]
 
-            backbone.clip_len = clip_len
-            backbone.is_rgb = is_rgb
-            backbone.in_channels = in_channels
+            default_args = None
+            if backbone.type == "graph_conv_seq":
+                # tracking graph encoder: no clip_len/is_rgb/in_channels
+                # notion, needs input_dim instead (see GraphSequenceEncoder).
+                from opensportslib.datasets.utils.tracking import FEATURE_DIM
 
-            self.backbone = build_backbone(backbone)
+                default_args = {"input_dim": FEATURE_DIM}
+            else:
+                is_rgb = modality == "rgb"
+                in_channels = {"flow": 2, "bw": 1, "rgb": 3}[modality]
+
+                backbone.clip_len = clip_len
+                backbone.is_rgb = is_rgb
+                backbone.in_channels = in_channels
+
+            self.backbone = build_backbone(backbone, default_args=default_args)
 
             head.num_classes = num_classes
             head.feat_dim = self.backbone._feat_dim
@@ -85,10 +94,14 @@ class E2EModel(BaseRGBModel):
             return self.head(im_feat)
 
         def print_stats(self):
+            # not every backbone exposes a "_features" submodule (e.g. the
+            # tracking GraphSequenceEncoder doesn't) - fall back to the whole
+            # backbone's params so this stays generic.
+            feature_extractor = getattr(self.backbone, "_features", self.backbone)
             print("Model params:", sum(p.numel() for p in self.parameters()))
             print(
-                "  CNN features:",
-                sum(p.numel() for p in self.backbone._features.parameters()),
+                "  Backbone features:",
+                sum(p.numel() for p in feature_extractor.parameters()),
             )
             print(
                 "  Temporal:", sum(p.numel() for p in self.head._pred_fine.parameters())
@@ -232,12 +245,22 @@ class E2EModel(BaseRGBModel):
             pred_cls (numpy.ndarray): Predicted class indices.
             pred (numpy.ndarray): Predicted probabilities.
         """
-        if not isinstance(seq, torch.Tensor):
-            seq = torch.FloatTensor(seq)
-        if len(seq.shape) == 4:  # (L, C, H, W)
-            seq = seq.unsqueeze(0)
-        if seq.device != self.device:
+        try:
+            from torch_geometric.data import Data as _PyGData
+        except ImportError:
+            _PyGData = None
+
+        if _PyGData is not None and isinstance(seq, _PyGData):
+            # tracking graph batch (Batch is a subclass of Data): no
+            # tensor-shape reasoning applies, just move it to device.
             seq = seq.to(self.device)
+        else:
+            if not isinstance(seq, torch.Tensor):
+                seq = torch.FloatTensor(seq)
+            if len(seq.shape) == 4:  # (L, C, H, W)
+                seq = seq.unsqueeze(0)
+            if seq.device != self.device:
+                seq = seq.to(self.device)
 
         self._model.eval()
         with torch.no_grad():
