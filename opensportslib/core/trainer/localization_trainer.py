@@ -546,7 +546,7 @@ class Inferer:
             return self.infer_E2E(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_H5HeaderRule":
             return self.infer_H5HeaderRule(cfg, self.model, data, dataloader)
-
+        raise ValueError(f"Unsupported infer_Spotting method: {self.infer_Spotting}")
 
     def infer_common(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model.
