@@ -36,9 +36,11 @@ def test_method_signatures_expose_weights_and_no_pretrained_in_signature(
     loc_train_sig = inspect.signature(loc_api.train)
     loc_infer_sig = inspect.signature(loc_api.infer)
     loc_eval_sig = inspect.signature(loc_api.evaluate)
+    vqa_train_sig = inspect.signature(vqa_api.train)
     assert "use_ddp" not in loc_train_sig.parameters
     assert "use_ddp" not in loc_infer_sig.parameters
     assert "use_ddp" not in loc_eval_sig.parameters
+    assert "resume_from_checkpoint" in vqa_train_sig.parameters
 
     save_sig = inspect.signature(cls_api.save_predictions)
     assert "output_path" in save_sig.parameters
@@ -560,6 +562,79 @@ def test_vqa_worker_ddp_initializes_wandb_on_rank_zero(vqa_config_path, tmp_path
     assert wandb_inits == [(vqa_config_path, True)]
 
 
+def test_vqa_worker_ddp_forwards_resume_checkpoint(vqa_config_path, tmp_path, monkeypatch):
+    captured = {}
+    train_path = tmp_path / "train.json"
+    valid_path = tmp_path / "valid.json"
+    resume_path = tmp_path / "checkpoint-2072"
+    train_path.write_text("[]", encoding="utf-8")
+    valid_path.write_text("[]", encoding="utf-8")
+    resume_path.mkdir()
+
+    class FakeTrainer:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def train(
+            self,
+            model,
+            train_data,
+            valid_data=None,
+            *,
+            rank=0,
+            world_size=1,
+            resume_from_checkpoint=None,
+            use_wandb=False,
+        ):
+            del model, train_data, valid_data, use_wandb
+            captured["rank"] = rank
+            captured["world_size"] = world_size
+            captured["resume_from_checkpoint"] = resume_from_checkpoint
+            return "trained.ckpt"
+
+    class FakeQueue:
+        def __init__(self):
+            self.items = []
+
+        def put(self, item):
+            self.items.append(item)
+
+    monkeypatch.setattr(
+        "opensportslib.datasets.builder.build_dataset",
+        lambda *args, **kwargs: [{"id": kwargs.get("split", "x")}],
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        FakeTrainer,
+    )
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: None,
+    )
+
+    os_environ = __import__("os").environ
+    os_environ["RUN_ID"] = "testrun"
+    queue = FakeQueue()
+    config = SimpleNamespace()
+
+    VQAModel._worker_ddp(
+        rank=0,
+        world_size=1,
+        config_path=vqa_config_path,
+        config=config,
+        return_queue=queue,
+        train_set=str(train_path),
+        valid_set=str(valid_path),
+        resume_from_checkpoint=str(resume_path),
+        use_wandb=False,
+    )
+
+    assert queue.items == ["trained.ckpt"]
+    assert captured["rank"] == 0
+    assert captured["world_size"] == 1
+    assert captured["resume_from_checkpoint"] == str(resume_path)
+
+
 def test_vqa_worker_ddp_sets_distributed_debug_when_unset(vqa_config_path, tmp_path, monkeypatch):
     train_path = tmp_path / "train.json"
     valid_path = tmp_path / "valid.json"
@@ -700,6 +775,8 @@ def test_vqa_direct_xvars_infer_uses_native_model_path(vqa_config_path, tmp_path
             "question": "What happened?",
             "references": [],
             "video_path": str(video_path),
+            "frame_paths": [],
+            "video_frames": [],
             "video_spatio_temporal_features": None,
             "prior_prediction_text": "",
             "labels": {},

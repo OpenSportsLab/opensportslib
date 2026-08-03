@@ -145,6 +145,12 @@ for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
 `opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
 config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
 
+For native end-to-end Qwen VL models, use:
+
+- `opensportslib/configs/vqa/qwen_vl_native.yaml`
+- `opensportslib/configs/vqa/qwen_vl_native_awq.yaml`
+- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
+
 ### X-VARS Backends
 
 Use `MODEL.metadata.backend: xvars_videochatgpt` with
@@ -170,3 +176,28 @@ For upstream-style inference JSON, save VQA predictions with:
 ```python
 m.save_predictions("xvars_predictions.json", predictions, output_format="xvars")
 ```
+
+### Native Qwen VL Backends
+
+Use `MODEL.metadata.backend: qwen_vl_native_infer` with
+`TRAIN.execution.training_backend: qwen_vl_native_lora` for the native
+end-to-end multimodal path. This backend does not use
+`video_spatio_temporal_features` or the X-VARS projector contract. Instead, it
+feeds sampled video frames directly into a Hugging Face Qwen VL processor/model
+pair.
+
+The initial shared input contract is frame-based. Set
+`TRAIN.execution.native_vl.visual_input_mode` to:
+
+- `frames` for deterministic frame sampling from `video_path`
+- `video_with_frames_fallback` to attempt native video input first and fall back
+  to sampled frames if the model/runtime path rejects direct video
+
+Supported native model configs include:
+
+- `Qwen/Qwen2.5-VL-7B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct-AWQ` for inference
+- `Qwen/Qwen3-VL-8B-Instruct`
+
+The AWQ variant is treated as inference-only by the training backend and will
+raise a clear error if used for `qwen_vl_native_lora`.

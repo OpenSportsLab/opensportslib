@@ -1,0 +1,133 @@
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints_vqa_qwen_sngar_frames
+  gpu:
+    count: 4
+    id: null
+
+DATA:
+  common:
+    dataset_name: sngar-frames-vqa
+    data_root: /home/vorajv/dataset/sngar-frames
+    splits:
+      test:
+        annotation_path: ${DATA.common.data_root}/test.json
+        source_path: ${DATA.common.data_root}
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+  inputs:
+    video:
+      modality: frames_npy
+      representation: frames_npy
+      source:
+        format: npy
+      sampling:
+        num_frames: 16
+      transform: {}
+      augmentations: {}
+      params: {}
+    question:
+      modality: text
+      representation: raw
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  topology: []
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        name: qwen_vl_native
+      params:
+        feature_source: raw_video
+        native_vl:
+          visual_input_mode: frames
+          num_frames: 8
+          min_pixels: 50176 # 28*28*64
+          max_pixels: 401408 # 28*28*512
+      overrides: {}
+    llm_decoder:
+      kind: decoder
+      source:
+        provider: huggingface
+        name: Qwen/Qwen3-VL-8B-Instruct
+      params:
+        repo_id: Qwen/Qwen3-VL-8B-Instruct
+      overrides: {}
+  metadata:
+    backend: qwen_vl_native_infer
+
+TRAIN:
+  optimizer:
+    hf_optim: adamw_torch
+  execution:
+    acc_grad_iter: 4
+    training_backend: qwen_vl_native_lora
+    prompt:
+      include_priors: false
+      system_prompt: >-
+        You are a soccer action classifier for short soccer clips.
+        Your task is to choose exactly one label from this closed set:
+        PASS, HEADER, HIGH PASS, OUT, CROSS, THROW IN, SHOT,
+        PLAYER SUCCESSFUL TACKLE, FREE KICK, GOAL.
+        Use these label meanings:
+        PASS = a standard grounded or short pass between teammates.
+        HEADER = the ball is intentionally played with the head.
+        HIGH PASS = a lofted or aerial pass to a teammate that is not mainly a cross.
+        OUT = the ball goes out of play.
+        CROSS = the ball is delivered from a wide area into the box or a dangerous central area.
+        THROW IN = play is restarted with a throw-in from the sideline.
+        SHOT = a player attempts to score.
+        PLAYER SUCCESSFUL TACKLE = a defender successfully wins or disrupts possession with a tackle.
+        FREE KICK = play is restarted with a free kick.
+        GOAL = the ball enters the goal and a goal is scored.
+        Decision rules:
+        Prefer the main action visible in the clip.
+        Choose the closest valid label if the clip is ambiguous.
+        Do not output any words other than the single label.
+        Do not explain.
+        Do not output a sentence.
+        Do not output punctuation.
+        Do not output 'The' or any extra text.
+    generation:
+      max_new_tokens: 3
+      temperature: 0.0
+      repetition_penalty: 1.0
+      no_repeat_ngram_size: 2
+    native_vl:
+      visual_input_mode: frames
+      num_frames: 8
+      min_pixels: 50176 # 28*28*64
+      max_pixels: 401408 # 28*28*512
+    hf:
+      tokenizer_id: ${MODEL.components.llm_decoder.params.repo_id}
+      prefer_cuda: true
+      local_files_only: false
+      device_map: auto
+      offload_folder: ./hf_offload_qwen
+    sft:
+      per_device_train_batch_size: 1
+      per_device_eval_batch_size: 1
+      max_seq_length: 1024
+      max_grad_norm: 1.0
+      gradient_checkpointing: true
+      ddp_find_unused_parameters: false
+      ddp_broadcast_buffers: false
+      resume_optimizer_state: false
+      cache_tokenized_rows: false
+      disable_tqdm: false
+      save_strategy: epoch
+      evaluation_strategy: "no"
+    lora:
+      prepare_kbit: false
+    quantization:
+      enabled: false
