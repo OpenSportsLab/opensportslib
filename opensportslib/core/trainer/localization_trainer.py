@@ -510,6 +510,8 @@ def build_inferer(cfg, model, default_args=None):
         return Inferer(cfg=cfg, model=model, infer_Spotting="infer_SN")
     if runner_type == "runner_e2e":
         return Inferer(cfg=cfg, model=model, infer_Spotting="infer_E2E")
+    if runner_type == "runner_h5_header_rule":
+        return Inferer(cfg=cfg, model=model, infer_Spotting="infer_H5HeaderRule")
     raise ValueError(f"Unsupported localization runner type: {runner_type}")
 
 class Inferer:
@@ -542,7 +544,9 @@ class Inferer:
             return self.infer_SN(cfg, self.model, data, dataloader)
         elif self.infer_Spotting=="infer_E2E":
             return self.infer_E2E(cfg, self.model, data, dataloader)
-
+        elif self.infer_Spotting=="infer_H5HeaderRule":
+            return self.infer_H5HeaderRule(cfg, self.model, data, dataloader)
+        raise ValueError(f"Unsupported infer_Spotting method: {self.infer_Spotting}")
 
     def infer_common(self, cfg, model, data, dataloader=None):
         """Infer actions from data using a given model.
@@ -643,6 +647,11 @@ class Inferer:
             logging.info(pred_recall_file)
 
         return predictions
+
+    def infer_H5HeaderRule(self, cfg, model, data, dataloader=None):
+        """Run rule-based H5 header spotting without Lightning or weights."""
+        del cfg, dataloader
+        return model.predict(data)
 
 
 def build_evaluator(cfg, default_args=None):

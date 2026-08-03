@@ -14,6 +14,7 @@ from opensportslib.core.config.accessors import (
     get_split_annotation_path,
     get_split_cfg,
     set_split_annotation_path,
+    get_model_family,
 )
 from opensportslib.core.utils.config import expand
 
@@ -169,6 +170,11 @@ class LocalizationModel(BaseTaskModel):
         import torch
 
         del kwargs
+
+        if str(get_model_family(self.config)).lower() == "rulebased":
+            raise NotImplementedError(
+                "RuleBased localization models are inference-only; call infer() instead of train()."
+            )
 
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
