@@ -13,6 +13,7 @@ from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_params_by_kind,
     get_hf_cuda_device_index,
+    get_hf_prefer_cuda,
     get_model_load,
     get_model_runtime_dtype,
     get_train_execution,
@@ -363,7 +364,7 @@ class QwenXVarsModel(nn.Module):
         )
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        prefer_cuda = get_hf_prefer_cuda(config, hf_cfg)
         cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         mm_hidden_size = int(projector_params.get("input_dim") or get_vqa_mm_hidden_size(config, default=1024))
         use_cuda = prefer_cuda and torch.cuda.is_available()
@@ -481,7 +482,7 @@ class QwenXVarsModel(nn.Module):
                         self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
                             weights_path=self.vision_weights_path,
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(config, hf_cfg),
                             start_frame=self.strict_sampling_cfg.get("start_frame"),
                             end_frame=self.strict_sampling_cfg.get("end_frame"),
                             input_fps=self.strict_sampling_cfg.get("input_fps"),
@@ -491,7 +492,7 @@ class QwenXVarsModel(nn.Module):
                     else:
                         self.raw_extractor = XVarsRawVideoFeatureExtractor(
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(config, hf_cfg),
                         )
                 if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
                     features, classifier_prior = self.raw_extractor.extract_with_prior(video_path)

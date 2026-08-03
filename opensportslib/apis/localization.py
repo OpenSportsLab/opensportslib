@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from types import SimpleNamespace
 
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.core.config.accessors import (
@@ -14,6 +15,7 @@ from opensportslib.core.config.accessors import (
     get_split_annotation_path,
     get_split_cfg,
     set_split_annotation_path,
+    set_loader_backend,
     get_model_family,
 )
 from opensportslib.core.utils.config import expand
@@ -21,6 +23,17 @@ from opensportslib.core.utils.config import expand
 
 class LocalizationModel(BaseTaskModel):
     """Top-level task wrapper for localization / spotting."""
+
+    _HF_BACKEND_SPLIT_TYPES = {
+        "dali": {
+            "VideoGameWithOpencv": "VideoGameWithDali",
+            "VideoGameWithOpencvVideo": "VideoGameWithDaliVideo",
+        },
+        "opencv": {
+            "VideoGameWithDali": "VideoGameWithOpencv",
+            "VideoGameWithDaliVideo": "VideoGameWithOpencvVideo",
+        },
+    }
 
     # def __init__(self, config=None, weights=None):
     #     super().__init__(config=config, weights=None)
@@ -62,6 +75,82 @@ class LocalizationModel(BaseTaskModel):
                 device,
             )
 
+    @staticmethod
+    def _device_type(device) -> str:
+        device_type = getattr(device, "type", device)
+        return str(device_type).split(":", 1)[0].lower()
+
+    @staticmethod
+    def _is_hf_repo_weights(weights: str | None) -> bool:
+        if not weights:
+            return False
+        from opensportslib.core.utils.config import is_local_path
+
+        return not is_local_path(weights)
+
+    @staticmethod
+    def _iter_split_items(splits):
+        if splits is None:
+            return []
+        if isinstance(splits, dict):
+            return list(splits.items())
+        return list(vars(splits).items())
+
+    @staticmethod
+    def _ensure_namespace(parent, attr: str):
+        current = getattr(parent, attr, None)
+        if current is None:
+            current = SimpleNamespace()
+            setattr(parent, attr, current)
+        return current
+
+    def _normalize_opencv_dataloader(self, split_name: str, split_cfg) -> None:
+        dataloader = getattr(split_cfg, "dataloader", None)
+        if dataloader is None:
+            dataloader = SimpleNamespace()
+            setattr(split_cfg, "dataloader", dataloader)
+
+        if getattr(dataloader, "batch_size", None) is None:
+            dataloader.batch_size = 1
+        if getattr(dataloader, "shuffle", None) is None:
+            dataloader.shuffle = split_name == "train"
+        if getattr(dataloader, "num_workers", None) is None:
+            dataloader.num_workers = 0
+        if getattr(dataloader, "pin_memory", None) is None:
+            dataloader.pin_memory = False
+
+    def _adapt_hf_backend_for_device(self, weights: str | None) -> None:
+        if not self._is_hf_repo_weights(weights):
+            return
+
+        from opensportslib.core.utils.config import select_device
+
+        device = select_device(self.config.SYSTEM)
+        backend = "dali" if self._device_type(device) == "cuda" else "opencv"
+        current_backend = get_loader_backend(self.config)
+        set_loader_backend(self.config, backend)
+
+        common = getattr(getattr(self.config, "DATA", None), "common", None)
+        if common is None:
+            return
+        splits = self._ensure_namespace(common, "splits")
+        remap = self._HF_BACKEND_SPLIT_TYPES[backend]
+
+        for split_name, split_cfg in self._iter_split_items(splits):
+            split_type = getattr(split_cfg, "type", None)
+            if split_type in remap:
+                setattr(split_cfg, "type", remap[split_type])
+            if backend == "opencv":
+                self._normalize_opencv_dataloader(split_name, split_cfg)
+
+        if current_backend != backend:
+            logging.info(
+                "HF localization runtime backend override: %s -> %s for weights=%s",
+                current_backend,
+                backend,
+                weights,
+            )
+
     def load_weights(
         self,
         weights: str | None = None,
@@ -80,6 +169,7 @@ class LocalizationModel(BaseTaskModel):
         if weights is None:
             raise ValueError("`weights` must be provided to load_weights().")
 
+        self._adapt_hf_backend_for_device(weights)
         device = select_device(self.config.SYSTEM)
         self._gate_multi_gpu_by_device(device)
         if self.model is None:
@@ -183,8 +273,10 @@ class LocalizationModel(BaseTaskModel):
         # E2E validation mAP uses the `valid_data_frames` split; keep it in sync
         # with explicit valid annotation overrides.
         self._set_split_path("valid_data_frames", valid_set)
-        
+
         self.config = resolve_config_omega(self.config, weights=weights)
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+        self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="train")
         init_wandb(
             self.config_path,
@@ -195,8 +287,6 @@ class LocalizationModel(BaseTaskModel):
 
         logging.info("Configuration:")
         logging.info(self.config)
-
-        effective_weights = weights if weights is not None else self.last_loaded_weights
 
         def set_seed(seed):
             random.seed(seed)
@@ -298,6 +388,8 @@ class LocalizationModel(BaseTaskModel):
         self._set_split_path("test", test_set)
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+        self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 
@@ -312,8 +404,6 @@ class LocalizationModel(BaseTaskModel):
         logging.info(self.config)
 
         start = time.time()
-
-        effective_weights = weights if weights is not None else self.last_loaded_weights
 
         if effective_weights is not None:
             if self.model is None or self.last_loaded_weights != effective_weights:
@@ -368,6 +458,8 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
         self.config = resolve_config_omega(self.config, weights=weights)
+        effective_weights = weights if weights is not None else self.last_loaded_weights
+        self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="test")
         self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 

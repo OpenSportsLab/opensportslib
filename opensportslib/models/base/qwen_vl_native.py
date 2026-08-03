@@ -13,6 +13,7 @@ import torch.nn as nn
 
 from opensportslib.core.config.accessors import (
     get_hf_cuda_device_index,
+    get_hf_prefer_cuda,
     get_model_load,
     get_train_execution,
     get_vqa_generation_cfg,
@@ -248,7 +249,7 @@ class QwenVLNativeModel(nn.Module):
         hf_cfg = _as_dict(exec_cfg.get("hf"))
         quant_cfg = _as_dict(exec_cfg.get("quantization"))
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        prefer_cuda = get_hf_prefer_cuda(config, hf_cfg)
         cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         use_cuda = prefer_cuda and torch.cuda.is_available()
         if use_cuda and cuda_device_index is not None:

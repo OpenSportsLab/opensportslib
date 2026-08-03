@@ -68,6 +68,20 @@ def get_loader_backend(cfg: Any) -> str:
     return str(backend).lower()
 
 
+def set_loader_backend(cfg: Any, backend: str) -> None:
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    runtime = _ensure_child(common, "runtime")
+    if isinstance(runtime, dict):
+        runtime["loader_backend"] = str(backend).lower()
+    else:
+        setattr(runtime, "loader_backend", str(backend).lower())
+
+
 def get_system_path(cfg: Any, key: str, default: str | None = None) -> str | None:
     system = _as_dict(getattr(cfg, "SYSTEM", None))
     paths = _as_dict(system.get("paths"))
@@ -349,6 +363,30 @@ def get_train_epochs(cfg: Any) -> int:
 def get_train_execution(cfg: Any) -> dict[str, Any]:
     train = _as_dict(getattr(cfg, "TRAIN", None))
     return _as_dict(train.get("execution"))
+
+
+def get_hf_prefer_cuda(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> bool:
+    """Resolve whether HF-backed runtimes should prefer CUDA.
+
+    Precedence:
+    1. explicit TRAIN.execution.hf.prefer_cuda
+    2. SYSTEM.device mapping:
+       - cpu -> False
+       - cuda/gpu -> True
+       - auto/unset -> True
+    """
+    hf_cfg = _as_dict(hf_cfg) if hf_cfg is not None else _as_dict(get_train_execution(cfg).get("hf"))
+    explicit = hf_cfg.get("prefer_cuda")
+    if explicit is not None:
+        return bool(explicit)
+
+    system = _as_dict(getattr(cfg, "SYSTEM", None))
+    mode = str(system.get("device", "auto")).strip().lower()
+    if mode == "cpu":
+        return False
+    if mode in {"cuda", "gpu"}:
+        return True
+    return True
 
 
 def get_hf_cuda_device_index(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> int | None:

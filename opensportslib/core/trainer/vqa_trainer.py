@@ -17,24 +17,25 @@ import torch
 from tqdm.auto import tqdm
 
 from opensportslib.core.config.accessors import (
-    get_xvars_train_model_id,
-    get_xvars_train_tokenizer_id,
-    get_xvars_train_video_token_len,
     get_hf_cuda_device_index,
-    get_vqa_backend,
-    get_vqa_decoder_model_id,
-    is_xvars_videochatgpt_backend,
+    get_hf_prefer_cuda,
     get_model_runtime_dtype,
     get_split_dataloader_cfg,
     get_system_path,
     get_train_epochs,
     get_train_execution,
     get_train_optimizer,
+    get_vqa_backend,
+    get_vqa_decoder_model_id,
     get_vqa_eval_profile_cfg,
     get_vqa_generation_cfg,
     get_vqa_mm_hidden_size,
     get_vqa_native_visual_cfg,
     get_vqa_prompt_video_token_len,
+    get_xvars_train_model_id,
+    get_xvars_train_tokenizer_id,
+    get_xvars_train_video_token_len,
+    is_xvars_videochatgpt_backend,
 )
 from opensportslib.core.utils.config import save_config
 from opensportslib.core.utils.hf_runtime import (
@@ -952,7 +953,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         cuda_device_index = get_hf_cuda_device_index(self.config, hf_cfg)
         if bnb_config is not None:
             model_kwargs["quantization_config"] = bnb_config
-            if bool(hf_cfg.get("prefer_cuda", True)) and torch.cuda.is_available():
+            if get_hf_prefer_cuda(self.config, hf_cfg) and torch.cuda.is_available():
                 if cuda_device_index is not None:
                     torch.cuda.set_device(cuda_device_index)
                     model_kwargs["device_map"] = {"": cuda_device_index}
@@ -1033,7 +1034,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
-            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
             "fp16": fp16,
             "bf16": bf16,
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
@@ -1186,7 +1187,7 @@ class VQAQwenXVarsLoraTrainer:
         cuda_device_index = get_hf_cuda_device_index(self.config, hf_cfg)
         if bnb_config is not None:
             model_kwargs["quantization_config"] = bnb_config
-            if bool(hf_cfg.get("prefer_cuda", True)) and torch.cuda.is_available():
+            if get_hf_prefer_cuda(self.config, hf_cfg) and torch.cuda.is_available():
                 if cuda_device_index is not None:
                     torch.cuda.set_device(cuda_device_index)
                     model_kwargs["device_map"] = {"": cuda_device_index}
@@ -1261,7 +1262,7 @@ class VQAQwenXVarsLoraTrainer:
             "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
-            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
             "fp16": fp16,
             "bf16": bf16,
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
@@ -1491,7 +1492,7 @@ class VQAQwenVLNativeLoraTrainer:
             "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
-            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
             "fp16": fp16,
             "bf16": bf16,
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),

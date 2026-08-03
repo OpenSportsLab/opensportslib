@@ -5,7 +5,7 @@ SYSTEM:
   paths:
     save_dir: ./checkpoints_vqa
     work_dir: ${SYSTEM.paths.save_dir}
-  device: cuda
+  device: auto
   gpu:
     count: 1
     id: 0
