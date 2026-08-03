@@ -25,8 +25,13 @@ MODEL:
       kind: decoder
       source:
         provider: huggingface
-        name:  Qwen/Qwen3-VL-8B-Instruct
+        # Canonical end-to-end QwenVL config.
+        # Swap this model ID if you want another supported QwenVL checkpoint.
+        name: Qwen/Qwen3-VL-8B-Instruct
       params:
+        # Supported examples:
+        # - Qwen/Qwen3-VL-8B-Instruct
+        # - Qwen/Qwen2.5-VL-7B-Instruct
         repo_id: Qwen/Qwen3-VL-8B-Instruct
       overrides: {}
   metadata:

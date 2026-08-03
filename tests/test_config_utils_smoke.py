@@ -2,7 +2,7 @@ from pathlib import Path
 
 from types import SimpleNamespace
 
-from opensportslib.core.config.accessors import get_hf_cuda_device_index
+from opensportslib.core.config.accessors import get_hf_cuda_device_index, get_hf_prefer_cuda
 from opensportslib.core.utils.config import (
     dict_to_namespace,
     expand,
@@ -82,3 +82,39 @@ def test_get_hf_cuda_device_index_returns_none_when_unset(monkeypatch):
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 
     assert get_hf_cuda_device_index(cfg, {}) is None
+
+
+def test_get_hf_prefer_cuda_respects_explicit_override():
+    cfg = SimpleNamespace(
+        SYSTEM=SimpleNamespace(device="cpu"),
+        TRAIN=SimpleNamespace(execution={"hf": {"prefer_cuda": True}}),
+    )
+
+    assert get_hf_prefer_cuda(cfg, {"prefer_cuda": True}) is True
+
+
+def test_get_hf_prefer_cuda_maps_system_cpu_to_false():
+    cfg = SimpleNamespace(
+        SYSTEM=SimpleNamespace(device="cpu"),
+        TRAIN=SimpleNamespace(execution={"hf": {}}),
+    )
+
+    assert get_hf_prefer_cuda(cfg, {}) is False
+
+
+def test_get_hf_prefer_cuda_maps_system_cuda_to_true():
+    cfg = SimpleNamespace(
+        SYSTEM=SimpleNamespace(device="cuda"),
+        TRAIN=SimpleNamespace(execution={"hf": {}}),
+    )
+
+    assert get_hf_prefer_cuda(cfg, {}) is True
+
+
+def test_get_hf_prefer_cuda_maps_system_auto_to_true():
+    cfg = SimpleNamespace(
+        SYSTEM=SimpleNamespace(device="auto"),
+        TRAIN=SimpleNamespace(execution={"hf": {}}),
+    )
+
+    assert get_hf_prefer_cuda(cfg, {}) is True

@@ -19,16 +19,17 @@ import torch.nn as nn
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_params_by_kind,
-    get_hf_cuda_device_index,
     get_data_sampling,
-    get_xvars_infer_tokenizer_id,
-    get_xvars_infer_video_token_len,
+    get_hf_cuda_device_index,
+    get_hf_prefer_cuda,
     get_model_load,
     get_model_runtime_dtype,
     get_train_execution,
     get_vqa_feature_source,
     get_vqa_mm_hidden_size,
     get_vqa_xvars_feature_mode,
+    get_xvars_infer_tokenizer_id,
+    get_xvars_infer_video_token_len,
 )
 from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
@@ -856,7 +857,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         )
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        prefer_cuda = get_hf_prefer_cuda(config, hf_cfg)
         cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         adapter_path = get_model_load(config).get("checkpoint_path")
         projection_path = xvars_cfg.get("projection_path")
@@ -998,7 +999,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                         self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
                             weights_path=self.vision_weights_path,
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(self.config, hf_cfg),
                             start_frame=self.strict_sampling_cfg.get("start_frame"),
                             end_frame=self.strict_sampling_cfg.get("end_frame"),
                             input_fps=self.strict_sampling_cfg.get("input_fps"),
@@ -1008,7 +1009,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                     else:
                         self.raw_extractor = XVarsRawVideoFeatureExtractor(
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(self.config, hf_cfg),
                         )
                 if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
                     logger.info("USING STRICT XVARS EXTRACTOR")

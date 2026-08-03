@@ -307,9 +307,25 @@ predictions = myModel.infer(
 
 
 Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
-`opensportslib setup --vqa_qwen` for the Qwen backend. The Qwen backend
-supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+for the X-VARS backend. OpenSportsLib supports three VQA config paths:
+
+- `opensportslib/configs/vqa/xvars.yaml`
+  Original X-VARS / Video-ChatGPT path.
+- CLIP features + Qwen
+  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
+  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
+- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
+  Full end-to-end native QwenVL path.
+
+Use `opensportslib setup --vqa_qwen` for the CLIP+Qwen and native QwenVL
+paths. The CLIP+Qwen configs support `Qwen/Qwen2.5-7B-Instruct` and
+`Qwen/Qwen3.5-9B-Base`. The native config defaults to
+`Qwen/Qwen3-VL-8B-Instruct` and supports:
+
+- `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
+
+Switch models by editing `MODEL.components.llm_decoder.params.repo_id`.
 
 For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
 when available and falls back to raw-video CLIP extraction during `infer()`.

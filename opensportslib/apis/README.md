@@ -141,15 +141,25 @@ metrics = m.evaluate(
 ```
 
 Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
-`opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
-config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+for the X-VARS backend. OpenSportsLib supports three VQA options:
 
-For native end-to-end Qwen VL models, use:
-
-- `opensportslib/configs/vqa/qwen_vl_native.yaml`
-- `opensportslib/configs/vqa/qwen_vl_native_awq.yaml`
+- `opensportslib/configs/vqa/xvars.yaml`
+  Original X-VARS / Video-ChatGPT path.
+- CLIP features + Qwen
+  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
+  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
 - `opensportslib/configs/vqa/qwen3_vl_native.yaml`
+  Full end-to-end native QwenVL path.
+
+Use `opensportslib setup --vqa_qwen` for the CLIP+Qwen and native QwenVL
+paths. `qwen.yaml` and `qwen_lora.yaml` support
+`Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`. The single canonical
+QwenVL config is `qwen3_vl_native.yaml`; change
+`MODEL.components.llm_decoder.params.repo_id` there to switch supported QwenVL
+model IDs:
+
+- `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
 
 ### X-VARS Backends
 
@@ -195,9 +205,8 @@ The initial shared input contract is frame-based. Set
 
 Supported native model configs include:
 
-- `Qwen/Qwen2.5-VL-7B-Instruct`
-- `Qwen/Qwen2.5-VL-7B-Instruct-AWQ` for inference
 - `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
 
 The AWQ variant is treated as inference-only by the training backend and will
 raise a clear error if used for `qwen_vl_native_lora`.
