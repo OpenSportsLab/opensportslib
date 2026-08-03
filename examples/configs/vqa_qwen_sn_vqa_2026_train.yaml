@@ -1,0 +1,203 @@
+TASK: vqa
+VERSION: 2
+
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_vqa_qwen_sn_vqa_2026_train
+    work_dir: ./checkpoints_vqa_qwen_sn_vqa_2026_train
+  device: cuda
+  gpu:
+    count: 4
+    id: null
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    dataset_name: SN-VQA-2026
+    data_root: /home/vorajv/dataset/SN-VQA-2026
+    feature_index: ""
+    prediction_index: ""
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        annotation_path: /home/vorajv/dataset/SN-VQA-2026/osl-files/train_osl_qwen_native.json
+        source_path: /home/vorajv/dataset/SN-VQA-2026
+        dataloader:
+          batch_size: 1
+          shuffle: true
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+      valid:
+        annotation_path: /home/vorajv/dataset/SN-VQA-2026/osl-files/valid_osl_qwen_native.json
+        source_path: /home/vorajv/dataset/SN-VQA-2026
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+      test:
+        annotation_path: /home/vorajv/dataset/SN-VQA-2026/osl-files/test_osl_qwen_native.json
+        source_path: /home/vorajv/dataset/SN-VQA-2026
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+          mp_context: spawn
+          persistent_workers: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: mp4
+      sampling:
+        num_frames: 8
+      transform: {}
+      augmentations: {}
+      params: {}
+    question:
+      modality: text
+      representation: raw
+      source:
+        format: json
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  runtime:
+    dtype: fp16
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        name: qwen_vl_native
+      params:
+        feature_source: raw_video
+        native_vl:
+          visual_input_mode: frames
+          num_frames: 8
+          min_pixels: 50176
+          max_pixels: 401408
+      overrides: {}
+    llm_decoder:
+      kind: decoder
+      source:
+        provider: huggingface
+        name: Qwen/Qwen3-VL-8B-Instruct
+      params:
+        repo_id: Qwen/Qwen3-VL-8B-Instruct
+      overrides: {}
+  topology: []
+  metadata:
+    backend: qwen_vl_native_infer
+
+IO:
+  inputs:
+    video: video_encoder
+    question: llm_decoder
+  outputs:
+    answer_text: llm_decoder
+    explanation_text: llm_decoder
+
+TRAIN:
+  trainer:
+    type: vqa
+  epochs: 3
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: adamw_torch
+    lr: 0.0002
+    weight_decay: 0.001
+  scheduler:
+    type: constant
+  execution:
+    enabled: true
+    training_backend: qwen_vl_native_lora
+    feature_backend: xvars_clip
+    view_sampling_policy: random_train_deterministic_eval
+    acc_grad_iter: 4
+    log_interval: 1
+    dry_run: false
+    prompt:
+      style: detailed
+      system_prompt: You are a football video assistant. Answer the VQA question using the provided visual evidence.
+      include_priors: false
+    generation:
+      max_new_tokens: 128
+      temperature: 0.0
+    eval_profile:
+      metric_set: [exact_match, contains_match, token_f1]
+      aggregation: mean
+      exclusions: []
+    native_vl:
+      visual_input_mode: frames
+      num_frames: 8
+      min_pixels: 50176
+      max_pixels: 401408
+    hf:
+      tokenizer_id: ${MODEL.components.llm_decoder.params.repo_id}
+      prefer_cuda: true
+      local_files_only: false
+      device_map: null
+    sft:
+      per_device_train_batch_size: 1
+      per_device_eval_batch_size: 1
+      max_seq_length: 4096
+      max_grad_norm: 1.0
+      memory_cache_rows: 0
+      gradient_checkpointing: true
+      ddp_find_unused_parameters: false
+      ddp_broadcast_buffers: false
+      resume_optimizer_state: false
+      cache_tokenized_rows: false
+      disable_tqdm: false
+      save_strategy: epoch
+      evaluation_strategy: "no"
+      include_video_tokens: true
+      reference_mode: all
+      append_eos_token: true
+    lora:
+      r: 16
+      alpha: 32
+      dropout: 0.05
+      bias: none
+      prepare_kbit: false
+      target_modules: [mm_projector, upsample_features, up_proj, down_proj, gate_proj, k_proj, q_proj, v_proj, o_proj]
+      exclude_modules: '^base_lm\.model\.mm_projector$'
+    quantization:
+      enabled: false
+      load_in_4bit: true
+      bnb_4bit_quant_type: nf4
+      compute_dtype: float16
+      bnb_4bit_use_double_quant: true
+    checkpoint:
+      save_adapter: true
+      merge_and_save: false
+  selection:
+    monitor: loss
+    mode: min
+  checkpoint:
+    save_every: 1
+    save_best: true
