@@ -10,8 +10,7 @@ from opensportslib.apis import LocalizationModel
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = Path("/Users/giancos/git/VideoAnnotationTool/test_data")
-
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "outputs" / "h5_header_rule"
 METHOD_CONFIGS = {
     "distance": REPO_ROOT / "opensportslib/configs/localization/h5_header_distance.yaml",
     "distance_speed": REPO_ROOT / "opensportslib/configs/localization/h5_header_distance_speed.yaml",
