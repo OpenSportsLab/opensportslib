@@ -27,6 +27,8 @@ MODEL:
         provider: huggingface
         # Canonical end-to-end QwenVL config.
         # Swap this model ID if you want another supported QwenVL checkpoint.
+        # - Qwen/Qwen3-VL-8B-Instruct
+        # - Qwen/Qwen2.5-VL-7B-Instruct
         name: Qwen/Qwen3-VL-8B-Instruct
       params:
         # Supported examples:
