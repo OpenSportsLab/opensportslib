@@ -129,6 +129,8 @@ class H5TrackingReader:
         stride_ms: float | None = None,
         target_fps: float | None = None,
     ) -> np.ndarray:
+        if self.player_unique_timestamps.size == 0:
+            raise ValueError(f"Player H5 input has no timestamps: {self.player_path}")
         start = parse_utc(start_utc) if start_utc else self.player_unique_timestamps[0]
         end = parse_utc(end_utc) if end_utc else self.player_unique_timestamps[-1]
 
