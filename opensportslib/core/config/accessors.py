@@ -68,6 +68,20 @@ def get_loader_backend(cfg: Any) -> str:
     return str(backend).lower()
 
 
+def set_loader_backend(cfg: Any, backend: str) -> None:
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    runtime = _ensure_child(common, "runtime")
+    if isinstance(runtime, dict):
+        runtime["loader_backend"] = str(backend).lower()
+    else:
+        setattr(runtime, "loader_backend", str(backend).lower())
+
+
 def get_system_path(cfg: Any, key: str, default: str | None = None) -> str | None:
     system = _as_dict(getattr(cfg, "SYSTEM", None))
     paths = _as_dict(system.get("paths"))

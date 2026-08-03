@@ -188,6 +188,10 @@ https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2
 - **2024 Ball Action Spotting (12 classes)**  
   https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e 
 
+These localization HF repos can now be loaded with the same model ID on both
+GPU and CPU. OpenSportsLib picks the runtime backend automatically: `dali` when
+CUDA/NVIDIA is available, otherwise `opencv`.
+
 ### 3. VQA
 
 - **X-VARS LoRA on OSL-XFoul**  
