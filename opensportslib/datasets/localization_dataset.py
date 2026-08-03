@@ -408,6 +408,12 @@ class LocalizationDataset(Dataset):
                 overlap_len=cfg.overlap_len,
                 crop_dim=self.data_cfg.crop_dim,
             )
+        elif dataset_type == "H5OSLJsonSpotting":
+            from opensportslib.models.base.rule_based import H5OSLJsonSpottingDataset
+            dataset = H5OSLJsonSpottingDataset(
+                annotation_path=annotation_path,
+                source_path=source_path,
+            )
         else:
             dataset = None
         return dataset
@@ -428,6 +434,8 @@ class LocalizationDataset(Dataset):
             random.seed(id + 100 * 100)
         if dali:
             return dataset
+        if getattr(dataset, "rule_based_no_dataloader", False):
+            return None
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=cfg.batch_size,

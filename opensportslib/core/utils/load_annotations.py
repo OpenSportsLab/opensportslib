@@ -66,7 +66,8 @@ def load_annotations(
     # Group by action id (without view suffix)
     grouped = defaultdict(lambda: {
         "video_paths": [],
-        "label": None
+        "label": None,
+        "inputs": [],
     })
 
     for item in data["data"]:
@@ -101,9 +102,14 @@ def load_annotations(
             continue
 
         grouped[group_id]["video_paths"].extend(clips)
+        grouped[group_id]["inputs"].extend(
+            dict(inp) for inp in item.get("inputs", [])
+            if inp.get("type") == input_type and "path" in inp
+        )
         if label_idx is not None:
             grouped[group_id]["label"] = label_idx
         grouped[group_id]["id"] = group_id
+        grouped[group_id].setdefault("metadata", dict(item.get("metadata", {}) or {}))
 
     return list(grouped.values()), label_map
 
@@ -587,5 +593,7 @@ def whether_infer_split(cfg):
             return True
         else:
             return False
+    elif split_type == "H5OSLJsonSpotting":
+        return bool(annotation_path and annotation_path.endswith(".json"))
     else:
         raise ValueError(f"Unknown dataset type {split_type}")

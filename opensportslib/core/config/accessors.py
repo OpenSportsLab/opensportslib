@@ -6,10 +6,17 @@ import os
 from types import SimpleNamespace
 from typing import Any
 
+try:
+    from omegaconf import OmegaConf
+except Exception:  # pragma: no cover - omegaconf is a runtime dependency
+    OmegaConf = None
+
 
 def _to_plain(obj: Any) -> Any:
     if obj is None:
         return None
+    if OmegaConf is not None and OmegaConf.is_config(obj):
+        return OmegaConf.to_container(obj, resolve=True)
     if isinstance(obj, dict):
         return {k: _to_plain(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -24,6 +31,9 @@ def _to_plain(obj: Any) -> Any:
 def _as_dict(obj: Any) -> dict[str, Any]:
     if obj is None:
         return {}
+    if OmegaConf is not None and OmegaConf.is_config(obj):
+        plain = OmegaConf.to_container(obj, resolve=True)
+        return plain if isinstance(plain, dict) else {}
     if isinstance(obj, dict):
         return {k: _to_plain(v) for k, v in obj.items()}
     if hasattr(obj, "__dict__"):

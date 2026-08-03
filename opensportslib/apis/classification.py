@@ -17,6 +17,17 @@ from opensportslib.core.config.accessors import (
 )
 from opensportslib.core.utils.config import expand
 
+
+def _is_tracking_graph_modality(modality):
+    return str(modality).lower() in {
+        "tracking",
+        "tracking_parquet",
+        "tracking_h5",
+        "player_centroids_h5",
+        "player_joints_h5",
+    }
+
+
 class ClassificationModel(BaseTaskModel):
     """Top-level task wrapper for classification."""
 
@@ -100,7 +111,7 @@ class ClassificationModel(BaseTaskModel):
         trainer.model = model
 
         modality = get_data_modality(config)
-        use_tracking_collate = modality in {"tracking", "tracking_parquet"}
+        use_tracking_collate = _is_tracking_graph_modality(modality)
         logging.info(
             "Worker setup | mode=%s | modality=%s | tracking_collate=%s",
             mode,

@@ -69,6 +69,16 @@ def _is_frames_npy_modality(config, modality=None):
     representation = str(input_cfg.get("representation", "")).lower()
     return source_format == "npy" or representation == "frames"
 
+
+def _is_tracking_graph_modality(modality):
+    return str(modality).lower() in {
+        "tracking",
+        "tracking_parquet",
+        "tracking_h5",
+        "player_centroids_h5",
+        "player_joints_h5",
+    }
+
 # -------------------------------------------------------------------
 # base classification trainer
 # -------------------------------------------------------------------
@@ -815,7 +825,7 @@ class Trainer_Classification:
 
         is_ddp = world_size > 1
         modality = get_data_modality(self.config)
-        is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+        is_tracking_modality = _is_tracking_graph_modality(modality)
         is_frames_modality = _is_frames_npy_modality(self.config, modality)
         seed = get_system_seed(self.config)
 
@@ -1128,7 +1138,7 @@ class Trainer_Classification:
                 test_sampler = None
 
             modality = get_data_modality(self.config)
-            is_tracking_modality = modality in {"tracking", "tracking_parquet"}
+            is_tracking_modality = _is_tracking_graph_modality(modality)
             is_frames_modality = _is_frames_npy_modality(self.config, modality)
             collate_fn = tracking_collate_fn if is_tracking_modality else None
             test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
