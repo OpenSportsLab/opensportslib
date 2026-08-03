@@ -188,6 +188,17 @@ https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2
 - **2024 Ball Action Spotting (12 classes)**  
   https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e 
 
+### 3. VQA
+
+- **X-VARS LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora
+
+- **Qwen2.5-VL-7B LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora
+
+- **Qwen3-VL-8B LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora
+
 Usage:
 ```bash
 ### Load weights from HF ###
@@ -198,6 +209,12 @@ myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")
 #### For Localization ####
 weights = "OpenSportsLab/OSL-loc-snbas-2023-e2e" # SNBAS - 2 classes (E2E spot)
 weights = "OpenSportsLab/OSL-loc-snbas-2025-e2e" # SNBAS - 12 classes (E2E spot)
+myModel.load_weights(weights=weights)
+
+#### For VQA ####
+weights = "OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora"
+weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora"
+weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora"
 myModel.load_weights(weights=weights)
 ```
 
