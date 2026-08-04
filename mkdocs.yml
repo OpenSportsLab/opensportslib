@@ -47,6 +47,7 @@ nav:
   - Tools:
       - Dataset Conversion: tools/dataset-conversion.md
       - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
+      - Hugging Face Model Upload: tools/hf-model-upload.md
 
   - API Reference:
       - API: api/api.md

@@ -68,6 +68,20 @@ def get_loader_backend(cfg: Any) -> str:
     return str(backend).lower()
 
 
+def set_loader_backend(cfg: Any, backend: str) -> None:
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    runtime = _ensure_child(common, "runtime")
+    if isinstance(runtime, dict):
+        runtime["loader_backend"] = str(backend).lower()
+    else:
+        setattr(runtime, "loader_backend", str(backend).lower())
+
+
 def get_system_path(cfg: Any, key: str, default: str | None = None) -> str | None:
     system = _as_dict(getattr(cfg, "SYSTEM", None))
     paths = _as_dict(system.get("paths"))
@@ -351,6 +365,30 @@ def get_train_execution(cfg: Any) -> dict[str, Any]:
     return _as_dict(train.get("execution"))
 
 
+def get_hf_prefer_cuda(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> bool:
+    """Resolve whether HF-backed runtimes should prefer CUDA.
+
+    Precedence:
+    1. explicit TRAIN.execution.hf.prefer_cuda
+    2. SYSTEM.device mapping:
+       - cpu -> False
+       - cuda/gpu -> True
+       - auto/unset -> True
+    """
+    hf_cfg = _as_dict(hf_cfg) if hf_cfg is not None else _as_dict(get_train_execution(cfg).get("hf"))
+    explicit = hf_cfg.get("prefer_cuda")
+    if explicit is not None:
+        return bool(explicit)
+
+    system = _as_dict(getattr(cfg, "SYSTEM", None))
+    mode = str(system.get("device", "auto")).strip().lower()
+    if mode == "cpu":
+        return False
+    if mode in {"cuda", "gpu"}:
+        return True
+    return True
+
+
 def get_hf_cuda_device_index(cfg: Any, hf_cfg: dict[str, Any] | None = None) -> int | None:
     """Resolve the CUDA device index used by HuggingFace runtime helpers."""
     if os.environ.get("CUDA_VISIBLE_DEVICES"):
@@ -464,6 +502,10 @@ def get_vqa_backend(cfg: Any) -> str:
 
 def is_xvars_videochatgpt_backend(cfg: Any) -> bool:
     return get_vqa_backend(cfg) == "xvars_videochatgpt"
+
+
+def is_qwen_vl_native_backend(cfg: Any) -> bool:
+    return get_vqa_backend(cfg) == "qwen_vl_native_infer"
 
 
 def normalize_xvars_feature_mode(mode: Any, default: str = "strict_xvars") -> str:
@@ -610,6 +652,50 @@ def get_vqa_mm_hidden_size(cfg: Any, default: int = 1024) -> int:
     if xvars_cfg.get("mm_hidden_size") is not None:
         return int(xvars_cfg["mm_hidden_size"])
     return int(default)
+
+
+def get_vqa_native_visual_cfg(cfg: Any) -> dict[str, Any]:
+    execution = get_train_execution(cfg)
+    native_cfg = _as_dict(execution.get("native_vl"))
+    if native_cfg:
+        return native_cfg
+
+    encoder_params = get_component_params_by_kind(cfg, "encoder")
+    return _as_dict(encoder_params.get("native_vl"))
+
+
+def get_vqa_native_visual_input_mode(cfg: Any, default: str = "frames") -> str:
+    native_cfg = get_vqa_native_visual_cfg(cfg)
+    mode = str(native_cfg.get("visual_input_mode", default) or default).strip().lower()
+    if mode not in {"frames", "video_with_frames_fallback"}:
+        raise ValueError(
+            f"Unsupported native VL visual_input_mode '{mode}'. "
+            "Expected 'frames' or 'video_with_frames_fallback'."
+        )
+    return mode
+
+
+def get_vqa_native_num_frames(cfg: Any, default: int = 8) -> int:
+    native_cfg = get_vqa_native_visual_cfg(cfg)
+    if native_cfg.get("num_frames") is not None:
+        return max(1, int(native_cfg["num_frames"]))
+
+    sampling = get_data_sampling(cfg)
+    if sampling.get("num_frames") is not None:
+        return max(1, int(sampling["num_frames"]))
+    return int(default)
+
+
+def get_vqa_native_min_pixels(cfg: Any) -> int | None:
+    native_cfg = get_vqa_native_visual_cfg(cfg)
+    value = native_cfg.get("min_pixels")
+    return int(value) if value is not None else None
+
+
+def get_vqa_native_max_pixels(cfg: Any) -> int | None:
+    native_cfg = get_vqa_native_visual_cfg(cfg)
+    value = native_cfg.get("max_pixels")
+    return int(value) if value is not None else None
 
 
 def get_model_runtime_dtype(cfg: Any, default: str = "fp32") -> str:

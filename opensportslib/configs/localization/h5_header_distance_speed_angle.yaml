@@ -11,14 +11,14 @@ SYSTEM:
 DATA:
   common:
     dataset_name: h5_headers
-    data_root: /Users/giancos/git/VideoAnnotationTool/test_data
+    data_root: /home/vorajv/dataset/silvio-h5/
     classes:
       - header
     splits:
       test:
         type: H5OSLJsonSpotting
-        annotation_path: /Users/giancos/git/VideoAnnotationTool/test_data/h5.json
-        source_path: /Users/giancos/git/VideoAnnotationTool/test_data
+        annotation_path: /home/vorajv/dataset/silvio-h5/h5_tiny.json
+        source_path: /home/vorajv/dataset/silvio-h5/
         dataloader:
           batch_size: 1
           shuffle: false

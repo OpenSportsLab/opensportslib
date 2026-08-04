@@ -19,16 +19,17 @@ import torch.nn as nn
 from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_params_by_kind,
-    get_hf_cuda_device_index,
     get_data_sampling,
-    get_xvars_infer_tokenizer_id,
-    get_xvars_infer_video_token_len,
+    get_hf_cuda_device_index,
+    get_hf_prefer_cuda,
     get_model_load,
     get_model_runtime_dtype,
     get_train_execution,
     get_vqa_feature_source,
     get_vqa_mm_hidden_size,
     get_vqa_xvars_feature_mode,
+    get_xvars_infer_tokenizer_id,
+    get_xvars_infer_video_token_len,
 )
 from opensportslib.core.utils.hf_runtime import (
     VIDEO_SPECIAL_TOKENS,
@@ -222,7 +223,20 @@ def resolve_xvars_raw_num_frames(config, xvars_cfg: dict[str, Any] | None = None
 
 
 def resolve_xvars_strict_sampling_cfg(config) -> dict[str, Any]:
-    return dict(get_data_sampling(config))
+    sampling = dict(get_data_sampling(config))
+    if sampling:
+        return sampling
+
+    data = getattr(config, "DATA", None)
+    common = getattr(data, "common", None) if data is not None else None
+    common_inputs = getattr(common, "inputs", None) if common is not None else None
+    video = getattr(common_inputs, "video", None) if common_inputs is not None else None
+    nested_sampling = getattr(video, "sampling", None) if video is not None else None
+    if isinstance(nested_sampling, dict):
+        return dict(nested_sampling)
+    if hasattr(nested_sampling, "__dict__"):
+        return dict(vars(nested_sampling))
+    return {}
 
 
 def _runtime_torch_dtype(config) -> torch.dtype:
@@ -571,14 +585,35 @@ class XVarsRawVideoFeatureExtractor:
         import numpy as np
         from decord import VideoReader, cpu
 
-        vr = VideoReader(video_path, ctx=cpu(0))
-        total = len(vr)
-        take = min(total, int(num_frames))
+        if str(video_path).lower().endswith(".npy"):
+            arr = np.load(video_path)
+            if arr.ndim != 4:
+                raise ValueError(f"Expected frames_npy clip with shape (T, H, W, C), got {tuple(arr.shape)}")
+            if np.issubdtype(arr.dtype, np.floating):
+                max_value = float(arr.max()) if arr.size else 0.0
+                scale = 255.0 if max_value <= 1.0 else 1.0
+                arr = np.clip(arr * scale, 0, 255).astype(np.uint8)
+            else:
+                arr = np.clip(arr, 0, 255).astype(np.uint8)
+            total = int(arr.shape[0])
+            take = min(total, int(num_frames))
+            if take <= 0:
+                raise ValueError(f"No frames found in npy clip: {video_path}")
+            seg = float(total - 1) / take
+            idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
+            arr = arr[idx]
+        else:
+            vr = VideoReader(video_path, ctx=cpu(0))
+            total = len(vr)
+            take = min(total, int(num_frames))
+            if take <= 0:
+                raise ValueError(f"No frames found in video: {video_path}")
+            seg = float(total - 1) / take
+            idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
+            arr = vr.get_batch(idx).asnumpy()
+
         if take <= 0:
             raise ValueError(f"No frames found in video: {video_path}")
-        seg = float(total - 1) / take
-        idx = [int((round(seg * i) + round(seg * (i + 1))) // 2) for i in range(take)]
-        arr = vr.get_batch(idx).asnumpy()
         if arr.shape[-3] != 224 or arr.shape[-2] != 224:
             ten = torch.from_numpy(arr).permute(0, 3, 1, 2).float()
             ten = torch.nn.functional.interpolate(ten, size=(224, 224))
@@ -731,8 +766,15 @@ class XVarsStrictRawVideoFeatureExtractor:
             return frames
         input_fps = self.input_fps if input_fps is None else float(input_fps)
         target_fps = self.target_fps if target_fps is None else float(target_fps)
-        factor = input_fps / target_fps if target_fps else 1.0
-        sampled = [frame for index, frame in enumerate(window) if index % factor < 1]
+        if not target_fps or input_fps <= 0 or target_fps >= input_fps:
+            return window
+        step = max(int(round(input_fps / target_fps)), 1)
+        sampled = list(window[::step])
+        if window[-1] not in sampled:
+            if sampled:
+                sampled[-1] = window[-1]
+            else:
+                sampled.append(window[-1])
         return sampled or window
 
     def spatio_temporal_tokens(self, frame_features: torch.Tensor) -> torch.Tensor:
@@ -815,7 +857,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         )
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        prefer_cuda = get_hf_prefer_cuda(config, hf_cfg)
         cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         adapter_path = get_model_load(config).get("checkpoint_path")
         projection_path = xvars_cfg.get("projection_path")
@@ -957,7 +999,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                         self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
                             weights_path=self.vision_weights_path,
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(self.config, hf_cfg),
                             start_frame=self.strict_sampling_cfg.get("start_frame"),
                             end_frame=self.strict_sampling_cfg.get("end_frame"),
                             input_fps=self.strict_sampling_cfg.get("input_fps"),
@@ -967,7 +1009,7 @@ class XVarsVideoChatGPTModel(nn.Module):
                     else:
                         self.raw_extractor = XVarsRawVideoFeatureExtractor(
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(self.config, hf_cfg),
                         )
                 if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
                     logger.info("USING STRICT XVARS EXTRACTOR")

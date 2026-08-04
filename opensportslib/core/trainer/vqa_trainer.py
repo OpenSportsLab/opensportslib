@@ -2,32 +2,40 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import json
 import logging
 import os
 import inspect
+import re
 import time
+import hashlib
+import shutil
 from typing import Any
 
 import torch
 from tqdm.auto import tqdm
 
 from opensportslib.core.config.accessors import (
-    get_xvars_train_model_id,
-    get_xvars_train_tokenizer_id,
-    get_xvars_train_video_token_len,
     get_hf_cuda_device_index,
-    is_xvars_videochatgpt_backend,
+    get_hf_prefer_cuda,
     get_model_runtime_dtype,
     get_split_dataloader_cfg,
     get_system_path,
     get_train_epochs,
     get_train_execution,
     get_train_optimizer,
+    get_vqa_backend,
+    get_vqa_decoder_model_id,
     get_vqa_eval_profile_cfg,
     get_vqa_generation_cfg,
     get_vqa_mm_hidden_size,
+    get_vqa_native_visual_cfg,
     get_vqa_prompt_video_token_len,
+    get_xvars_train_model_id,
+    get_xvars_train_tokenizer_id,
+    get_xvars_train_video_token_len,
+    is_xvars_videochatgpt_backend,
 )
 from opensportslib.core.utils.config import save_config
 from opensportslib.core.utils.hf_runtime import (
@@ -37,6 +45,13 @@ from opensportslib.core.utils.hf_runtime import (
     require_optional_package,
 )
 from opensportslib.metrics.vqa_metric import compute_vqa_metrics
+from opensportslib.models.base.qwen_xvars import QWEN_MM_PROJECTOR_FILE, QwenXVarsCausalLM
+from opensportslib.models.base.qwen_vl_native import (
+    NativeQwenVLDataCollator,
+    NativeQwenVLInvalidRowError,
+    NativeQwenVLTrainer,
+    QwenVLNativeModel,
+)
 from opensportslib.models.base.video_chatgpt_compat import load_videochatgpt_compatible_causal_lm
 from opensportslib.models.base.xvars_videochatgpt import (
     DEFAULT_XVARS_TARGET_MODULES,
@@ -54,6 +69,39 @@ def _as_dict(obj: Any) -> dict[str, Any]:
     if hasattr(obj, "__dict__"):
         return {k: v for k, v in vars(obj).items()}
     return {}
+
+
+def _normalize_classification_answer(
+    answer_text: str,
+    allowed_labels: list[str] | None,
+    ground_truth_label: str | None = None,
+) -> dict[str, Any]:
+    labels = [str(label).strip() for label in (allowed_labels or []) if str(label).strip()]
+    if not labels:
+        return {}
+
+    raw = str(answer_text or "")
+    trimmed = raw.strip()
+    cleaned = trimmed.strip(" \t\r\n.,;:!?\"'`()[]{}")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().upper()
+    exact_map = {label.upper(): label for label in labels}
+    predicted = exact_map.get(cleaned)
+
+    if predicted is None and cleaned:
+        simplified = re.sub(r"[^A-Z0-9]+", "", cleaned)
+        alias_map = {
+            re.sub(r"[^A-Z0-9]+", "", label.upper()): label
+            for label in labels
+        }
+        predicted = alias_map.get(simplified)
+
+    truth = str(ground_truth_label or "").strip() or None
+    return {
+        "predicted_label": predicted,
+        "ground_truth_label": truth,
+        "is_valid_label": predicted is not None,
+        "is_correct": bool(predicted == truth) if truth else None,
+    }
 
 
 def _resolve_sft_per_device_batch_sizes(config, sft_cfg: dict[str, Any]) -> tuple[int, int]:
@@ -87,6 +135,115 @@ def _resolve_training_precision_flags(config, sft_cfg: dict[str, Any]) -> tuple[
     if dtype == "fp16":
         return True, False
     return bool(sft_cfg.get("fp16", False)), bool(sft_cfg.get("bf16", False))
+
+
+def _normalize_eval_strategy(value: Any, default: str = "epoch") -> str:
+    if value is None:
+        return str(default)
+    if isinstance(value, bool):
+        return "steps" if value else "no"
+    normalized = str(value).strip().lower()
+    if normalized in {"false", "0"}:
+        return "no"
+    if normalized in {"true", "1"}:
+        return "steps"
+    if normalized not in {"no", "steps", "epoch"}:
+        raise ValueError(
+            "Invalid TRAIN.execution.sft.evaluation_strategy value "
+            f"{value!r}. Expected one of: 'no', 'steps', 'epoch'."
+        )
+    return normalized
+
+
+def _save_training_artifacts(config, output_dir: str, metadata: dict[str, Any], *, marker_text: str) -> str:
+    save_config(config, os.path.join(output_dir, "config.yaml"))
+    with open(os.path.join(output_dir, "training_metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+    marker = os.path.join(output_dir, "adapter_model")
+    os.makedirs(marker, exist_ok=True)
+    with open(os.path.join(marker, "README.txt"), "w", encoding="utf-8") as f:
+        f.write(marker_text)
+    return output_dir
+
+
+def _prepare_hf_resume_checkpoint(
+    resume_from_checkpoint: str | None,
+    args,
+    output_dir: str,
+    *,
+    resume_optimizer_state: bool = True,
+) -> str | None:
+    """Create a lightweight resume checkpoint copy with current TrainingArguments."""
+
+    if not resume_from_checkpoint:
+        return None
+    source = os.path.abspath(resume_from_checkpoint)
+    if not os.path.isdir(source):
+        raise FileNotFoundError(f"Resume checkpoint directory was not found: {resume_from_checkpoint}")
+
+    resume_root = os.path.join(output_dir, "_resume_sanitized")
+    target = os.path.join(resume_root, os.path.basename(source.rstrip(os.sep)))
+    os.makedirs(resume_root, exist_ok=True)
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+    os.makedirs(target, exist_ok=True)
+
+    skip_files = {"training_args.bin"}
+    if not resume_optimizer_state:
+        skip_files.update({"optimizer.pt", "scheduler.pt", "scaler.pt"})
+
+    for name in os.listdir(source):
+        if name in skip_files:
+            continue
+        src = os.path.join(source, name)
+        dst = os.path.join(target, name)
+        if os.path.exists(dst):
+            continue
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, symlinks=True)
+            continue
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
+
+    torch.save(args, os.path.join(target, "training_args.bin"))
+    logging.info(
+        "Prepared sanitized HF resume checkpoint | source=%s | target=%s | resume_optimizer_state=%s",
+        source,
+        target,
+        resume_optimizer_state,
+    )
+    return target
+
+
+def _unwrap_mm_projector(model):
+    seen = set()
+    queue = [model]
+    while queue:
+        current = queue.pop(0)
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        projector = getattr(current, "mm_projector", None)
+        if projector is not None:
+            return projector
+        for attr in ("model", "base_model", "base_lm", "module"):
+            child = getattr(current, attr, None)
+            if child is not None:
+                queue.append(child)
+    return None
+
+
+def _save_qwen_mm_projector(output_dir: str, model) -> None:
+    projector = _unwrap_mm_projector(model)
+    if projector is None:
+        logging.warning("Could not locate a Qwen mm_projector to save for adapter checkpoint: %s", output_dir)
+        return
+    torch.save(
+        {"mm_projector": projector.state_dict()},
+        os.path.join(output_dir, QWEN_MM_PROJECTOR_FILE),
+    )
 
 
 def _maybe_log_vqa_predictions(predictions: dict[str, Any], *, use_wandb: bool) -> None:
@@ -316,6 +473,273 @@ class VQAXVarsVideoChatGPTSFTDataset:
         return {"input_ids": input_ids, "attention_mask": attn, "labels": labels}
 
 
+class VQANativeQwenVLSFTDataset:
+    """Lazy tokenized multimodal SFT dataset for native Qwen VL backends."""
+
+    def __init__(
+        self,
+        dataset,
+        *,
+        model: QwenVLNativeModel,
+        prompt_cfg: dict[str, Any],
+        sft_cfg: dict[str, Any],
+        cache_dir: str | None = None,
+        split_name: str = "train",
+        invalid_row_report_path: str | None = None,
+        fail_on_invalid: bool = False,
+        rank: int = 0,
+    ):
+        self.rows = []
+        self.entries = []
+        self._memory_cache = OrderedDict()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._materialized = 0
+        self._invalid_rows: list[dict[str, Any]] = []
+        self._invalid_row_keys: set[tuple[str, int]] = set()
+        self.model = model
+        self.prompt_cfg = dict(prompt_cfg or {})
+        self.sft_cfg = dict(sft_cfg or {})
+        self.cache_dir = str(cache_dir).strip() if cache_dir else ""
+        self.split_name = str(split_name or "train")
+        self.invalid_row_report_path = str(invalid_row_report_path or "").strip()
+        self.fail_on_invalid = bool(fail_on_invalid)
+        self.rank = int(rank)
+        self.memory_cache_rows = max(0, int(self.sft_cfg.get("memory_cache_rows", 0) or 0))
+        max_seq_length = int(sft_cfg.get("max_seq_length", 1024))
+        disable_tqdm = bool(sft_cfg.get("disable_tqdm", True))
+        self.max_seq_length = max_seq_length
+        if self.cache_dir:
+            os.makedirs(self.cache_dir, exist_ok=True)
+        try:
+            total = len(dataset)
+        except Exception:
+            total = None
+        logging.info(
+            "Starting native Qwen VL SFT manifest build | split=%s | source_samples=%s | max_seq_length=%s | "
+            "disable_tqdm=%s | cache_dir=%s",
+            self.split_name,
+            total if total is not None else "unknown",
+            max_seq_length,
+            disable_tqdm,
+            self.cache_dir or "disabled",
+        )
+        visual_samples = 0
+        question_answer_pairs = 0
+        iterator = tqdm(
+            dataset,
+            total=total,
+            desc="Qwen VL SFT manifest",
+            unit="sample",
+            disable=disable_tqdm,
+            leave=False,
+        )
+        for sample in iterator:
+            if not disable_tqdm:
+                iterator.set_postfix_str(f"id={sample.get('id')}")
+            refs = sample.get("references") or []
+            if not refs:
+                continue
+            if not (sample.get("video_path") or sample.get("frame_paths") or sample.get("video_frames")):
+                continue
+            visual_samples += 1
+            references = refs if str(sft_cfg.get("reference_mode", "all")).lower() == "all" else refs[:1]
+            for reference_idx, reference in enumerate(references):
+                answer_text = str(reference).strip()
+                if not answer_text:
+                    continue
+                question_answer_pairs += 1
+                self.entries.append(
+                    {
+                        "sample": sample,
+                        "answer_text": answer_text,
+                        "reference_index": int(reference_idx),
+                        "cache_path": self._cache_path(sample, answer_text, reference_idx),
+                    }
+                )
+        logging.info(
+            "Finished native Qwen VL SFT manifest build | split=%s | source_samples=%s | usable_visual_samples=%s | "
+            "question_answer_pairs=%s | tokenized_rows=%s | cache_dir=%s",
+            self.split_name,
+            total if total is not None else "unknown",
+            visual_samples,
+            question_answer_pairs,
+            len(self.entries),
+            self.cache_dir or "disabled",
+        )
+
+    def __len__(self):
+        return len(self.entries)
+
+    def __getitem__(self, idx):
+        total = len(self.entries)
+        for offset in range(total):
+            current_idx = (idx + offset) % total
+            if current_idx in self._memory_cache:
+                row = self._memory_cache.pop(current_idx)
+                self._memory_cache[current_idx] = row
+                return row
+
+            entry = self.entries[current_idx]
+            cache_path = entry.get("cache_path") or ""
+            if cache_path and os.path.isfile(cache_path):
+                row = torch.load(cache_path, map_location="cpu", weights_only=False)
+                self._cache_hits += 1
+                self._remember_row(current_idx, row)
+                return row
+
+            sample = entry["sample"]
+            try:
+                try:
+                    row = self.model.build_training_inputs(
+                        sample,
+                        prompt_cfg=self.prompt_cfg,
+                        answer_text=entry["answer_text"],
+                        max_seq_length=self.max_seq_length,
+                        reference_index=int(entry.get("reference_index", 0)),
+                    )
+                except TypeError as exc:
+                    if "reference_index" not in str(exc):
+                        raise
+                    row = self.model.build_training_inputs(
+                        sample,
+                        prompt_cfg=self.prompt_cfg,
+                        answer_text=entry["answer_text"],
+                        max_seq_length=self.max_seq_length,
+                    )
+            except NativeQwenVLInvalidRowError as exc:
+                invalid_record = self._record_invalid_row(sample, entry, exc)
+                if self.fail_on_invalid:
+                    raise RuntimeError(
+                        "Invalid native Qwen VL training row encountered before backward/allreduce | "
+                        f"rank={self.rank} | split={self.split_name} | id={invalid_record.get('sample_id')} | "
+                        f"reference_index={invalid_record.get('reference_index')} | reason={invalid_record.get('reason')}"
+                    ) from exc
+                continue
+
+            row["id"] = str(sample.get("id", ""))
+            row["question"] = str(sample.get("question", ""))
+            row["reference_index"] = int(entry.get("reference_index", 0))
+
+            if cache_path:
+                tmp_path = f"{cache_path}.tmp"
+                torch.save(row, tmp_path)
+                os.replace(tmp_path, cache_path)
+            self._cache_misses += 1
+            self._materialized += 1
+            if self._materialized <= 3 or self._materialized % 100 == 0:
+                logging.info(
+                    "Materialized native Qwen VL SFT row | split=%s | built=%s/%s | cache_hits=%s | cache_misses=%s | id=%s",
+                    self.split_name,
+                    self._materialized,
+                    len(self.entries),
+                    self._cache_hits,
+                    self._cache_misses,
+                    row.get("id", ""),
+                )
+            self._remember_row(current_idx, row)
+            return row
+        raise ValueError(f"No valid native Qwen VL rows remained for split '{self.split_name}'.")
+
+    def _remember_row(self, idx: int, row: dict[str, Any]) -> None:
+        if self.memory_cache_rows <= 0:
+            return
+        self._memory_cache[idx] = row
+        self._memory_cache.move_to_end(idx)
+        while len(self._memory_cache) > self.memory_cache_rows:
+            self._memory_cache.popitem(last=False)
+
+    def _record_invalid_row(
+        self,
+        sample: dict[str, Any],
+        entry: dict[str, Any],
+        exc: NativeQwenVLInvalidRowError,
+    ) -> dict[str, Any]:
+        sample_id = str(sample.get("id", ""))
+        reference_index = int(entry.get("reference_index", 0))
+        key = (sample_id, reference_index)
+        context = dict(getattr(exc, "context", {}) or {})
+        record = {
+            "split": self.split_name,
+            "rank": self.rank,
+            "sample_id": sample_id,
+            "question": str(sample.get("question", "")),
+            "reference_index": reference_index,
+            "reason": str(exc),
+            **context,
+        }
+        if key not in self._invalid_row_keys:
+            self._invalid_row_keys.add(key)
+            self._invalid_rows.append(record)
+            logging.warning(
+                "Skipping invalid native Qwen VL row | split=%s | rank=%s | id=%s | reference_index=%s | reason=%s",
+                self.split_name,
+                self.rank,
+                sample_id,
+                reference_index,
+                record["reason"],
+            )
+            self._write_invalid_row_report()
+        return record
+
+    def _write_invalid_row_report(self) -> None:
+        if not self.invalid_row_report_path:
+            return
+        os.makedirs(os.path.dirname(self.invalid_row_report_path), exist_ok=True)
+        with open(self.invalid_row_report_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "kind": "native_qwen_vl_invalid_rows",
+                    "split": self.split_name,
+                    "count": len(self._invalid_rows),
+                    "rows": self._invalid_rows,
+                },
+                f,
+                indent=2,
+                ensure_ascii=True,
+            )
+
+    @property
+    def invalid_row_count(self) -> int:
+        return len(self._invalid_rows)
+
+    def _cache_path(self, sample: dict[str, Any], answer_text: str, reference_idx: int) -> str:
+        if not self.cache_dir:
+            return ""
+        payload = {
+            "split": self.split_name,
+            "sample_id": str(sample.get("id", "")),
+            "question": str(sample.get("question", "")),
+            "answer_text": str(answer_text),
+            "reference_index": int(reference_idx),
+            "video_path": self._file_fingerprint(sample.get("video_path")),
+            "frame_paths": [self._file_fingerprint(path) for path in list(sample.get("frame_paths") or [])],
+            "frame_count": len(list(sample.get("video_frames") or [])),
+            "prompt_cfg": self.prompt_cfg,
+            "max_seq_length": self.max_seq_length,
+            "model_id": str(getattr(self.model, "model_id", "")),
+            "visual_input_mode": str(getattr(self.model, "visual_input_mode", "")),
+            "num_frames": int(getattr(self.model, "num_frames", 0) or 0),
+        }
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        return os.path.join(self.cache_dir, f"{digest}.pt")
+
+    @staticmethod
+    def _file_fingerprint(path: Any) -> dict[str, Any]:
+        raw = str(path or "").strip()
+        if not raw:
+            return {"path": "", "exists": False}
+        info = {"path": raw, "exists": os.path.exists(raw)}
+        if info["exists"]:
+            try:
+                stat = os.stat(raw)
+                info["size"] = int(stat.st_size)
+                info["mtime_ns"] = int(stat.st_mtime_ns)
+            except OSError:
+                pass
+        return info
+
+
 def _score_xvars_generated_answers(
     answers: list[str],
     *,
@@ -468,7 +892,15 @@ class VQAXVarsVideoChatGPTLoraTrainer:
     def __init__(self, config):
         self.config = config
 
-    def train(self, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
+    def train(
+        self,
+        train_data,
+        valid_data=None,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+        use_wandb: bool = False,
+    ) -> str:
         execution = get_train_execution(self.config)
         prompt_cfg = _as_dict(execution.get("prompt"))
         sft_cfg = _as_dict(execution.get("sft"))
@@ -521,7 +953,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         cuda_device_index = get_hf_cuda_device_index(self.config, hf_cfg)
         if bnb_config is not None:
             model_kwargs["quantization_config"] = bnb_config
-            if bool(hf_cfg.get("prefer_cuda", True)) and torch.cuda.is_available():
+            if get_hf_prefer_cuda(self.config, hf_cfg) and torch.cuda.is_available():
                 if cuda_device_index is not None:
                     torch.cuda.set_device(cuda_device_index)
                     model_kwargs["device_map"] = {"": cuda_device_index}
@@ -602,7 +1034,7 @@ class VQAXVarsVideoChatGPTLoraTrainer:
             "report_to": ["wandb"] if use_wandb else [],
             "remove_unused_columns": False,
             "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
-            "use_cpu": not bool(hf_cfg.get("prefer_cuda", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
             "fp16": fp16,
             "bf16": bf16,
             "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
@@ -611,9 +1043,13 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         if max_steps is not None and int(max_steps) > 0:
             training_kwargs["max_steps"] = int(max_steps)
         if int(world_size) > 1:
-            training_kwargs["ddp_find_unused_parameters"] = True
+            training_kwargs["ddp_find_unused_parameters"] = bool(sft_cfg.get("ddp_find_unused_parameters", True))
             training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
-        training_kwargs[eval_strategy_key] = str(sft_cfg.get("evaluation_strategy", "epoch"))
+            training_kwargs["local_rank"] = int(rank)
+        training_kwargs[eval_strategy_key] = _normalize_eval_strategy(
+            sft_cfg.get("evaluation_strategy", "epoch"),
+            default="epoch",
+        )
         args = TrainingArguments(**training_kwargs)
         generated_callback = None
         if bool(generated_validation_cfg.get("enabled", False)):
@@ -678,14 +1114,470 @@ class VQAXVarsVideoChatGPTLoraTrainer:
         return output_dir
 
     def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:
-        save_config(self.config, os.path.join(output_dir, "config.yaml"))
-        with open(os.path.join(output_dir, "training_metadata.json"), "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2)
-        marker = os.path.join(output_dir, "adapter_model")
-        os.makedirs(marker, exist_ok=True)
-        with open(os.path.join(marker, "README.txt"), "w", encoding="utf-8") as f:
-            f.write("X-VARS VideoChatGPT LoRA adapter artifacts are stored in the parent directory when training runs.\n")
+        return _save_training_artifacts(
+            self.config,
+            output_dir,
+            metadata,
+            marker_text="X-VARS VideoChatGPT LoRA adapter artifacts are stored in the parent directory when training runs.\n",
+        )
+
+
+class VQAQwenXVarsLoraTrainer:
+    """Qwen LoRA trainer preserving the X-VARS multimodal feature contract."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def train(
+        self,
+        train_data,
+        valid_data=None,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+        use_wandb: bool = False,
+    ) -> str:
+        execution = get_train_execution(self.config)
+        prompt_cfg = _as_dict(execution.get("prompt"))
+        sft_cfg = _as_dict(execution.get("sft"))
+        hf_cfg = _as_dict(execution.get("hf"))
+        lora_cfg = _as_dict(execution.get("lora"))
+        quant_cfg = _as_dict(execution.get("quantization"))
+        checkpoint_cfg = _as_dict(execution.get("checkpoint"))
+        generated_validation_cfg = _as_dict(execution.get("generated_validation"))
+
+        save_root = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
+        output_dir = os.path.join(save_root, "qwen_xvars_lora")
+        os.makedirs(output_dir, exist_ok=True)
+
+        prompt_token_len = _resolve_vqa_video_token_len(self.config, prompt_cfg=prompt_cfg, sft_cfg=sft_cfg)
+        model_id = get_xvars_train_model_id(self.config, default=str(hf_cfg.get("model_id", "Qwen/Qwen2.5-7B-Instruct")))
+        metadata = {
+            "backend": "qwen_xvars_lora",
+            "model_id": model_id,
+            "status": "metadata_only",
+            "multimodal_training": True,
+            "video_token_len": prompt_token_len,
+            "lora_target_modules": list(lora_cfg.get("target_modules") or ["q_proj", "v_proj"]),
+            "num_train_samples": 0,
+            "num_valid_samples": 0,
+        }
+        if bool(execution.get("dry_run", False)):
+            metadata["num_train_samples"] = sum(1 for x in train_data if x.get("video_spatio_temporal_features") is not None)
+            if valid_data is not None:
+                metadata["num_valid_samples"] = sum(1 for x in valid_data if x.get("video_spatio_temporal_features") is not None)
+            return self._write_artifacts(output_dir, metadata)
+
+        require_optional_package("transformers", "pip install transformers")
+        require_optional_package("peft", "pip install peft")
+        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+
+        local_files_only = bool(hf_cfg.get("local_files_only", False))
+        tokenizer = AutoTokenizer.from_pretrained(
+            get_xvars_train_tokenizer_id(self.config),
+            local_files_only=local_files_only,
+            use_fast=False,
+            model_max_length=int(hf_cfg.get("model_max_length", 1048)),
+            padding_side=str(hf_cfg.get("padding_side", "right")),
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        bnb_config = build_bitsandbytes_config(quant_cfg)
+        model_kwargs = {"local_files_only": local_files_only}
+        cuda_device_index = get_hf_cuda_device_index(self.config, hf_cfg)
+        if bnb_config is not None:
+            model_kwargs["quantization_config"] = bnb_config
+            if get_hf_prefer_cuda(self.config, hf_cfg) and torch.cuda.is_available():
+                if cuda_device_index is not None:
+                    torch.cuda.set_device(cuda_device_index)
+                    model_kwargs["device_map"] = {"": cuda_device_index}
+                else:
+                    model_kwargs["device_map"] = {"": torch.cuda.current_device()}
+        base_lm = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+        from opensportslib.core.utils.hf_runtime import _ensure_video_special_tokens
+
+        _ensure_video_special_tokens(tokenizer, base_lm)
+        model = QwenXVarsCausalLM(base_lm, mm_hidden_size=get_vqa_mm_hidden_size(self.config, default=1024))
+        model.config.use_cache = False
+        model = apply_lora_for_causal_lm(model, lora_cfg, distributed=int(world_size) > 1)
+        model.config.use_cache = False
+
+        logging.info("Building Qwen X-VARS SFT datasets | rank=%s", rank)
+        train_sft = VQAXVarsVideoChatGPTSFTDataset(
+            train_data,
+            config=self.config,
+            tokenizer=tokenizer,
+            prompt_cfg=prompt_cfg,
+            sft_cfg=sft_cfg,
+            xvars_cfg={},
+        )
+        valid_sft = (
+            VQAXVarsVideoChatGPTSFTDataset(
+                valid_data,
+                config=self.config,
+                tokenizer=tokenizer,
+                prompt_cfg=prompt_cfg,
+                sft_cfg=sft_cfg,
+                xvars_cfg={},
+            )
+            if valid_data is not None
+            else None
+        )
+        if len(train_sft) == 0:
+            raise ValueError("No multimodal Qwen training rows were usable.")
+        metadata["num_train_samples"] = len(train_sft)
+        metadata["num_valid_samples"] = len(valid_sft) if valid_sft is not None else 0
+        feature_shape = tuple(train_sft[0]["video_spatio_temporal_features"].shape) if len(train_sft) else None
+        logging.info(
+            "Built Qwen X-VARS SFT datasets | rank=%s | train=%s | valid=%s | feature_shape=%s",
+            rank,
+            metadata["num_train_samples"],
+            metadata["num_valid_samples"],
+            feature_shape,
+        )
+        train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
+
+        optimizer_cfg = get_train_optimizer(self.config)
+        execution_cfg = get_train_execution(self.config)
+        fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
+        eval_strategy_key = "evaluation_strategy"
+        try:
+            if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters:
+                eval_strategy_key = "eval_strategy"
+        except Exception:
+            eval_strategy_key = "evaluation_strategy"
+
+        training_kwargs = {
+            "output_dir": output_dir,
+            "per_device_train_batch_size": train_bs,
+            "per_device_eval_batch_size": eval_bs,
+            "gradient_accumulation_steps": int(execution_cfg.get("acc_grad_iter", sft_cfg.get("gradient_accumulation_steps", 1))),
+            "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
+            "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
+            "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
+            "optim": str(optimizer_cfg.get("hf_optim", "paged_adamw_8bit")),
+            "weight_decay": float(optimizer_cfg.get("weight_decay", 0.001)),
+            "lr_scheduler_type": str(sft_cfg.get("lr_scheduler_type", "constant")),
+            "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
+            "report_to": ["wandb"] if use_wandb else [],
+            "remove_unused_columns": False,
+            "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
+            "fp16": fp16,
+            "bf16": bf16,
+            "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
+        }
+        max_steps = sft_cfg.get("max_steps")
+        if max_steps is not None and int(max_steps) > 0:
+            training_kwargs["max_steps"] = int(max_steps)
+        if int(world_size) > 1:
+            training_kwargs["ddp_find_unused_parameters"] = bool(sft_cfg.get("ddp_find_unused_parameters", False))
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+        training_kwargs[eval_strategy_key] = _normalize_eval_strategy(
+            sft_cfg.get("evaluation_strategy", "epoch"),
+            default="epoch",
+        )
+        args = TrainingArguments(**training_kwargs)
+        generated_callback = None
+        if bool(generated_validation_cfg.get("enabled", False)):
+            generated_callback = _build_xvars_generated_validation_callback(
+                tokenizer=tokenizer,
+                rows=train_sft.rows,
+                output_dir=output_dir,
+                validation_cfg=generated_validation_cfg,
+                use_step_schedule=bool(training_kwargs.get("max_steps", 0)),
+            )
+        trainer = XVarsVideoChatGPTTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=args,
+            train_dataset=train_sft,
+            eval_dataset=valid_sft,
+            data_collator=XVarsVideoChatGPTDataCollator(tokenizer),
+            callbacks=[generated_callback] if generated_callback is not None else None,
+        )
+        logging.info(
+            "Starting Qwen trainer.train | rank=%s | world_size=%s | execution_mode=%s | precision=%s | "
+            "max_seq_length=%s | lora_targets=%s | gradient_checkpointing=%s | "
+            "ddp_find_unused_parameters=%s | use_cache=%s",
+            rank,
+            world_size,
+            "ddp" if int(world_size) > 1 else "single_gpu",
+            "fp16" if fp16 else "bf16" if bf16 else "fp32",
+            int(sft_cfg.get("max_seq_length", 768)),
+            list(metadata["lora_target_modules"]),
+            training_kwargs["gradient_checkpointing"],
+            training_kwargs.get("ddp_find_unused_parameters"),
+            model.config.use_cache,
+        )
+        trainer.train()
+        logging.info("Finished Qwen trainer.train | rank=%s", rank)
+        if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
+            trainer.model.save_pretrained(output_dir)
+            tokenizer.save_pretrained(output_dir)
+            _save_qwen_mm_projector(output_dir, trainer.model)
+        metadata["status"] = "trained"
+        selected_output_dir = output_dir
+        if rank == 0 and generated_callback is not None:
+            generated_path = os.path.join(output_dir, "generated_validation.json")
+            with open(generated_path, "w", encoding="utf-8") as f:
+                json.dump(generated_callback.history, f, indent=2)
+            accepted = any(record.get("accepted") for record in generated_callback.history)
+            metadata["generated_validation_accepted"] = accepted
+            metadata["generated_validation_history"] = generated_path
+            if generated_callback.history:
+                selected_output_dir = os.path.join(output_dir, "generated_validation_best")
+                metadata["best_generated_checkpoint"] = selected_output_dir
+                if os.path.isdir(selected_output_dir):
+                    _save_qwen_mm_projector(selected_output_dir, trainer.model)
+        if rank == 0:
+            self._write_artifacts(output_dir, metadata)
+            if selected_output_dir != output_dir:
+                self._write_artifacts(selected_output_dir, metadata)
+            if bool(generated_validation_cfg.get("require_relevance", False)) and not metadata.get(
+                "generated_validation_accepted", False
+            ):
+                raise RuntimeError(
+                    "Qwen generated-answer relevance gate failed. Inspect generated_validation.json before "
+                    "starting or accepting a full training run."
+                )
+            return selected_output_dir
         return output_dir
+
+    def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:
+        return _save_training_artifacts(
+            self.config,
+            output_dir,
+            metadata,
+            marker_text="Qwen X-VARS LoRA adapter artifacts are stored in the parent directory when training runs.\n",
+        )
+
+
+class VQAQwenVLNativeLoraTrainer:
+    """Native Qwen VL LoRA trainer using end-to-end multimodal inputs."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def train(
+        self,
+        train_data,
+        valid_data=None,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+        resume_from_checkpoint: str | None = None,
+        use_wandb: bool = False,
+    ) -> str:
+        execution = get_train_execution(self.config)
+        prompt_cfg = _as_dict(execution.get("prompt"))
+        sft_cfg = _as_dict(execution.get("sft"))
+        hf_cfg = _as_dict(execution.get("hf"))
+        lora_cfg = _as_dict(execution.get("lora"))
+        checkpoint_cfg = _as_dict(execution.get("checkpoint"))
+
+        model_id = get_vqa_decoder_model_id(self.config, default="Qwen/Qwen2.5-VL-7B-Instruct")
+        if "awq" in str(model_id).lower():
+            raise ValueError("AWQ Qwen VL checkpoints are inference-only. Use a non-AWQ Qwen VL model for training.")
+
+        save_root = get_system_path(self.config, "save_dir", "./checkpoints") or "./checkpoints"
+        output_dir = os.path.join(save_root, "qwen_vl_native_lora")
+        os.makedirs(output_dir, exist_ok=True)
+
+        metadata = {
+            "backend": "qwen_vl_native_lora",
+            "model_id": model_id,
+            "status": "metadata_only",
+            "multimodal_training": True,
+            "visual_config": get_vqa_native_visual_cfg(self.config),
+            "num_train_samples": 0,
+            "num_valid_samples": 0,
+            "invalid_train_rows": 0,
+            "invalid_valid_rows": 0,
+            "invalid_train_rows_report_path": None,
+            "invalid_valid_rows_report_path": None,
+            "native_memory_cache_rows": 0,
+        }
+        if bool(execution.get("dry_run", False)):
+            metadata["num_train_samples"] = sum(
+                1 for x in train_data if x.get("video_path") or x.get("frame_paths") or x.get("video_frames")
+            )
+            if valid_data is not None:
+                metadata["num_valid_samples"] = sum(
+                    1 for x in valid_data if x.get("video_path") or x.get("frame_paths") or x.get("video_frames")
+                )
+            return self._write_artifacts(output_dir, metadata)
+
+        require_optional_package("transformers", "pip install transformers")
+        require_optional_package("peft", "pip install peft")
+        from transformers import TrainingArguments
+
+        native_model = QwenVLNativeModel(self.config, model_id=model_id)
+        if not native_model._ready:
+            raise RuntimeError(native_model._error or "Qwen VL native backend failed to initialize for training.")
+        model = native_model.model
+        model.config.use_cache = False
+        model = apply_lora_for_causal_lm(model, lora_cfg, distributed=int(world_size) > 1)
+        model.config.use_cache = False
+        cache_tokenized_rows = bool(sft_cfg.get("cache_tokenized_rows", False))
+        native_cache_root = os.path.join(output_dir, "native_sft_cache") if cache_tokenized_rows else ""
+        train_cache_dir = os.path.join(native_cache_root, "train") if cache_tokenized_rows else None
+        valid_cache_dir = os.path.join(native_cache_root, "valid") if cache_tokenized_rows else None
+        invalid_train_report_path = os.path.join(output_dir, "native_invalid_rows_train.json")
+        invalid_valid_report_path = os.path.join(output_dir, "native_invalid_rows_valid.json")
+        metadata["native_sft_cache_enabled"] = cache_tokenized_rows
+        metadata["native_sft_cache_dir"] = native_cache_root or None
+
+        train_sft = VQANativeQwenVLSFTDataset(
+            train_data,
+            model=native_model,
+            prompt_cfg=prompt_cfg,
+            sft_cfg=sft_cfg,
+            cache_dir=train_cache_dir,
+            split_name="train",
+            invalid_row_report_path=invalid_train_report_path,
+            fail_on_invalid=int(world_size) > 1,
+            rank=rank,
+        )
+        valid_sft = (
+            VQANativeQwenVLSFTDataset(
+                valid_data,
+                model=native_model,
+                prompt_cfg=prompt_cfg,
+                sft_cfg=sft_cfg,
+                cache_dir=valid_cache_dir,
+                split_name="valid",
+                invalid_row_report_path=invalid_valid_report_path,
+                fail_on_invalid=int(world_size) > 1,
+                rank=rank,
+            )
+            if valid_data is not None
+            else None
+        )
+        if len(train_sft) == 0:
+            raise ValueError("No multimodal native Qwen VL training rows were usable.")
+        metadata["num_train_samples"] = len(train_sft)
+        metadata["num_valid_samples"] = len(valid_sft) if valid_sft is not None else 0
+        metadata["native_memory_cache_rows"] = train_sft.memory_cache_rows
+        train_bs, eval_bs = _resolve_sft_per_device_batch_sizes(self.config, sft_cfg)
+        optimizer_cfg = get_train_optimizer(self.config)
+        execution_cfg = get_train_execution(self.config)
+        fp16, bf16 = _resolve_training_precision_flags(self.config, sft_cfg)
+        effective_optim = str(
+            optimizer_cfg.get("hf_optim")
+            or optimizer_cfg.get("type")
+            or "paged_adamw_8bit"
+        ).strip()
+        if effective_optim.lower() == "adamw":
+            effective_optim = "adamw_torch"
+        eval_strategy_key = "evaluation_strategy"
+        try:
+            if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters:
+                eval_strategy_key = "eval_strategy"
+        except Exception:
+            eval_strategy_key = "evaluation_strategy"
+
+        training_kwargs = {
+            "output_dir": output_dir,
+            "per_device_train_batch_size": train_bs,
+            "per_device_eval_batch_size": eval_bs,
+            "gradient_accumulation_steps": int(execution_cfg.get("acc_grad_iter", sft_cfg.get("gradient_accumulation_steps", 1))),
+            "num_train_epochs": float(get_train_epochs(self.config) or sft_cfg.get("num_train_epochs", 1)),
+            "learning_rate": float(optimizer_cfg.get("lr", sft_cfg.get("learning_rate", 2e-4))),
+            "logging_steps": int(execution_cfg.get("log_interval", sft_cfg.get("logging_steps", 1))),
+            "optim": effective_optim,
+            "weight_decay": float(optimizer_cfg.get("weight_decay", 0.001)),
+            "lr_scheduler_type": str(sft_cfg.get("lr_scheduler_type", "constant")),
+            "save_strategy": str(sft_cfg.get("save_strategy", "epoch")),
+            "report_to": ["wandb"] if use_wandb else [],
+            "remove_unused_columns": False,
+            "disable_tqdm": bool(sft_cfg.get("disable_tqdm", True)),
+            "use_cpu": not get_hf_prefer_cuda(self.config, hf_cfg),
+            "fp16": fp16,
+            "bf16": bf16,
+            "gradient_checkpointing": bool(sft_cfg.get("gradient_checkpointing", False)),
+        }
+        max_steps = sft_cfg.get("max_steps")
+        if max_steps is not None and int(max_steps) > 0:
+            training_kwargs["max_steps"] = int(max_steps)
+        max_grad_norm = sft_cfg.get("max_grad_norm")
+        if max_grad_norm is not None:
+            training_kwargs["max_grad_norm"] = float(max_grad_norm)
+        save_steps = sft_cfg.get("save_steps")
+        if save_steps is not None and int(save_steps) > 0:
+            training_kwargs["save_steps"] = int(save_steps)
+        save_total_limit = sft_cfg.get("save_total_limit")
+        if save_total_limit is not None and int(save_total_limit) > 0:
+            training_kwargs["save_total_limit"] = int(save_total_limit)
+        if int(world_size) > 1:
+            training_kwargs["ddp_find_unused_parameters"] = bool(sft_cfg.get("ddp_find_unused_parameters", False))
+            ddp_broadcast_buffers = sft_cfg.get("ddp_broadcast_buffers")
+            if ddp_broadcast_buffers is not None:
+                training_kwargs["ddp_broadcast_buffers"] = bool(ddp_broadcast_buffers)
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+        training_kwargs[eval_strategy_key] = _normalize_eval_strategy(
+            sft_cfg.get("evaluation_strategy", "epoch"),
+            default="epoch",
+        )
+        logging.info(
+            "Starting native Qwen VL trainer.train | rank=%s | world_size=%s | optim=%s | learning_rate=%s | "
+            "weight_decay=%s | memory_cache_rows=%s | disk_cache=%s",
+            rank,
+            world_size,
+            effective_optim,
+            training_kwargs["learning_rate"],
+            training_kwargs["weight_decay"],
+            train_sft.memory_cache_rows,
+            bool(cache_tokenized_rows),
+        )
+        args = TrainingArguments(**training_kwargs)
+        trainer = NativeQwenVLTrainer(
+            model=model,
+            args=args,
+            train_dataset=train_sft,
+            eval_dataset=valid_sft,
+            data_collator=NativeQwenVLDataCollator(),
+        )
+        resume_optimizer_state = bool(sft_cfg.get("resume_optimizer_state", False))
+        effective_resume_checkpoint = _prepare_hf_resume_checkpoint(
+            resume_from_checkpoint,
+            args,
+            output_dir,
+            resume_optimizer_state=resume_optimizer_state,
+        )
+        if rank == 0 and resume_from_checkpoint:
+            logging.info(
+                "Resuming native Qwen VL training from checkpoint: %s | effective_checkpoint=%s | "
+                "resume_optimizer_state=%s",
+                resume_from_checkpoint,
+                effective_resume_checkpoint,
+                resume_optimizer_state,
+            )
+        trainer.train(resume_from_checkpoint=effective_resume_checkpoint)
+        metadata["invalid_train_rows"] = train_sft.invalid_row_count
+        metadata["invalid_valid_rows"] = valid_sft.invalid_row_count if valid_sft is not None else 0
+        metadata["invalid_train_rows_report_path"] = (
+            invalid_train_report_path if train_sft.invalid_row_count > 0 else None
+        )
+        metadata["invalid_valid_rows_report_path"] = (
+            invalid_valid_report_path if valid_sft is not None and valid_sft.invalid_row_count > 0 else None
+        )
+        if rank == 0 and bool(checkpoint_cfg.get("save_adapter", True)):
+            trainer.model.save_pretrained(output_dir)
+            if getattr(native_model, "processor", None) is not None:
+                native_model.processor.save_pretrained(output_dir)
+        metadata["status"] = "trained"
+        if rank == 0:
+            self._write_artifacts(output_dir, metadata)
+        return output_dir
+
+    def _write_artifacts(self, output_dir: str, metadata: dict[str, Any]) -> str:
+        return _save_training_artifacts(
+            self.config,
+            output_dir,
+            metadata,
+            marker_text="Qwen VL native LoRA adapter artifacts are stored in the parent directory when training runs.\n",
+        )
 
 
 class Trainer_VQA:
@@ -710,7 +1602,17 @@ class Trainer_VQA:
         self.best_checkpoint_path = weights
         return weights
 
-    def train(self, model, train_data, valid_data=None, *, rank: int = 0, world_size: int = 1, use_wandb: bool = False) -> str:
+    def train(
+        self,
+        model,
+        train_data,
+        valid_data=None,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+        resume_from_checkpoint: str | None = None,
+        use_wandb: bool = False,
+    ) -> str:
         del model
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
@@ -724,9 +1626,30 @@ class Trainer_VQA:
             )
             self.best_checkpoint_path = ckpt
             return ckpt
+        if backend == "qwen_xvars_lora":
+            ckpt = VQAQwenXVarsLoraTrainer(self.config).train(
+                train_data,
+                valid_data,
+                rank=rank,
+                world_size=world_size,
+                use_wandb=use_wandb,
+            )
+            self.best_checkpoint_path = ckpt
+            return ckpt
+        if backend == "qwen_vl_native_lora":
+            ckpt = VQAQwenVLNativeLoraTrainer(self.config).train(
+                train_data,
+                valid_data,
+                rank=rank,
+                world_size=world_size,
+                resume_from_checkpoint=resume_from_checkpoint,
+                use_wandb=use_wandb,
+            )
+            self.best_checkpoint_path = ckpt
+            return ckpt
         raise ValueError(
             f"Unsupported VQA training backend '{backend}'. "
-            "Only 'xvars_videochatgpt_lora' is supported."
+            "Only 'xvars_videochatgpt_lora', 'qwen_xvars_lora', and 'qwen_vl_native_lora' are supported."
         )
 
     def infer(self, model, dataset, *, use_wandb: bool = False) -> dict[str, Any]:
@@ -763,14 +1686,20 @@ class Trainer_VQA:
             )
             if not disable_tqdm:
                 iterator.set_postfix_str(f"id={sample.get('id')} elapsed={time.perf_counter() - sample_started_at:.2f}s")
-            preds.append(
-                {
-                    "id": sample.get("id"),
-                    "question": sample.get("question"),
-                    "answer_text": answer,
-                    "video_path": sample.get("video_path"),
-                }
+            row = {
+                "id": sample.get("id"),
+                "question": sample.get("question"),
+                "answer_text": answer,
+                "video_path": sample.get("video_path"),
+            }
+            row.update(
+                _normalize_classification_answer(
+                    answer,
+                    sample.get("allowed_labels"),
+                    sample.get("ground_truth_label"),
+                )
             )
+            preds.append(row)
         logging.info(
             "Finished VQA inference | samples=%s | elapsed_s=%.2f",
             len(preds),

@@ -110,7 +110,7 @@ def load_annotations(
         if label_idx is not None:
             grouped[group_id]["label"] = label_idx
         grouped[group_id]["id"] = group_id
-        grouped[group_id]["metadata"] = dict(item.get("metadata", {}) or {})
+        grouped[group_id].setdefault("metadata", dict(item.get("metadata", {}) or {}))
 
     return list(grouped.values()), label_map
 

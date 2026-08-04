@@ -1,0 +1,69 @@
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints_vqa_qwen_lora
+  gpu:
+    count: 4
+
+MODEL:
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        name: xvars_clip_features
+      load:
+        weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
+      params:
+        feature_source: indexed_or_raw_clip
+        vision_tower: openai/clip-vit-large-patch14
+        feature_dim: 1024
+      overrides: {}
+    mm_projector:
+      kind: projector
+      source:
+        provider: opensportslib
+      params:
+        input_dim: 1024
+      overrides: {}
+    llm_decoder:
+      kind: decoder
+      source:
+        provider: huggingface
+        name: Qwen/Qwen3.5-9B-Base
+      params:
+        repo_id: Qwen/Qwen3.5-9B-Base
+      overrides: {}
+  metadata:
+    backend: qwen_xvars_infer
+
+TRAIN:
+  execution:
+    training_backend: qwen_xvars_lora
+    prompt:
+      system_prompt: You are a football video assistant. Answer the VQA question using the provided video context and referee priors.
+    hf:
+      tokenizer_id: ${MODEL.components.llm_decoder.params.repo_id}
+      prefer_cuda: true
+      local_files_only: false
+    sft:
+      per_device_train_batch_size: 1
+      per_device_eval_batch_size: 1
+      gradient_accumulation_steps: 8
+      max_seq_length: 480
+      gradient_checkpointing: true
+      disable_tqdm: true
+      save_strategy: epoch
+      evaluation_strategy: "no"
+    lora:
+      r: 16
+      alpha: 32
+      dropout: 0.05
+      bias: none
+      prepare_kbit: false
+      target_modules: [q_proj, v_proj, k_proj, o_proj]
+    quantization:
+      enabled: false
+      load_in_4bit: true
+      bnb_4bit_quant_type: nf4
+      compute_dtype: float16
+      bnb_4bit_use_double_quant: true

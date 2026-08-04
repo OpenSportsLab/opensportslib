@@ -12,6 +12,8 @@ Build (raw source -> OSL JSON):
 - `build_soccernet_gar.py`: PFF FC raw data -> SoccerNet-GAR classification dataset (OSL JSON manifest of windowed action clips).
 - `build_soccernet_gar_action_spotting.py`: SoccerNet-GAR classification manifest -> SoccerNet-GAR action-spotting dataset (per-game manifest with
   event timestamps).
+- `build_soccernet_gar_vqa.py`: SoccerNet-GAR frames dataset -> VQA-style test manifest.
+- `build_sn_vqa_2026_vqa.py`: SN-VQA-2026 raw test rows -> VQA-ready OSL manifest and evaluation report.
 
 Convert (OSL JSON <-> Parquet + WebDataset):
 

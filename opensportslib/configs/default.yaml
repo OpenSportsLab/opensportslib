@@ -2,7 +2,7 @@ SYSTEM:
   paths:
     log_dir: ./logs
     save_dir: ./checkpoints
-  device: cuda
+  device: auto
   gpu:
     id: 0
   reproducibility:

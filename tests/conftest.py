@@ -467,7 +467,7 @@ def make_vqa_config(tmp_path: Path) -> str:
                 "log_interval": 1,
                 "dry_run": True,
                 "prompt": {"style": "short", "video_token_len": 8},
-                "xvars": {"feature_mode": "strict_xvars", "projection_path": None, "conv_mode": "video-chatgpt_v1"},
+                "xvars": {"feature_mode": "clip_compat", "projection_path": None, "conv_mode": "video-chatgpt_v1"},
                 "generation": {"fallback_policy": "baseline_on_failure"},
                 "hf": {"local_files_only": True, "prefer_cuda": False},
                 "lora": {"target_modules": ["mm_projector", "q_proj", "v_proj"]},

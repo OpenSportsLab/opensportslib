@@ -13,6 +13,8 @@ from opensportslib.core.config.accessors import (
     get_component_load_by_kind,
     get_component_params_by_kind,
     get_hf_cuda_device_index,
+    get_hf_prefer_cuda,
+    get_model_load,
     get_model_runtime_dtype,
     get_train_execution,
     get_vqa_feature_source,
@@ -27,6 +29,7 @@ from opensportslib.core.utils.hf_runtime import (
     build_bitsandbytes_config,
     configure_generation_cache,
     hf_offline_if_requested,
+    load_peft_adapter_if_available,
 )
 from opensportslib.models.base.xvars_videochatgpt import (
     XVarsRawVideoFeatureExtractor,
@@ -43,6 +46,7 @@ from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xva
 from opensportslib.models.utils.xvars_clip_index import validate_xvars_feature_tensor
 
 logger = logging.getLogger(__name__)
+QWEN_MM_PROJECTOR_FILE = "mm_projector.bin"
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
@@ -85,6 +89,13 @@ class QwenXVarsCausalLM(nn.Module):
         return self.base_lm.config
 
     @property
+    def base_model_prefix(self):
+        prefix = getattr(self.base_lm, "base_model_prefix", None)
+        if prefix:
+            return prefix
+        return getattr(getattr(self.base_lm, "__class__", None), "base_model_prefix", "model")
+
+    @property
     def generation_config(self):
         return self.base_lm.generation_config
 
@@ -94,13 +105,74 @@ class QwenXVarsCausalLM(nn.Module):
 
     @property
     def device(self):
-        return next(self.parameters()).device
+        projector_param = next(self.mm_projector.parameters(), None)
+        if projector_param is not None:
+            return projector_param.device
+        embed = self.get_input_embeddings()
+        weight = getattr(embed, "weight", None)
+        if weight is not None:
+            return weight.device
+        base_param = next(self.base_lm.parameters(), None)
+        if base_param is not None:
+            return base_param.device
+        raise RuntimeError("Could not resolve Qwen X-VARS execution device from model parameters.")
 
     def get_input_embeddings(self):
         return self.base_lm.get_input_embeddings()
 
     def resize_token_embeddings(self, size: int):
         return self.base_lm.resize_token_embeddings(size)
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        enable = getattr(self.base_lm, "gradient_checkpointing_enable", None)
+        if not callable(enable):
+            raise AttributeError("The wrapped Qwen decoder does not support gradient checkpointing.")
+        return enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+
+    def gradient_checkpointing_disable(self):
+        disable = getattr(self.base_lm, "gradient_checkpointing_disable", None)
+        if not callable(disable):
+            raise AttributeError("The wrapped Qwen decoder does not support gradient checkpointing.")
+        return disable()
+
+    def enable_input_require_grads(self):
+        enable = getattr(self.base_lm, "enable_input_require_grads", None)
+        if callable(enable):
+            return enable()
+        return None
+
+    def disable_input_require_grads(self):
+        disable = getattr(self.base_lm, "disable_input_require_grads", None)
+        if callable(disable):
+            return disable()
+        return None
+
+    def save_pretrained(self, output_dir: str):
+        os.makedirs(output_dir, exist_ok=True)
+        self.base_lm.save_pretrained(output_dir)
+        torch.save(
+            {
+                "mm_projector": self.mm_projector.state_dict(),
+                "mm_hidden_size": self.mm_hidden_size,
+                "hidden_size": self.hidden_size,
+            },
+            os.path.join(output_dir, QWEN_MM_PROJECTOR_FILE),
+        )
+
+    @classmethod
+    def from_pretrained_projector(cls, base_lm, projector_path: str | None = None, *, mm_hidden_size: int = 1024):
+        model = cls(base_lm, mm_hidden_size=mm_hidden_size)
+        if not projector_path:
+            return model
+        projector_file = os.path.join(os.path.abspath(os.path.expanduser(projector_path)), QWEN_MM_PROJECTOR_FILE)
+        if not os.path.isfile(projector_file):
+            return model
+        checkpoint = torch.load(projector_file, map_location="cpu")
+        state_dict = checkpoint.get("mm_projector", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+        if not isinstance(state_dict, dict):
+            raise ValueError(f"Unsupported Qwen mm_projector checkpoint format: {projector_file}")
+        model.mm_projector.load_state_dict(state_dict, strict=True)
+        return model
 
     def _video_token_ids(self, tokenizer) -> dict[str, int]:
         return {tok: int(tokenizer.convert_tokens_to_ids(tok)) for tok in VIDEO_SPECIAL_TOKENS}
@@ -123,11 +195,29 @@ class QwenXVarsCausalLM(nn.Module):
                 f"got {int(video_spatio_temporal_features.shape[-1])}"
             )
 
-        input_ids = input_ids.to(self.device)
-        inputs_embeds = self.get_input_embeddings()(input_ids)
-        projector_param = next(self.mm_projector.parameters())
+        input_embedder = self.get_input_embeddings()
+        embed_weight = getattr(input_embedder, "weight", None)
+        embed_device = embed_weight.device if embed_weight is not None else self.device
+        input_ids = input_ids.to(embed_device)
+        inputs_embeds = input_embedder(input_ids)
+        projector_weight = getattr(self.mm_projector, "weight", None)
+        projector_bias = getattr(self.mm_projector, "bias", None)
+        projector_device = (
+            projector_weight.device
+            if projector_weight is not None
+            else projector_bias.device
+            if projector_bias is not None
+            else inputs_embeds.device
+        )
+        projector_dtype = (
+            projector_weight.dtype
+            if projector_weight is not None
+            else projector_bias.dtype
+            if projector_bias is not None
+            else torch.float32
+        )
         features = self.mm_projector(
-            video_spatio_temporal_features.to(projector_param.device, dtype=projector_param.dtype)
+            video_spatio_temporal_features.to(device=projector_device, dtype=projector_dtype)
         ).to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
         token_ids = self._video_token_ids(tokenizer)
         patch_id = token_ids["<vid_patch>"]
@@ -237,7 +327,7 @@ class QwenXVarsCausalLM(nn.Module):
 
 
 class QwenXVarsModel(nn.Module):
-    """Inference-only Qwen VQA model reusing the X-VARS feature pipeline."""
+    """Qwen VQA model reusing the X-VARS feature pipeline."""
 
     def __init__(self, config, model_id: str, projector_params: dict[str, Any] | None = None):
         super().__init__()
@@ -261,6 +351,7 @@ class QwenXVarsModel(nn.Module):
         self.raw_num_frames = resolve_xvars_raw_num_frames(config, xvars_cfg)
         self.strict_sampling_cfg = resolve_xvars_strict_sampling_cfg(config)
         self.raw_extractor = None
+        adapter_path = get_model_load(config).get("checkpoint_path")
 
         encoder_params = get_component_params_by_kind(config, "encoder")
         encoder_load = get_component_load_by_kind(config, "encoder")
@@ -273,7 +364,7 @@ class QwenXVarsModel(nn.Module):
         )
 
         local_files_only = bool(hf_cfg.get("local_files_only", False))
-        prefer_cuda = bool(hf_cfg.get("prefer_cuda", True))
+        prefer_cuda = get_hf_prefer_cuda(config, hf_cfg)
         cuda_device_index = get_hf_cuda_device_index(config, hf_cfg)
         mm_hidden_size = int(projector_params.get("input_dim") or get_vqa_mm_hidden_size(config, default=1024))
         use_cuda = prefer_cuda and torch.cuda.is_available()
@@ -323,17 +414,23 @@ class QwenXVarsModel(nn.Module):
                 base_lm = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
             configure_generation_cache(base_lm, enabled=True)
             _ensure_video_special_tokens(self.tokenizer, base_lm)
-            self.model = QwenXVarsCausalLM(base_lm, mm_hidden_size=mm_hidden_size)
+            self.model = QwenXVarsCausalLM.from_pretrained_projector(
+                base_lm,
+                adapter_path,
+                mm_hidden_size=mm_hidden_size,
+            )
+            self.model, adapter_status = load_peft_adapter_if_available(self.model, adapter_path)
             if bnb_config is None and not dispatched_model:
                 self.model = self.model.to(device)
             self.model = self.model.eval()
             self._ready = True
             logger.info(
-                "Initialized Qwen X-VARS backend | model_id=%s | feature_mode=%s | feature_source=%s | video_token_len=%s",
+                "Initialized Qwen X-VARS backend | model_id=%s | feature_mode=%s | feature_source=%s | video_token_len=%s | adapter_status=%s",
                 model_id,
                 self.feature_mode,
                 self.feature_source,
                 self.video_token_len,
+                adapter_status,
             )
         except Exception as exc:
             self._error = str(exc)
@@ -385,7 +482,7 @@ class QwenXVarsModel(nn.Module):
                         self.raw_extractor = XVarsStrictRawVideoFeatureExtractor(
                             weights_path=self.vision_weights_path,
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(config, hf_cfg),
                             start_frame=self.strict_sampling_cfg.get("start_frame"),
                             end_frame=self.strict_sampling_cfg.get("end_frame"),
                             input_fps=self.strict_sampling_cfg.get("input_fps"),
@@ -395,7 +492,7 @@ class QwenXVarsModel(nn.Module):
                     else:
                         self.raw_extractor = XVarsRawVideoFeatureExtractor(
                             vision_tower=self.vision_tower_name,
-                            prefer_cuda=bool(hf_cfg.get("prefer_cuda", True)),
+                            prefer_cuda=get_hf_prefer_cuda(config, hf_cfg),
                         )
                 if isinstance(self.raw_extractor, XVarsStrictRawVideoFeatureExtractor):
                     features, classifier_prior = self.raw_extractor.extract_with_prior(video_path)

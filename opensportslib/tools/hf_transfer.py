@@ -5,20 +5,56 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from .osl_json_to_parquet import DEFAULT_SHARD_SIZE, convert_json_to_parquet, parse_shard_size
-from .parquet_to_osl_json import convert_parquet_to_json
-
-
 ProgressCallback = Callable[[str], None]
 CancelCheck = Callable[[], bool]
 
 HF_REPO_ID_KEY = "hf_repo_id"
 HF_BRANCH_KEY = "hf_branch"
 HF_SPLIT_KEY = "hf_split"
+DEFAULT_SHARD_SIZE = 1_000_000_000
 
 
 class HfTransferCancelled(RuntimeError):
     pass
+
+
+def _import_osl_json_to_parquet():
+    try:
+        from .osl_json_to_parquet import DEFAULT_SHARD_SIZE as module_default_shard_size
+        from .osl_json_to_parquet import convert_json_to_parquet as module_convert_json_to_parquet
+        from .osl_json_to_parquet import parse_shard_size as module_parse_shard_size
+    except ImportError as exc:
+        raise RuntimeError(
+            "Missing conversion dependencies for OSL JSON -> Parquet tools. "
+            "Install the package with its data-conversion dependencies, including 'pandas' and 'pyarrow'."
+        ) from exc
+    return module_default_shard_size, module_convert_json_to_parquet, module_parse_shard_size
+
+
+def _import_parquet_to_osl_json():
+    try:
+        from .parquet_to_osl_json import convert_parquet_to_json as module_convert_parquet_to_json
+    except ImportError as exc:
+        raise RuntimeError(
+            "Missing conversion dependencies for Parquet -> OSL JSON tools. "
+            "Install the package with its data-conversion dependencies, including 'pandas' and 'pyarrow'."
+        ) from exc
+    return module_convert_parquet_to_json
+
+
+def parse_shard_size(value: int | str) -> int:
+    _, _, module_parse_shard_size = _import_osl_json_to_parquet()
+    return module_parse_shard_size(value)
+
+
+def convert_json_to_parquet(*args, **kwargs):
+    _, module_convert_json_to_parquet, _ = _import_osl_json_to_parquet()
+    return module_convert_json_to_parquet(*args, **kwargs)
+
+
+def convert_parquet_to_json(*args, **kwargs):
+    module_convert_parquet_to_json = _import_parquet_to_osl_json()
+    return module_convert_parquet_to_json(*args, **kwargs)
 
 
 def _emit_progress(progress_cb: ProgressCallback | None, message: str) -> None:

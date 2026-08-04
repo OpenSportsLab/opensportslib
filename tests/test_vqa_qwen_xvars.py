@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
-from opensportslib.models.base.qwen_xvars import QwenXVarsCausalLM, QwenXVarsModel
+from opensportslib.models.base.qwen_xvars import QWEN_MM_PROJECTOR_FILE, QwenXVarsCausalLM, QwenXVarsModel
 from opensportslib.models.builder import build_model
 
 
@@ -89,6 +89,9 @@ class TinyGenerateLM(torch.nn.Module):
     def resize_token_embeddings(self, size):
         return self.emb
 
+    def save_pretrained(self, output_dir):
+        del output_dir
+
     def forward(self, input_ids=None, inputs_embeds=None, attention_mask=None, labels=None, **kwargs):
         del input_ids, attention_mask, kwargs
         self.seen_inputs_embeds = inputs_embeds.detach().clone()
@@ -173,6 +176,34 @@ def test_qwen_xvars_wrapper_projects_features_into_hidden_size():
     assert tuple(base.seen_inputs_embeds.shape) == (1, 4, base.config.hidden_size)
 
 
+def test_qwen_xvars_wrapper_raises_on_patch_feature_mismatch():
+    tokenizer = TinyTokenizer()
+    base = TinyGenerateLM()
+    model = QwenXVarsCausalLM(base, mm_hidden_size=1024)
+    input_ids = torch.tensor(
+        [[
+            tokenizer.convert_tokens_to_ids("<vid_start>"),
+            tokenizer.convert_tokens_to_ids("<vid_patch>"),
+            tokenizer.convert_tokens_to_ids("<vid_patch>"),
+            tokenizer.convert_tokens_to_ids("<vid_end>"),
+        ]]
+    )
+    features = torch.ones((1, 3, 1024))
+
+    try:
+        model(
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
+            labels=input_ids.clone(),
+            video_spatio_temporal_features=features,
+            tokenizer=tokenizer,
+        )
+    except ValueError as exc:
+        assert "Patch-feature mismatch" in str(exc)
+    else:
+        raise AssertionError("Expected patch-feature mismatch to raise ValueError.")
+
+
 def test_qwen_xvars_model_generate_answer_uses_existing_feature_contract(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     tokenizer = TinyTokenizer()
@@ -249,3 +280,50 @@ def test_builder_routes_qwen_backend(tmp_path, monkeypatch):
     model, _ = build_model(cfg, device="cpu")
 
     assert isinstance(model, QwenXVarsModel)
+
+
+def test_qwen_wrapper_save_and_reload_projector(tmp_path):
+    base = TinyGenerateLM()
+    model = QwenXVarsCausalLM(base, mm_hidden_size=1024)
+    with torch.no_grad():
+        model.mm_projector.weight.fill_(0.25)
+        model.mm_projector.bias.fill_(0.5)
+
+    model.save_pretrained(str(tmp_path))
+    reloaded = QwenXVarsCausalLM.from_pretrained_projector(
+        TinyGenerateLM(),
+        str(tmp_path),
+        mm_hidden_size=1024,
+    )
+
+    assert (tmp_path / QWEN_MM_PROJECTOR_FILE).exists()
+    assert torch.allclose(reloaded.mm_projector.weight, model.mm_projector.weight)
+    assert torch.allclose(reloaded.mm_projector.bias, model.mm_projector.bias)
+
+
+def test_qwen_model_loads_adapter_checkpoint_without_hard_failure(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+    cfg.MODEL.load.checkpoint_path = str(adapter_dir)
+    tokenizer = TinyTokenizer()
+    base_model = TinyGenerateLM()
+    captured = {}
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import opensportslib.models.base.qwen_xvars as mod
+
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda *args, **kwargs: tokenizer)
+    monkeypatch.setattr(AutoModelForCausalLM, "from_pretrained", lambda *args, **kwargs: base_model)
+
+    def _fake_load(model, adapter_path):
+        captured["adapter_path"] = adapter_path
+        return model, "loaded"
+
+    monkeypatch.setattr(mod, "load_peft_adapter_if_available", _fake_load)
+
+    model = QwenXVarsModel(cfg, model_id="Qwen/Qwen3.5-9B-Base", projector_params={"input_dim": 1024})
+
+    assert model._ready is True
+    assert captured["adapter_path"] == str(adapter_dir)
