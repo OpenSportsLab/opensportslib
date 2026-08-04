@@ -4,6 +4,7 @@ import tqdm
 import logging
 import cv2
 import math
+import numpy as np
 import torch
 from opensportslib.core.utils.video_processing import get_stride, read_fps, get_num_frames
 from opensportslib.core.utils.config import load_json
@@ -302,6 +303,116 @@ def annotationstoe2eformat(
 
     return labels_e2e, task_name_list[0]
 
+
+def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps):
+    """
+    Adapt tracking-parquet action-spotting annotations to E2E format.
+
+    Mirrors annotationstoe2eformat's output schema, but reads a whole-match
+    tracking parquet (via the per-game cache built by
+    opensportslib.datasets.utils.tracking.load_or_build_game_cache) instead
+    of a video file. Each event's position_ms is mapped to a native frame
+    index via a searchsorted lookup on the cached videoTimeMs column (the
+    absolute match clock, which lines up directly with position_ms) rather
+    than the from-scratch fps computation the video path uses, then
+    converted to a decimated (extract_fps) frame index the same way
+    FrameReader converts native video frames.
+
+    Args:
+        label_files (str | list[str]): Annotation JSON files.
+        video_dirs (str | list[str]): Root directories containing the
+            tracking parquets referenced by each annotation file.
+        extract_fps (float): Target fps to decimate the native tracking
+            stream to. A non-positive value keeps every native frame.
+
+    Returns:
+        (labels_e2e, task_name): labels_e2e is a list of dicts with the
+        same keys as annotationstoe2eformat's output (events/fps/
+        num_frames/num_frames_base/video/path/num_events), plus a
+        "stride" field (native rows per decimated frame) that dataset
+        classes use to slice windows out of the cached native features.
+    """
+    from opensportslib.datasets.utils.tracking import load_or_build_game_cache
+
+    if not isinstance(label_files, list):
+        label_files = [label_files]
+    if not isinstance(video_dirs, list):
+        video_dirs = [video_dirs]
+    assert len(label_files) == len(video_dirs)
+
+    labels_e2e = []
+    classes_by_label_dir = []
+    task_name_list = []
+
+    for label_path, video_dir in zip(label_files, video_dirs):
+        logging.info(f"Processing {label_path} to e2e format (tracking)")
+
+        annotations = load_json(label_path)
+
+        for task_name, task_data in annotations["labels"].items():
+            labels = task_data.get("labels", {})
+            task_name_list.append(task_name)
+        classes_by_label_dir.append(labels)
+
+        videos = annotations["data"]
+
+        for video in tqdm.tqdm(videos):
+            video_input = video["inputs"][0]
+            video_path = video_input["path"]
+            full_video_path = os.path.join(video_dir, video_path)
+            assert os.path.isfile(full_video_path), full_video_path
+
+            _, times, _ = load_or_build_game_cache(full_video_path)
+            num_frames = len(times)
+
+            native_fps = video_input.get("fps")
+            if not native_fps:
+                native_fps = 1000.0 / float(np.median(np.diff(times)))
+
+            target_fps = (
+                extract_fps if (extract_fps and extract_fps < native_fps) else native_fps
+            )
+            sample_fps = read_fps(native_fps, target_fps)
+            stride = get_stride(native_fps, target_fps)
+            num_frames_after = get_num_frames(num_frames, native_fps, target_fps)
+
+            events = []
+            for ann in video.get("events", []):
+                position_ms = float(ann["position_ms"])
+                native_idx = int(np.searchsorted(times, position_ms))
+                native_idx = min(max(native_idx, 0), num_frames - 1)
+                adj_frame = native_idx // stride
+
+                if adj_frame == 0:
+                    adj_frame = 1
+
+                events.append({
+                    "frame": int(adj_frame),
+                    "label": ann["label"],
+                })
+
+            events.sort(key=lambda x: x["frame"])
+
+            labels_e2e.append({
+                "events": events,
+                "fps": sample_fps,
+                "num_frames": num_frames_after,
+                "num_frames_base": num_frames,
+                "num_events": len(events),
+                "video": full_video_path,
+                "path": video_path,
+                "stride": stride,
+            })
+
+    base_classes = classes_by_label_dir[0]
+    for c in classes_by_label_dir:
+        assert c == base_classes
+
+    labels_e2e.sort(key=lambda x: x["video"])
+
+    return labels_e2e, task_name_list[0]
+
+
 # def annotationstoe2eformat(label_files, video_dirs, input_fps, extract_fps, dali):
 #     """Adapt annotations jsons to e2e format.
 
@@ -496,7 +607,7 @@ def check_config(cfg, split="train"):
         if get_loader_backend(cfg) == "dali":
             cfg.TRAIN.execution.repartitions = get_repartition_gpu(cfg.SYSTEM.gpu.count)
         primary_modality = get_data_modality(cfg)
-        assert primary_modality in ["rgb", "video"]
+        assert primary_modality in ["rgb", "video", "tracking_parquet"]
         backbone_type = get_component_name_by_kind(cfg, "encoder")
         assert backbone_type in [
             # From torchvision
@@ -513,6 +624,8 @@ def check_config(cfg, split="train"):
             "rny008",
             "rny008_tsm",
             "rny008_gsm",
+            # tracking graph encoder, sequence output (see models/backbones/builder.py)
+            "graph_conv_seq",
             # From timm
             "convnextt",
             "convnextt_tsm",
@@ -588,7 +701,11 @@ def whether_infer_split(cfg):
             return True
         else:
             return False
-    elif split_type == "VideoGameWithOpencvVideo" or split_type == "VideoGameWithDaliVideo":
+    elif split_type in (
+        "VideoGameWithOpencvVideo",
+        "VideoGameWithDaliVideo",
+        "TrackingActionSpotVideo",
+    ):
         if annotation_path and annotation_path.endswith(".json"):
             return True
         else:

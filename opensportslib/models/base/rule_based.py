@@ -118,23 +118,28 @@ class H5OSLJsonSpottingDataset:
         return self.samples[idx]
 
 
-class H5HeaderSpotter:
-    """Rule-based H5 header spotter driven entirely by config parameters."""
+class H5HeaderSpotterBase:
+    """Shared plumbing for H5 header spotters.
 
-    variant_name = "h5_header_distance"
+    Holds only what every spotting algorithm needs regardless of how it finds
+    contacts: the OSL JSON envelope, manifest path resolution and the
+    position_ms conversion. Subclasses supply ``_predict_sample`` and their own
+    parameter defaults.
+    """
 
-    def __init__(self, config):
-        rule_params = get_component_params_by_kind(config, "algorithm")
-        if not rule_params:
-            rule_params = get_data_params(config)
-        params = dict(DEFAULT_HEADER_RULE_PARAMS)
-        params.update(rule_params or {})
-        configured_variant = params.pop("type", None) or self.variant_name
-        params.update(HEADER_RULE_VARIANTS.get(configured_variant, {}))
-        params["model_variant"] = configured_variant
-        self.params = params
+    variant_name = ""
 
     def predict(self, dataset):
+        """Spot events for every sample of a dataset.
+
+        Args:
+            dataset (H5OSLJsonSpottingDataset): Manifest wrapper exposing
+                `samples` and `source_path`.
+
+        Returns:
+            predictions (dict): OSL JSON v2 payload with one entry per sample
+                under `data`, each holding the spotted `events`.
+        """
         data = []
         for sample in getattr(dataset, "samples", []):
             events = self._predict_sample(sample, dataset.source_path)
@@ -166,6 +171,64 @@ class H5HeaderSpotter:
         }
 
     def _predict_sample(self, sample, source_path):
+        """Spot events for a single manifest sample.
+
+        Args:
+            sample (dict): Manifest entry with `inputs` and optional `metadata`.
+            source_path (str): Directory relative input paths resolve against.
+
+        Returns:
+            events (List[dict]): Spotted events in chronological order.
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def _resolve_path(source_path, path):
+        """Resolve a manifest input path against the dataset source directory.
+
+        Args:
+            source_path (str): Directory relative paths resolve against.
+            path (str): Absolute or relative input path.
+
+        Returns:
+            resolved (str): Absolute path.
+        """
+        if os.path.isabs(path):
+            return path
+        return os.path.join(source_path, path)
+
+    @staticmethod
+    def _position_ms(timestamp, base_ts):
+        """Convert a timestamp to milliseconds elapsed since a reference.
+
+        Args:
+            timestamp (np.datetime64): Instant to convert.
+            base_ts (np.datetime64): Reference instant, i.e. position 0.
+
+        Returns:
+            position_ms (int): Milliseconds between the two instants.
+        """
+        delta_us = (timestamp - base_ts).astype("timedelta64[us]").astype(np.int64)
+        return int(round(delta_us / 1000.0))
+
+
+class H5HeaderSpotter(H5HeaderSpotterBase):
+    """Rule-based H5 header spotter driven entirely by config parameters."""
+
+    variant_name = "h5_header_distance"
+
+    def __init__(self, config):
+        rule_params = get_component_params_by_kind(config, "algorithm")
+        if not rule_params:
+            rule_params = get_data_params(config)
+        params = dict(DEFAULT_HEADER_RULE_PARAMS)
+        params.update(rule_params or {})
+        configured_variant = params.pop("type", None) or self.variant_name
+        params.update(HEADER_RULE_VARIANTS.get(configured_variant, {}))
+        params["model_variant"] = configured_variant
+        self.params = params
+
+    def _predict_sample(self, sample, source_path):
         inputs = sample.get("inputs", []) or []
         candidates = []
         for input_obj in inputs:
@@ -188,12 +251,6 @@ class H5HeaderSpotter:
             if candidate.confidence > float(self.params["min_confidence"])
         ]
         return [self._candidate_to_event(candidate) for candidate in self._nms(filtered)]
-
-    @staticmethod
-    def _resolve_path(source_path, path):
-        if os.path.isabs(path):
-            return path
-        return os.path.join(source_path, path)
 
     def _scan_joint_input(self, joint_path, ball_path, sample_metadata):
         ball = self._load_ball(ball_path)
@@ -494,11 +551,6 @@ class H5HeaderSpotter:
             return right
         raise ValueError(f"Unsupported trajectory endpoint direction: {direction}")
 
-    @staticmethod
-    def _position_ms(timestamp, base_ts):
-        delta_us = (timestamp - base_ts).astype("timedelta64[us]").astype(np.int64)
-        return int(round(delta_us / 1000.0))
-
     def _nms(self, candidates):
         if self.params["nms_scope"] != "sample":
             raise ValueError(f"Unsupported nms_scope: {self.params['nms_scope']}")
@@ -561,6 +613,518 @@ class H5HeaderDistanceSpeedAngleSpotter(H5HeaderSpotter):
     variant_name = "h5_header_distance_speed_angle"
 
 
+DEFAULT_SKELETON_RULE_PARAMS = {
+    "label": "header",
+    "head_name": "action",
+    # ball gates
+    "ball_height_min_m": 1.3,
+    "ball_height_max_m": 3.0,
+    "invalid_value": -1.0,
+    # ball trajectory gates (velocity from +/-1 frame, acceleration from +/-2)
+    "velocity_change_min_mps": 2.0,
+    "velocity_mag_min_mps": 1.0,
+    "angle_change_min_deg": 10.0,
+    "accel_z_change_min_mps2": 8.0,
+    "incoming_speed_min_mps": 4.0,
+    # player gates
+    "head_ball_distance_max_m": 0.4,
+    "facing_dot_min": -0.5,
+    "ankle_height_max_m": 1.2,
+    # dwell filter (rejects the ball resting near a head)
+    "dwell_window_frames": 3,
+    "dwell_distance_factor": 1.2,
+    "dwell_max_frames": 5,
+    # de-duplication
+    "nms_window_frames": 25,
+    "fps": 50.0,
+    # io / output
+    "required_input_type": "player_joints_h5",
+    "ball_path_field": "ball_path",
+    "timestamp_field": "timestamp_utc",
+    "output_task": "action_spotting",
+    "include_diagnostics": True,
+    "created_by": "h5_header_skeleton_rule",
+    # position_ms is measured from the first ball-track timestamp in the file
+    "metadata_start_field": "start_utc",
+    "metadata_end_field": "end_utc",
+    "confidence_output_key": "confidence_score",
+    "position_offset_ms": 0.0,
+}
+
+
+class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
+    """Frame-joined skeleton heuristic for header spotting.
+
+    Logic: ball height and trajectory gates (velocity change, direction change, 
+    z-acceleration change, incoming speed), then per-player checks (head-ball distance,
+    facing the ball, hands farther than the head, no acrobatic pose) and a dwell filter, 
+    joined on ``frame``/``player_id`` rather than timestamps.
+    Events carry ``timestamp_utc`` from the matched ball sample, so the output 
+    schema matches the other H5 header variants.
+
+    A sibling of :class:`H5HeaderSpotter` rather than a subclass: the two share
+    the output envelope but no detection logic, and this one deliberately does 
+    not participate in ``HEADER_RULE_VARIANTS``.
+    """
+
+    variant_name = "h5_header_skeleton"
+
+    def __init__(self, config):
+        """Build the spotter from a canonical config.
+
+        Args:
+            config: Config whose `algorithm` component params override
+                `DEFAULT_SKELETON_RULE_PARAMS`.
+        """
+        rule_params = get_component_params_by_kind(config, "algorithm")
+        if not rule_params:
+            rule_params = get_data_params(config)
+        params = dict(DEFAULT_SKELETON_RULE_PARAMS)
+        params.update(rule_params or {})
+        params.pop("type", None)
+        params["model_variant"] = self.variant_name
+        self.params = params
+
+    def _predict_sample(self, sample, source_path):
+        """Spot headers across every joints/ball input of a sample.
+
+        Args:
+            sample (dict): Manifest entry with `inputs` and optional `metadata`.
+            source_path (str): Directory relative input paths resolve against.
+
+        Returns:
+            events (List[dict]): Header events ordered by position.
+        """
+        inputs = sample.get("inputs", []) or []
+        events = []
+        for input_obj in inputs:
+            if input_obj.get("type") != self.params["required_input_type"]:
+                continue
+            ball_path = input_obj.get(self.params["ball_path_field"])
+            if not ball_path:
+                continue
+            events.extend(
+                self._detect(
+                    joint_path=self._resolve_path(source_path, input_obj["path"]),
+                    ball_path=self._resolve_path(source_path, ball_path),
+                    sample_metadata=sample.get("metadata", {}) or {},
+                )
+            )
+        events.sort(key=lambda event: event["position_ms"])
+        return events
+
+    # ------------------------------------------------------------- ball
+    def _load_ball_track(self, ball_path):
+        """Load the ball track, sorted by frame.
+
+        Args:
+            ball_path (str): Path to the ball H5 file.
+
+        Returns:
+            frames (np.ndarray): Frame number per sample, ascending.
+            xyz (np.ndarray): Ball positions of shape (num_samples, 3).
+            timestamps (np.ndarray): UTC instant per sample, datetime64[us].
+        """
+        timestamp_field = self.params["timestamp_field"]
+        with h5py.File(ball_path, "r") as f:
+            for field in ("frame", "x", "y", "z", timestamp_field):
+                if field not in f:
+                    raise ValueError(f"Ball H5 is missing dataset '{field}': {ball_path}")
+            frames = f["frame"][:]
+            order = np.argsort(frames, kind="stable")
+            frames = frames[order]
+            xyz = np.stack([f["x"][:], f["y"][:], f["z"][:]], axis=1).astype(float)[order]
+            timestamps = np.asarray(
+                [parse_utc(value) for value in f[timestamp_field][:]],
+                dtype="datetime64[us]",
+            )[order]
+        return frames, xyz, timestamps
+
+    def _ball_velocities(self, frames, xyz):
+        """Compute per-sample ball velocity from the preceding sample.
+
+        Velocity is left at zero wherever the pair of samples is unusable:
+        an invalid coordinate, a non-positive gap, or a gap long enough that
+        the ball was untracked in between.
+
+        Args:
+            frames (np.ndarray): Frame number per sample, ascending.
+            xyz (np.ndarray): Ball positions of shape (num_samples, 3).
+
+        Returns:
+            velocities (np.ndarray): Velocity in m/s, shape (num_samples, 3).
+        """
+        invalid = float(self.params["invalid_value"])
+        fps = float(self.params["fps"])
+        vel = np.zeros_like(xyz)
+        dt = np.diff(frames) / fps
+        pair_valid = (
+            (xyz[1:, 0] != invalid)
+            & (xyz[:-1, 0] != invalid)
+            & (dt > 0)
+            & (dt < 0.1)
+        )
+        safe_dt = np.where(dt > 0, dt, 1.0)
+        step = np.diff(xyz, axis=0) / safe_dt[:, None]
+        vel[1:][pair_valid] = step[pair_valid]
+        return vel
+
+    def _trajectory_pass(self, idx, n, vel):
+        """Test whether the ball path around a sample looks like an impact.
+
+        Applies the velocity-change, direction-change, z-acceleration and
+        incoming-speed gates. Samples too close to either end of the track skip
+        the gates that cannot be computed there.
+
+        Args:
+            idx (int): Index of the contact sample.
+            n (int): Number of ball samples.
+            vel (np.ndarray): Velocities of shape (num_samples, 3).
+
+        Returns:
+            passed (bool): Whether every applicable gate accepted the sample.
+            diagnostics (dict): Measured angle, speeds and acceleration change,
+                empty when a gate rejected the sample or none could be applied.
+        """
+        p = self.params
+        if not (2 < idx < n - 2):
+            return True, {}
+        vel_before = vel[idx - 1]
+        vel_after = vel[idx + 1]
+        vel_change = float(np.linalg.norm(vel_after - vel_before))
+        if vel_change < float(p["velocity_change_min_mps"]):
+            return False, {}
+        mag_before = float(np.linalg.norm(vel_before))
+        mag_after = float(np.linalg.norm(vel_after))
+        if mag_after < float(p["velocity_mag_min_mps"]) or mag_before < float(p["velocity_mag_min_mps"]):
+            return False, {}
+        cos_angle = float(np.dot(vel_before, vel_after) / (mag_before * mag_after))
+        cos_angle = max(-1.0, min(1.0, cos_angle))
+        angle_change = float(np.degrees(np.arccos(cos_angle)))
+        if angle_change < float(p["angle_change_min_deg"]):
+            return False, {}
+        diagnostics = {
+            "velocity_change_mps": vel_change,
+            "angle_change_deg": angle_change,
+            "incoming_speed_mps": mag_before,
+        }
+        if 3 < idx < n - 3:
+            half_step = 2.0 / float(p["fps"])
+            accel_before = (vel[idx, 2] - vel[idx - 2, 2]) / half_step
+            accel_after = (vel[idx + 2, 2] - vel[idx, 2]) / half_step
+            if abs(accel_after - accel_before) < float(p["accel_z_change_min_mps2"]):
+                return False, {}
+            if mag_before < float(p["incoming_speed_min_mps"]):
+                return False, {}
+            diagnostics["accel_z_change_mps2"] = float(abs(accel_after - accel_before))
+        return True, diagnostics
+
+    # ------------------------------------------------------------ joints
+    _JOINT_COLUMNS = (
+        "nose_x", "nose_y", "nose_z",
+        "l_wrist_x", "l_wrist_y", "l_wrist_z",
+        "r_wrist_x", "r_wrist_y", "r_wrist_z",
+        "l_shoulder_x", "l_shoulder_y", "r_shoulder_x", "r_shoulder_y",
+        "l_ankle_z", "r_ankle_z",
+    )
+
+    def _load_joints(self, joint_path, wanted_frames=None):
+        """Load joint rows, sorted by frame.
+
+        Restricting the read matters: the joint table holds millions of rows
+        while a scan touches only the frames near ball candidates, and the
+        variable-length `player_id` column dominates a full read.
+
+        Args:
+            joint_path (str): Path to the player joints H5 file.
+            wanted_frames (np.ndarray): Frame numbers to read rows for. Reads
+                every row when None.
+                Default: None.
+
+        Returns:
+            joints (dict): Column name to values, ordered by frame. `is_home`
+                is None when the file does not carry it.
+        """
+        with h5py.File(joint_path, "r") as f:
+            missing = [c for c in ("frame", "player_id", *self._JOINT_COLUMNS) if c not in f]
+            if missing:
+                raise ValueError(f"Joint H5 is missing datasets {missing}: {joint_path}")
+            frames = f["frame"][:]
+            if wanted_frames is None:
+                rows = np.arange(len(frames))
+            else:
+                rows = np.flatnonzero(np.isin(frames, wanted_frames))
+            # h5py fancy selection needs ascending indices; reorder to frame
+            # order in memory afterwards.
+            rows = np.sort(rows)
+            row_frames = frames[rows]
+            order = np.argsort(row_frames, kind="stable")
+
+            joints = {"frame": row_frames[order]}
+            for column in ("player_id", *self._JOINT_COLUMNS, "is_home"):
+                if column not in f:
+                    joints[column] = None
+                    continue
+                values = f[column][rows] if len(rows) else f[column][:0]
+                if column in self._JOINT_COLUMNS:
+                    values = values.astype(float, copy=False)
+                joints[column] = values[order]
+        return joints
+
+    @staticmethod
+    def _rows_at_frame(joints, frame):
+        """Locate the joint rows recorded at a frame.
+
+        Args:
+            joints (dict): Loaded joint columns, ordered by frame.
+            frame (int): Frame number to look up.
+
+        Returns:
+            rows (range): Row indexes for that frame, one per tracked player.
+        """
+        lo = int(np.searchsorted(joints["frame"], frame, side="left"))
+        hi = int(np.searchsorted(joints["frame"], frame, side="right"))
+        return range(lo, hi)
+
+    def _row_for_player(self, joints, frame, player_id):
+        """Locate one player's joint row at a frame.
+
+        Args:
+            joints (dict): Loaded joint columns, ordered by frame.
+            frame (int): Frame number to look up.
+            player_id: Player identifier as stored in the H5 file.
+
+        Returns:
+            row (int): Row index, or None when that player is untracked there.
+        """
+        for row in self._rows_at_frame(joints, frame):
+            if joints["player_id"][row] == player_id:
+                return row
+        return None
+
+    def _dwell_frames(self, joints, ball_frames, ball_xyz, ball_idx, player_id):
+        """Count how long the ball stays beside a player's head.
+
+        A header is a brief contact, so a ball that lingers near the head
+        across the window was carried or held rather than headed.
+
+        Args:
+            joints (dict): Loaded joint columns, ordered by frame.
+            ball_frames (np.ndarray): Frame number per ball sample.
+            ball_xyz (np.ndarray): Ball positions of shape (num_samples, 3).
+            ball_idx (int): Index of the contact sample.
+            player_id: Player identifier as stored in the H5 file.
+
+        Returns:
+            count (int): Samples in the window with the head close to the ball.
+        """
+        p = self.params
+        invalid = float(p["invalid_value"])
+        near = float(p["head_ball_distance_max_m"]) * float(p["dwell_distance_factor"])
+        window = int(p["dwell_window_frames"])
+        count = 0
+        for offset in range(-window, window + 1):
+            check_idx = ball_idx + offset
+            if check_idx < 0 or check_idx >= len(ball_frames):
+                continue
+            row = self._row_for_player(joints, ball_frames[check_idx], player_id)
+            if row is None or joints["nose_x"][row] == invalid:
+                continue
+            nose = np.array([
+                joints["nose_x"][row], joints["nose_y"][row], joints["nose_z"][row],
+            ])
+            if float(np.linalg.norm(nose - ball_xyz[check_idx])) < near:
+                count += 1
+        return count
+
+    # ------------------------------------------------------------ detect
+    def _detect(self, joint_path, ball_path, sample_metadata):
+        """Spot headers in one joints/ball pair.
+
+        Ball samples at head height start as candidates, survive the trajectory
+        gates, then face the per-player checks (head distance, facing the ball,
+        hands clear of the head, no acrobatic pose) and the dwell filter.
+        Survivors are de-duplicated so each contact yields one event.
+
+        Args:
+            joint_path (str): Path to the player joints H5 file.
+            ball_path (str): Path to the ball H5 file.
+            sample_metadata (dict): Manifest metadata; `start_utc` and
+                `end_utc` bound the scan window when present.
+
+        Returns:
+            events (List[dict]): Spotted header events for this input pair.
+        """
+        p = self.params
+        invalid = float(p["invalid_value"])
+        frames, xyz, timestamps = self._load_ball_track(ball_path)
+        n = len(frames)
+        if n == 0:
+            return []
+        vel = self._ball_velocities(frames, xyz)
+
+        candidate_mask = (
+            (xyz[:, 2] >= float(p["ball_height_min_m"]))
+            & (xyz[:, 2] <= float(p["ball_height_max_m"]))
+            & (xyz[:, 0] != invalid)
+        )
+        start_utc = sample_metadata.get(p["metadata_start_field"])
+        end_utc = sample_metadata.get(p["metadata_end_field"])
+        if start_utc:
+            candidate_mask &= timestamps >= parse_utc(start_utc)
+        if end_utc:
+            candidate_mask &= timestamps <= parse_utc(end_utc)
+        candidate_indices = np.flatnonzero(candidate_mask)
+        if candidate_indices.size == 0:
+            return []
+
+        # The scan reads joints at candidate frames, and the dwell filter looks
+        # a few ball samples either side of those, so that neighbourhood is the
+        # whole set of frames this sample can touch.
+        dwell_window = int(p["dwell_window_frames"])
+        neighbourhood = np.clip(
+            candidate_indices[:, None] + np.arange(-dwell_window, dwell_window + 1),
+            0,
+            n - 1,
+        )
+        joints = self._load_joints(joint_path, wanted_frames=np.unique(frames[neighbourhood]))
+        base_ts = timestamps.min()
+        max_dist = float(p["head_ball_distance_max_m"])
+
+        detections = []
+        for ball_idx in candidate_indices:
+            passed, trajectory = self._trajectory_pass(int(ball_idx), n, vel)
+            if not passed:
+                continue
+            ball_pos = xyz[ball_idx]
+            for row in self._rows_at_frame(joints, frames[ball_idx]):
+                if joints["nose_x"][row] == invalid:
+                    continue
+                nose = np.array([
+                    joints["nose_x"][row], joints["nose_y"][row], joints["nose_z"][row],
+                ])
+                head_dist = float(np.linalg.norm(nose - ball_pos))
+                if head_dist >= max_dist:
+                    continue
+                # facing: shoulder-line normal vs. direction to the ball (2-D)
+                facing = np.array([
+                    -(joints["r_shoulder_y"][row] - joints["l_shoulder_y"][row]),
+                    joints["r_shoulder_x"][row] - joints["l_shoulder_x"][row],
+                ])
+                to_ball = ball_pos[:2] - nose[:2]
+                if float(np.dot(facing, to_ball)) < float(p["facing_dot_min"]):
+                    continue
+                # hands: a hand nearer the ball than the head is not a header
+                l_hand = np.array([
+                    joints["l_wrist_x"][row], joints["l_wrist_y"][row], joints["l_wrist_z"][row],
+                ])
+                r_hand = np.array([
+                    joints["r_wrist_x"][row], joints["r_wrist_y"][row], joints["r_wrist_z"][row],
+                ])
+                hand_dist = min(
+                    float(np.linalg.norm(l_hand - ball_pos)),
+                    float(np.linalg.norm(r_hand - ball_pos)),
+                )
+                if hand_dist < head_dist:
+                    continue
+                # acrobatic pose: both feet must be below ankle_height_max
+                if (
+                    joints["l_ankle_z"][row] > float(p["ankle_height_max_m"])
+                    or joints["r_ankle_z"][row] > float(p["ankle_height_max_m"])
+                ):
+                    continue
+                player_id = joints["player_id"][row]
+                dwell = self._dwell_frames(joints, frames, xyz, int(ball_idx), player_id)
+                if dwell > int(p["dwell_max_frames"]):
+                    continue
+                detections.append({
+                    "ball_idx": int(ball_idx),
+                    "frame": int(frames[ball_idx]),
+                    "head_dist": head_dist,
+                    "player_id": player_id,
+                    "is_home": (
+                        int(joints["is_home"][row]) if joints["is_home"] is not None else None
+                    ),
+                    "ball_z": float(ball_pos[2]),
+                    "dwell": dwell,
+                    "trajectory": trajectory,
+                })
+
+        return [
+            self._detection_to_event(det, timestamps, base_ts)
+            for det in self._nms_frames(detections)
+        ]
+
+    def _nms_frames(self, detections):
+        """Reduce each cluster of detections to its closest contact.
+
+        One aerial duel produces detections on many neighbouring frames; the
+        one with the smallest head-ball distance represents the contact.
+
+        Args:
+            detections (List[dict]): Raw detections carrying `frame` and
+                `head_dist`.
+
+        Returns:
+            kept (List[dict]): One detection per cluster, ordered by frame.
+        """
+        window = int(self.params["nms_window_frames"])
+        detections = sorted(detections, key=lambda det: det["frame"])
+        kept, processed = [], []
+        for det in detections:
+            if any(abs(det["frame"] - frame) <= window for frame in processed):
+                continue
+            cluster = [det] + [
+                other for other in detections
+                if other is not det and abs(other["frame"] - det["frame"]) <= window
+            ]
+            best = min(cluster, key=lambda item: item["head_dist"])
+            kept.append(best)
+            processed.append(best["frame"])
+        return sorted(kept, key=lambda det: det["frame"])
+
+    def _detection_to_event(self, det, timestamps, base_ts):
+        """Convert a detection into an OSL JSON event.
+
+        Args:
+            det (dict): Detection produced by `_detect`.
+            timestamps (np.ndarray): UTC instant per ball sample.
+            base_ts (np.datetime64): Reference instant for `position_ms`.
+
+        Returns:
+            event (dict): Event with label, position, timestamp, confidence and
+                optional diagnostics metadata.
+        """
+        p = self.params
+        timestamp = timestamps[det["ball_idx"]]
+        position_ms = self._position_ms(timestamp, base_ts) + int(round(float(p["position_offset_ms"])))
+        confidence = max(0.0, min(1.0, 1.0 - det["head_dist"] / float(p["head_ball_distance_max_m"])))
+        player_id = det["player_id"]
+        if isinstance(player_id, (bytes, np.bytes_)):
+            player_id = player_id.decode("utf-8")
+        event = {
+            "head": p["head_name"],
+            "label": p["label"],
+            "position_ms": position_ms,
+            "timestamp_utc": str(timestamp).replace("T", " "),
+            p["confidence_output_key"]: float(confidence),
+        }
+        if p["include_diagnostics"]:
+            event["metadata"] = {
+                "distance_m": det["head_dist"],
+                "joint": "nose",
+                "player_id": str(player_id) if player_id else None,
+                "team": (
+                    None if det["is_home"] is None
+                    else ("home" if det["is_home"] == 1 else "away")
+                ),
+                "ball_z_m": det["ball_z"],
+                "dwell_frames": det["dwell"],
+                **det["trajectory"],
+            }
+        return event
+
+
 def build_rule_based_model(config):
     rule_params = get_component_params_by_kind(config, "algorithm")
     variant = (rule_params or {}).get("type", "h5_header_distance")
@@ -569,6 +1133,7 @@ def build_rule_based_model(config):
         "h5_header_distance_speed": H5HeaderDistanceSpeedSpotter,
         "h5_header_distance_angle": H5HeaderDistanceAngleSpotter,
         "h5_header_distance_speed_angle": H5HeaderDistanceSpeedAngleSpotter,
+        "h5_header_skeleton": H5HeaderSkeletonSpotter,
     }
     try:
         return registry[variant](config)

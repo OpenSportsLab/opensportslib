@@ -14,6 +14,7 @@ from opensportslib.core.utils.load_annotations import get_repartition_gpu
 from opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts
 from opensportslib.core.config.accessors import (
     get_component_params_by_kind,
+    get_data_augmentations,
     get_data_classes,
     get_data_params,
     get_runtime_modality,
@@ -23,6 +24,10 @@ from opensportslib.core.config.accessors import (
     get_split_dataloader_cfg,
     get_system_gpu_count,
     get_train_execution,
+)
+from opensportslib.core.utils.data import (
+    tracking_spotting_collate_fn,
+    tracking_spotting_eval_collate_fn,
 )
 from SoccerNet.Downloader import getListGames
 from SoccerNet.Downloader import SoccerNetDownloader
@@ -91,7 +96,26 @@ def _resolve_dali_video_sample(labels, video_idx, frame_num, stride):
     video_meta = labels[video_idx]
     start = _dali_frame_num_to_local_frame(frame_num, stride)
     return video_meta["path"], start
-    
+
+
+def _build_tracking_spotting_augmentations(config):
+    """Assemble tracking augmentations for TrackingActionSpotDataset from the
+    canonical DATA.inputs.<input>.augmentations block (get_data_augmentations),
+    mirroring classification_dataset.TrackingDataset._build_transforms."""
+    from opensportslib.datasets.utils.tracking import HorizontalFlip, TeamFlip, VerticalFlip
+
+    aug_config = get_data_augmentations(config)
+
+    transforms = []
+    if aug_config.get("horizontal_flip", False):
+        transforms.append(HorizontalFlip(probability=0.5))
+    if aug_config.get("vertical_flip", False):
+        transforms.append(VerticalFlip(probability=0.5))
+    if aug_config.get("team_flip", False):
+        transforms.append(TeamFlip(probability=0.5))
+    return transforms
+
+
 class LocalizationDataset(Dataset):
     def __init__(self, config, annotations_path=None, processor=None, split="train"):
         self.config = config
@@ -414,6 +438,42 @@ class LocalizationDataset(Dataset):
                 annotation_path=annotation_path,
                 source_path=source_path,
             )
+        elif dataset_type == "TrackingActionSpot":
+            # Graph topology params live on the encoder component (canonical),
+            # spatial normalization on the input transform block.
+            encoder_params = get_component_params_by_kind(self.config, "encoder")
+            normalize = get_data_transform(self.config).get("normalize", True)
+            dataset_len = self.data_cfg.epoch_num_frames // self.data_cfg.clip_len
+            dataset = TrackingActionSpotDataset(
+                default_args["classes"],
+                annotation_path,
+                source_path,
+                self.data_cfg.clip_len,
+                self.data_cfg.extract_fps,
+                dataset_len if default_args["train"] else dataset_len // 4,
+                edge_type=encoder_params.get("edge_type"),
+                k=encoder_params.get("k"),
+                r=encoder_params.get("radius"),
+                is_eval=not default_args["train"],
+                dilate_len=self.data_cfg.dilate_len,
+                augmentations=_build_tracking_spotting_augmentations(self.config),
+                normalize=normalize,
+            )
+        elif dataset_type == "TrackingActionSpotVideo":
+            encoder_params = get_component_params_by_kind(self.config, "encoder")
+            normalize = get_data_transform(self.config).get("normalize", True)
+            dataset = TrackingActionSpotVideoDataset(
+                default_args["classes"],
+                annotation_path,
+                source_path,
+                self.data_cfg.clip_len,
+                self.data_cfg.extract_fps,
+                edge_type=encoder_params.get("edge_type"),
+                k=encoder_params.get("k"),
+                r=encoder_params.get("radius"),
+                overlap_len=getattr(cfg, "overlap_len", self.data_cfg.clip_len // 2),
+                normalize=normalize,
+            )
         else:
             dataset = None
         return dataset
@@ -445,7 +505,11 @@ class LocalizationDataset(Dataset):
             prefetch_factor=(
                 getattr(cfg, "prefetch_factor", None)
             ),
-            worker_init_fn=worker_init_fn
+            worker_init_fn=worker_init_fn,
+            # None for RGB datasets (default collate); the tracking datasets
+            # expose a graph collate that flattens per-frame graphs into a
+            # single PyG Batch (see core.utils.data).
+            collate_fn=getattr(dataset, "collate_fn", None),
         )
         return dataloader
 
@@ -1045,6 +1109,352 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
             frames = torch.stack((frames, frames.flip(-1)), dim=0)
 
         return {"video": video_path, "start": start // self._stride, "frame": frames}
+
+
+class _TrackingGraphWindowMixin:
+    """Shared window-slicing + per-frame graph-building logic for
+    tracking-based action-spotting datasets (train and eval).
+
+    Both TrackingActionSpotDataset and TrackingActionSpotVideoDataset need
+    to turn a (video_meta, base_idx) pair into `self._clip_len` per-frame
+    PyG graphs. The pure array work (slicing a decimated window out of a
+    game's whole-match cache) lives in datasets.utils.tracking.slice_window;
+    this mixin only does the dataset-layer glue: caching, applying
+    augmentation/normalization, and wrapping each frame in a PyG Data (which
+    keeps torch_geometric out of the utils module).
+    """
+
+    def _init_tracking_window(self, clip_len, edge_type, k, r, normalize, transforms=None):
+        from opensportslib.datasets.utils.tracking import (
+            build_edge_index,
+            load_or_build_game_cache,
+            normalize_features,
+            slice_window,
+        )
+
+        self._clip_len = clip_len
+        self._build_edge_index = build_edge_index
+        self._normalize_features = normalize_features
+        self._load_or_build_game_cache = load_or_build_game_cache
+        self._slice_window_fn = slice_window
+
+        self._edge_type = edge_type
+        self._k = k
+        self._r = r
+        self._normalize = normalize
+        self._transforms = list(transforms) if transforms else []
+        self._game_cache = {}
+
+    def load_frame_gpu(self, batch, device):
+        """Move the batched graph ("frame") to device.
+
+        No GPU-deferred transforms are used for tracking data; this just
+        gives the E2E training loop the same interface ActionSpotDataset
+        provides for RGB clips.
+        """
+        return batch["frame"].to(device)
+
+    def _get_game_cache(self, video_path):
+        """lazily load (and memoize for the lifetime of this dataset
+        instance/worker) a game's cached whole-match features."""
+        if video_path not in self._game_cache:
+            self._game_cache[video_path] = self._load_or_build_game_cache(video_path)
+        return self._game_cache[video_path]
+
+    def _slice_window(self, video_meta, base_idx):
+        """Fetch the game cache and slice a decimated feature window +
+        per-frame position lists out of it (see tracking.slice_window)."""
+        features_cache, _, positions_cache = self._get_game_cache(video_meta["video"])
+        return self._slice_window_fn(
+            features_cache, positions_cache, base_idx, self._clip_len, video_meta["stride"]
+        )
+
+    def _build_graphs(self, window, positions):
+        """Turn a sliced feature window into a list of per-frame PyG graphs,
+        applying tracking augmentations/normalization first."""
+        from torch_geometric.data import Data
+
+        for transform in self._transforms:
+            window = transform(window)
+
+        if self._normalize:
+            window = self._normalize_features(window)
+
+        graphs = []
+        for t in range(window.shape[0]):
+            edge_index = self._build_edge_index(
+                window[t], positions[t], self._edge_type, self._k, self._r
+            )
+            graphs.append(
+                Data(
+                    x=torch.tensor(window[t], dtype=torch.float),
+                    edge_index=torch.tensor(edge_index, dtype=torch.long),
+                )
+            )
+        return graphs
+
+
+class TrackingActionSpotDataset(Dataset, _TrackingGraphWindowMixin):
+    """Training dataset for tracking-based action spotting.
+
+    Mirrors ActionSpotDataset (random clip_len-frame windows, dense dilated
+    per-frame labels, uniform/foreground-weighted sampling) but slices
+    per-frame graphs out of a cached whole-match tracking parquet (see
+    datasets.utils.tracking.load_or_build_game_cache) instead of decoding
+    video frames. Mixup is not supported (mixing raw node features across two
+    differently-structured graphs is not well-defined).
+
+    Args:
+        classes (dict): dict of class names to idx.
+        label_file (str | list[str]): Path to annotation JSON file(s).
+        video_dir (str | list[str]): Root dir(s) containing the tracking
+            parquets referenced by the annotations.
+        clip_len (int): Length of a clip, in decimated (extract_fps) frames.
+        extract_fps (float): Target fps to decimate the native stream to.
+        dataset_len (int): Number of clips per epoch.
+        edge_type (str): Graph edge-building strategy (see build_edge_index).
+        k (int): neighbour count for knn-style edge strategies.
+        r (float): distance threshold (metres) for distance-style strategies.
+        is_eval (bool): Disable augmentation (mirrors ActionSpotDataset).
+        dilate_len (int): Dilate ground-truth labels.
+        pad_len (int): Frames to pad the start/end of a game.
+        fg_upsample (float): Sample foreground explicitly.
+        augmentations (list): tracking augmentation transforms.
+        normalize (bool): whether to normalize spatial features.
+    """
+
+    collate_fn = staticmethod(tracking_spotting_collate_fn)
+
+    def __init__(
+        self,
+        classes,
+        label_file,
+        video_dir,
+        clip_len,
+        extract_fps,
+        dataset_len,
+        edge_type="positional",
+        k=8,
+        r=15.0,
+        is_eval=True,
+        dilate_len=0,
+        pad_len=5,
+        fg_upsample=-1,
+        augmentations=None,
+        normalize=True,
+    ):
+        from opensportslib.core.utils.load_annotations import annotationstoe2eformat_tracking
+
+        self._src_file = label_file
+        self._labels, self.task_name = annotationstoe2eformat_tracking(
+            label_file, video_dir, extract_fps
+        )
+        self._class_dict = _normalize_class_dict(classes)
+        self._video_idxs = {x["video"]: i for i, x in enumerate(self._labels)}
+
+        num_frames = [v["num_frames"] for v in self._labels]
+        self._weights_by_length = np.array(num_frames) / np.sum(num_frames)
+
+        self._is_eval = is_eval
+        self._stride = 1
+        self._dataset_len = dataset_len
+        assert dataset_len > 0
+        self._pad_len = pad_len
+        assert pad_len >= 0
+
+        self._dilate_len = dilate_len
+        self._fg_upsample = fg_upsample
+
+        if self._fg_upsample > 0:
+            self._flat_labels = []
+            for i, x in enumerate(self._labels):
+                for event in x["events"]:
+                    if event["frame"] < x["num_frames"]:
+                        self._flat_labels.append((i, event["frame"]))
+
+        # Like ActionSpotDataset, augmentation is disabled at eval time; the
+        # dataset owns that decision (via is_eval) rather than the caller.
+        self._init_tracking_window(
+            clip_len, edge_type, k, r, normalize,
+            None if is_eval else augmentations,
+        )
+
+    def _sample_uniform(self):
+        """Sample video metadata and a base start index uniformly based on
+        video lengths and weights."""
+        video_meta = random.choices(self._labels, weights=self._weights_by_length)[0]
+
+        video_len = video_meta["num_frames"]
+        base_idx = -self._pad_len * self._stride + random.randint(
+            0,
+            max(0, video_len - 1 + (2 * self._pad_len - self._clip_len) * self._stride),
+        )
+        return video_meta, base_idx
+
+    def _sample_foreground(self):
+        """Sample video metadata and a base start index focusing on
+        foreground labels."""
+        video_idx, frame_idx = random.choices(self._flat_labels)[0]
+        video_meta = self._labels[video_idx]
+        video_len = video_meta["num_frames"]
+
+        lower_bound = max(
+            -self._pad_len * self._stride, frame_idx - self._clip_len * self._stride + 1
+        )
+        upper_bound = min(
+            video_len - 1 + (self._pad_len - self._clip_len) * self._stride, frame_idx
+        )
+
+        base_idx = (
+            random.randint(lower_bound, upper_bound)
+            if upper_bound > lower_bound
+            else lower_bound
+        )
+        return video_meta, base_idx
+
+    def _get_one(self):
+        """Get a training sample for one game."""
+        if self._fg_upsample > 0 and random.random() >= self._fg_upsample:
+            video_meta, base_idx = self._sample_foreground()
+        else:
+            video_meta, base_idx = self._sample_uniform()
+
+        labels = np.zeros(self._clip_len, np.int64)
+        for event in video_meta["events"]:
+            event_frame = event["frame"]
+
+            label_idx = (event_frame - base_idx) // self._stride
+            if (
+                label_idx >= -self._dilate_len
+                and label_idx < self._clip_len + self._dilate_len
+            ):
+                label = self._class_dict[event["label"]]
+                for i in range(
+                    max(0, label_idx - self._dilate_len),
+                    min(self._clip_len, label_idx + self._dilate_len + 1),
+                ):
+                    labels[i] = label
+
+        window, positions = self._slice_window(video_meta, base_idx)
+        graphs = self._build_graphs(window, positions)
+
+        return {
+            "graphs": graphs,
+            "contains_event": int(np.sum(labels) > 0),
+            "label": labels,
+        }
+
+    def __getitem__(self, unused):
+        """Get a training sample based on one game."""
+        return self._get_one()
+
+    def __len__(self):
+        return self._dataset_len
+
+    def print_info(self):
+        num_frames = sum(x["num_frames"] for x in self._labels)
+        num_events = sum(len(x["events"]) for x in self._labels)
+        print(
+            "{} : {} games, {} frames ({} stride), {:0.5f}% non-bg".format(
+                self._src_file,
+                len(self._labels),
+                num_frames,
+                self._stride,
+                num_events / num_frames * 100 if num_frames else 0.0,
+            )
+        )
+
+
+class TrackingActionSpotVideoDataset(Dataset, _TrackingGraphWindowMixin, DatasetVideoSharedMethods):
+    """Sliding-window evaluation dataset for tracking-based action spotting.
+
+    Mirrors ActionSpotVideoDataset/DatasetVideoSharedMethods - same
+    (path, video, start) sliding-clip list with overlap_len for full-match
+    coverage, and the same get_labels/videos/labels properties the mAP
+    evaluator relies on - but each clip is a window of per-frame graphs
+    sliced out of a cached whole-match tracking parquet instead of decoded
+    video frames.
+
+    Args:
+        classes (dict): dict of class names to idx.
+        label_file (str): Path to annotation JSON file.
+        video_dir (str): Root dir containing the tracking parquets.
+        clip_len (int): Length of a clip, in decimated (extract_fps) frames.
+        extract_fps (float): Target fps to decimate the native stream to.
+        edge_type (str): Graph edge-building strategy (see build_edge_index).
+        k (int): neighbour count for knn-style edge strategies.
+        r (float): distance threshold (metres) for distance-style strategies.
+        overlap_len (int): Overlapping frames between consecutive clips.
+        pad_len (int): Frames to pad the start/end of a game.
+        skip_partial_end (bool): Whether to skip a partial clip at the end.
+        normalize (bool): whether to normalize spatial features.
+    """
+
+    collate_fn = staticmethod(tracking_spotting_eval_collate_fn)
+
+    def __init__(
+        self,
+        classes,
+        label_file,
+        video_dir,
+        clip_len,
+        extract_fps,
+        edge_type="positional",
+        k=8,
+        r=15.0,
+        overlap_len=0,
+        pad_len=5,
+        skip_partial_end=True,
+        normalize=True,
+    ):
+        from opensportslib.core.utils.load_annotations import annotationstoe2eformat_tracking
+
+        self._src_file = label_file
+        self._labels, self.task_name = annotationstoe2eformat_tracking(
+            label_file, video_dir, extract_fps
+        )
+        self._class_dict = _normalize_class_dict(classes)
+        self._video_idxs = {x["path"]: i for i, x in enumerate(self._labels)}
+        self._stride = 1
+
+        # DatasetVideoSharedMethods.augment reads these; tracking data has
+        # no notion of flip/multi-crop augmentation at eval time.
+        self._flip = False
+        self._multi_crop = False
+
+        self._init_tracking_window(clip_len, edge_type, k, r, normalize)
+
+        stride = self._stride
+        self._clips = []
+        for l in self._labels:
+            has_clip = False
+            for i in range(
+                -pad_len * stride,
+                max(
+                    0, l["num_frames"] - (overlap_len * stride) * int(skip_partial_end)
+                ),  # Need to ensure that all clips have at least one frame
+                (clip_len - overlap_len) * stride,
+            ):
+                has_clip = True
+                self._clips.append((l["path"], l["video"], i))
+            assert has_clip, l
+
+    def __len__(self):
+        return len(self._clips)
+
+    def __getitem__(self, idx):
+        """Get a dict of metadata containing the name of the game, the index
+        of the first frame, and the clip's per-frame graphs.
+
+        Returns:
+            dict: {"video", "start", "graphs"}.
+        """
+        video_path, video, start = self._clips[idx]
+        video_meta = self._labels[self._video_idxs[video_path]]
+        window, positions = self._slice_window(video_meta, start)
+        graphs = self._build_graphs(window, positions)
+        return {"video": video_path, "start": start // self._stride, "graphs": graphs}
+
 
 if DALI_AVAILABLE:
     class DaliDataSet(DALIGenericIterator):

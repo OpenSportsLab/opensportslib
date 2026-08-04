@@ -22,6 +22,7 @@ feature vector layout (per object, per frame)::
 """
 
 import json
+import os
 import random
 
 import numpy as np
@@ -619,3 +620,174 @@ class TeamFlip:
             features_flipped[:, :, 4] = home_col
             return features_flipped
         return features
+
+
+# -------------------------------------------------------------------
+# whole-match feature cache (action spotting)
+# -------------------------------------------------------------------
+#
+# action-spotting tracking parquets cover a full match (~175k rows,
+# 800MB-1.2GB, a single row group with no predicate pushdown), so
+# re-reading/re-parsing the raw parquet for every randomly sampled
+# training window is not viable. these helpers parse a game once and
+# cache compact per-frame arrays next to the source parquet; later
+# accesses just load (optionally memory-mapped) those arrays and slice
+# windows out of them.
+
+_POSITION_CODES = {"": 0, "BALL": 1, "GK": 2, "DEF": 3, "MID": 4, "FWD": 5}
+_POSITION_NAMES = {v: k for k, v in _POSITION_CODES.items()}
+
+
+def _cache_paths(parquet_path):
+    """sidecar cache file paths for a given game parquet."""
+    return (
+        parquet_path + ".features.npy",
+        parquet_path + ".times.npy",
+        parquet_path + ".positions.npy",
+    )
+
+
+def _atomic_save(path, array):
+    """write `array` to `path` via a temp file + rename so concurrent
+    dataloader workers never observe a partially-written cache file."""
+    tmp_path = f"{path}.tmp-{os.getpid()}"
+    np.save(tmp_path, array, allow_pickle=False)
+    # np.save appends ".npy" if the given name doesn't already end with it.
+    saved_path = tmp_path if tmp_path.endswith(".npy") else tmp_path + ".npy"
+    os.replace(saved_path, path)
+
+
+def build_game_cache(parquet_path):
+    """parse a whole-match tracking parquet once and cache compact arrays.
+
+    writes three sidecar files next to `parquet_path`:
+        <path>.features.npy   (num_frames, NUM_OBJECTS, FEATURE_DIM) float32
+        <path>.times.npy      (num_frames,) float64, videoTimeMs per row
+        <path>.positions.npy  (num_frames, NUM_OBJECTS) int8 position codes
+
+    velocity deltas (dx, dy) are intentionally left at zero here rather
+    than computed on this native-rate array: a training/eval window may
+    subsample the native stream down to a lower extract_fps, and deltas
+    must reflect the gap between *sampled* frames, not between raw
+    native rows. callers should slice a window out of the cached array
+    first, then run compute_deltas on that (already-decimated)
+    subsequence. the array is not normalized and has no augmentation
+    applied either - both also happen per-window at train/eval time so
+    they stay config-dependent.
+
+    Args:
+        parquet_path: path to the whole-match tracking parquet.
+
+    Returns:
+        a tuple (features, times, positions); see load_or_build_game_cache.
+    """
+    df = pd.read_parquet(
+        parquet_path,
+        columns=["videoTimeMs", "balls", "homePlayers", "awayPlayers"],
+    )
+
+    num_frames = len(df)
+    all_features = np.zeros((num_frames, NUM_OBJECTS, FEATURE_DIM), dtype=np.float32)
+    all_positions = np.zeros((num_frames, NUM_OBJECTS), dtype=np.int8)
+
+    for t, (_, row) in enumerate(df.iterrows()):
+        features, positions = parse_frame(row)
+        all_features[t] = features
+        all_positions[t] = [_POSITION_CODES.get(p, 0) for p in positions]
+
+    times = df["videoTimeMs"].to_numpy(dtype=np.float64)
+
+    features_path, times_path, positions_path = _cache_paths(parquet_path)
+    _atomic_save(features_path, all_features)
+    _atomic_save(times_path, times)
+    _atomic_save(positions_path, all_positions)
+
+    return all_features, times, all_positions
+
+
+def load_or_build_game_cache(parquet_path, mmap=True):
+    """load the cached per-frame features/times/positions for a game,
+    building the cache (see build_game_cache) on first access.
+
+    Args:
+        parquet_path: path to the whole-match tracking parquet.
+        mmap: if True, load cached arrays memory-mapped (cheap random
+            window slicing without pulling the whole game into RAM).
+
+    Returns:
+        features: numpy.ndarray (num_frames, NUM_OBJECTS, FEATURE_DIM)
+            float32, raw (no velocity deltas, unnormalized) - callers
+            compute deltas after slicing/decimating a window.
+        times: numpy.ndarray (num_frames,) float64, videoTimeMs per row.
+        positions: numpy.ndarray (num_frames, NUM_OBJECTS) int8 position
+            codes (see _POSITION_CODES / positions_to_strings).
+    """
+    features_path, times_path, positions_path = _cache_paths(parquet_path)
+
+    if (
+        os.path.exists(features_path)
+        and os.path.exists(times_path)
+        and os.path.exists(positions_path)
+    ):
+        mmap_mode = "r" if mmap else None
+        features = np.load(features_path, mmap_mode=mmap_mode)
+        times = np.load(times_path, mmap_mode=mmap_mode)
+        positions = np.load(positions_path, mmap_mode=mmap_mode)
+        return features, times, positions
+
+    return build_game_cache(parquet_path)
+
+
+def positions_to_strings(position_codes):
+    """decode a (NUM_OBJECTS,) array of int position codes back to strings.
+
+    Args:
+        position_codes: iterable of int codes (see _POSITION_CODES).
+
+    Returns:
+        list of position-group strings, e.g. ["BALL", "GK", "DEF", ...].
+    """
+    return [_POSITION_NAMES.get(int(c), "") for c in position_codes]
+
+
+def slice_window(features_cache, positions_cache, base_idx, clip_len, stride):
+    """slice one decimated feature window out of a whole-match cache.
+
+    Picks `clip_len` frames starting at decimated index `base_idx`, taking
+    every `stride`-th native row (native_idx = (base_idx + i) * stride).
+    `base_idx` may be negative or run past the end of the match (start/end
+    padding, as ActionSpotDataset does for video); out-of-range frames are
+    left as MISSING_VALUE sentinels, which the edge-building / normalization
+    utilities already treat as absent nodes. Velocity deltas are computed
+    *after* this decimation (see compute_deltas) so dx/dy reflect the gap
+    between sampled frames, not raw native rows.
+
+    Args:
+        features_cache: (native_num_frames, NUM_OBJECTS, FEATURE_DIM) array
+            from load_or_build_game_cache (raw, no deltas, unnormalized).
+        positions_cache: (native_num_frames, NUM_OBJECTS) int8 position
+            codes from the same cache.
+        base_idx: window start, in decimated (extract_fps) frame units.
+        clip_len: number of decimated frames in the window.
+        stride: native rows per decimated frame (from the game's metadata).
+
+    Returns:
+        window: (clip_len, NUM_OBJECTS, FEATURE_DIM) float32 array with
+            velocity deltas filled in.
+        positions: list of `clip_len` per-frame position-group string lists.
+    """
+    native_num_frames = features_cache.shape[0]
+
+    window = np.full(
+        (clip_len, NUM_OBJECTS, FEATURE_DIM), MISSING_VALUE, dtype=np.float32
+    )
+    positions = [[""] * NUM_OBJECTS for _ in range(clip_len)]
+
+    for i in range(clip_len):
+        native_idx = (base_idx + i) * stride
+        if 0 <= native_idx < native_num_frames:
+            window[i] = features_cache[native_idx]
+            positions[i] = positions_to_strings(positions_cache[native_idx])
+
+    window = compute_deltas(window)
+    return window, positions

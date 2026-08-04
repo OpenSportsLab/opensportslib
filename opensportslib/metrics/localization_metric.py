@@ -495,6 +495,10 @@ def infer_and_process_predictions_e2e(
             num_workers=dataloader_params.num_workers,
             pin_memory=dataloader_params.pin_memory,
             batch_size=batch_size,
+            # None for RGB datasets (default collate); tracking eval datasets
+            # expose a graph collate that wraps each clip's PyG Batch in a
+            # 1-element list under "frame" (see core.utils.data).
+            collate_fn=getattr(dataset, "collate_fn", None),
         )
     ):
         if batch_size > 1:
