@@ -112,6 +112,20 @@ def test_vqa_qwen_experiment_composes_all_layers():
     assert cfg["TRAIN"]["execution"]["hf"]["offload_folder"] == "./hf_offload_qwen"
 
 
+def test_vqa_qwen_vl_native_experiment_composes_all_layers():
+    cfg = load_config("opensportslib/configs/vqa/qwen3_vl_native.yaml", as_namespace=False)
+
+    assert cfg["VERSION"] == 2
+    assert cfg["TASK"] == "vqa"
+    assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
+    assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints_vqa_qwen3_vl_native"
+    assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints_vqa_qwen3_vl_native"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert cfg["MODEL"]["metadata"]["backend"] == "qwen_vl_native_infer"
+    assert cfg["MODEL"]["components"]["llm_decoder"]["source"]["name"] == "Qwen/Qwen3-VL-8B-Instruct"
+    assert cfg["TRAIN"]["execution"]["training_backend"] == "qwen_vl_native_lora"
+
+
 def test_validation_accepts_canonical_schema():
     canonical = load_config(
         "opensportslib/configs/localization/default.yaml",

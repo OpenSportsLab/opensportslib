@@ -141,9 +141,25 @@ metrics = m.evaluate(
 ```
 
 Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
-`opensportslib setup --vqa_qwen` for the Qwen-compatible backend. The Qwen
-config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+for the X-VARS backend. OpenSportsLib supports three VQA options:
+
+- `opensportslib/configs/vqa/xvars.yaml`
+  Original X-VARS / Video-ChatGPT path.
+- CLIP features + Qwen
+  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
+  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
+- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
+  Full end-to-end native QwenVL path.
+
+Use `opensportslib setup --vqa_qwen` for the CLIP+Qwen and native QwenVL
+paths. `qwen.yaml` and `qwen_lora.yaml` support
+`Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`. The single canonical
+QwenVL config is `qwen3_vl_native.yaml`; change
+`MODEL.components.llm_decoder.params.repo_id` there to switch supported QwenVL
+model IDs:
+
+- `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
 
 ### X-VARS Backends
 
@@ -170,3 +186,27 @@ For upstream-style inference JSON, save VQA predictions with:
 ```python
 m.save_predictions("xvars_predictions.json", predictions, output_format="xvars")
 ```
+
+### Native Qwen VL Backends
+
+Use `MODEL.metadata.backend: qwen_vl_native_infer` with
+`TRAIN.execution.training_backend: qwen_vl_native_lora` for the native
+end-to-end multimodal path. This backend does not use
+`video_spatio_temporal_features` or the X-VARS projector contract. Instead, it
+feeds sampled video frames directly into a Hugging Face Qwen VL processor/model
+pair.
+
+The initial shared input contract is frame-based. Set
+`TRAIN.execution.native_vl.visual_input_mode` to:
+
+- `frames` for deterministic frame sampling from `video_path`
+- `video_with_frames_fallback` to attempt native video input first and fall back
+  to sampled frames if the model/runtime path rejects direct video
+
+Supported native model configs include:
+
+- `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
+
+The AWQ variant is treated as inference-only by the training backend and will
+raise a clear error if used for `qwen_vl_native_lora`.

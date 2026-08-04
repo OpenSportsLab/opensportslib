@@ -61,14 +61,19 @@ def build_model_canonical(config, device):
         from opensportslib.models.base.contextaware import LiteContextAwareModel
         from opensportslib.models.base.learnablepooling import LiteLearnablePoolingModel
 
-        backbone = _component_cfg(config, "encoder")
-        head = _component_cfg(config, "head")
         model_weights = (
             get_model_load(config).get("checkpoint_path")
             or get_component_load_by_kind(config, "encoder").get("weights_path")
         )
         runner = get_runner_type(config)
         normalized_family = str(model_family or "").strip().lower()
+
+        if normalized_family == "rulebased":
+            from opensportslib.models.base.rule_based import build_rule_based_model
+            return build_rule_based_model(config)
+
+        backbone = _component_cfg(config, "encoder")
+        head = _component_cfg(config, "head")
 
         if normalized_family == "learnablepooling":
             neck = _component_cfg(config, "adapter")
@@ -132,10 +137,18 @@ def build_model_canonical(config, device):
                 model_id=model_id,
                 projector_params=projector_params,
             ), None
+        if backend == "qwen_vl_native_infer":
+            from opensportslib.models.base.qwen_vl_native import QwenVLNativeModel
+
+            model_id = get_vqa_decoder_model_id(config, default="Qwen/Qwen2.5-VL-7B-Instruct")
+            return QwenVLNativeModel(
+                config,
+                model_id=model_id,
+            ), None
 
         raise ValueError(
             f"Unsupported VQA backend '{backend}'. "
-            "Only 'xvars_videochatgpt' and 'qwen_xvars_infer' are supported."
+            "Only 'xvars_videochatgpt', 'qwen_xvars_infer', and 'qwen_vl_native_infer' are supported."
         )
     else:
         raise ValueError(f"Unsupported model family for task: {task}")

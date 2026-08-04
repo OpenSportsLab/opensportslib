@@ -188,6 +188,21 @@ https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2
 - **2024 Ball Action Spotting (12 classes)**  
   https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e 
 
+These localization HF repos can now be loaded with the same model ID on both
+GPU and CPU. OpenSportsLib picks the runtime backend automatically: `dali` when
+CUDA/NVIDIA is available, otherwise `opencv`.
+
+### 3. VQA
+
+- **X-VARS LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora
+
+- **Qwen2.5-VL-7B LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora
+
+- **Qwen3-VL-8B LoRA on OSL-XFoul**  
+  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora
+
 Usage:
 ```bash
 ### Load weights from HF ###
@@ -198,6 +213,12 @@ myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")
 #### For Localization ####
 weights = "OpenSportsLab/OSL-loc-snbas-2023-e2e" # SNBAS - 2 classes (E2E spot)
 weights = "OpenSportsLab/OSL-loc-snbas-2025-e2e" # SNBAS - 12 classes (E2E spot)
+myModel.load_weights(weights=weights)
+
+#### For VQA ####
+weights = "OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora"
+weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora"
+weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora"
 myModel.load_weights(weights=weights)
 ```
 
@@ -307,9 +328,25 @@ predictions = myModel.infer(
 
 
 Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS-compatible backend, or `opensportslib/configs/vqa/qwen.yaml` with
-`opensportslib setup --vqa_qwen` for the Qwen backend. The Qwen backend
-supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-Base`.
+for the X-VARS backend. OpenSportsLib supports three VQA config paths:
+
+- `opensportslib/configs/vqa/xvars.yaml`
+  Original X-VARS / Video-ChatGPT path.
+- CLIP features + Qwen
+  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
+  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
+- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
+  Full end-to-end native QwenVL path.
+
+Use `opensportslib setup --vqa_qwen` for the CLIP+Qwen and native QwenVL
+paths. The CLIP+Qwen configs support `Qwen/Qwen2.5-7B-Instruct` and
+`Qwen/Qwen3.5-9B-Base`. The native config defaults to
+`Qwen/Qwen3-VL-8B-Instruct` and supports:
+
+- `Qwen/Qwen3-VL-8B-Instruct`
+- `Qwen/Qwen2.5-VL-7B-Instruct`
+
+Switch models by editing `MODEL.components.llm_decoder.params.repo_id`.
 
 For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
 when available and falls back to raw-video CLIP extraction during `infer()`.

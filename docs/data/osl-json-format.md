@@ -125,9 +125,18 @@ Supported input types used by current OpenSportsLib workflows:
 | `video` | `clips/clip_0001.mp4` | Raw video clip or full game video. |
 | `frames_npy` | `frames/clip_0001.npy` | NumPy frame array. The legacy alias `frame_npy` is normalized by annotation tooling. |
 | `tracking_parquet` | `tracking/clip_0001.parquet` | Parquet tracking data. |
+| `player_centroids_h5` | `tracking/live_centroids.h5` | Columnar H5 player centroid rows keyed by `timestamp_utc`, with player `x/y` coordinates. |
+| `player_joints_h5` | `tracking/live_joints.h5` | Columnar H5 player joint rows keyed by `timestamp_utc`, with joint columns named like `nose_x`, `nose_y`, `nose_z`. |
 
 `fps` is recommended for video and frame-array inputs. Tracking inputs can also
 include `fps` as a fallback when timestamps are not available.
+
+H5 player tracking inputs may include `ball_path` to point at a synchronized
+ball H5 file. Ball files are resolved relative to the same split `source_path`
+as `path`, unless an absolute path is provided. H5 loaders use `timestamp_utc`
+as the source of truth and can clip each sample with optional
+`data[].metadata.start_utc` and `data[].metadata.end_utc` values. When those
+metadata fields are absent, the loader uses the available H5 timestamp range.
 
 ### Relative Path Resolution
 
@@ -184,6 +193,11 @@ or modality.
     {
       "type": "tracking_parquet",
       "path": "tracking/play_0001.parquet"
+    },
+    {
+      "type": "player_centroids_h5",
+      "path": "tracking/live_centroids.h5",
+      "ball_path": "tracking/live_ball.h5"
     }
   ]
 }
@@ -467,6 +481,45 @@ Grouped question/answer annotations:
         "effective_fps": 2.0,
         "window_size": 16,
         "frame_interval": 15
+      }
+    }
+  ]
+}
+```
+
+## H5 Tracking Example
+
+```json
+{
+  "version": "2.0",
+  "date": "2026-07-20",
+  "task": "action_classification",
+  "dataset_name": "soccer-h5-tracking-demo",
+  "modalities": ["player_centroids_h5"],
+  "labels": {
+    "action": {
+      "type": "single_label",
+      "labels": ["header", "other"]
+    }
+  },
+  "data": [
+    {
+      "id": "match_01_window_0001",
+      "inputs": [
+        {
+          "type": "player_centroids_h5",
+          "path": "live_centroids.h5",
+          "ball_path": "live_ball.h5"
+        }
+      ],
+      "metadata": {
+        "start_utc": "2022-12-03 16:00:02.000000",
+        "end_utc": "2022-12-03 16:00:04.000000"
+      },
+      "labels": {
+        "action": {
+          "label": "header"
+        }
       }
     }
   ]
