@@ -1,0 +1,65 @@
+TASK: localization
+VERSION: 2
+
+SYSTEM:
+  paths:
+    work_dir: ./outputs/header_spotting_skeleton
+  device: cpu
+  gpu:
+    count: 0
+
+DATA:
+  common:
+    dataset_name: h5_headers
+    data_root: /home/giancos/FIFA_data/128083
+    classes:
+      - header
+    splits:
+      test:
+        type: H5OSLJsonSpotting
+        # Manifest listing the joints/ball h5 pair and the scan window; the
+        # eval scripts generate one per run under their own work dir.
+        annotation_path: ./outputs/header_wc22/manifest.json
+        source_path: /home/giancos/FIFA_data/128083
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 0
+          pin_memory: false
+  inputs:
+    tracking:
+      modality: player_joints_h5
+      representation: raw
+      source:
+        format: h5
+      sampling: {}
+      transform: {}
+      augmentations: {}
+      params: {}
+
+MODEL:
+  metadata:
+    family: RuleBased
+    runner:
+      type: runner_h5_header_rule
+  components:
+    rule:
+      kind: algorithm
+      source:
+        provider: opensportslib
+        registry: rule_based
+        name: h5_header_skeleton
+      # Thresholds default to DEFAULT_SKELETON_RULE_PARAMS in
+      # opensportslib/models/base/rule_based.py. Override here only what this
+      # run needs to differ — restating a default pins it, so later tuning of
+      # the defaults would silently not reach this config.
+      params:
+        label: header
+        head_name: action
+  topology: []
+
+TRAIN:
+  trainer:
+    type: trainer_rule_based
+  execution:
+    enabled: false
