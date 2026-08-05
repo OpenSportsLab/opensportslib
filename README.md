@@ -36,6 +36,13 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 > Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
 > PyTorch Geometric is supported up to PyTorch 2.10.*.
 
+### Create conda env
+
+```bash
+conda create -n osl python=3.12 pip
+conda activate osl
+```
+
 ### Stable release
 
 ```bash
