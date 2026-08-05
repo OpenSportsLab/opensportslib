@@ -19,6 +19,7 @@ from opensportslib.core.config.accessors import (
     get_model_family,
 )
 from opensportslib.core.utils.config import expand
+from opensportslib.core.config.loader import _dali_available
 
 
 class LocalizationModel(BaseTaskModel):
@@ -126,7 +127,7 @@ class LocalizationModel(BaseTaskModel):
         from opensportslib.core.utils.config import select_device
 
         device = select_device(self.config.SYSTEM)
-        backend = "dali" if self._device_type(device) == "cuda" else "opencv"
+        backend = "dali" if self._device_type(device) == "cuda" and _dali_available() else "opencv"
         current_backend = get_loader_backend(self.config)
         set_loader_backend(self.config, backend)
 

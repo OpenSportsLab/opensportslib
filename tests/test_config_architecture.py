@@ -81,7 +81,7 @@ def test_localization_experiment_composes_all_layers():
     assert cfg["SYSTEM"]["paths"]["log_dir"] == "./logs"
     assert cfg["SYSTEM"]["paths"]["save_dir"] == "./checkpoints"
     assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints"
-    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "dali"
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] in {"dali", "opencv"}
     assert cfg["MODEL"]["components"]["video_encoder"]["source"]["name"] == "rny008_gsm"
 
 
@@ -92,6 +92,20 @@ def test_resolve_config_cpu_normalizes_canonical_dali_localization_config():
     resolved = migrate_config(cfg, as_namespace=False)
     resolved = validate_config(resolved)
     resolved = resolve_config(resolved, as_namespace=False)
+
+    assert resolved["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert resolved["DATA"]["common"]["splits"]["train"]["type"] == "VideoGameWithOpencv"
+    assert resolved["DATA"]["common"]["splits"]["valid"]["type"] == "VideoGameWithOpencv"
+    assert resolved["DATA"]["common"]["splits"]["test"]["type"] == "VideoGameWithOpencvVideo"
+
+
+def test_resolve_config_cuda_without_dali_normalizes_to_opencv(monkeypatch):
+    cfg = load_config("opensportslib/configs/localization/video_dali.yaml", as_namespace=False)
+    cfg["SYSTEM"]["device"] = "cuda"
+
+    monkeypatch.setattr("opensportslib.core.config.loader._dali_available", lambda: False)
+
+    resolved = resolve_config(cfg, as_namespace=False)
 
     assert resolved["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
     assert resolved["DATA"]["common"]["splits"]["train"]["type"] == "VideoGameWithOpencv"
