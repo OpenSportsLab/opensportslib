@@ -4,12 +4,13 @@ import pytest
 pytest.importorskip("omegaconf")
 from omegaconf import OmegaConf
 
-from opensportslib.apis.classification import ClassificationAPI
-from opensportslib.apis.localization import LocalizationAPI
+from opensportslib.apis.classification import ClassificationModel
+from opensportslib.apis.localization import LocalizationModel
 from opensportslib.core.utils import config as config_utils
 from opensportslib.core.utils.config import (
     fetch_and_merge_pretrained_config,
     namespace_to_dict,
+    resolve_inference_class_metadata,
 )
 
 
@@ -75,6 +76,7 @@ def test_fetch_merge_compatibility_keeps_runtime_and_adopts_hf_model(tmp_path):
             "inputs": {"video": {"params": {"num_classes": 10}}},
         },
         "SYSTEM": {"device": "cuda", "gpu": {"count": 8, "id": 0}},
+        "TRAIN": {"epochs": 1},
     }
 
     ckpt_dir = tmp_path / "hf_ckpt"
@@ -96,9 +98,64 @@ def test_fetch_merge_compatibility_keeps_runtime_and_adopts_hf_model(tmp_path):
     assert merged["DATA"]["common"]["data_root"] == "/local/data"
     assert merged["DATA"]["inputs"]["video"]["params"]["num_classes"] == 8
     assert merged["DATA"]["common"]["classes"] == ["A", "B"]
+    assert merged["DATA"]["common"]["runtime"]["pretrained_classes"] == ["X", "Y"]
+    assert merged["DATA"]["common"]["runtime"]["pretrained_num_classes"] == 10
     assert merged["SYSTEM"]["device"] == "cpu"
     assert merged["SYSTEM"]["gpu"]["count"] == 1
     assert merged["TRAIN"]["epochs"] == 12
+
+
+def test_resolve_inference_class_metadata_prefers_pretrained_classes(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "TASK": "classification",
+            "MODEL": {"components": {}, "topology": []},
+            "DATA": {
+                "common": {
+                    "classes": ["LOCAL_A", "LOCAL_B"],
+                    "runtime": {
+                        "pretrained_classes": ["HF_A", "HF_B", "HF_C"],
+                        "pretrained_num_classes": 3,
+                    },
+                }
+            },
+            "SYSTEM": {"device": "cpu"},
+            "TRAIN": {},
+        }
+    )
+
+    resolved = resolve_inference_class_metadata(cfg)
+    resolved = _as_plain(resolved)
+
+    assert resolved["DATA"]["common"]["classes"] == ["HF_A", "HF_B", "HF_C"]
+    assert resolved["DATA"]["common"]["num_classes"] == 3
+    assert resolved["DATA"]["common"]["runtime"]["inference_class_source"] == "model"
+    assert resolved["DATA"]["common"]["runtime"]["inference_model_classes_authoritative"] is True
+
+
+def test_resolve_inference_class_metadata_falls_back_to_local_classes():
+    cfg = OmegaConf.create(
+        {
+            "TASK": "classification",
+            "MODEL": {"components": {}, "topology": []},
+            "DATA": {
+                "common": {
+                    "classes": ["LOCAL_A", "LOCAL_B"],
+                    "runtime": {},
+                }
+            },
+            "SYSTEM": {"device": "cpu"},
+            "TRAIN": {},
+        }
+    )
+
+    resolved = resolve_inference_class_metadata(cfg)
+    resolved = _as_plain(resolved)
+
+    assert resolved["DATA"]["common"]["classes"] == ["LOCAL_A", "LOCAL_B"]
+    assert resolved["DATA"]["common"]["num_classes"] == 2
+    assert resolved["DATA"]["common"]["runtime"]["inference_class_source"] == "local"
+    assert resolved["DATA"]["common"]["runtime"]["inference_model_classes_authoritative"] is False
 
 
 def test_namespace_to_dict_handles_omegaconf_without_recursion():
@@ -120,11 +177,11 @@ def test_namespace_to_dict_handles_omegaconf_without_recursion():
     "api_cls,cfg_path",
     [
         (
-            ClassificationAPI,
+            ClassificationModel,
             REPO_ROOT / "opensportslib" / "legacy_config" / "classification.yaml",
         ),
         (
-            LocalizationAPI,
+            LocalizationModel,
             REPO_ROOT / "opensportslib" / "legacy_config" / "localization.yaml",
         ),
     ],
@@ -132,22 +189,13 @@ def test_namespace_to_dict_handles_omegaconf_without_recursion():
 def test_infer_uses_compatibility_merge_policy(monkeypatch, tmp_path, api_cls, cfg_path):
     calls = []
 
-    def fake_fetch(cfg, pretrained, hf_token=None, merge_policy="full"):
-        calls.append(
-            {
-                "pretrained": pretrained,
-                "merge_policy": merge_policy,
-            }
-        )
-        return cfg
-
     class _StopFlow(RuntimeError):
         pass
 
-    def stop_after_merge(cfg):
+    def stop_after_merge(cfg, weights=None):
+        calls.append({"weights": weights})
         raise _StopFlow
 
-    monkeypatch.setattr(config_utils, "fetch_and_merge_pretrained_config", fake_fetch)
     monkeypatch.setattr(config_utils, "resolve_config_omega", stop_after_merge)
 
     api = api_cls(config=str(cfg_path))
@@ -155,21 +203,20 @@ def test_infer_uses_compatibility_merge_policy(monkeypatch, tmp_path, api_cls, c
     with pytest.raises(_StopFlow):
         api.infer(
             test_set=str(tmp_path / "test_annotations.json"),
-            pretrained="OpenSportsLab/dummy-repo",
+            weights="OpenSportsLab/dummy-repo",
             predictions=str(tmp_path / "predictions.json"),
             use_wandb=False,
         )
 
     assert calls
-    assert calls[0]["pretrained"] == "OpenSportsLab/dummy-repo"
-    assert calls[0]["merge_policy"] == "compatibility"
+    assert calls[0]["weights"] == "OpenSportsLab/dummy-repo"
 
 
 @pytest.mark.parametrize(
     "api_cls,cfg_path,train_kwargs",
     [
         (
-            ClassificationAPI,
+            ClassificationModel,
             REPO_ROOT / "opensportslib" / "legacy_config" / "classification.yaml",
             {
                 "train_set": "train.json",
@@ -177,7 +224,7 @@ def test_infer_uses_compatibility_merge_policy(monkeypatch, tmp_path, api_cls, c
             },
         ),
         (
-            LocalizationAPI,
+            LocalizationModel,
             REPO_ROOT / "opensportslib" / "legacy_config" / "localization.yaml",
             {
                 "train_set": "train.json",
@@ -191,33 +238,23 @@ def test_train_uses_compatibility_merge_policy(
 ):
     calls = []
 
-    def fake_fetch(cfg, pretrained, hf_token=None, merge_policy="full"):
-        calls.append(
-            {
-                "pretrained": pretrained,
-                "merge_policy": merge_policy,
-            }
-        )
-        return cfg
-
     class _StopFlow(RuntimeError):
         pass
 
-    def stop_after_merge(cfg):
+    def stop_after_merge(cfg, weights=None):
+        calls.append({"weights": weights})
         raise _StopFlow
 
-    monkeypatch.setattr(config_utils, "fetch_and_merge_pretrained_config", fake_fetch)
     monkeypatch.setattr(config_utils, "resolve_config_omega", stop_after_merge)
 
     api = api_cls(config=str(cfg_path))
 
     with pytest.raises(_StopFlow):
         api.train(
-            pretrained="OpenSportsLab/dummy-repo",
+            weights="OpenSportsLab/dummy-repo",
             use_wandb=False,
             **train_kwargs,
         )
 
     assert calls
-    assert calls[0]["pretrained"] == "OpenSportsLab/dummy-repo"
-    assert calls[0]["merge_policy"] == "compatibility"
+    assert calls[0]["weights"] == "OpenSportsLab/dummy-repo"

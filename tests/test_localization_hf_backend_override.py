@@ -203,3 +203,151 @@ def test_localization_infer_applies_hf_backend_override_before_dataset_build(
     assert observed["backend"] == "opencv"
     assert observed["dataset_type"] == "VideoGameWithOpencvVideo"
     assert observed["dali"] is False
+
+
+def test_localization_infer_uses_pretrained_runtime_classes_before_dataset_build(
+    tmp_path,
+    monkeypatch,
+):
+    test_set = tmp_path / "test.json"
+    test_set.write_text("{}", encoding="utf-8")
+    observed = {}
+
+    class FakeData:
+        cfg = SimpleNamespace(dataloader=SimpleNamespace(batch_size=1, shuffle=False))
+        default_args = {}
+
+        def building_dataset(self, cfg, gpu, default_args):
+            del cfg, gpu, default_args
+            return ["dataset"]
+
+        def building_dataloader(self, dataset, cfg, gpu, dali):
+            del dataset, cfg, gpu, dali
+            return ["batch"]
+
+    class FakeInferer:
+        def infer(self, cfg, data, dataloader):
+            del data, dataloader
+            observed["classes"] = list(cfg.DATA.common.classes)
+            observed["num_classes"] = cfg.DATA.common.num_classes
+            return {"task": "localization"}
+
+    fake_load_annotations = ModuleType("opensportslib.core.utils.load_annotations")
+    fake_load_annotations.check_config = lambda config, split: None
+    fake_load_annotations.whether_infer_split = lambda test_cfg: False
+    monkeypatch.setitem(sys.modules, "opensportslib.core.utils.load_annotations", fake_load_annotations)
+
+    fake_localization_trainer = ModuleType("opensportslib.core.trainer.localization_trainer")
+    fake_localization_trainer.build_inferer = lambda cfg, model: FakeInferer()
+    monkeypatch.setitem(
+        sys.modules,
+        "opensportslib.core.trainer.localization_trainer",
+        fake_localization_trainer,
+    )
+
+    fake_builder = ModuleType("opensportslib.datasets.builder")
+    fake_builder.build_dataset = lambda config, split: FakeData()
+    monkeypatch.setitem(sys.modules, "opensportslib.datasets.builder", fake_builder)
+
+    fake_wandb = ModuleType("opensportslib.core.utils.wandb")
+    fake_wandb.init_wandb = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "opensportslib.core.utils.wandb", fake_wandb)
+
+    monkeypatch.setattr("opensportslib.core.utils.config.resolve_config_omega", lambda config, weights=None: config)
+    monkeypatch.setattr(
+        "opensportslib.core.utils.config.select_device",
+        lambda system: SimpleNamespace(type="cpu"),
+    )
+    monkeypatch.setattr(LocalizationModel, "load_weights", lambda self, weights=None, **kwargs: setattr(self, "model", object()))
+
+    api = _make_api(_make_config(loader_backend="opencv"))
+    api.config.DATA.common.classes = ["LOCAL_PASS"]
+    api.config.DATA.common.runtime.pretrained_classes = ["HF_PASS", "HF_SHOT"]
+    api.config.DATA.common.runtime.pretrained_num_classes = 2
+    api.last_loaded_weights = "OpenSportsLab/OSL-loc-snbas-2025-e2e"
+    os.environ["RUN_ID"] = "test-run"
+
+    predictions = api.infer(test_set=str(test_set), use_wandb=False)
+
+    assert predictions == {"task": "localization"}
+    assert observed["classes"] == ["HF_PASS", "HF_SHOT"]
+    assert observed["num_classes"] == 2
+
+
+def test_localization_infer_restores_pretrained_classes_after_check_config_override(
+    tmp_path,
+    monkeypatch,
+):
+    test_set = tmp_path / "test.json"
+    test_set.write_text("{}", encoding="utf-8")
+    observed = {}
+
+    class FakeData:
+        cfg = SimpleNamespace(dataloader=SimpleNamespace(batch_size=1, shuffle=False))
+        default_args = {}
+
+        def building_dataset(self, cfg, gpu, default_args):
+            del cfg, gpu, default_args
+            return ["dataset"]
+
+        def building_dataloader(self, dataset, cfg, gpu, dali):
+            del dataset, cfg, gpu, dali
+            return ["batch"]
+
+    class FakeInferer:
+        def infer(self, cfg, data, dataloader):
+            del data, dataloader
+            observed["classes"] = list(cfg.DATA.common.classes)
+            observed["num_classes"] = cfg.DATA.common.num_classes
+            return {"task": "localization"}
+
+    def _mutating_check_config(config, split):
+        del split
+        config.DATA.common.classes = {
+            "PASS": 1,
+            "DRIVE": 2,
+            "HEADER": 3,
+            "HIGH PASS": 4,
+        }
+        config.DATA.common.num_classes = 4
+
+    fake_load_annotations = ModuleType("opensportslib.core.utils.load_annotations")
+    fake_load_annotations.check_config = _mutating_check_config
+    fake_load_annotations.whether_infer_split = lambda test_cfg: False
+    monkeypatch.setitem(sys.modules, "opensportslib.core.utils.load_annotations", fake_load_annotations)
+
+    fake_localization_trainer = ModuleType("opensportslib.core.trainer.localization_trainer")
+    fake_localization_trainer.build_inferer = lambda cfg, model: FakeInferer()
+    monkeypatch.setitem(
+        sys.modules,
+        "opensportslib.core.trainer.localization_trainer",
+        fake_localization_trainer,
+    )
+
+    fake_builder = ModuleType("opensportslib.datasets.builder")
+    fake_builder.build_dataset = lambda config, split: FakeData()
+    monkeypatch.setitem(sys.modules, "opensportslib.datasets.builder", fake_builder)
+
+    fake_wandb = ModuleType("opensportslib.core.utils.wandb")
+    fake_wandb.init_wandb = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "opensportslib.core.utils.wandb", fake_wandb)
+
+    monkeypatch.setattr("opensportslib.core.utils.config.resolve_config_omega", lambda config, weights=None: config)
+    monkeypatch.setattr(
+        "opensportslib.core.utils.config.select_device",
+        lambda system: SimpleNamespace(type="cpu"),
+    )
+    monkeypatch.setattr(LocalizationModel, "load_weights", lambda self, weights=None, **kwargs: setattr(self, "model", object()))
+
+    api = _make_api(_make_config(loader_backend="opencv"))
+    api.config.DATA.common.classes = ["LOCAL_PASS"]
+    api.config.DATA.common.runtime.pretrained_classes = ["HF_PASS", "HF_DRIVE"]
+    api.config.DATA.common.runtime.pretrained_num_classes = 2
+    api.last_loaded_weights = "OpenSportsLab/OSL-loc-snbas-2023-e2e"
+    os.environ["RUN_ID"] = "test-run"
+
+    predictions = api.infer(test_set=str(test_set), use_wandb=False)
+
+    assert predictions == {"task": "localization"}
+    assert observed["classes"] == ["HF_PASS", "HF_DRIVE"]
+    assert observed["num_classes"] == 2

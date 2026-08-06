@@ -1219,6 +1219,11 @@ class Trainer_Classification:
             sid = item["id"]
             gt_label = item["labels"]["action"]["label"]
             if gt_label not in exclude_labels:
+                if gt_label not in label_to_idx:
+                    raise ValueError(
+                        "Ground-truth label is not present in the resolved inference class list: "
+                        f"{gt_label!r}."
+                    )
                 gt_dict[sid] = label_to_idx[gt_label]
 
         preds = []
@@ -1230,6 +1235,11 @@ class Trainer_Classification:
                 continue
 
             pred_label = item["labels"]["action"]["label"]
+            if pred_label not in label_to_idx:
+                raise ValueError(
+                    "Predicted label is not present in the resolved inference class list: "
+                    f"{pred_label!r}."
+                )
 
             preds.append(label_to_idx[pred_label])
             labels.append(gt_dict[sid])

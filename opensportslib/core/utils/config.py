@@ -2,11 +2,20 @@ import os
 import re
 import json
 import gzip
+import logging
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - runtime compatibility
     import yaml_compat as yaml
 
+from opensportslib.core.config.accessors import (
+    get_data_classes,
+    get_data_num_classes,
+    get_data_runtime,
+    set_data_classes,
+    set_data_num_classes,
+    set_data_runtime_value,
+)
 from opensportslib.core.config import (
     load_config as _load_config,
     load_config_omega as _load_config_omega,
@@ -225,6 +234,108 @@ def is_local_path(p):
     )
 
 
+def _extract_class_metadata(data_section):
+    if not isinstance(data_section, dict):
+        return None, None
+
+    common = data_section.get("common", {}) if isinstance(data_section.get("common", {}), dict) else {}
+    classes = common.get("classes")
+    if classes is not None:
+        classes = list(classes)
+
+    num_classes = common.get("num_classes")
+    if num_classes is None:
+        inputs = data_section.get("inputs", {})
+        if isinstance(inputs, dict):
+            for input_cfg in inputs.values():
+                if not isinstance(input_cfg, dict):
+                    continue
+                params = input_cfg.get("params", {})
+                if isinstance(params, dict) and params.get("num_classes") is not None:
+                    num_classes = params.get("num_classes")
+                    break
+
+    if num_classes is None and classes is not None:
+        num_classes = len(classes)
+
+    return classes, num_classes
+
+
+def _cache_pretrained_class_metadata(target_dict, loaded_dict):
+    if not isinstance(target_dict, dict) or not isinstance(loaded_dict, dict):
+        return
+
+    loaded_data = loaded_dict.get("DATA", {})
+    pretrained_classes, pretrained_num_classes = _extract_class_metadata(loaded_data)
+    if pretrained_classes is None and pretrained_num_classes is None:
+        return
+
+    data = target_dict.setdefault("DATA", {})
+    if not isinstance(data, dict):
+        return
+    common = data.setdefault("common", {})
+    if not isinstance(common, dict):
+        return
+    runtime = common.setdefault("runtime", {})
+    if not isinstance(runtime, dict):
+        return
+
+    if pretrained_classes is not None:
+        runtime["pretrained_classes"] = list(pretrained_classes)
+    if pretrained_num_classes is not None:
+        runtime["pretrained_num_classes"] = int(pretrained_num_classes)
+
+
+def resolve_inference_class_metadata(cfg):
+    runtime = get_data_runtime(cfg)
+    pretrained_classes = runtime.get("pretrained_classes")
+    pretrained_num_classes = runtime.get("pretrained_num_classes")
+
+    local_classes = get_data_classes(cfg)
+    local_num_classes = get_data_num_classes(cfg, default=0)
+
+    chosen_classes = None
+    chosen_num_classes = None
+    source = None
+
+    if pretrained_classes:
+        chosen_classes = list(pretrained_classes)
+        chosen_num_classes = len(chosen_classes)
+        source = "model"
+        if local_classes and list(local_classes) != chosen_classes:
+            logging.warning(
+                "Inference class mismatch: local config classes differ from pretrained model classes. "
+                "Using pretrained model classes."
+            )
+    elif pretrained_num_classes is not None:
+        chosen_num_classes = int(pretrained_num_classes)
+        source = "model"
+        if local_num_classes and int(local_num_classes) != chosen_num_classes:
+            logging.warning(
+                "Inference class-count mismatch: local config num_classes=%s, pretrained model num_classes=%s. "
+                "Using pretrained model class count.",
+                local_num_classes,
+                chosen_num_classes,
+            )
+    elif local_classes:
+        chosen_classes = list(local_classes)
+        chosen_num_classes = len(chosen_classes)
+        source = "local"
+    elif local_num_classes:
+        chosen_num_classes = int(local_num_classes)
+        source = "local"
+    else:
+        source = "annotation"
+
+    if chosen_classes is not None:
+        set_data_classes(cfg, chosen_classes)
+    if chosen_num_classes is not None:
+        set_data_num_classes(cfg, chosen_num_classes)
+    set_data_runtime_value(cfg, "inference_class_source", source)
+    set_data_runtime_value(cfg, "inference_model_classes_authoritative", source == "model")
+    return cfg
+
+
 def fetch_and_merge_config_from_HF(
     target_config, weights, hf_token=None, merge_policy="full"
 ):
@@ -275,6 +386,7 @@ def fetch_and_merge_config_from_HF(
         loaded_dict = namespace_to_dict(loaded_cfg)
 
         _warn_critical_config_conflicts(target_dict, loaded_dict)
+        _cache_pretrained_class_metadata(target_dict, loaded_dict)
 
         if merge_policy == "compatibility":
             # Keep local runtime config as source of truth. Pull only compatibility-
@@ -315,8 +427,6 @@ def fetch_and_merge_config_from_HF(
 
 
 def _warn_critical_config_conflicts(target_dict, loaded_dict):
-    import logging
-
     local_data = target_dict.get("DATA", {}) if isinstance(target_dict, dict) else {}
     hf_data = loaded_dict.get("DATA", {}) if isinstance(loaded_dict, dict) else {}
 
@@ -335,7 +445,7 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
     ):
         logging.warning(
             "Config mismatch: DATA.num_classes local=%s hf=%s. "
-            "Keeping local runtime config values.",
+            "Inference may use pretrained model class metadata.",
             local_num_classes,
             hf_num_classes,
         )
@@ -355,8 +465,11 @@ def _warn_critical_config_conflicts(target_dict, loaded_dict):
     ):
         logging.warning(
             "Config mismatch: DATA.classes differs between local and HF config. "
-            "Keeping local runtime config values.",
+            "Inference may use pretrained model classes.",
         )
+
+
+fetch_and_merge_pretrained_config = fetch_and_merge_config_from_HF
 
 def save_config(config_obj, path):
     """Save the configuration object to a YAML file."""

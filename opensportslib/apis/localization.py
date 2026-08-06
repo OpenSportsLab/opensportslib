@@ -18,7 +18,7 @@ from opensportslib.core.config.accessors import (
     set_loader_backend,
     get_model_family,
 )
-from opensportslib.core.utils.config import expand
+from opensportslib.core.utils.config import expand, resolve_inference_class_metadata
 from opensportslib.core.config.loader import _dali_available
 
 
@@ -276,6 +276,7 @@ class LocalizationModel(BaseTaskModel):
         self._set_split_path("valid_data_frames", valid_set)
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="train")
@@ -389,9 +390,11 @@ class LocalizationModel(BaseTaskModel):
         self._set_split_path("test", test_set)
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="test")
+        self.config = resolve_inference_class_metadata(self.config)
         self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 
         init_wandb(
@@ -459,9 +462,11 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
         self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
         check_config(self.config, split="test")
+        self.config = resolve_inference_class_metadata(self.config)
         self.config.infer_split = whether_infer_split(get_split_cfg(self.config, "test"))
 
         init_wandb(

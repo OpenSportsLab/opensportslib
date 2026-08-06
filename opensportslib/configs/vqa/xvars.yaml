@@ -1,6 +1,6 @@
 SYSTEM:
   paths:
-    save_dir: ./checkpoints_vqa_lora
+    save_dir: ./checkpoints_vqa_xvars_lora
   gpu:
     count: 4
 
