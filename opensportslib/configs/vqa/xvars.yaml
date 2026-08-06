@@ -10,9 +10,9 @@ MODEL:
       kind: encoder
       source:
         provider: opensportslib
-      # XVARS-trained classifier weights to load into that architecture
+      # X-VARS visual checkpoint: local file path or HF model repo ID.
       load:
-        weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
+        weights_path: OpenSportsLab/trained-clip-vit-large-patch14
       params:
         # CLIP architecture and image processor to instantiate.
         feature_source: indexed_or_raw_clip
@@ -31,7 +31,7 @@ MODEL:
       source:
         provider: opensportslib
       params:
-        repo_id: /home/vorajv/X-VARS/weights/base_model_videoChatGPT
+        repo_id: OpenSportsLab/base_model_videoChatGPT
       overrides: {}
   metadata:
     backend: xvars_videochatgpt

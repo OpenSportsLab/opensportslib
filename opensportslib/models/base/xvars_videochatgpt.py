@@ -46,6 +46,15 @@ from opensportslib.models.utils.vqa_prompting import build_prior_text, build_xva
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_XVARS_VISUAL_CHECKPOINT_FILES = [
+    "model.pth.tar",
+    "model.pt",
+    "model.pth",
+    "checkpoint.pt",
+    "checkpoint.pth",
+    "checkpoint.pth.tar",
+]
+
 XVARS_BASE_TOKEN_IDS = {
     "<vid_patch>": 32003,
     "<vid_start>": 32004,
@@ -55,6 +64,54 @@ XVARS_BASE_TOKEN_IDS = {
 
 _XVARS_DIRECT_PARITY_SAMPLE_FLAG = "_xvars_demo_parity_direct_infer"
 _XVARS_DIRECT_STOP_STR = "</s>"
+
+
+def resolve_xvars_visual_checkpoint_path(weights_path: str) -> str:
+    if not weights_path:
+        raise ValueError("weights_path is required.")
+
+    candidate = os.path.abspath(os.path.expanduser(str(weights_path)))
+    if os.path.isfile(candidate):
+        logger.info("Using local X-VARS visual checkpoint | path=%s", candidate)
+        return candidate
+
+    repo_id = str(weights_path).strip()
+    if not repo_id:
+        raise ValueError("weights_path is required.")
+
+    try:
+        from huggingface_hub import hf_hub_download, list_repo_files
+    except ImportError as exc:
+        raise RuntimeError(
+            "Hugging Face support is required to resolve X-VARS visual checkpoints from a model repo ID."
+        ) from exc
+
+    try:
+        repo_files = set(list_repo_files(repo_id=repo_id, repo_type="model"))
+    except Exception as exc:
+        raise FileNotFoundError(
+            "X-VARS visual checkpoint path does not exist locally and could not be inspected as a Hugging Face "
+            f"model repo: {weights_path}"
+        ) from exc
+
+    selected_file = next(
+        (name for name in SUPPORTED_XVARS_VISUAL_CHECKPOINT_FILES if name in repo_files),
+        None,
+    )
+    if selected_file is None:
+        raise FileNotFoundError(
+            f"No supported X-VARS visual checkpoint file found in HF repo '{repo_id}'. "
+            f"Searched: {', '.join(SUPPORTED_XVARS_VISUAL_CHECKPOINT_FILES)}"
+        )
+
+    resolved = hf_hub_download(repo_id=repo_id, filename=selected_file, repo_type="model")
+    logger.info(
+        "Using HF-cached X-VARS visual checkpoint | repo_id=%s | filename=%s | path=%s",
+        repo_id,
+        selected_file,
+        resolved,
+    )
+    return resolved
 
 
 class _BaselineFallback:
@@ -721,7 +778,7 @@ class XVarsStrictRawVideoFeatureExtractor:
                 "Strict X-VARS raw-video inference requires the visual encoder weights_path "
                 "(14_model.pth.tar)."
             )
-        self.weights_path = os.path.abspath(os.path.expanduser(str(weights_path)))
+        self.weights_path = resolve_xvars_visual_checkpoint_path(weights_path)
         self.vision_tower = vision_tower
         self._device = torch.device("cuda" if prefer_cuda and torch.cuda.is_available() else "cpu")
         self.start_frame = int(start_frame) if start_frame is not None else 63
@@ -735,8 +792,6 @@ class XVarsStrictRawVideoFeatureExtractor:
     def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
-        if not os.path.isfile(self.weights_path):
-            raise FileNotFoundError(f"X-VARS visual encoder checkpoint not found: {self.weights_path}")
         from transformers import CLIPImageProcessor
 
         self._processor = CLIPImageProcessor.from_pretrained(self.vision_tower)
