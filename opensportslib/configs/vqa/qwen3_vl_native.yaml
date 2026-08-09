@@ -1,6 +1,6 @@
 SYSTEM:
   paths:
-    save_dir: ./checkpoints_vqa_qwen3_vl_native
+    save_dir: ./checkpoints_vqa_qwen3_vl
   gpu:
     count: 4
     id: null

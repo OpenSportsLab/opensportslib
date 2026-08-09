@@ -4,6 +4,7 @@ from opensportslib.datasets.localization_dataset import (
     _build_dali_filenames_and_labels,
     _count_dali_video_samples,
     _dali_frame_num_to_local_frame,
+    _normalize_dali_devices,
     _pad_dali_iterator_size,
     _resolve_dali_video_sample,
 )
@@ -57,3 +58,9 @@ def test_resolve_dali_video_sample_uses_relative_path_and_one_based_start():
 
     assert video_name == "train/match one.mp4"
     assert start == 3
+
+
+def test_normalize_dali_devices_caps_shards_to_sample_count():
+    assert _normalize_dali_devices([0, 1, 2, 3], 1) == [0]
+    assert _normalize_dali_devices([0, 1, 2, 3], 2) == [0, 1]
+    assert _normalize_dali_devices([], 1) == [0]

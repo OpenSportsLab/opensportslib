@@ -280,6 +280,100 @@ def test_vqa_dataset_infer_expands_all_questions(vqa_config_path, tmp_path, monk
     )
 
 
+def test_vqa_infer_indexed_or_raw_clip_ignores_stale_feature_index_path(vqa_config_path, tmp_path, monkeypatch):
+    dataset_path = tmp_path / "portable-test.json"
+    video_path = tmp_path / "portable.mp4"
+    video_path.write_bytes(b"video")
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "portable_0",
+                        "video_path": str(video_path),
+                        "question": "Is it a foul, and why?",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    api = VQAModel(config=vqa_config_path)
+    api.config = SimpleNamespace(
+        DATA=SimpleNamespace(
+            common=SimpleNamespace(
+                feature_index="/home/vorajv/dataset/OSL-XFoul/feature_index.json",
+                prediction_index="",
+                splits=SimpleNamespace(
+                    test=SimpleNamespace(
+                        annotation_path=str(dataset_path),
+                        source_path=str(tmp_path),
+                        dataloader=SimpleNamespace(batch_size=1, shuffle=False),
+                    ),
+                ),
+            )
+        ),
+        MODEL=SimpleNamespace(
+            load=SimpleNamespace(checkpoint_path=None),
+            components=SimpleNamespace(
+                video_encoder=SimpleNamespace(
+                    params=SimpleNamespace(feature_source="indexed_or_raw_clip")
+                ),
+            ),
+        ),
+        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
+        TRAIN=SimpleNamespace(
+            execution={
+                "training_backend": "xvars_videochatgpt_lora",
+                "prompt": {},
+                "generation": {},
+                "xvars": {"feature_source": "indexed_or_raw_clip"},
+            }
+        ),
+        TASK="VQA",
+    )
+    fake_model = object()
+    monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
+    monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
+    monkeypatch.setattr("opensportslib.core.utils.config.select_device", lambda cfg: "cpu")
+    monkeypatch.setattr(
+        "opensportslib.core.utils.wandb.init_wandb",
+        lambda cfg_path, cfg, run_id, use_wandb=False: None,
+    )
+    monkeypatch.setattr(
+        "opensportslib.models.builder.build_model",
+        lambda *args, **kwargs: (fake_model, None),
+    )
+
+    def _fake_infer(model, dataset, use_wandb=False):
+        row = dataset[0]
+        return {
+            "task": "vqa",
+            "data": [
+                {
+                    "id": row["id"],
+                    "question": row["question"],
+                    "video_path": row["video_path"],
+                    "selected_feature_path": row["selected_feature_path"],
+                    "has_features": row["video_spatio_temporal_features"] is not None,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "opensportslib.core.trainer.vqa_trainer.Trainer_VQA",
+        lambda cfg: SimpleNamespace(infer=_fake_infer, load=lambda weights: None),
+    )
+
+    predictions = api.infer(test_set=str(dataset_path), use_wandb=False)
+
+    assert predictions["task"] == "vqa"
+    assert predictions["data"][0]["video_path"] == str(video_path)
+    assert predictions["data"][0]["selected_feature_path"] is None
+    assert predictions["data"][0]["has_features"] is False
+
+
 def test_build_xvars_prompt_injects_classifier_priors():
     from opensportslib.models.utils.vqa_prompting import build_xvars_prompt
 

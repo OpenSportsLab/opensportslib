@@ -13,9 +13,11 @@ from opensportslib.core.trainer.vqa_trainer import (
     _score_xvars_generated_answers,
 )
 from opensportslib.models.base.xvars_videochatgpt import (
+    SUPPORTED_XVARS_VISUAL_CHECKPOINT_FILES,
     XVarsStrictRawVideoFeatureExtractor,
     XVarsVideoChatGPTCausalLM,
     _build_direct_demo_parity_prompt_and_stop,
+    resolve_xvars_visual_checkpoint_path,
     resolve_xvars_strict_sampling_cfg,
 )
 from opensportslib.models.utils.vqa_prompting import VIDEO_CHATGPT_SYSTEM_PROMPT, build_prior_text, build_xvars_prompt
@@ -619,6 +621,89 @@ def test_xvars_dataset_and_model_prefer_canonical_vqa_fields(tmp_path):
     assert tuple(model._features_for_sample({"video_spatio_temporal_features": features}, {"video_token_len": 5}).shape) == (5, 7)
 
 
+def test_xvars_dataset_indexed_mode_requires_existing_feature_index(tmp_path):
+    from opensportslib.datasets.vqa_dataset import VQADataset
+
+    annotation_path = tmp_path / "train.json"
+    annotation_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "action_0",
+                        "inputs": [{"type": "video", "path": "clip.mp4"}],
+                        "answers": [{"question": "What happened?", "answers": ["Foul"]}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.DATA = SimpleNamespace(
+        common=SimpleNamespace(
+            feature_index=str(tmp_path / "missing_feature_index.json"),
+            prediction_index="",
+            splits=SimpleNamespace(
+                train=SimpleNamespace(
+                    annotation_path=str(annotation_path),
+                    source_path=str(tmp_path),
+                    dataloader=SimpleNamespace(batch_size=1),
+                )
+            ),
+        )
+    )
+    cfg.MODEL.components.video_encoder.params.feature_source = "indexed"
+
+    with pytest.raises(FileNotFoundError):
+        VQADataset(cfg, split="train")
+
+
+@pytest.mark.parametrize("feature_source", ["indexed_or_raw", "indexed_or_raw_clip"])
+def test_xvars_dataset_fallback_modes_tolerate_missing_feature_index(tmp_path, feature_source):
+    from opensportslib.datasets.vqa_dataset import VQADataset
+
+    annotation_path = tmp_path / "train.json"
+    annotation_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "action_0",
+                        "inputs": [{"type": "video", "path": "clip.mp4"}],
+                        "answers": [{"question": "What happened?", "answers": ["Foul"]}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = _cfg(tmp_path, dry_run=True)
+    cfg.DATA = SimpleNamespace(
+        common=SimpleNamespace(
+            feature_index=str(tmp_path / "missing_feature_index.json"),
+            prediction_index="",
+            splits=SimpleNamespace(
+                train=SimpleNamespace(
+                    annotation_path=str(annotation_path),
+                    source_path=str(tmp_path),
+                    dataloader=SimpleNamespace(batch_size=1),
+                )
+            ),
+        )
+    )
+    cfg.MODEL.components.video_encoder.params.feature_source = feature_source
+
+    dataset = VQADataset(cfg, split="train")
+
+    assert dataset.feature_index == {}
+    assert dataset[0]["feature_candidates"] == []
+    assert dataset[0]["selected_feature_path"] is None
+    assert dataset[0]["video_spatio_temporal_features"] is None
+
+
 def test_xvars_model_init_uses_explicit_feature_mode_token_len(monkeypatch, tmp_path):
     from opensportslib.models.base.xvars_videochatgpt import XVarsVideoChatGPTModel
 
@@ -673,7 +758,7 @@ def test_xvars_model_init_uses_explicit_feature_mode_token_len(monkeypatch, tmp_
     model = XVarsVideoChatGPTModel(cfg, model_id="base_model_videoChatGPT", projector_params={"input_dim": 1024})
 
     assert captured["model"] == "base_model_videoChatGPT"
-    assert captured["tokenizer"] == "LLaVA-7B-Lightening-v1-1"
+    assert captured["tokenizer"] == "base_model_videoChatGPT"
     assert model.native_generation is True
     assert model.video_token_len == 300
 
@@ -887,9 +972,12 @@ def test_xvars_strict_sampling_cfg_uses_canonical_data_sampling_only():
     assert merged["target_fps"] == 17
 
 
-def test_xvars_strict_extractor_uses_configured_window_and_packing():
+def test_xvars_strict_extractor_uses_configured_window_and_packing(tmp_path):
+    weights_path = tmp_path / "weights.pth.tar"
+    weights_path.write_bytes(b"checkpoint")
+
     extractor = XVarsStrictRawVideoFeatureExtractor(
-        weights_path="/tmp/weights.pth.tar",
+        weights_path=str(weights_path),
         prefer_cuda=False,
         start_frame=10,
         end_frame=20,
@@ -907,6 +995,75 @@ def test_xvars_strict_extractor_uses_configured_window_and_packing():
 
     packed = extractor.spatio_temporal_tokens(torch.ones((24, 256, 1024), dtype=torch.float32))
     assert packed.shape == (300, 1024)
+
+
+def test_resolve_xvars_visual_checkpoint_path_keeps_local_file(tmp_path):
+    local_file = tmp_path / "14_model.pth.tar"
+    local_file.write_bytes(b"checkpoint")
+
+    resolved = resolve_xvars_visual_checkpoint_path(str(local_file))
+
+    assert resolved == str(local_file.resolve())
+
+
+def test_resolve_xvars_visual_checkpoint_path_uses_hf_precedence(monkeypatch):
+    captured = {}
+
+    def _fake_list_repo_files(repo_id, repo_type):
+        captured["repo_id"] = repo_id
+        captured["repo_type"] = repo_type
+        return ["checkpoint.pth", "model.pt"]
+
+    def _fake_hf_download(repo_id, filename, repo_type):
+        captured["download"] = (repo_id, filename, repo_type)
+        return f"/tmp/{filename}"
+
+    import huggingface_hub
+
+    monkeypatch.setattr(huggingface_hub, "list_repo_files", _fake_list_repo_files)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", _fake_hf_download)
+
+    resolved = resolve_xvars_visual_checkpoint_path("OpenSportsLab/trained-clip-vit-large-patch14")
+
+    assert resolved == "/tmp/model.pt"
+    assert captured["repo_id"] == "OpenSportsLab/trained-clip-vit-large-patch14"
+    assert captured["repo_type"] == "model"
+    assert captured["download"] == (
+        "OpenSportsLab/trained-clip-vit-large-patch14",
+        "model.pt",
+        "model",
+    )
+
+
+def test_resolve_xvars_visual_checkpoint_path_rejects_repo_without_supported_files(monkeypatch):
+    import huggingface_hub
+
+    monkeypatch.setattr(
+        huggingface_hub,
+        "list_repo_files",
+        lambda repo_id, repo_type: ["config.json", "README.md"],
+    )
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        resolve_xvars_visual_checkpoint_path("OpenSportsLab/trained-clip-vit-large-patch14")
+
+    message = str(exc_info.value)
+    for filename in SUPPORTED_XVARS_VISUAL_CHECKPOINT_FILES:
+        assert filename in message
+
+
+def test_xvars_strict_extractor_accepts_hf_repo_weights_path(monkeypatch, tmp_path):
+    import opensportslib.models.base.xvars_videochatgpt as mod
+
+    resolved_path = str(tmp_path / "model.pt")
+    monkeypatch.setattr(mod, "resolve_xvars_visual_checkpoint_path", lambda weights_path: resolved_path)
+
+    extractor = XVarsStrictRawVideoFeatureExtractor(
+        weights_path="OpenSportsLab/trained-clip-vit-large-patch14",
+        prefer_cuda=False,
+    )
+
+    assert extractor.weights_path == resolved_path
 
 
 def test_xvars_base_inference_direct_demo_parity_recovers_from_zero_temperature():

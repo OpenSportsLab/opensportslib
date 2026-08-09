@@ -194,6 +194,12 @@ def get_data_num_classes(cfg: Any, default: int = 0) -> int:
     if classes:
         return len(classes)
 
+    data = _as_dict(getattr(cfg, "DATA", None))
+    common = _as_dict(data.get("common"))
+    common_num_classes = common.get("num_classes")
+    if common_num_classes is not None:
+        return int(common_num_classes)
+
     input_cfg = get_input_cfg(cfg)
     params = _as_dict(input_cfg.get("params"))
     num_classes = params.get("num_classes")
@@ -222,8 +228,47 @@ def set_data_classes(cfg: Any, classes: list[str]) -> None:
     common = _ensure_child(data, "common")
     if isinstance(common, dict):
         common["classes"] = list(classes)
+        common["num_classes"] = len(classes)
     else:
         setattr(common, "classes", list(classes))
+        setattr(common, "num_classes", len(classes))
+
+
+def set_data_num_classes(cfg: Any, num_classes: int | None) -> None:
+    if num_classes is None:
+        return
+
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    if isinstance(common, dict):
+        common["num_classes"] = int(num_classes)
+    else:
+        setattr(common, "num_classes", int(num_classes))
+
+
+def get_data_runtime(cfg: Any) -> dict[str, Any]:
+    data = _as_dict(getattr(cfg, "DATA", None))
+    common = _as_dict(data.get("common"))
+    runtime = _as_dict(common.get("runtime"))
+    return runtime
+
+
+def set_data_runtime_value(cfg: Any, key: str, value: Any) -> None:
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+
+    common = _ensure_child(data, "common")
+    runtime = _ensure_child(common, "runtime")
+    if isinstance(runtime, dict):
+        runtime[key] = value
+    else:
+        setattr(runtime, key, value)
 
 
 def get_input_cfg(cfg: Any, input_name: str | None = None) -> dict[str, Any]:

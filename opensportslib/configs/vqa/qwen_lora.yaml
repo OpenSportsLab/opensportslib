@@ -1,6 +1,6 @@
 SYSTEM:
   paths:
-    save_dir: ./checkpoints_vqa_qwen_lora
+    save_dir: ./checkpoints_vqa_qwen
   gpu:
     count: 4
 
@@ -12,7 +12,7 @@ MODEL:
         provider: opensportslib
         name: xvars_clip_features
       load:
-        weights_path: /home/vorajv/X-VARS/weights/14_model.pth.tar
+        weights_path: OpenSportsLab/trained-clip-vit-large-patch14
       params:
         feature_source: indexed_or_raw_clip
         vision_tower: openai/clip-vit-large-patch14

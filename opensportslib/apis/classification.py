@@ -15,7 +15,7 @@ from opensportslib.core.config.accessors import (
     get_system_seed,
     get_system_use_seed,
 )
-from opensportslib.core.utils.config import expand
+from opensportslib.core.utils.config import expand, resolve_inference_class_metadata
 
 
 def _is_tracking_graph_modality(modality):
@@ -269,6 +269,7 @@ class ClassificationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = resolve_inference_class_metadata(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
 
@@ -335,6 +336,7 @@ class ClassificationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
 
         self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = resolve_inference_class_metadata(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
         if predictions is None:

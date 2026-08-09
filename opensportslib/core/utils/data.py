@@ -83,6 +83,73 @@ def tracking_collate_fn(batch):
         'id': [item['id'] for item in batch],
     }
 
+
+def _flatten_graphs_to_batch(list_of_graph_lists):
+    """Flatten a batch of per-sample per-frame graph lists into one PyG Batch.
+
+    Args:
+        list_of_graph_lists: list of length B, each a list of T
+            torch_geometric.data.Data objects (one per frame in the clip).
+
+    Returns:
+        A torch_geometric.data.Batch of all B*T graphs, with a plain int
+        `.seq_len` attribute (T) attached so a graph_conv_seq backbone can
+        reshape the pooled per-frame embeddings back to (B, T, H). Plain
+        int attributes survive Batch.to(device).
+    """
+    try:
+        from torch_geometric.data import Batch
+    except ImportError as exc:
+        raise ImportError(
+            "torch-geometric is required for tracking spotting collate functions. "
+            "Run: `opensportslib setup --pyg` to install the correct version "
+            "based on your system (PyTorch & CUDA compatible)."
+        ) from exc
+
+    seq_len = len(list_of_graph_lists[0])
+    all_graphs = [g for graphs in list_of_graph_lists for g in graphs]
+    batched = Batch.from_data_list(all_graphs)
+    batched.seq_len = seq_len
+    return batched
+
+
+def tracking_spotting_collate_fn(batch):
+    """
+    Collate function for tracking-based action-spotting training clips.
+    Flattens the B*T per-frame graphs of a batch into one PyG Batch (see
+    _flatten_graphs_to_batch) and stacks the dense per-frame labels into
+    (B, T).
+    """
+    frame = _flatten_graphs_to_batch([item["graphs"] for item in batch])
+    labels = torch.as_tensor(
+        np.stack([item["label"] for item in batch]), dtype=torch.long
+    )
+    return {
+        "frame": frame,
+        "label": labels,
+        "contains_event": torch.tensor(
+            [item["contains_event"] for item in batch], dtype=torch.long
+        ),
+    }
+
+
+def tracking_spotting_eval_collate_fn(batch):
+    """
+    Collate function for tracking-based action-spotting sliding-window eval
+    clips. Requires dataloader batch_size=1 (mirrors how the E2E inferer
+    reads clip["frame"][0] for RGB datasets): wraps the single clip's
+    flattened PyG Batch in a 1-element list under "frame" so that indexing
+    keeps working unmodified.
+    """
+    assert len(batch) == 1, "tracking spotting eval requires dataloader batch_size=1"
+    item = batch[0]
+    frame = _flatten_graphs_to_batch([item["graphs"]])
+    return {
+        "video": [item["video"]],
+        "start": torch.tensor([item["start"]]),
+        "frame": [frame],
+    }
+
 def mixup_data(x, y, alpha=0.2):
     """blend pairs of samples and their labels for mixup augmentation."""
     lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0

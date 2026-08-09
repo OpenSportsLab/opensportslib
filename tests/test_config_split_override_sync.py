@@ -35,3 +35,11 @@ def test_resolve_config_keeps_canonical_split_sources():
     cfg = resolve_config(migrate_config(_legacy_localization_cfg(), as_namespace=False), as_namespace=False)
     assert cfg["DATA"]["common"]["splits"]["valid"]["annotation_path"].endswith("valid.json")
     assert cfg["DATA"]["common"]["splits"]["valid_data_frames"]["annotation_path"].endswith("valid.json")
+
+
+def test_resolve_config_cpu_forces_opencv_backend_and_split_types():
+    cfg = resolve_config(migrate_config(_legacy_localization_cfg(), as_namespace=False), as_namespace=False)
+    assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
+    assert cfg["DATA"]["common"]["splits"]["train"]["type"] == "VideoGameWithOpencv"
+    assert cfg["DATA"]["common"]["splits"]["valid"]["type"] == "VideoGameWithOpencv"
+    assert cfg["DATA"]["common"]["splits"]["valid_data_frames"]["type"] == "VideoGameWithOpencvVideo"
