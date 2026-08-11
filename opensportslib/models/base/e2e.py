@@ -140,6 +140,44 @@ class E2EModel(BaseRGBModel):
 
         self._multi_gpu = multi_gpu
         self._num_classes = num_classes
+        self._test_time_policy = None
+
+    def configure_test_time_adaptation(self, policy_cfg=None):
+        """Attach a fresh test-time policy to the loaded source model.
+
+        The source ``_model`` is never mutated. Reconfiguring the policy therefore
+        starts a new adaptation stream from the same loaded checkpoint.
+        """
+        self._test_time_policy = None
+        if policy_cfg is None:
+            return
+
+        if isinstance(policy_cfg, dict):
+            enabled = policy_cfg.get("enabled", False)
+            name = policy_cfg.get("name", "spotta")
+        else:
+            enabled = getattr(policy_cfg, "enabled", False)
+            name = getattr(policy_cfg, "name", "spotta")
+        if not enabled:
+            return
+        if str(name).strip().lower() != "spotta":
+            raise ValueError(f"Unsupported E2ESpot test-time policy: {name!r}")
+        if self._num_classes != 2:
+            raise ValueError(
+                "The current SpoTTA E2ESpot recipe requires exactly one action "
+                "class (Background + Header)."
+            )
+
+        from opensportslib.models.policies import SpoTTA
+
+        self._test_time_policy = SpoTTA(self._model, policy_cfg)
+
+    @property
+    def test_time_adaptation_stats(self):
+        """Return current policy accounting, or ``None`` when TTA is disabled."""
+        if self._test_time_policy is None:
+            return None
+        return self._test_time_policy.stats
 
     def epoch(
         self,
@@ -245,6 +283,9 @@ class E2EModel(BaseRGBModel):
             pred_cls (numpy.ndarray): Predicted class indices.
             pred (numpy.ndarray): Predicted probabilities.
         """
+        if self._test_time_policy is not None:
+            return self._test_time_policy.predict(seq, use_amp=use_amp)
+
         try:
             from torch_geometric.data import Data as _PyGData
         except ImportError:

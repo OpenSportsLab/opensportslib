@@ -18,6 +18,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 - Unified workflow for training and inference
 - Modular design for adding new tasks, datasets, and models
 - Config driven experiments for reproducibility
+- Optional SpoTTA test-time adaptation for binary Header E2ESpot inference
 - Support for multiple modalities and sports workflows
 - Research friendly while still usable in applied settings
 

@@ -115,6 +115,30 @@ metrics = m.evaluate(
 )
 ```
 
+### E2ESpot test-time adaptation
+
+Use `opensportslib/configs/localization/e2e_spotta_header.yaml` to enable the
+SpoTTA recipe for a binary Background/Header E2ESpot checkpoint. Replace the
+placeholder test annotation and source paths, then pass the source checkpoint
+through `weights` as usual:
+
+```python
+from opensportslib.apis import LocalizationModel
+
+model = LocalizationModel(
+    config="opensportslib/configs/localization/e2e_spotta_header.yaml",
+    weights="/path/to/best_checkpoint.pt",
+)
+predictions = model.infer(test_set="/path/to/ordered-target-stream.json")
+```
+
+SpoTTA is stateful within one `infer()` call and is reset from the loaded source
+checkpoint at the start of the next call. The current reproducible recipe is
+E2ESpot-only, binary Header-only, and requires an ordered
+`VideoGameWithOpencvVideo` test split. Disable it with
+`MODEL.policies.test_time_adaptation.enabled: false`; ordinary E2ESpot
+prediction is then unchanged.
+
 ## VQA Usage
 
 ```python

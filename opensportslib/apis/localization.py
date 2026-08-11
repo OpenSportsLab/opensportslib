@@ -152,6 +152,55 @@ class LocalizationModel(BaseTaskModel):
                 weights,
             )
 
+    def _configure_test_time_adaptation(self) -> None:
+        """Start a fresh configured adaptation stream for localization inference."""
+        model_cfg = getattr(self.config, "MODEL", None)
+        policies = getattr(model_cfg, "policies", None)
+        if isinstance(policies, dict):
+            policy_cfg = policies.get("test_time_adaptation")
+        else:
+            policy_cfg = getattr(policies, "test_time_adaptation", None)
+
+        if policy_cfg is None:
+            if hasattr(self.model, "configure_test_time_adaptation"):
+                self.model.configure_test_time_adaptation(None)
+            return
+
+        enabled = (
+            policy_cfg.get("enabled", False)
+            if isinstance(policy_cfg, dict)
+            else getattr(policy_cfg, "enabled", False)
+        )
+        if enabled and str(get_model_family(self.config)).strip().lower() != "e2e":
+            raise ValueError("SpoTTA is currently integrated only for the E2ESpot family.")
+        test_split_type = getattr(get_split_cfg(self.config, "test"), "type", None)
+        if enabled and test_split_type != "VideoGameWithOpencvVideo":
+            raise ValueError(
+                "The reproducible SpoTTA E2ESpot recipe requires a "
+                "VideoGameWithOpencvVideo test split."
+            )
+        if enabled:
+            set_loader_backend(self.config, "opencv")
+            import random
+
+            import numpy as np
+            import torch
+
+            seed = get_system_seed(self.config)
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        if not hasattr(self.model, "configure_test_time_adaptation"):
+            if enabled:
+                raise ValueError("This localization model does not support test-time adaptation.")
+            return
+        self.model.configure_test_time_adaptation(policy_cfg)
+
     def load_weights(
         self,
         weights: str | None = None,
@@ -175,6 +224,9 @@ class LocalizationModel(BaseTaskModel):
         self._gate_multi_gpu_by_device(device)
         if self.model is None:
             self.model = build_model(self.config, device=device)
+
+        if hasattr(self.model, "configure_test_time_adaptation"):
+            self.model.configure_test_time_adaptation(None)
 
         inner_model = getattr(self.model, "_model", None)
         if inner_model is None:
@@ -417,6 +469,8 @@ class LocalizationModel(BaseTaskModel):
             self._gate_multi_gpu_by_device(device)
             self.model = build_model(self.config, device=device)
 
+        self._configure_test_time_adaptation()
+
         data_obj_test = build_dataset(self.config, split="test")
         dataset_test = data_obj_test.building_dataset(
             cfg=data_obj_test.cfg,
@@ -436,6 +490,10 @@ class LocalizationModel(BaseTaskModel):
             data=dataset_test,
             dataloader=test_loader,
         )
+
+        adaptation_stats = getattr(self.model, "test_time_adaptation_stats", None)
+        if adaptation_stats is not None:
+            logging.info("SpoTTA inference stats: %s", adaptation_stats)
 
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return predictions

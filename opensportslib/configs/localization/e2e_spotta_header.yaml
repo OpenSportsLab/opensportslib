@@ -1,0 +1,105 @@
+TASK: localization
+VERSION: 2
+
+SYSTEM:
+  device: cuda
+  gpu:
+    count: 1
+  reproducibility:
+    use_seed: true
+    seed: 42
+
+DATA:
+  common:
+    classes:
+      - Header
+    runtime:
+      loader_backend: opencv
+    splits:
+      test:
+        type: VideoGameWithOpencvVideo
+        annotation_path: /path/to/ordered-test.json
+        source_path: /path/to/videos
+        results: results_spotting_test
+        metric: tight
+        nms_window: 2
+        overlap_len: 50
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 1
+          pin_memory: true
+  inputs:
+    video:
+      sampling:
+        clip_len: 100
+        input_fps: 25
+        extract_fps: 2
+      transform:
+        resize:
+          height: 224
+          width: 398
+      params:
+        crop_dim: 224
+        dilate_len: 0
+
+MODEL:
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny008_gsm
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+  policies:
+    test_time_adaptation:
+      name: spotta
+      enabled: true
+      protocol: adapt_then_predict
+      robust_bn:
+        alpha: 0.05
+        tether:
+          mode: bayesian
+          cap: 0.5
+      confidence_gate:
+        action_class_index: 1
+        min_action_frames: 1
+        uncertainty: one_minus_max_probability
+        aggregation: min_over_predicted_action_frames
+        threshold: 0.3
+      memory:
+        capacity: 8
+        class_policy: header_only
+        update_frequency: 2
+        lambda_t: 1.0
+        lambda_u: 1.0
+      optimizer:
+        type: Adam
+        learning_rate: 0.001
+        beta: 0.9
+        trainable_parameters: batch_norm_affine_only
+      teacher:
+        type: ema
+        base_nu: 0.001
+        adaptive_from_bn_drift: true
+        max_nu: 0.02
+        drift_scale: 10.0
+        drift_threshold: 1.0
+        drift_gamma: 0.2
+      augmentation:
+        enabled: true
+        mode: framewise_rotta_strong
+
+TRAIN:
+  execution:
+    multi_gpu: false
