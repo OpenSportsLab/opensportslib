@@ -8,7 +8,7 @@ from torch import nn
 
 from opensportslib.core.config.accessors import get_loader_backend
 from opensportslib.models.base.e2e import E2EModel
-from opensportslib.models.policies.spotta import (
+from opensportslib.adaptation.spotta import (
     FramewiseStrongAugmentation,
     RobustBatchNorm,
     SpoTTA,
@@ -34,7 +34,7 @@ class _TinyE2ESpot(nn.Module):
         return self.classifier(features).reshape(batch, time, 2)
 
 
-def _policy_config(**overrides):
+def _spotta_config(**overrides):
     config = {
         "enabled": True,
         "name": "spotta",
@@ -91,20 +91,20 @@ def test_robust_batch_norm_preserves_eval_output_and_frozen_anchor():
 
 
 def test_effective_recipe_gates_headers_and_updates_every_second_gated_clip():
-    policy = SpoTTA(_TinyE2ESpot(), _policy_config())
+    spotta = SpoTTA(_TinyE2ESpot(), _spotta_config())
     clips = torch.randn(2, 4, 3, 5, 5)
 
-    predicted, probabilities = policy.predict(clips, use_amp=False)
+    predicted, probabilities = spotta.predict(clips, use_amp=False)
 
     assert predicted.shape == (2, 4)
     assert probabilities.shape == (2, 4, 2)
-    assert policy.stats["clips_seen"] == 2
-    assert policy.stats["clips_gated"] == 2
-    assert policy.stats["memory_insertions"] == 2
-    assert policy.stats["memory_occupancy"] == 2
-    assert policy.stats["update_attempts"] == 1
-    assert policy.stats["updates_completed"] == 1
-    assert {layer.tether_rho for layer in policy.tether_layers} == {0.25}
+    assert spotta.stats["clips_seen"] == 2
+    assert spotta.stats["clips_gated"] == 2
+    assert spotta.stats["memory_insertions"] == 2
+    assert spotta.stats["memory_occupancy"] == 2
+    assert spotta.stats["update_attempts"] == 1
+    assert spotta.stats["updates_completed"] == 1
+    assert {layer.tether_rho for layer in spotta.tether_layers} == {0.25}
 
 
 def test_framewise_strong_augmentation_preserves_clip_frame_shape_and_range():
@@ -118,28 +118,28 @@ def test_framewise_strong_augmentation_preserves_clip_frame_shape_and_range():
     assert float(augmented.max()) <= 1.0
 
 
-def test_e2e_wrapper_starts_fresh_policy_without_mutating_source_model():
+def test_e2e_wrapper_starts_fresh_spotta_without_mutating_source_model():
     wrapper = E2EModel.__new__(E2EModel)
     wrapper._model = _TinyE2ESpot()
     wrapper._num_classes = 2
     wrapper._multi_gpu = False
-    wrapper._test_time_policy = None
+    wrapper._test_time_adapter = None
     source_state = {
         name: tensor.clone() for name, tensor in wrapper._model.state_dict().items()
     }
 
-    wrapper.configure_test_time_adaptation(_policy_config())
+    wrapper.configure_test_time_adaptation(_spotta_config())
     wrapper.predict(torch.randn(2, 4, 3, 5, 5), use_amp=False)
-    first_policy = wrapper._test_time_policy
-    wrapper.configure_test_time_adaptation(_policy_config())
+    first_adapter = wrapper._test_time_adapter
+    wrapper.configure_test_time_adaptation(_spotta_config())
 
-    assert wrapper._test_time_policy is not first_policy
+    assert wrapper._test_time_adapter is not first_adapter
     for name, tensor in wrapper._model.state_dict().items():
         assert torch.equal(tensor, source_state[name])
 
 
 def test_spotta_config_rejects_non_header_action_index():
-    config = _policy_config()
+    config = _spotta_config()
     config["confidence_gate"]["action_class_index"] = 2
 
     try:
@@ -151,7 +151,7 @@ def test_spotta_config_rejects_non_header_action_index():
 
 
 def test_spotta_config_rejects_recipe_semantic_changes():
-    config = _policy_config()
+    config = _spotta_config()
     config["confidence_gate"]["aggregation"] = "mean"
 
     try:
@@ -170,17 +170,17 @@ def test_spotta_header_config_contains_only_effective_recipe_options():
             "opensportslib/configs/localization/e2e_spotta_header.yaml",
             as_namespace=False,
         )
-    policy = config["MODEL"]["policies"]["test_time_adaptation"]
+    spotta_config = config["MODEL"]["policies"]["test_time_adaptation"]
 
-    assert policy["enabled"] is True
-    assert policy["confidence_gate"]["threshold"] == 0.3
-    assert policy["memory"]["capacity"] == 8
-    assert policy["memory"]["update_frequency"] == 2
-    assert policy["robust_bn"]["tether"]["mode"] == "bayesian"
-    assert "frame_filter" not in policy
-    assert "steps" not in policy
-    assert "reset_frequency" not in policy
-    assert "action_frame_weight" not in policy
+    assert spotta_config["enabled"] is True
+    assert spotta_config["confidence_gate"]["threshold"] == 0.3
+    assert spotta_config["memory"]["capacity"] == 8
+    assert spotta_config["memory"]["update_frequency"] == 2
+    assert spotta_config["robust_bn"]["tether"]["mode"] == "bayesian"
+    assert "frame_filter" not in spotta_config
+    assert "steps" not in spotta_config
+    assert "reset_frequency" not in spotta_config
+    assert "action_frame_weight" not in spotta_config
 
 
 def test_localization_starts_fresh_spotta_stream_and_forces_opencv_runtime():
@@ -189,16 +189,16 @@ def test_localization_starts_fresh_spotta_stream_and_forces_opencv_runtime():
     configured = []
 
     class _Model:
-        def configure_test_time_adaptation(self, policy):
-            configured.append(policy)
+        def configure_test_time_adaptation(self, adaptation):
+            configured.append(adaptation)
 
-    policy = SimpleNamespace(enabled=True, name="spotta")
+    adaptation = SimpleNamespace(enabled=True, name="spotta")
     api = LocalizationModel.__new__(LocalizationModel)
     api.model = _Model()
     api.config = SimpleNamespace(
         MODEL=SimpleNamespace(
             metadata=SimpleNamespace(family="E2E"),
-            policies=SimpleNamespace(test_time_adaptation=policy),
+            policies=SimpleNamespace(test_time_adaptation=adaptation),
         ),
         DATA=SimpleNamespace(
             common=SimpleNamespace(
@@ -212,5 +212,5 @@ def test_localization_starts_fresh_spotta_stream_and_forces_opencv_runtime():
 
     api._configure_test_time_adaptation()
 
-    assert configured == [policy]
+    assert configured == [adaptation]
     assert get_loader_backend(api.config) == "opencv"

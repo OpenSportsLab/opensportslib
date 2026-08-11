@@ -1,4 +1,4 @@
-"""Runtime policies that can be attached to OpenSportsLib models."""
+"""Test-time adaptation tools for OpenSportsLib models."""
 
 from .spotta import SpoTTA, SpoTTAConfig
 

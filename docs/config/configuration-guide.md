@@ -243,7 +243,7 @@ MODEL:
 | `policies` | object | no | `{}` | free-form | model owner | Policy hooks for advanced runtimes. |
 | `metadata` | object | no | `{}` | free-form with common fields below | model owner | Used by helper accessors for family/runner fallbacks. |
 
-### 5.1.1 E2ESpot SpoTTA policy
+### 5.1.1 E2ESpot SpoTTA adaptation tool
 
 The effective SpoTTA Header recipe is available in
 [`e2e_spotta_header.yaml`](../../opensportslib/configs/localization/e2e_spotta_header.yaml).

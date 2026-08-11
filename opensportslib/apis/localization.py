@@ -157,19 +157,19 @@ class LocalizationModel(BaseTaskModel):
         model_cfg = getattr(self.config, "MODEL", None)
         policies = getattr(model_cfg, "policies", None)
         if isinstance(policies, dict):
-            policy_cfg = policies.get("test_time_adaptation")
+            adaptation_cfg = policies.get("test_time_adaptation")
         else:
-            policy_cfg = getattr(policies, "test_time_adaptation", None)
+            adaptation_cfg = getattr(policies, "test_time_adaptation", None)
 
-        if policy_cfg is None:
+        if adaptation_cfg is None:
             if hasattr(self.model, "configure_test_time_adaptation"):
                 self.model.configure_test_time_adaptation(None)
             return
 
         enabled = (
-            policy_cfg.get("enabled", False)
-            if isinstance(policy_cfg, dict)
-            else getattr(policy_cfg, "enabled", False)
+            adaptation_cfg.get("enabled", False)
+            if isinstance(adaptation_cfg, dict)
+            else getattr(adaptation_cfg, "enabled", False)
         )
         if enabled and str(get_model_family(self.config)).strip().lower() != "e2e":
             raise ValueError("SpoTTA is currently integrated only for the E2ESpot family.")
@@ -199,7 +199,7 @@ class LocalizationModel(BaseTaskModel):
             if enabled:
                 raise ValueError("This localization model does not support test-time adaptation.")
             return
-        self.model.configure_test_time_adaptation(policy_cfg)
+        self.model.configure_test_time_adaptation(adaptation_cfg)
 
     def load_weights(
         self,

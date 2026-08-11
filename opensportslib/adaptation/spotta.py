@@ -78,7 +78,7 @@ class SpoTTAConfig:
         teacher = _mapping(root.get("teacher"))
         augmentation = _mapping(root.get("augmentation"))
 
-        _require_recipe_value(root, "protocol", "adapt_then_predict", "policy")
+        _require_recipe_value(root, "protocol", "adapt_then_predict", "adaptation")
         _require_recipe_value(tether, "mode", "bayesian", "robust_bn.tether")
         _require_recipe_value(
             gate,
@@ -449,7 +449,7 @@ def _logits(output: Any) -> torch.Tensor:
 
 
 class SpoTTA:
-    """Stateful SpoTTA policy attached to a loaded E2ESpot source model."""
+    """Stateful SpoTTA adaptation tool attached to a source model."""
 
     def __init__(self, source_model: nn.Module, config: SpoTTAConfig | Any):
         self.config = (
