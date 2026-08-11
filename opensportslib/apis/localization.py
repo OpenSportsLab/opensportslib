@@ -153,7 +153,7 @@ class LocalizationModel(BaseTaskModel):
             )
 
     def _configure_test_time_adaptation(self) -> None:
-        """Start a fresh configured adaptation stream for localization inference."""
+        """Start a fresh adaptation session for one localization inference call."""
         model_cfg = getattr(self.config, "MODEL", None)
         policies = getattr(model_cfg, "policies", None)
         if isinstance(policies, dict):

@@ -38,6 +38,7 @@ def _spotta_config(**overrides):
     config = {
         "enabled": True,
         "name": "spotta",
+        "prediction_timing": "adapt_then_predict",
         "robust_bn": {"alpha": 0.05, "tether": {"cap": 0.5}},
         "confidence_gate": {
             "action_class_index": 1,
@@ -138,6 +139,47 @@ def test_e2e_wrapper_starts_fresh_spotta_without_mutating_source_model():
         assert torch.equal(tensor, source_state[name])
 
 
+def test_e2e_wrapper_keeps_one_spotta_instance_across_session_batches():
+    wrapper = E2EModel.__new__(E2EModel)
+    wrapper._model = _TinyE2ESpot()
+    wrapper._num_classes = 2
+    wrapper._multi_gpu = False
+    wrapper._test_time_adapter = None
+    wrapper.configure_test_time_adaptation(_spotta_config())
+    session_adapter = wrapper._test_time_adapter
+
+    wrapper.predict(torch.randn(1, 4, 3, 5, 5), use_amp=False)
+    wrapper.predict(torch.randn(1, 4, 3, 5, 5), use_amp=False)
+
+    assert wrapper._test_time_adapter is session_adapter
+    assert wrapper.test_time_adaptation_stats["clips_seen"] == 2
+    assert wrapper.test_time_adaptation_stats["memory_occupancy"] == 2
+    assert wrapper.test_time_adaptation_stats["updates_completed"] == 1
+
+
+def test_disabled_spotta_uses_ordinary_e2e_prediction_path():
+    wrapper = E2EModel.__new__(E2EModel)
+    wrapper._model = _TinyE2ESpot()
+    wrapper._num_classes = 2
+    wrapper._multi_gpu = False
+    wrapper._test_time_adapter = None
+    wrapper.device = torch.device("cpu")
+    clips = torch.randn(2, 4, 3, 5, 5)
+    wrapper._model.eval()
+    with torch.no_grad():
+        expected_probabilities = wrapper._model(clips).softmax(dim=2)
+        expected_classes = expected_probabilities.argmax(dim=2)
+
+    wrapper.configure_test_time_adaptation({"enabled": False, "name": "spotta"})
+    predicted_classes, probabilities = wrapper.predict(clips, use_amp=False)
+
+    assert wrapper._test_time_adapter is None
+    assert torch.equal(torch.from_numpy(predicted_classes), expected_classes)
+    assert torch.allclose(
+        torch.from_numpy(probabilities), expected_probabilities, atol=1e-7
+    )
+
+
 def test_spotta_config_rejects_non_header_action_index():
     config = _spotta_config()
     config["confidence_gate"]["action_class_index"] = 2
@@ -173,6 +215,7 @@ def test_spotta_header_config_contains_only_effective_recipe_options():
     spotta_config = config["MODEL"]["policies"]["test_time_adaptation"]
 
     assert spotta_config["enabled"] is True
+    assert spotta_config["prediction_timing"] == "adapt_then_predict"
     assert spotta_config["confidence_gate"]["threshold"] == 0.3
     assert spotta_config["memory"]["capacity"] == 8
     assert spotta_config["memory"]["update_frequency"] == 2
@@ -183,7 +226,7 @@ def test_spotta_header_config_contains_only_effective_recipe_options():
     assert "action_frame_weight" not in spotta_config
 
 
-def test_localization_starts_fresh_spotta_stream_and_forces_opencv_runtime():
+def test_localization_starts_fresh_spotta_session_and_forces_opencv_runtime():
     from opensportslib.apis.localization import LocalizationModel
 
     configured = []

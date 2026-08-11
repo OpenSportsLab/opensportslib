@@ -3,7 +3,9 @@
 This module contains only the effective SpoTTA recipe used by the historical
 Header experiment.  It intentionally does not expose inactive options from the
 research CLI (frame filtering, action weighting, reset scheduling, or repeated
-``steps``).
+``steps``).  A :class:`SpoTTA` instance represents one continuous target-set
+adaptation session; the E2ESpot API creates a fresh instance for every
+``LocalizationModel.infer()`` call.
 """
 
 from __future__ import annotations
@@ -78,7 +80,12 @@ class SpoTTAConfig:
         teacher = _mapping(root.get("teacher"))
         augmentation = _mapping(root.get("augmentation"))
 
-        _require_recipe_value(root, "protocol", "adapt_then_predict", "adaptation")
+        _require_recipe_value(
+            root,
+            "prediction_timing",
+            "adapt_then_predict",
+            "adaptation",
+        )
         _require_recipe_value(tether, "mode", "bayesian", "robust_bn.tether")
         _require_recipe_value(
             gate,
@@ -449,7 +456,7 @@ def _logits(output: Any) -> torch.Tensor:
 
 
 class SpoTTA:
-    """Stateful SpoTTA adaptation tool attached to a source model."""
+    """Stateful SpoTTA tool for one continuous target-set inference session."""
 
     def __init__(self, source_model: nn.Module, config: SpoTTAConfig | Any):
         self.config = (

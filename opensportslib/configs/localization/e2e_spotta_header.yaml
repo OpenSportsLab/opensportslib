@@ -18,7 +18,7 @@ DATA:
     splits:
       test:
         type: VideoGameWithOpencvVideo
-        annotation_path: /path/to/ordered-test.json
+        annotation_path: /path/to/target-test.json
         source_path: /path/to/videos
         results: results_spotting_test
         metric: tight
@@ -65,7 +65,7 @@ MODEL:
     test_time_adaptation:
       name: spotta
       enabled: true
-      protocol: adapt_then_predict
+      prediction_timing: adapt_then_predict
       robust_bn:
         alpha: 0.05
         tether:

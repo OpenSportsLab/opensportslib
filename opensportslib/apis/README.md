@@ -129,13 +129,15 @@ model = LocalizationModel(
     config="opensportslib/configs/localization/e2e_spotta_header.yaml",
     weights="/path/to/best_checkpoint.pt",
 )
-predictions = model.infer(test_set="/path/to/ordered-target-stream.json")
+predictions = model.infer(test_set="/path/to/target-test.json")
 ```
 
-SpoTTA is stateful within one `infer()` call and is reset from the loaded source
-checkpoint at the start of the next call. The current reproducible recipe is
-E2ESpot-only, binary Header-only, and requires an ordered
-`VideoGameWithOpencvVideo` test split. Disable it with
+Treat each `infer()` call as one target-set adaptation session. SpoTTA remains
+continuous across the batches produced by OpenSportsLib's ordinary test
+dataloader, then starts fresh from the loaded source checkpoint on the next
+call. No match or tournament metadata is required. The current reproducible
+recipe is E2ESpot-only, binary Header-only, and requires a
+`VideoGameWithOpencvVideo` test split with `shuffle: false`. Disable it with
 `MODEL.policies.test_time_adaptation.enabled: false`; ordinary E2ESpot
 prediction is then unchanged.
 

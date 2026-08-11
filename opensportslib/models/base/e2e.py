@@ -146,7 +146,7 @@ class E2EModel(BaseRGBModel):
         """Attach a fresh test-time adaptation tool to the loaded source model.
 
         The source ``_model`` is never mutated. Reconfiguring SpoTTA therefore
-        starts a new adaptation stream from the same loaded checkpoint.
+        starts a new target-set session from the same loaded checkpoint.
         """
         self._test_time_adapter = None
         if adaptation_cfg is None:

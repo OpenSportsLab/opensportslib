@@ -248,7 +248,10 @@ MODEL:
 The effective SpoTTA Header recipe is available in
 [`e2e_spotta_header.yaml`](../../opensportslib/configs/localization/e2e_spotta_header.yaml).
 It is attached after source checkpoint loading and maintains one continuous
-adaptation state for the duration of `LocalizationModel.infer()`.
+adaptation state across the ordinary dataloader batches produced during one
+`LocalizationModel.infer()` call. A later `infer()` call starts a fresh session
+from the loaded source checkpoint. SpoTTA does not introduce match, tournament,
+or domain-boundary semantics into OpenSportsLib.
 
 ```yaml
 MODEL:
@@ -256,7 +259,7 @@ MODEL:
     test_time_adaptation:
       name: spotta
       enabled: true
-      protocol: adapt_then_predict
+      prediction_timing: adapt_then_predict
       robust_bn:
         alpha: 0.05
         tether: {mode: bayesian, cap: 0.5}
