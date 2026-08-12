@@ -327,3 +327,38 @@ def test_qwen_model_loads_adapter_checkpoint_without_hard_failure(tmp_path, monk
 
     assert model._ready is True
     assert captured["adapter_path"] == str(adapter_dir)
+
+
+def test_qwen_xvars_strict_raw_extractor_uses_hf_repo_weights_path(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    cfg.MODEL.components.video_encoder.load.weights_path = "OpenSportsLab/trained-clip-vit-large-patch14"
+    cfg.MODEL.components.video_encoder.params.feature_source = "raw_video"
+    tokenizer = TinyTokenizer()
+    base_model = TinyGenerateLM()
+    captured = {}
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import opensportslib.models.base.qwen_xvars as mod
+
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda *args, **kwargs: tokenizer)
+    monkeypatch.setattr(AutoModelForCausalLM, "from_pretrained", lambda *args, **kwargs: base_model)
+
+    class FakeExtractor:
+        def __init__(self, *, weights_path, **kwargs):
+            del kwargs
+            captured["weights_path"] = weights_path
+
+        def extract_with_prior(self, video_path, prediction_index=None, video_id=None):
+            del video_path, prediction_index, video_id
+            return torch.ones((3, 1024), dtype=torch.float32), "prior"
+
+    monkeypatch.setattr(mod, "XVarsStrictRawVideoFeatureExtractor", FakeExtractor)
+
+    model = QwenXVarsModel(cfg, model_id="Qwen/Qwen3.5-9B-Base", projector_params={"input_dim": 1024})
+    model.feature_source = "raw_video"
+    model.feature_mode = "strict_xvars"
+
+    features = model._features_for_sample({"video_path": str(tmp_path / "clip.mp4")}, {"video_token_len": 3})
+
+    assert captured["weights_path"] == "OpenSportsLab/trained-clip-vit-large-patch14"
+    assert tuple(features.shape) == (3, 1024)

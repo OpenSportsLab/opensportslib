@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pickle
 import random
@@ -21,6 +22,8 @@ from opensportslib.core.config.accessors import (
 )
 from opensportslib.models.utils.vqa_prediction_priors import build_prediction_prior_text
 from opensportslib.models.utils.xvars_clip_index import load_feature_index, load_prediction_index, validate_xvars_feature_tensor
+
+logger = logging.getLogger(__name__)
 
 
 class VQADataset(Dataset):
@@ -66,16 +69,18 @@ class VQADataset(Dataset):
         feature_source = get_vqa_feature_source(config, default="indexed")
         if not self.native_vl and feature_backend != "xvars_clip":
             raise ValueError(f"Unsupported VQA feature backend '{feature_backend}'. Expected 'xvars_clip'.")
-        require_feature_index = (not self.native_vl) and feature_source in {"indexed", ""}
-        if require_feature_index and not feature_index_path:
+        strict_feature_index = (not self.native_vl) and feature_source in {"indexed", ""}
+        fallback_feature_index = (not self.native_vl) and feature_source in {"indexed_or_raw", "indexed_or_raw_clip"}
+        if strict_feature_index and not feature_index_path:
             raise ValueError("Missing required config key DATA.common.feature_index for VQA xvars_clip mode.")
         self.feature_source = feature_source
         self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
         self.expected_feature_tokens = get_xvars_train_video_token_len(config)
-        self.feature_index = (
-            load_feature_index(os.path.abspath(os.path.expanduser(feature_index_path)), split=split)
-            if feature_index_path
-            else {}
+        self.feature_index = self._load_feature_index(
+            feature_index_path,
+            split=split,
+            strict=strict_feature_index,
+            allow_missing=fallback_feature_index,
         )
         self.prediction_index = (
             load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)), split=split)
@@ -94,7 +99,7 @@ class VQADataset(Dataset):
             frame_paths = self._resolve_frame_paths(item, source_root)
 
             feature_candidates = self.feature_index.get(item_id_str, [])
-            if require_feature_index and not feature_candidates:
+            if strict_feature_index and not feature_candidates:
                 raise ValueError(
                     f"Missing feature index entry for sample id '{item_id_str}'. "
                     "Provide DATA.common.feature_index mapping with feature_paths or feature_dir/path."
@@ -135,6 +140,43 @@ class VQADataset(Dataset):
                     f"Native Qwen VL sample '{sample.get('id')}' is missing visual input. "
                     "Expected video_path, frame_paths, or video_frames."
                 )
+
+    def _load_feature_index(
+        self,
+        feature_index_path: str,
+        *,
+        split: str,
+        strict: bool,
+        allow_missing: bool,
+    ) -> dict[str, list[str]]:
+        if not feature_index_path:
+            return {}
+
+        resolved_path = os.path.abspath(os.path.expanduser(feature_index_path))
+        if allow_missing and not os.path.exists(resolved_path):
+            logger.warning(
+                "VQA feature index unavailable; falling back to raw-video extraction | "
+                "feature_source=%s | split=%s | feature_index=%s",
+                self.feature_source,
+                split,
+                resolved_path,
+            )
+            return {}
+
+        try:
+            return load_feature_index(resolved_path, split=split)
+        except Exception:
+            if strict or not allow_missing:
+                raise
+            logger.warning(
+                "VQA feature index unreadable; falling back to raw-video extraction | "
+                "feature_source=%s | split=%s | feature_index=%s",
+                self.feature_source,
+                split,
+                resolved_path,
+                exc_info=True,
+            )
+            return {}
 
     def __len__(self) -> int:
         return len(self.samples)

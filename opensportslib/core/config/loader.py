@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -20,6 +21,10 @@ from .runtime_adapter import maybe_namespace, namespace_to_plain_dict
 _YAML_SUFFIXES = {".yaml", ".yml"}
 _TASK_DIRS = {"classification", "localization", "vqa"}
 _INTERPOLATION_RE = re.compile(r"\$\{([^}]+)\}")
+_CPU_OPENCV_SPLIT_TYPES = {
+    "VideoGameWithDali": "VideoGameWithOpencv",
+    "VideoGameWithDaliVideo": "VideoGameWithOpencvVideo",
+}
 
 
 def _load_single_yaml(path: str | Path) -> Any:
@@ -131,6 +136,67 @@ def load_raw_config(path: str | Path) -> dict[str, Any]:
     raise ValueError("Unsupported config format. Use YAML or JSON.")
 
 
+def _torch_cuda_available() -> bool:
+    try:
+        import torch
+    except Exception:
+        return False
+    return bool(torch.cuda.is_available())
+
+
+def _dali_available() -> bool:
+    return importlib.util.find_spec("nvidia.dali") is not None
+
+
+def _preferred_loader_backend(payload: dict[str, Any]) -> str | None:
+    system = payload.get("SYSTEM", {})
+    if not isinstance(system, dict):
+        return None
+
+    mode = str(system.get("device", "auto")).lower()
+    if mode == "cpu":
+        return "opencv"
+    if mode == "cuda":
+        return "dali" if _dali_available() else "opencv"
+    if mode == "auto":
+        return "dali" if (_torch_cuda_available() and _dali_available()) else "opencv"
+    return None
+
+
+def _normalize_cpu_loader_backend(payload: dict[str, Any]) -> dict[str, Any]:
+    preferred_backend = _preferred_loader_backend(payload)
+    if preferred_backend is None:
+        return payload
+
+    data = payload.get("DATA", {})
+    if not isinstance(data, dict):
+        return payload
+
+    common = data.get("common", {})
+    if not isinstance(common, dict):
+        return payload
+
+    runtime = common.get("runtime", {})
+    if not isinstance(runtime, dict):
+        runtime = {}
+        common["runtime"] = runtime
+    runtime["loader_backend"] = preferred_backend
+
+    splits = common.get("splits", {})
+    if not isinstance(splits, dict):
+        return payload
+
+    if preferred_backend == "opencv":
+        for split_cfg in splits.values():
+            if not isinstance(split_cfg, dict):
+                continue
+            split_type = split_cfg.get("type")
+            if split_type in _CPU_OPENCV_SPLIT_TYPES:
+                split_cfg["type"] = _CPU_OPENCV_SPLIT_TYPES[split_type]
+
+    return payload
+
+
 def load_config(
     config_path: str | Path,
     *,
@@ -139,6 +205,7 @@ def load_config(
 ) -> Any:
     raw = load_raw_config(config_path)
     canonical = migrate_config(raw, as_namespace=False)
+    canonical = _normalize_cpu_loader_backend(canonical)
     assert_no_legacy_aliases(canonical)
 
     if validate:
@@ -168,6 +235,7 @@ def resolve_config(
 ) -> Any:
     payload = namespace_to_plain_dict(config)
     canonical = migrate_config(payload, as_namespace=False)
+    canonical = _normalize_cpu_loader_backend(canonical)
     assert_no_legacy_aliases(canonical)
     return maybe_namespace(canonical, as_namespace=as_namespace)
 

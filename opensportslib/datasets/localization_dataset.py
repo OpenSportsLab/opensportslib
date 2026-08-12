@@ -74,6 +74,15 @@ def _build_dali_filenames_and_labels(labels):
     return filenames, label_indices
 
 
+def _normalize_dali_devices(devices, sample_count):
+    devices = list(devices or [])
+    if not devices:
+        return [0]
+    if sample_count <= 0:
+        return devices[:1]
+    return devices[: max(1, min(len(devices), int(sample_count)))]
+
+
 def _dali_frame_num_to_local_frame(frame_num, stride):
     return frame_num // stride + 1
 
@@ -1538,13 +1547,16 @@ if DALI_AVAILABLE:
             else:
                 self.batch_size = batch_size
 
-            self.batch_size_per_pipe = distribute_elements(self.batch_size, len(devices))
+            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
+                self._labels
+            )
+            self.devices = _normalize_dali_devices(devices, len(self._filenames))
+            self.batch_size_per_pipe = distribute_elements(self.batch_size, len(self.devices))
 
             self.batch_size = batch_size
             self.nb_videos = dataset_len * 2 if mixup else dataset_len
             self.mixup = mixup
             self.output_map = output_map
-            self.devices = devices
             self.is_eval = is_eval
             self.crop_dim = crop_dim
             self.dilate_len = dilate_len
@@ -1555,9 +1567,6 @@ if DALI_AVAILABLE:
             self.TARGET_WIDTH = TARGET_WIDTH
 
             self._stride = get_stride(input_fps, extract_fps)
-            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
-                self._labels
-            )
 
             self.pipes = [
                 self.video_pipe(
@@ -1570,9 +1579,9 @@ if DALI_AVAILABLE:
                     num_threads=8,
                     device_id=i,
                     shard_id=index,
-                    num_shards=len(devices),
+                    num_shards=len(self.devices),
                 )
-                for index, i in enumerate(devices)
+                for index, i in enumerate(self.devices)
             ]
 
             for pipe in self.pipes:
@@ -1931,16 +1940,16 @@ if DALI_AVAILABLE:
             self._stride_dali = stride_dali
             self._flip = flip
             self._multi_crop = multi_crop
-            self.batch_size = batch_size // len(devices)
+            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
+                self._labels
+            )
+            self.devices = _normalize_dali_devices(devices, len(self._filenames))
+            self.batch_size = batch_size // len(self.devices)
             self.global_batch_size = batch_size
-            self.devices = devices
             self.IMAGENET_MEAN = IMAGENET_MEAN
             self.IMAGENET_STD = IMAGENET_STD
             self.TARGET_HEIGHT = TARGET_HEIGHT
             self.TARGET_WIDTH = TARGET_WIDTH
-            self._filenames, self._video_indices = _build_dali_filenames_and_labels(
-                self._labels
-            )
             clip_count = 0
             for video in self._labels:
                 num_clips = _count_dali_video_samples(
@@ -1961,9 +1970,9 @@ if DALI_AVAILABLE:
                     num_threads=8,
                     device_id=i,
                     shard_id=index,
-                    num_shards=len(devices),
+                    num_shards=len(self.devices),
                 )
-                for index, i in enumerate(devices)
+                for index, i in enumerate(self.devices)
             ]
 
             for pipe in self.pipes:

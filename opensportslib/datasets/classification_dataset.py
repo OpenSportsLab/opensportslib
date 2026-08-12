@@ -13,6 +13,7 @@ label mapping, and class-weight computation.
 
 import os
 import random
+import logging
 
 import numpy as np
 import torch
@@ -27,16 +28,19 @@ from opensportslib.core.config.accessors import (
     get_component_provider_by_kind,
     get_data_classes,
     get_data_modality,
+    get_data_runtime,
     get_data_augmentations,
     get_data_params,
     get_data_sampling,
     set_data_classes,
+    set_data_num_classes,
     get_data_transform,
     get_split_source_path,
 )
 
 
 H5_TRACKING_MODALITIES = {"player_centroids_h5", "player_joints_h5", "tracking_h5"}
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------
@@ -145,13 +149,33 @@ class ClassificationDataset(Dataset):
 
         # invert to id -> name and propagate into the config so
         # downstream components (metrics, logging) can look it up.
-        self.label_map = {v: k for k, v in self.label_map.items()}
-        set_data_classes(self.config, list(self.label_map.values()))
+        annotation_label_map = {v: k for k, v in self.label_map.items()}
+        runtime = get_data_runtime(self.config)
+        inference_source = str(runtime.get("inference_class_source") or "").strip().lower()
+        configured_classes = list(get_data_classes(self.config))
+        configured_label_map = {idx: name for idx, name in enumerate(configured_classes)}
+
+        if split in {"test", "infer"} and inference_source in {"model", "local"} and configured_classes:
+            self.label_map = configured_label_map
+            set_data_num_classes(self.config, len(configured_classes))
+
+            annotation_classes = [annotation_label_map[idx] for idx in sorted(annotation_label_map.keys())]
+            if annotation_classes != configured_classes:
+                logger.warning(
+                    "Inference annotation labels differ from resolved %s classes. "
+                    "Using resolved runtime classes for predictions.",
+                    inference_source,
+                )
+                for sample in self.samples:
+                    sample.pop("label", None)
+            self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
+        else:
+            self.label_map = annotation_label_map
+            set_data_classes(self.config, list(self.label_map.values()))
+            self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
 
         print(len(get_data_classes(self.config)), "classes:", get_data_classes(self.config))
         print("Label Map : ", self.label_map)
-
-        self.has_labels = len(self.samples) > 0 and "label" in self.samples[0]
 
     # -- Sampling / loss weights ------------------------------------------
 

@@ -10,7 +10,12 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from opensportslib.core.config.accessors import get_component_name_by_kind
-from opensportslib.core.utils.config import expand, load_config_omega, fetch_and_merge_config_from_HF
+from opensportslib.core.utils.config import (
+    expand,
+    load_config_omega,
+    fetch_and_merge_config_from_HF,
+    resolve_inference_class_metadata,
+)
 
 
 class BaseTaskModel(ABC):
@@ -29,6 +34,7 @@ class BaseTaskModel(ABC):
 
         if weights is not None:
             self.config = fetch_and_merge_config_from_HF(self.config, weights, merge_policy="compatibility")
+            self.config = resolve_inference_class_metadata(self.config)
             self.last_loaded_weights = weights
             self.best_checkpoint = weights
 

@@ -15,16 +15,16 @@ SYSTEM:
 
 DATA:
   common:
-    dataset_name: OSL-XFoul
-    data_root: /home/vorajv/dataset/OSL-XFoul
-    feature_index: /home/vorajv/dataset/OSL-XFoul/feature_index.json
-    prediction_index: /home/vorajv/dataset/OSL-XFoul/prediction_index.json
+    dataset_name: dataset_name
+    data_root: ./dataset/dataset_name
+    feature_index: ./dataset/feature_index.json
+    prediction_index: ./dataset/prediction_index.json
     runtime:
       loader_backend: opencv
     splits:
       train:
-        annotation_path: /home/vorajv/dataset/OSL-XFoul/train.json
-        source_path: /home/vorajv/dataset/OSL-XFoul
+        annotation_path: ./dataset//train.json
+        source_path: ./dataset/
         dataloader:
           batch_size: 1
           shuffle: true
@@ -33,8 +33,8 @@ DATA:
           mp_context: spawn
           persistent_workers: false
       valid:
-        annotation_path: /home/vorajv/dataset/OSL-XFoul/valid.json
-        source_path: /home/vorajv/dataset/OSL-XFoul
+        annotation_path: ./dataset/valid.json
+        source_path: ./dataset/
         dataloader:
           batch_size: 1
           shuffle: false
@@ -43,8 +43,8 @@ DATA:
           mp_context: spawn
           persistent_workers: false
       test:
-        annotation_path: /home/vorajv/dataset/OSL-XFoul/test.json
-        source_path: /home/vorajv/dataset/OSL-XFoul
+        annotation_path: ./dataset/test.json
+        source_path: ./dataset/
         dataloader:
           batch_size: 1
           shuffle: false
