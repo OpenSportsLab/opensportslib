@@ -496,15 +496,19 @@ class GroundTruth:
     windows keep both sides to the periods the annotations cover.
     """
 
-    def __init__(self, annotation_path, data_root):
+    def __init__(self, annotation_path, data_root, game_dirs=None):
         """Read annotations and derive the play windows.
 
         Args:
             annotation_path (str): OSL JSON with Header and Kickoff events.
             data_root (Path): Directory the H5 input paths resolve against.
+            game_dirs (List[Path]): Game directories to fall back on when the
+                annotation names its tracking files without a directory
+                prefix. Default: None.
 
         Raises:
-            ValueError: If no item carries tracking inputs.
+            ValueError: If no item carries tracking inputs, or its ball track
+                cannot be found.
         """
         payload = json.loads(Path(annotation_path).read_text())
         game = next(
@@ -519,16 +523,21 @@ class GroundTruth:
 
         video = next(i for i in game["inputs"] if i["type"] == "video")
         joints = next(i for i in game["inputs"] if i["type"] == "player_joints_h5")
-        self.game_id = Path(joints["path"]).parent.name or game["id"]
+        # Prefer the directory the tracking files sit in, since that is how
+        # predictions are keyed; fall back to the annotation's own id.
+        self.game_id = Path(joints["path"]).parent.name or str(game["id"])
         self.video_start = parse_utc_string(video["UTC_time_start"])
         self.header_ms = sorted(e["position_ms"] for e in game["events"]
                                 if e["label"] == "Header")
 
         # A window runs from an annotated kickoff to the last tracked sample of
         # that period, so half-time and the gaps between periods stay out.
-        kickoffs = sorted((e for e in game["events"] if e["label"] == "Kickoff"),
+        # Annotation files spell this both "Kickoff" and "KickOff".
+        kickoffs = sorted((e for e in game["events"]
+                           if e["label"].lower() == "kickoff"),
                           key=lambda e: e["position_ms"])
-        meta = read_game_metadata(Path(data_root) / joints["ball_path"])
+        meta = read_game_metadata(
+            self._locate(joints["ball_path"], data_root, game_dirs))
         ends = [end for _, _, end in meta["periods"]]
         self.windows = [
             (parse_utc_string(kickoff["timestamp_utc"]),
@@ -536,6 +545,35 @@ class GroundTruth:
             for index, kickoff in enumerate(kickoffs)
             if index < len(ends)
         ]
+
+    @staticmethod
+    def _locate(relative_path, data_root, game_dirs):
+        """Find a tracking file named relative to either root or a game dir.
+
+        Annotations name their inputs either with a game directory prefix, as
+        in `128083/live_ball.h5`, or bare, as in `live_ball.h5`. The first
+        resolves against the data root and the second against a game directory.
+
+        Args:
+            relative_path (str): Path as written in the annotation.
+            data_root (Path): Directory the annotation paths resolve against.
+            game_dirs (List[Path]): Game directories to try as a fallback.
+
+        Returns:
+            path (Path): The located file.
+
+        Raises:
+            ValueError: If no candidate exists.
+        """
+        candidates = [Path(data_root) / relative_path]
+        for game_dir in game_dirs or []:
+            candidates.append(Path(game_dir) / Path(relative_path).name)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        raise ValueError(
+            f"Cannot find {relative_path} under {data_root}"
+            + (f" or in {[str(g) for g in game_dirs]}" if game_dirs else ""))
 
     def in_play_ms(self, position_ms):
         """Whether a video position falls inside a play window.
@@ -561,7 +599,7 @@ class GroundTruth:
         return int(round((moment - self.video_start).total_seconds() * 1000))
 
 
-def evaluate(gt, variants, work_dir, predictions_paths=None):
+def evaluate(gt, variants, work_dir, predictions_paths=None, game_ids=None):
     """Score predictions for one game against video annotations.
 
     Args:
@@ -571,6 +609,9 @@ def evaluate(gt, variants, work_dir, predictions_paths=None):
         predictions_paths (dict): Variant to a combined predictions file, for
             scoring a `--combined` run rather than the per-game cache.
             Default: None.
+        game_ids (List[str]): Game directories processed in this run, used to
+            resolve predictions when the annotation's id differs from the
+            directory name. Default: None.
 
     Returns:
         results (dict): Per-variant prediction count, mAP per tolerance, tight
@@ -602,6 +643,10 @@ def evaluate(gt, variants, work_dir, predictions_paths=None):
     for variant in variants:
         events = load_game_events(work_dir, variant, gt.game_id,
                                   (predictions_paths or {}).get(variant))
+        if events is None and len(game_ids or []) == 1:
+            # The annotation's id need not match the tracking directory name.
+            events = load_game_events(work_dir, variant, game_ids[0],
+                                      (predictions_paths or {}).get(variant))
         if events is None:
             print(f"[eval] {variant}: no predictions for game {gt.game_id}")
             continue
@@ -800,8 +845,9 @@ def main():
             written[variant] = run_combined(games, variant, data_root,
                                             work_dir, output)
         if args.annotations:
-            evaluate(GroundTruth(args.annotations, data_root), variants,
-                     work_dir, predictions_paths=written)
+            evaluate(GroundTruth(args.annotations, data_root, games), variants,
+                     work_dir, predictions_paths=written,
+                     game_ids=[g.name for g in games])
         return
 
     print(f"[batch] {len(games)} games x {len(variants)} variants", flush=True)
@@ -814,7 +860,8 @@ def main():
         assemble(games, variant, work_dir, output, args.dataset_name, halves)
 
     if args.annotations:
-        evaluate(GroundTruth(args.annotations, data_root), variants, work_dir)
+        evaluate(GroundTruth(args.annotations, data_root, games), variants,
+                 work_dir, game_ids=[g.name for g in games])
 
 
 if __name__ == "__main__":

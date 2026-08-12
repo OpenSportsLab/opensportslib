@@ -671,9 +671,9 @@ SKELETON_RULE_VARIANTS = {
         "velocity_change_min_mps": 0.0,
         "velocity_mag_min_mps": 0.0,
         # A 10 degree bend is the one trajectory test worth keeping here. It
-        # costs about 3 points of recall and returns 8 of precision, measured
-        # by sweeping every gate: 93.3/66.0 against 96.2/58.5 without it.
-        # Set to 0.0 for maximum recall at the cost of far more false alarms.
+        # costs 2.9 points of recall and returns 8 of precision: 97.1/69.4 with
+        # it, 100.0/61.4 without. Set to 0.0 when a missed header matters more
+        # than a false one; that finds every annotated header on the 2022 final.
         "angle_change_min_deg": 10.0,
         "accel_z_change_min_mps2": 0.0,
         "incoming_speed_min_mps": 0.0,

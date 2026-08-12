@@ -31,6 +31,12 @@ events and the video's `UTC_time_start`.
 Tracking data and annotations are not part of the repository; pass your own with
 `--data-root` and `--annotations`.
 
+The annotations used to measure every number below are published in
+[pixels vs positions](https://github.com/drishyakarki/pixels_vs_positions/blob/main/headers_data/FWC2022-final-224p-Milli-OpenSportsLib.json).
+They cover the 2022 World Cup final and carry millisecond-precise header
+timings, which matters: see [Reproducing these numbers](#reproducing-these-numbers).
+
+
 Headers are annotated as positions inside the video file, while tracking rows
 are stamped in UTC. The video's `UTC_time_start` bridges the two:
 
@@ -213,24 +219,30 @@ a named variant and they become available everywhere.
 
 ### How they score
 
-Measured on the 2022 World Cup final against 104 annotated headers, at a
+Measured on the 2022 World Cup final against 105 annotated headers, at a
 one-second tolerance. Tight average mAP averages the score over tolerances of
 one to five seconds. Detection time is for that one game, on CPU, scanning the
 whole 178-minute tracking file.
 
 | Variant | Predictions | Recall | Precision | Tight avg mAP | Detection time |
 |---|---|---|---|---|---|
-| `skeleton` | 111 | 86.5% | **81.1%** | **64.9%** | **12 s** |
-| `skeleton_recall` | 147 | **93.3%** | 66.0% | 62.4% | 38 s |
-| `distance_angle` | 134 | 87.5% | 67.9% | 53.0% | 364 s |
-| `distance` | 142 | 89.4% | 65.5% | 52.7% | 368 s |
-| `distance_speed_angle` | 87 | 43.3% | 51.7% | 22.0% | 363 s |
-| `distance_speed` | 88 | 43.3% | 51.1% | 21.8% | 367 s |
+| `skeleton` | 111 | 91.4% | **86.5%** | 69.2% | **12 s** |
+| `skeleton_recall` | 147 | **97.1%** | 69.4% | **69.2%** | 38 s |
+| `distance` | 142 | 95.2% | 70.4% | 59.4% | 368 s |
+| `distance_angle` | 134 | 92.4% | 72.4% | 59.0% | 364 s |
+| `distance_speed_angle` | 87 | 46.7% | 56.3% | 25.7% | 363 s |
+| `distance_speed` | 88 | 46.7% | 55.7% | 25.1% | 367 s |
+
+These numbers depend on the annotations being millisecond-precise. Scored
+against a second-rounded copy of the same annotations every variant loses
+three to seven points of mAP, because half a second of rounding noise sits
+right on the one-second tolerance.
 
 The two speed variants are not competitive: requiring the ball's speed to change
 by a quarter throws away more than half the real headers, because flick-ons and
-glancing contacts barely disturb it. Direction change is the better signal, and
-`distance_angle` gains a little precision over plain `distance` for it.
+glancing contacts barely disturb it. Direction change is the gentler test, and
+`distance_angle` trades 2.8 points of recall for 2 of precision against plain
+`distance`, ending up marginally behind it on mAP.
 
 The skeleton variants lead because they judge the player, not only the ball:
 hands clear of the head, facing the ball, feet on the ground, contact brief.
@@ -243,15 +255,71 @@ candidate frames. The four distance variants all cost the same, around six
 minutes a game, because the trajectory test runs after that matching and is
 cheap by comparison.
 
+### Reproducing these numbers
+
+Everything in the table above comes from one command against one game. To check
+it yourself:
+
+**1. Get the annotations.**
+
+```bash
+curl -LO https://raw.githubusercontent.com/drishyakarki/pixels_vs_positions/main/headers_data/FWC2022-final-224p-Milli-OpenSportsLib.json
+```
+
+**2. Point at your tracking data.** You need the game's directory holding
+`live_joints.h5` and `live_ball.h5`. The annotations describe game `128083`, the
+2022 World Cup final.
+
+**3. Run the strict variant and score it.**
+
+```bash
+python scripts/run_h5_header_rule_inference.py \
+    --data-root /path/to/FIFA_data \
+    --games 128083 \
+    --variants skeleton \
+    --annotations FWC2022-final-224p-Milli-OpenSportsLib.json
+```
+
+About 20 seconds, CPU only. Expect:
+
+```
+variant       #pred   mAP@1s   mAP@2s   ...   tight avg   rec@1s   prec@1s
+skeleton        111   70.13%   70.13%         69.19%      91.4%    86.5%
+```
+
+**4. Compare variants** by naming more of them. Add `--force` to re-detect
+rather than reuse the cache:
+
+```bash
+python scripts/run_h5_header_rule_inference.py \
+    --data-root /path/to/FIFA_data --games 128083 \
+    --variants skeleton,skeleton_recall \
+    --annotations FWC2022-final-224p-Milli-OpenSportsLib.json
+```
+
+**5. Re-score without re-detecting.** Detection is cached per game and variant,
+so this returns in seconds:
+
+```bash
+python scripts/run_h5_header_rule_inference.py \
+    --data-root /path/to/FIFA_data --games 128083 \
+    --variants skeleton --annotations FWC2022-final-224p-Milli-OpenSportsLib.json \
+    --assemble-only
+```
+
+Results land in `outputs/header_spotting/`: `map_results.json` for the scores,
+`raw/<variant>/<game>.json` for detections with their full diagnostics.
+
+
 ### Choosing between `skeleton` and `skeleton_recall`
 
-They are the same detector at two operating points. `skeleton` finds 90 of the
-104 headers with 21 false positives; `skeleton_recall` finds 97 with 50. Seven
-more real headers cost twenty-nine more false ones, because the headers
-`skeleton` misses are genuinely ambiguous contacts.
+They are the same detector at two operating points. `skeleton` finds 96 of the
+105 headers with 15 false positives; `skeleton_recall` finds 102 with 45. Six
+more real headers cost thirty more false ones, because the headers `skeleton`
+misses are genuinely ambiguous contacts.
 
-Dropping `angle_change_min_deg` to 0 pushes recall to 96.2%, but precision falls
-to 58.5% and mAP to 60.4%. The 10 degree default is the better trade.
+Their mAP is now level, 69.19 against 69.24, so neither ranks its detections
+better than the other. The choice is purely recall against precision.
 
 Use `skeleton` when a prediction should be trustworthy on its own. Use
 `skeleton_recall` to build a candidate set that a human or a downstream
@@ -265,9 +333,9 @@ recall alone, but the four trajectory gates and the narrow height band together
 were rejecting about a tenth of the real headers, because a flick-on or a
 glancing contact barely disturbs the ball.
 
-Two gates earned their keep and stayed on. The hand check costs one header and
-returns fourteen points of precision, the best trade in the whole search. The
-facing check rejects nothing at all on this data, so it is free.
+Two gates earned their keep and stayed on. The hand check costs no recall at
+all and returns three points of precision. The facing check rejects nothing on
+this data, so it is free.
 
 A later sweep of 82 configurations added a third: a 10 degree bend test costs
 about three points of recall and returns eight of precision, so it is now on by
@@ -280,7 +348,7 @@ exists to decouple them.
 
 #### Why any head joint, not just the nose
 
-Across the 64-game run, only 23% of `skeleton_recall`'s detections match on the
+Across a 64-game run, only 23% of `skeleton_recall`'s detections match on the
 nose:
 
 | Joint | Detections |
@@ -294,7 +362,8 @@ nose:
 
 The other 9,322 come from an eye, an ear or the neck. The nose-only rule skipped
 a player outright whenever their nose was untracked, so every one of those
-contacts was lost.
+contacts was lost. Those counts come from a run made before the bend gate became
+the default, so the totals have since changed; the proportion has not.
 
 
 ## Running it
