@@ -15,6 +15,7 @@ import pytest
 from omegaconf import OmegaConf
 
 from opensportslib.models.base.rule_based import (
+    H5HeaderSkeletonRecallSpotter,
     H5HeaderSkeletonSpotter,
     H5HeaderSpotterBase,
     build_rule_based_model,
@@ -24,12 +25,20 @@ from opensportslib.models.base.rule_based import (
 FPS = 50
 CONTACT_FRAME = 100
 BALL_XYZ = (0.0, 0.0, 2.0)          # head height, mid-pitch
+UNTRACKED = -1.0
 JOINT_COLUMNS = (
     "nose_x", "nose_y", "nose_z",
     "l_wrist_x", "l_wrist_y", "l_wrist_z",
     "r_wrist_x", "r_wrist_y", "r_wrist_z",
     "l_shoulder_x", "l_shoulder_y", "r_shoulder_x", "r_shoulder_y",
     "l_ankle_z", "r_ankle_z",
+)
+# The recall variant reads these too; written as untracked unless a test sets
+# them, so a fixture aimed at one variant stays valid for the other.
+EXTRA_HEAD_COLUMNS = tuple(
+    f"{joint}_{axis}"
+    for joint in ("neck", "l_ear", "r_ear", "l_eye", "r_eye")
+    for axis in "xyz"
 )
 
 
@@ -59,8 +68,9 @@ def _write_joints(path: Path, *, frames, rows):
         f.create_dataset("frame", data=np.asarray(frames, dtype=np.int64))
         f.create_dataset("player_id", data=_bytes(["p1"] * count))
         f.create_dataset("is_home", data=np.ones(count, dtype=np.int64))
-        for column in JOINT_COLUMNS:
-            value = rows.get(column, 0.0)
+        for column in sorted(set(JOINT_COLUMNS) | set(EXTRA_HEAD_COLUMNS) | set(rows)):
+            default = UNTRACKED if column in EXTRA_HEAD_COLUMNS else 0.0
+            value = rows.get(column, default)
             data = np.full(count, value, dtype=float) if np.isscalar(value) \
                 else np.asarray(value, dtype=float)
             f.create_dataset(column, data=data)
@@ -134,11 +144,11 @@ class _Dataset:
         self.samples = json.loads(_manifest(directory).read_text())["data"]
 
 
-def _config(**params):
+def _config(variant="h5_header_skeleton", **params):
     return OmegaConf.create({
         "MODEL": {"components": {"rule": {
             "kind": "algorithm",
-            "source": {"name": "h5_header_skeleton"},
+            "source": {"name": variant},
             "params": params,
         }}},
     })
@@ -293,6 +303,127 @@ def test_scan_window_excludes_contact_outside_it(scene):
         "end_utc": "2026-01-01 00:00:01.000000",  # contact is at 00:00:02
     }
     assert spotter._predict_sample(sample, str(scene)) == []
+
+
+# --------------------------------------------------------------- recall variant
+def test_registry_builds_recall_variant():
+    model = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    assert isinstance(model, H5HeaderSkeletonRecallSpotter)
+    assert isinstance(model, H5HeaderSkeletonSpotter)
+    assert model.params["model_variant"] == "h5_header_skeleton_recall"
+
+
+def test_recall_variant_disables_trajectory_gates():
+    model = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    for gate in ("velocity_change_min_mps", "accel_z_change_min_mps2",
+                 "incoming_speed_min_mps"):
+        assert model.params[gate] == 0.0
+    # the bend test is the one trajectory gate kept, at a gentle threshold
+    assert model.params["angle_change_min_deg"] == 10.0
+    # the cheap, high-value checks stay on
+    assert model.params["hand_check_enabled"] is True
+    assert model.params["facing_dot_min"] == -0.5
+
+
+def test_recall_variant_uses_every_head_joint():
+    """The strict variant stays on the nose; the recall one takes any head joint."""
+    strict = H5HeaderSkeletonSpotter(_config())
+    recall = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    assert strict.params["head_joints"] == ["nose"]
+    assert set(recall.params["head_joints"]) == {
+        "nose", "neck", "l_ear", "r_ear", "l_eye", "r_eye"}
+
+
+def test_any_head_joint_can_trigger_a_detection(tmp_path):
+    """An untracked nose no longer discards a player whose ear is tracked."""
+    frames = list(range(CONTACT_FRAME - 10, CONTACT_FRAME + 11))
+    _write_ball(tmp_path / "ball.h5", frames=frames, positions=_deflected_ball(frames))
+    rows = {
+        "nose_x": -1.0, "nose_y": -1.0, "nose_z": -1.0,  # nose untracked
+        "l_wrist_x": 5.0, "l_wrist_y": 5.0, "l_wrist_z": 0.5,
+        "r_wrist_x": 5.0, "r_wrist_y": -5.0, "r_wrist_z": 0.5,
+        "l_shoulder_x": 0.0, "l_shoulder_y": -0.2,
+        "r_shoulder_x": 0.0, "r_shoulder_y": 0.2,
+        "l_ankle_z": 0.1, "r_ankle_z": 0.1,
+    }
+    for joint in ("neck", "l_ear", "r_ear", "l_eye", "r_eye"):
+        rows[f"{joint}_x"] = [BALL_XYZ[0] + 0.2 if f == CONTACT_FRAME else 50.0
+                              for f in frames]
+        rows[f"{joint}_y"] = 0.0
+        rows[f"{joint}_z"] = BALL_XYZ[2]
+    _write_joints(tmp_path / "joints.h5", frames=frames, rows=rows)
+
+    dataset = _Dataset(tmp_path)
+    assert H5HeaderSkeletonSpotter(_config()).predict(dataset)["data"][0]["events"] == []
+
+    recall = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    events = recall.predict(dataset)["data"][0]["events"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["joint"] in {"neck", "l_ear", "r_ear", "l_eye", "r_eye"}
+
+
+def test_recall_variant_keeps_headers_the_strict_one_drops(tmp_path):
+    """A header above the strict height band is a miss for the strict rule.
+
+    The strict variant only looks between 1.3 m and 3.0 m; the recall variant
+    widens that to 0.5 m to 8.0 m, so a tall header only it can see.
+    """
+    high = 4.0
+    frames = list(range(CONTACT_FRAME - 10, CONTACT_FRAME + 11))
+    positions = [(-0.3 * abs(f - CONTACT_FRAME), 0.0,
+                  high + 0.3 * abs(f - CONTACT_FRAME)) for f in frames]
+    _write_ball(tmp_path / "ball.h5", frames=frames, positions=positions)
+    _write_joints(
+        tmp_path / "joints.h5",
+        frames=frames,
+        rows={
+            "nose_x": [0.2 if f == CONTACT_FRAME else 50.0 for f in frames],
+            "nose_y": 0.0, "nose_z": high,
+            "l_wrist_x": 5.0, "l_wrist_y": 5.0, "l_wrist_z": 0.5,
+            "r_wrist_x": 5.0, "r_wrist_y": -5.0, "r_wrist_z": 0.5,
+            "l_shoulder_x": 0.0, "l_shoulder_y": -0.2,
+            "r_shoulder_x": 0.0, "r_shoulder_y": 0.2,
+            "l_ankle_z": 0.1, "r_ankle_z": 0.1,
+        },
+    )
+    dataset = _Dataset(tmp_path)
+    strict = H5HeaderSkeletonSpotter(_config())
+    recall = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+
+    assert strict.predict(dataset)["data"][0]["events"] == []
+    assert len(recall.predict(dataset)["data"][0]["events"]) == 1
+
+
+def test_hand_check_can_be_disabled(tmp_path):
+    """The hand check is the one gate the recall variant deliberately keeps."""
+    frames = list(range(CONTACT_FRAME - 10, CONTACT_FRAME + 11))
+    _write_ball(tmp_path / "ball.h5", frames=frames, positions=_deflected_ball(frames))
+    _write_joints(
+        tmp_path / "joints.h5",
+        frames=frames,
+        rows={
+            "nose_x": [BALL_XYZ[0] + 0.3 if f == CONTACT_FRAME else 50.0 for f in frames],
+            "nose_y": 0.0, "nose_z": BALL_XYZ[2],
+            "l_wrist_x": 0.0, "l_wrist_y": 0.0, "l_wrist_z": BALL_XYZ[2],
+            "r_wrist_x": 5.0, "r_wrist_y": -5.0, "r_wrist_z": 0.5,
+            "l_shoulder_x": 0.0, "l_shoulder_y": -0.2,
+            "r_shoulder_x": 0.0, "r_shoulder_y": 0.2,
+            "l_ankle_z": 0.1, "r_ankle_z": 0.1,
+        },
+    )
+    assert _events(tmp_path) == []
+    assert len(_events(tmp_path, hand_check_enabled=False)) == 1
+
+
+def test_dwell_radius_can_be_fixed_independently(tmp_path, scene):
+    """dwell_distance_m decouples the dwell radius from the contact threshold."""
+    default = H5HeaderSkeletonSpotter(_config())
+    assert default.params["dwell_distance_m"] is None
+
+    widened = H5HeaderSkeletonSpotter(
+        _config(head_ball_distance_max_m=0.8, dwell_distance_m=0.48))
+    assert widened.params["dwell_distance_m"] == 0.48
+    assert len(widened.predict(_Dataset(scene))["data"][0]["events"]) == 1
 
 
 def test_missing_joint_column_raises(tmp_path):
