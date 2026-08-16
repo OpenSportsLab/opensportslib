@@ -117,16 +117,15 @@ metrics = m.evaluate(
 
 ### E2ESpot test-time adaptation
 
-Use `opensportslib/configs/localization/e2e_spotta_header.yaml` to enable the
-SpoTTA recipe for a binary Background/Header E2ESpot checkpoint. Replace the
-placeholder test annotation and source paths, then pass the source checkpoint
-through `weights` as usual:
+Use `opensportslib/configs/localization/e2e_spotta.yaml` to enable the SpoTTA
+adapter for an E2ESpot checkpoint. Replace the example class, test annotation,
+and source paths, then pass the source checkpoint through `weights` as usual:
 
 ```python
 from opensportslib.apis import LocalizationModel
 
 model = LocalizationModel(
-    config="opensportslib/configs/localization/e2e_spotta_header.yaml",
+    config="opensportslib/configs/localization/e2e_spotta.yaml",
     weights="/path/to/best_checkpoint.pt",
 )
 predictions = model.infer(test_set="/path/to/target-test.json")
@@ -135,8 +134,8 @@ predictions = model.infer(test_set="/path/to/target-test.json")
 Treat each `infer()` call as one target-set adaptation session. SpoTTA remains
 continuous across the batches produced by OpenSportsLib's ordinary test
 dataloader, then starts fresh from the loaded source checkpoint on the next
-call. No match or tournament metadata is required. The current reproducible
-recipe is E2ESpot-only, binary Header-only, and requires a
+call. `confidence_gate.action_class_index` selects the model output class used
+to admit clips into adaptation memory. The current implementation requires a
 `VideoGameWithOpencvVideo` test split with `shuffle: false`. Disable it with
 `MODEL.policies.test_time_adaptation.enabled: false`; ordinary E2ESpot
 prediction is then unchanged.

@@ -162,11 +162,6 @@ class E2EModel(BaseRGBModel):
             return
         if str(name).strip().lower() != "spotta":
             raise ValueError(f"Unsupported E2ESpot adaptation tool: {name!r}")
-        if self._num_classes != 2:
-            raise ValueError(
-                "The current SpoTTA E2ESpot recipe requires exactly one action "
-                "class (Background + Header)."
-            )
 
         from opensportslib.adaptation import SpoTTA
 

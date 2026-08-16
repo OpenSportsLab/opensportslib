@@ -1,12 +1,4 @@
-"""SpoTTA test-time adaptation for binary E2E action spotting.
-
-This module contains only the effective SpoTTA recipe used by the historical
-Header experiment.  It intentionally does not expose inactive options from the
-research CLI (frame filtering, action weighting, reset scheduling, or repeated
-``steps``).  A :class:`SpoTTA` instance represents one continuous target-set
-adaptation session; the E2ESpot API creates a fresh instance for every
-``LocalizationModel.infer()`` call.
-"""
+# SpoTTA: test-time adaptation for action spotting.
 
 from __future__ import annotations
 
@@ -37,19 +29,19 @@ def _mapping(value: Any) -> dict[str, Any]:
         return vars(value)
 
 
-def _require_recipe_value(
+def _require_supported_value(
     mapping: dict[str, Any], key: str, expected: Any, path: str
 ) -> None:
     if key in mapping and mapping[key] != expected:
         raise ValueError(
-            f"The 53.33 SpoTTA recipe requires {path}.{key}={expected!r}, "
-            f"got {mapping[key]!r}."
+            f"SpoTTA currently supports only {path}.{key}={expected!r}; "
+            f"received {mapping[key]!r}."
         )
 
 
 @dataclass(frozen=True)
 class SpoTTAConfig:
-    """Effective hyperparameters for the 53.33-mAP SpoTTA recipe."""
+    """Configuration for the E2ESpot integration."""
 
     alpha: float = 0.05
     tether_cap: float = 0.5
@@ -80,38 +72,37 @@ class SpoTTAConfig:
         teacher = _mapping(root.get("teacher"))
         augmentation = _mapping(root.get("augmentation"))
 
-        _require_recipe_value(
+        _require_supported_value(
             root,
             "prediction_timing",
             "adapt_then_predict",
             "adaptation",
         )
-        _require_recipe_value(tether, "mode", "bayesian", "robust_bn.tether")
-        _require_recipe_value(
+        _require_supported_value(tether, "mode", "bayesian", "robust_bn.tether")
+        _require_supported_value(
             gate,
             "uncertainty",
             "one_minus_max_probability",
             "confidence_gate",
         )
-        _require_recipe_value(
+        _require_supported_value(
             gate,
             "aggregation",
             "min_over_predicted_action_frames",
             "confidence_gate",
         )
-        _require_recipe_value(memory, "class_policy", "header_only", "memory")
-        _require_recipe_value(optimizer, "type", "Adam", "optimizer")
-        _require_recipe_value(
+        _require_supported_value(optimizer, "type", "Adam", "optimizer")
+        _require_supported_value(
             optimizer,
             "trainable_parameters",
             "batch_norm_affine_only",
             "optimizer",
         )
-        _require_recipe_value(teacher, "type", "ema", "teacher")
-        _require_recipe_value(
+        _require_supported_value(teacher, "type", "ema", "teacher")
+        _require_supported_value(
             teacher, "adaptive_from_bn_drift", True, "teacher"
         )
-        _require_recipe_value(
+        _require_supported_value(
             augmentation, "mode", "framewise_rotta_strong", "augmentation"
         )
 
@@ -154,9 +145,10 @@ class SpoTTAConfig:
             raise ValueError("SpoTTA robust_bn.tether.cap must be in (0, 1].")
         if not 0 <= self.gate_threshold <= 1:
             raise ValueError("SpoTTA confidence_gate.threshold must be in [0, 1].")
-        if self.action_class_index != 1:
+        if self.action_class_index < 0:
             raise ValueError(
-                "The E2ESpot SpoTTA recipe currently requires Header at class index 1."
+                "SpoTTA confidence_gate.action_class_index must be "
+                "non-negative."
             )
         if self.min_action_frames < 1:
             raise ValueError("SpoTTA min_action_frames must be positive.")
@@ -328,8 +320,8 @@ class _MemoryItem:
     age: int = 0
 
 
-class HeaderCSTUMemory:
-    """Header-only CSTU memory used by the effective SpoTTA recipe."""
+class CSTUMemory:
+    """CSTU memory for clips selected by the confidence gate."""
 
     def __init__(self, capacity: int, lambda_t: float, lambda_u: float):
         self.capacity = capacity
@@ -499,7 +491,7 @@ class SpoTTA:
             betas=(self.config.adam_beta, 0.999),
             weight_decay=0.0,
         )
-        self.memory = HeaderCSTUMemory(
+        self.memory = CSTUMemory(
             self.config.memory_capacity, self.config.lambda_t, self.config.lambda_u
         )
         self.augmentation = FramewiseStrongAugmentation()
@@ -596,10 +588,6 @@ class SpoTTA:
         self.student.train()
         student_logits = _logits(self.student(augmented))
         batch, time, classes = student_logits.shape
-        if classes != 2:
-            raise ValueError(
-                "The 53.33 SpoTTA recipe is binary and expects Background/Header logits."
-            )
         student_flat = student_logits.reshape(-1, classes)
         teacher_flat = teacher_logits.reshape(-1, classes)
         soft_cross_entropy = -(
@@ -640,9 +628,12 @@ class SpoTTA:
         self.teacher.eval()
         with torch.no_grad():
             gate_probabilities = _logits(self.teacher(sequence)).softmax(dim=-1)
-        if gate_probabilities.shape[-1] != 2:
+        output_classes = gate_probabilities.shape[-1]
+        if self.config.action_class_index >= output_classes:
             raise ValueError(
-                "The 53.33 SpoTTA recipe requires two output classes: Background and Header."
+                "SpoTTA confidence_gate.action_class_index="
+                f"{self.config.action_class_index} is outside the model's "
+                f"{output_classes} output classes."
             )
 
         batch_size = sequence.shape[0]

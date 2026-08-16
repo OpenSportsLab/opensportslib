@@ -290,17 +290,17 @@ milliseconds on the physical video and follow half-open
 
 ```json
 {
-  "id": "FWC2022-M64-1",
-  "inputs": [{"type": "video", "path": "224p/M64-1.mp4"}],
+  "id": "sample-01",
+  "inputs": [{"type": "video", "path": "videos/sample.mp4"}],
   "metadata": {
     "annotation_status": "verified",
     "intervals": [
-      {"period": "1H", "start_time_ms": 5524000, "end_time_ms": 8672000},
-      {"period": "2H", "start_time_ms": 9579000, "end_time_ms": 12800000}
+      {"period": "segment_a", "start_time_ms": 10000, "end_time_ms": 20000},
+      {"period": "segment_b", "start_time_ms": 30000, "end_time_ms": 40000}
     ]
   },
   "events": [
-    {"head": "action", "label": "Header", "position_ms": 5668100}
+    {"head": "action", "label": "Action", "position_ms": 12000}
   ]
 }
 ```

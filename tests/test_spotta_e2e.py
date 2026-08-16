@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
+import pytest
 from torch import nn
 
 from opensportslib.core.config.accessors import get_loader_backend
@@ -19,19 +20,20 @@ from opensportslib.core.config import load_config
 
 
 class _TinyE2ESpot(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes=2, predicted_class=1):
         super().__init__()
         self.bn = nn.BatchNorm2d(3)
-        self.classifier = nn.Linear(3, 2)
+        self.classifier = nn.Linear(3, num_classes)
         with torch.no_grad():
             self.classifier.weight.zero_()
-            self.classifier.bias.copy_(torch.tensor([-2.0, 2.0]))
+            self.classifier.bias.fill_(-2.0)
+            self.classifier.bias[predicted_class] = 2.0
 
     def forward(self, clips):
         batch, time, channels, height, width = clips.shape
         frames = self.bn(clips.reshape(batch * time, channels, height, width))
         features = frames.mean(dim=(-1, -2))
-        return self.classifier(features).reshape(batch, time, 2)
+        return self.classifier(features).reshape(batch, time, -1)
 
 
 def _spotta_config(**overrides):
@@ -91,7 +93,7 @@ def test_robust_batch_norm_preserves_eval_output_and_frozen_anchor():
     assert not torch.equal(layers[0].source_mean, anchor_mean)
 
 
-def test_effective_recipe_gates_headers_and_updates_every_second_gated_clip():
+def test_spotta_gates_actions_and_updates_every_second_gated_clip():
     spotta = SpoTTA(_TinyE2ESpot(), _spotta_config())
     clips = torch.randn(2, 4, 3, 5, 5)
 
@@ -180,19 +182,42 @@ def test_disabled_spotta_uses_ordinary_e2e_prediction_path():
     )
 
 
-def test_spotta_config_rejects_non_header_action_index():
+def test_spotta_supports_configured_action_class_in_multiclass_output():
     config = _spotta_config()
     config["confidence_gate"]["action_class_index"] = 2
+    spotta = SpoTTA(
+        _TinyE2ESpot(num_classes=4, predicted_class=2), config
+    )
 
-    try:
+    predicted, probabilities = spotta.predict(
+        torch.randn(2, 4, 3, 5, 5), use_amp=False
+    )
+
+    assert predicted.shape == (2, 4)
+    assert probabilities.shape == (2, 4, 4)
+    assert torch.from_numpy(predicted).eq(2).all()
+    assert spotta.stats["clips_gated"] == 2
+    assert spotta.stats["updates_completed"] == 1
+
+
+def test_spotta_config_rejects_negative_action_class_index():
+    config = _spotta_config()
+    config["confidence_gate"]["action_class_index"] = -1
+
+    with pytest.raises(ValueError, match="must be non-negative"):
         SpoTTAConfig.from_mapping(config)
-    except ValueError as exc:
-        assert "class index 1" in str(exc)
-    else:
-        raise AssertionError("Expected invalid Header class index to fail.")
 
 
-def test_spotta_config_rejects_recipe_semantic_changes():
+def test_spotta_rejects_action_class_outside_model_outputs():
+    config = _spotta_config()
+    config["confidence_gate"]["action_class_index"] = 4
+    spotta = SpoTTA(_TinyE2ESpot(num_classes=4), config)
+
+    with pytest.raises(ValueError, match="outside the model's 4 output classes"):
+        spotta.predict(torch.randn(1, 4, 3, 5, 5), use_amp=False)
+
+
+def test_spotta_config_rejects_unsupported_semantic_changes():
     config = _spotta_config()
     config["confidence_gate"]["aggregation"] = "mean"
 
@@ -204,12 +229,12 @@ def test_spotta_config_rejects_recipe_semantic_changes():
         raise AssertionError("Expected a changed confidence aggregation to fail.")
 
 
-def test_spotta_header_config_contains_only_effective_recipe_options():
+def test_spotta_config_contains_only_supported_options():
     with patch(
         "opensportslib.core.config.loader._dali_available", return_value=False
     ):
         config = load_config(
-            "opensportslib/configs/localization/e2e_spotta_header.yaml",
+            "opensportslib/configs/localization/e2e_spotta.yaml",
             as_namespace=False,
         )
     spotta_config = config["MODEL"]["policies"]["test_time_adaptation"]
@@ -220,6 +245,7 @@ def test_spotta_header_config_contains_only_effective_recipe_options():
     assert spotta_config["memory"]["capacity"] == 8
     assert spotta_config["memory"]["update_frequency"] == 2
     assert spotta_config["robust_bn"]["tether"]["mode"] == "bayesian"
+    assert "class_policy" not in spotta_config["memory"]
     assert "frame_filter" not in spotta_config
     assert "steps" not in spotta_config
     assert "reset_frequency" not in spotta_config

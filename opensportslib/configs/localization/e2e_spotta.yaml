@@ -12,7 +12,7 @@ SYSTEM:
 DATA:
   common:
     classes:
-      - Header
+      - Action
     runtime:
       loader_backend: opencv
     splits:
@@ -79,7 +79,6 @@ MODEL:
         threshold: 0.3
       memory:
         capacity: 8
-        class_policy: header_only
         update_frequency: 2
         lambda_t: 1.0
         lambda_u: 1.0

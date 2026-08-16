@@ -17,26 +17,26 @@ from opensportslib.datasets.localization_dataset import FrameReader
 
 def _record(status="verified"):
     return {
-        "id": "FWC2022-M64-1",
-        "inputs": [{"type": "video", "path": "224p/M64-1.mp4"}],
+        "id": "sample-01",
+        "inputs": [{"type": "video", "path": "videos/sample.mp4"}],
         "metadata": {
             "annotation_status": status,
             "intervals": [
                 {
-                    "period": "1H",
-                    "start_time_ms": 5_524_000,
-                    "end_time_ms": 5_526_000,
+                    "period": "segment_a",
+                    "start_time_ms": 10_000,
+                    "end_time_ms": 12_000,
                 },
                 {
-                    "period": "2H",
-                    "start_time_ms": 9_579_000,
-                    "end_time_ms": 9_581_000,
+                    "period": "segment_b",
+                    "start_time_ms": 20_000,
+                    "end_time_ms": 22_000,
                 },
             ],
         },
         "events": [
-            {"head": "Actions", "label": "Header", "position_ms": 5_524_500},
-            {"head": "Actions", "label": "Header", "position_ms": 9_579_500},
+            {"head": "Actions", "label": "Action", "position_ms": 10_500},
+            {"head": "Actions", "label": "Action", "position_ms": 20_500},
         ],
     }
 
@@ -48,7 +48,7 @@ def _document(records):
         "metadata": {
             "interval_semantics": "half-open [start_time_ms, end_time_ms)"
         },
-        "labels": {"Actions": {"labels": ["Header"]}},
+        "labels": {"Actions": {"labels": ["Action"]}},
         "data": records,
     }
 
@@ -56,21 +56,24 @@ def _document(records):
 def test_expand_localization_intervals_rebases_half_open_events():
     segments = expand_localization_intervals(_record())
 
-    assert [segment["period"] for segment in segments] == ["1H", "2H"]
+    assert [segment["period"] for segment in segments] == [
+        "segment_a",
+        "segment_b",
+    ]
     assert [segment["events"][0]["position_ms"] for segment in segments] == [
         500,
         500,
     ]
     assert segments[0]["logical_path"].endswith(
-        "M64-1.interval-01-1H.mp4"
+        "sample.interval-01-segment_a.mp4"
     )
     assert segments[1]["logical_path"].endswith(
-        "M64-1.interval-02-2H.mp4"
+        "sample.interval-02-segment_b.mp4"
     )
 
     invalid = _record()
     invalid["events"].append(
-        {"head": "Actions", "label": "Header", "position_ms": 5_526_000}
+        {"head": "Actions", "label": "Action", "position_ms": 12_000}
     )
     with pytest.raises(ValueError, match="outside its declared"):
         expand_localization_intervals(invalid)
@@ -83,7 +86,7 @@ def test_expand_localization_intervals_preserves_legacy_and_omits_excluded():
     segments = expand_localization_intervals(legacy)
 
     assert len(segments) == 1
-    assert segments[0]["logical_path"] == "224p/M64-1.mp4"
+    assert segments[0]["logical_path"] == "videos/sample.mp4"
     assert segments[0]["start_time_ms"] == 0
     assert segments[0]["end_time_ms"] is None
     assert segments[0]["events"] == legacy["events"]
@@ -119,7 +122,7 @@ def test_annotation_loader_expands_intervals_and_source_bounds(
 ):
     annotation_path = tmp_path / "annotations.json"
     annotation_path.write_text(json.dumps(_document([_record()])))
-    video_path = tmp_path / "224p" / "M64-1.mp4"
+    video_path = tmp_path / "videos" / "sample.mp4"
     video_path.parent.mkdir()
     video_path.touch()
     monkeypatch.setattr(cv2, "VideoCapture", _MetadataCapture)
@@ -134,10 +137,10 @@ def test_annotation_loader_expands_intervals_and_source_bounds(
         "verified",
         "verified",
     ]
-    assert labels[0]["source_start_frame"] == 138_100
-    assert labels[0]["source_end_frame"] == 138_150
+    assert labels[0]["source_start_frame"] == 250
+    assert labels[0]["source_end_frame"] == 300
     assert labels[0]["num_frames_base"] == 50
-    assert labels[0]["events"] == [{"frame": 1, "label": "Header"}]
+    assert labels[0]["events"] == [{"frame": 1, "label": "Action"}]
 
     with pytest.raises(ValueError, match="requires the OpenCV backend"):
         annotationstoe2eformat(
@@ -210,7 +213,7 @@ def test_v2_evaluator_scores_only_verified_logical_intervals(tmp_path):
     verified = _record()
     unlabeled = _record(status="unlabeled")
     unlabeled["id"] = "adaptation-only"
-    unlabeled["inputs"][0]["path"] = "224p/adaptation-only.mp4"
+    unlabeled["inputs"][0]["path"] = "videos/adaptation-only.mp4"
     unlabeled["events"] = []
     document = _document([verified, unlabeled])
     annotation_path = tmp_path / "annotations.json"
@@ -224,7 +227,7 @@ def test_v2_evaluator_scores_only_verified_logical_intervals(tmp_path):
                 events.append(
                     {
                         "head": "Actions",
-                        "label": "Header",
+                        "label": "Action",
                         "frame": 1,
                         "position_ms": 500,
                         "confidence": 0.9,
@@ -234,7 +237,7 @@ def test_v2_evaluator_scores_only_verified_logical_intervals(tmp_path):
                 events.append(
                     {
                         "head": "Actions",
-                        "label": "Header",
+                        "label": "Action",
                         "frame": 1,
                         "position_ms": 500,
                         "confidence": 1.0,
@@ -260,7 +263,7 @@ def test_v2_evaluator_scores_only_verified_logical_intervals(tmp_path):
     evaluator = object.__new__(Evaluator)
     evaluator.extract_fps = 2
     cfg = SimpleNamespace(
-        annotation_path=str(annotation_path), classes=["Header"]
+        annotation_path=str(annotation_path), classes=["Action"]
     )
 
     result = evaluator.evaluate_common_JSON(
@@ -292,7 +295,7 @@ def test_v2_evaluator_counts_missing_verified_interval_as_empty(tmp_path):
                         ],
                         "events": [
                             {
-                                "label": "Header",
+                                "label": "Action",
                                 "frame": 1,
                                 "position_ms": 500,
                                 "confidence": 0.9,
@@ -306,7 +309,7 @@ def test_v2_evaluator_counts_missing_verified_interval_as_empty(tmp_path):
     evaluator = object.__new__(Evaluator)
     evaluator.extract_fps = 2
     cfg = SimpleNamespace(
-        annotation_path=str(annotation_path), classes=["Header"]
+        annotation_path=str(annotation_path), classes=["Action"]
     )
 
     result = evaluator.evaluate_common_JSON(
