@@ -281,6 +281,46 @@ OpenSportsLib localization prefers `position_ms` when present. If
 For predictions and evaluation, current OpenSportsLib spotting outputs use
 `confidence`.
 
+### Open video intervals
+
+A localization record may declare the playable or annotated portions of one
+physical video in `data[].metadata.intervals`. Interval bounds are absolute
+milliseconds on the physical video and follow half-open
+`[start_time_ms, end_time_ms)` semantics:
+
+```json
+{
+  "id": "FWC2022-M64-1",
+  "inputs": [{"type": "video", "path": "224p/M64-1.mp4"}],
+  "metadata": {
+    "annotation_status": "verified",
+    "intervals": [
+      {"period": "1H", "start_time_ms": 5524000, "end_time_ms": 8672000},
+      {"period": "2H", "start_time_ms": 9579000, "end_time_ms": 12800000}
+    ]
+  },
+  "events": [
+    {"head": "action", "label": "Header", "position_ms": 5668100}
+  ]
+}
+```
+
+The OpenCV localization loader exposes each interval as an ordered logical
+video while reading frames from the original physical file. Event timestamps
+are rebased to the interval start. Continuous inference state, including a
+test-time adapter, remains alive as the loader advances between intervals.
+
+`annotation_status` controls how the logical segments are used:
+
+- `verified`: included in inference and evaluation;
+- `unlabeled`: included in inference, but excluded from evaluation;
+- `excluded`: omitted from both inference and evaluation.
+
+Records without `metadata.intervals` retain full-video behavior. Bounded video
+intervals currently require the OpenCV backend; selecting DALI raises an error
+instead of silently reading the wrong physical frames. Events outside declared
+intervals and overlapping or invalid intervals are rejected.
+
 ## Description, Dense Description, And Q/A Payloads
 
 These payloads are part of the OSL JSON ecosystem. They are useful for datasets
@@ -597,6 +637,8 @@ Localization prediction example:
 - Classification samples use `labels.action.label` unless your code explicitly
   passes a different task head.
 - Localization samples use `events[].position_ms` whenever possible.
+- Localization interval bounds use absolute physical-video milliseconds and
+  half-open `[start_time_ms, end_time_ms)` semantics.
 - Labels in samples/events are present in the matching root label list.
 - `inputs[].path` resolves from the expected split root or conversion
   `media_root`.

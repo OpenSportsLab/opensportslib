@@ -4,11 +4,163 @@ import tqdm
 import logging
 import cv2
 import math
+import copy
 import numpy as np
 import torch
 from opensportslib.core.utils.video_processing import get_stride, read_fps, get_num_frames
 from opensportslib.core.utils.config import load_json
 from collections import defaultdict
+
+
+LOCALIZATION_ANNOTATION_STATUSES = {"verified", "unlabeled", "excluded"}
+
+
+def _localization_video_input(record):
+    inputs = [
+        item
+        for item in record.get("inputs", [])
+        if item.get("type") == "video" and item.get("path")
+    ]
+    if len(inputs) != 1:
+        raise ValueError(
+            "Localization records require exactly one video input, "
+            f"got {len(inputs)} for {record.get('id', '<unknown>')!r}."
+        )
+    return inputs[0]
+
+
+def _interval_logical_path(source_path, period, index):
+    stem, suffix = os.path.splitext(source_path)
+    safe_period = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "_"
+        for character in str(period)
+    ).strip("_")
+    if not safe_period:
+        safe_period = f"interval_{index + 1}"
+    return f"{stem}.interval-{index + 1:02d}-{safe_period}{suffix}"
+
+
+def expand_localization_intervals(record):
+    """Expand one OSL JSON localization record into logical video segments.
+
+    OSL interval timestamps are absolute milliseconds on the physical video and
+    use half-open ``[start_time_ms, end_time_ms)`` semantics. Events returned by
+    this function are rebased to the start of their logical segment. Records
+    without intervals preserve the historical full-video behavior.
+
+    ``verified`` and ``unlabeled`` records are returned for inference, while
+    ``excluded`` records produce no segments. Evaluators can additionally keep
+    only the returned ``verified`` segments.
+    """
+
+    metadata = dict(record.get("metadata") or {})
+    status = metadata.get(
+        "annotation_status", record.get("annotation_status", "verified")
+    )
+    if status not in LOCALIZATION_ANNOTATION_STATUSES:
+        raise ValueError(
+            f"Unknown localization annotation_status={status!r} for "
+            f"{record.get('id', '<unknown>')!r}."
+        )
+    if status == "excluded":
+        return []
+
+    video_input = _localization_video_input(record)
+    source_path = str(video_input["path"])
+    events = [copy.deepcopy(event) for event in record.get("events", [])]
+    intervals = metadata.get("intervals", record.get("intervals"))
+    if intervals is None:
+        return [
+            {
+                "id": record.get("id", source_path),
+                "logical_path": source_path,
+                "source_path": source_path,
+                "start_time_ms": 0,
+                "end_time_ms": None,
+                "period": None,
+                "annotation_status": status,
+                "events": events,
+            }
+        ]
+    if not intervals:
+        raise ValueError(
+            f"Included localization record {record.get('id', source_path)!r} "
+            "has an empty intervals list."
+        )
+
+    normalized_intervals = []
+    previous_end = -1
+    for index, interval in enumerate(intervals):
+        if "start_time_ms" not in interval or "end_time_ms" not in interval:
+            raise ValueError(
+                f"Interval {index} for {record.get('id', source_path)!r} must "
+                "define start_time_ms and end_time_ms."
+            )
+        start_time_ms = int(interval["start_time_ms"])
+        end_time_ms = int(interval["end_time_ms"])
+        if start_time_ms < 0 or end_time_ms <= start_time_ms:
+            raise ValueError(
+                f"Invalid half-open interval [{start_time_ms}, {end_time_ms}) "
+                f"for {record.get('id', source_path)!r}."
+            )
+        if start_time_ms < previous_end:
+            raise ValueError(
+                f"Intervals overlap or are out of order for "
+                f"{record.get('id', source_path)!r}."
+            )
+        previous_end = end_time_ms
+        normalized_intervals.append(
+            {
+                "period": interval.get("period", f"interval_{index + 1}"),
+                "start_time_ms": start_time_ms,
+                "end_time_ms": end_time_ms,
+            }
+        )
+
+    assigned_events = 0
+    segments = []
+    for index, interval in enumerate(normalized_intervals):
+        start_time_ms = interval["start_time_ms"]
+        end_time_ms = interval["end_time_ms"]
+        interval_events = []
+        for event in events:
+            position = event.get("position_ms", event.get("position"))
+            if position is None:
+                raise ValueError(
+                    f"Interval-aware localization event in "
+                    f"{record.get('id', source_path)!r} has no position_ms."
+                )
+            position_ms = int(position)
+            if start_time_ms <= position_ms < end_time_ms:
+                shifted = copy.deepcopy(event)
+                shifted["position_ms"] = position_ms - start_time_ms
+                if "position" in shifted:
+                    shifted["position"] = position_ms - start_time_ms
+                interval_events.append(shifted)
+                assigned_events += 1
+
+        period = interval["period"]
+        logical_path = _interval_logical_path(source_path, period, index)
+        segments.append(
+            {
+                "id": f"{record.get('id', source_path)}::{period}",
+                "logical_path": logical_path,
+                "source_path": source_path,
+                "start_time_ms": start_time_ms,
+                "end_time_ms": end_time_ms,
+                "period": period,
+                "annotation_status": status,
+                "events": interval_events,
+            }
+        )
+
+    if assigned_events != len(events):
+        raise ValueError(
+            f"{len(events) - assigned_events} event(s) in "
+            f"{record.get('id', source_path)!r} fall outside its declared "
+            "half-open intervals."
+        )
+    return segments
 
 def load_annotations(
     annotations_path,
@@ -222,84 +374,145 @@ def annotationstoe2eformat(
 
         classes_by_label_dir.append(labels)
 
-        # ---- Iterate videos ----
-        videos = annotations["data"]
+        video_properties = {}
+        for video in tqdm.tqdm(annotations["data"]):
+            for segment in expand_localization_intervals(video):
+                video_path = segment["source_path"]
+                full_video_path = os.path.join(video_dir, video_path)
+                assert os.path.isfile(full_video_path), full_video_path
 
-        for video in tqdm.tqdm(videos):
-            # ---- Video path & metadata ----
-            video_path = video["inputs"][0]["path"]#.replace(" ", "_")
-            #game_dir  = os.path.dirname(video_path)
-            #game_name = os.path.basename(video_path)
-            full_video_path = os.path.join(video_dir, video_path)
-            assert os.path.isfile(full_video_path), full_video_path
-            vc = cv2.VideoCapture(full_video_path)
-            width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = vc.get(cv2.CAP_PROP_FPS)
-            num_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
+                if full_video_path not in video_properties:
+                    vc = cv2.VideoCapture(full_video_path)
+                    try:
+                        if not vc.isOpened():
+                            raise ValueError(
+                                f"OpenCV cannot open video: {full_video_path}"
+                            )
+                        properties = {
+                            "width": int(vc.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                            "height": int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                            "fps": float(vc.get(cv2.CAP_PROP_FPS)),
+                            "num_frames": int(vc.get(cv2.CAP_PROP_FRAME_COUNT)),
+                        }
+                    finally:
+                        vc.release()
+                    if properties["fps"] <= 0 or properties["num_frames"] <= 0:
+                        raise ValueError(
+                            f"Invalid video metadata for {full_video_path}: "
+                            f"fps={properties['fps']}, "
+                            f"frames={properties['num_frames']}"
+                        )
+                    video_properties[full_video_path] = properties
 
-            # ---- FPS handling ----
-            target_fps = extract_fps if extract_fps < fps else fps
-            sample_fps = read_fps(fps, target_fps)
+                properties = video_properties[full_video_path]
+                width = properties["width"]
+                height = properties["height"]
+                fps = properties["fps"]
+                physical_num_frames = properties["num_frames"]
+                target_fps = extract_fps if extract_fps < fps else fps
+                sample_fps = read_fps(fps, target_fps)
 
-            num_frames_after = get_num_frames(
-                num_frames, fps, target_fps
-            )
-
-            if dali:
-                if get_stride(fps, target_fps) != get_stride(input_fps, extract_fps):
-                    sample_fps = fps / get_stride(input_fps, extract_fps)
-                    num_frames_dali = math.ceil(
-                        num_frames / get_stride(input_fps, extract_fps)
+                bounded = segment["end_time_ms"] is not None
+                if bounded and dali:
+                    raise ValueError(
+                        "Interval-aware localization loading currently requires "
+                        "the OpenCV backend; DALI cannot seek logical intervals."
                     )
+                if bounded:
+                    duration_ms = physical_num_frames / fps * 1000.0
+                    if segment["end_time_ms"] > duration_ms + 1.0:
+                        raise ValueError(
+                            f"Interval end {segment['end_time_ms']} exceeds video "
+                            f"duration {duration_ms:.3f} ms for {full_video_path}."
+                        )
+                    source_start_frame = int(
+                        math.ceil(segment["start_time_ms"] * fps / 1000.0 - 1e-9)
+                    )
+                    source_end_frame = int(
+                        math.ceil(segment["end_time_ms"] * fps / 1000.0 - 1e-9)
+                    )
+                    source_start_frame = max(
+                        0, min(source_start_frame, physical_num_frames)
+                    )
+                    source_end_frame = max(
+                        source_start_frame,
+                        min(source_end_frame, physical_num_frames),
+                    )
+                    if source_end_frame <= source_start_frame:
+                        raise ValueError(
+                            f"Empty interval {segment['logical_path']!r}: "
+                            f"[{segment['start_time_ms']}, "
+                            f"{segment['end_time_ms']})"
+                        )
+                    segment_num_frames = source_end_frame - source_start_frame
                 else:
-                    num_frames_dali = num_frames_after
+                    source_start_frame = None
+                    source_end_frame = None
+                    segment_num_frames = physical_num_frames
 
-            # ---- Events ----
-            events = []
-            for ann in video.get("events", []):
-                position_ms = float(ann["position_ms"])
-
+                num_frames_after = get_num_frames(
+                    segment_num_frames, fps, target_fps
+                )
                 if dali:
-                    if get_stride(fps, target_fps) != get_stride(input_fps, extract_fps):
-                        adj_frame = (
-                            position_ms / 1000
-                            * (fps / get_stride(input_fps, extract_fps))
+                    if get_stride(fps, target_fps) != get_stride(
+                        input_fps, extract_fps
+                    ):
+                        sample_fps = fps / get_stride(input_fps, extract_fps)
+                        num_frames_dali = math.ceil(
+                            segment_num_frames
+                            / get_stride(input_fps, extract_fps)
+                        )
+                    else:
+                        num_frames_dali = num_frames_after
+
+                events = []
+                for annotation in segment["events"]:
+                    position_ms = float(annotation["position_ms"])
+                    if dali and get_stride(fps, target_fps) != get_stride(
+                        input_fps, extract_fps
+                    ):
+                        adj_frame = position_ms / 1000 * (
+                            fps / get_stride(input_fps, extract_fps)
                         )
                     else:
                         adj_frame = position_ms / 1000 * sample_fps
-                else:
-                    adj_frame = position_ms / 1000 * sample_fps
+                    if int(adj_frame) == 0:
+                        adj_frame = 1
+                    events.append(
+                        {"frame": int(adj_frame), "label": annotation["label"]}
+                    )
+                events.sort(key=lambda item: item["frame"])
 
-                if int(adj_frame) == 0:
-                    adj_frame = 1
-
-                events.append({
-                    "frame": int(adj_frame),
-                    "label": ann["label"],
-
-                })
-
-            events.sort(key=lambda x: x["frame"])
-
-            labels_e2e.append({
-                "events": events,
-                "fps": sample_fps,
-                "num_frames": num_frames_dali if dali else num_frames_after,
-                "num_frames_base": num_frames,
-                "num_events": len(events),
-                "width": width,
-                "height": height,
-                "video": full_video_path,
-                "path": video_path,
-            })
+                labels_e2e.append(
+                    {
+                        "events": events,
+                        "fps": sample_fps,
+                        "num_frames": (
+                            num_frames_dali if dali else num_frames_after
+                        ),
+                        "num_frames_base": segment_num_frames,
+                        "num_events": len(events),
+                        "width": width,
+                        "height": height,
+                        "video": full_video_path,
+                        "path": segment["logical_path"],
+                        "source_start_frame": source_start_frame,
+                        "source_end_frame": source_end_frame,
+                        "start_time_ms": segment["start_time_ms"],
+                        "end_time_ms": segment["end_time_ms"],
+                        "period": segment["period"],
+                        "annotation_status": segment["annotation_status"],
+                    }
+                )
 
     # ---- Sanity checks ----
     base_classes = classes_by_label_dir[0]
     for c in classes_by_label_dir:
         assert c == base_classes
 
-    labels_e2e.sort(key=lambda x: x["video"])
+    labels_e2e.sort(
+        key=lambda item: (item["video"], item.get("start_time_ms", 0))
+    )
 
     return labels_e2e, task_name_list[0]
 

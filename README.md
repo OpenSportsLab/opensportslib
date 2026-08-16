@@ -176,7 +176,10 @@ Minimal localization sample:
 ```
 
 Relative paths in `inputs[].path` are resolved from the split media root in the
-YAML config, for example `DATA.common.splits.train.source_path`. See the full
+YAML config, for example `DATA.common.splits.train.source_path`. Localization
+records may also declare half-open physical-video ranges in
+`metadata.intervals`; the OpenCV loader treats them as ordered logical videos
+and evaluates only segments marked `verified`. See the full
 [OSL JSON format guide](docs/data/osl-json-format.md) for field definitions,
 multi-modal examples, prediction payloads, and conversion notes.
 
