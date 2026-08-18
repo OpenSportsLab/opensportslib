@@ -234,12 +234,16 @@ def has_peft_adapter_artifacts(adapter_path: str | None) -> bool:
 
 def load_peft_adapter_if_available(model, adapter_path: str | None):
     """Load a PEFT adapter into a model when real adapter artifacts exist."""
-    if not has_peft_adapter_artifacts(adapter_path):
+    if not adapter_path:
+        return model, "not_found"
+    is_local_dir = os.path.isdir(adapter_path)
+    if is_local_dir and not has_peft_adapter_artifacts(adapter_path):
         return model, "not_found"
     if not optional_package_available("peft"):
         logger.warning(
-            "PEFT adapter artifacts found but optional dependency 'peft' is not installed; "
-            "continuing with base decoder."
+            "PEFT adapter requested but optional dependency 'peft' is not installed; "
+            "continuing with base decoder. adapter_path=%s",
+            adapter_path,
         )
         return model, "missing_peft"
 
