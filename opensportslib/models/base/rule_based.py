@@ -686,6 +686,16 @@ SKELETON_RULE_VARIANTS = {
     },
 }
 
+# Recall taken as far as it goes: the same settings with the bend test off.
+# On the 2022 final that finds every annotated header, 100% recall at 61.4%
+# precision, against 97.1/69.4 with the bend test. Two in five predictions are
+# then wrong, so this is for building a candidate set something else filters.
+SKELETON_RULE_VARIANTS["h5_header_skeleton_max_recall"] = {
+    **SKELETON_RULE_VARIANTS["h5_header_skeleton_recall"],
+    "angle_change_min_deg": 0.0,
+    "created_by": "h5_header_skeleton_max_recall_rule",
+}
+
 
 class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
     """Frame-joined skeleton heuristic for header spotting.
@@ -1256,6 +1266,18 @@ class H5HeaderSkeletonRecallSpotter(H5HeaderSkeletonSpotter):
     variant_name = "h5_header_skeleton_recall"
 
 
+class H5HeaderSkeletonMaxRecallSpotter(H5HeaderSkeletonSpotter):
+    """Skeleton header spotting with every gate that costs recall removed.
+
+    The recall variant without its bend test. It finds every annotated header
+    on the game it was measured against, at the cost of roughly two wrong
+    predictions in five, so it suits building a candidate set for review or for
+    a downstream classifier rather than answering on its own.
+    """
+
+    variant_name = "h5_header_skeleton_max_recall"
+
+
 def build_rule_based_model(config):
     rule_params = get_component_params_by_kind(config, "algorithm")
     variant = (rule_params or {}).get("type", "h5_header_distance")
@@ -1266,6 +1288,7 @@ def build_rule_based_model(config):
         "h5_header_distance_speed_angle": H5HeaderDistanceSpeedAngleSpotter,
         "h5_header_skeleton": H5HeaderSkeletonSpotter,
         "h5_header_skeleton_recall": H5HeaderSkeletonRecallSpotter,
+        "h5_header_skeleton_max_recall": H5HeaderSkeletonMaxRecallSpotter,
     }
     try:
         return registry[variant](config)

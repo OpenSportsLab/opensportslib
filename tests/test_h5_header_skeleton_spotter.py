@@ -434,3 +434,42 @@ def test_missing_joint_column_raises(tmp_path):
         f.create_dataset("player_id", data=_bytes(["p1"]))
     with pytest.raises(ValueError, match="missing datasets"):
         _events(tmp_path)
+
+
+def test_registry_builds_max_recall_variant():
+    model = build_rule_based_model(_config(variant="h5_header_skeleton_max_recall"))
+    assert model.params["model_variant"] == "h5_header_skeleton_max_recall"
+    # the recall variant with its one remaining trajectory gate removed
+    assert model.params["angle_change_min_deg"] == 0.0
+    recall = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    assert recall.params["angle_change_min_deg"] == 10.0
+    for key in ("head_joints", "ball_height_min_m", "ball_height_max_m",
+                "dwell_max_frames", "nms_window_frames"):
+        assert model.params[key] == recall.params[key]
+
+
+def test_max_recall_keeps_headers_the_recall_variant_drops(tmp_path):
+    """A ball that never changes direction is a miss for the recall variant."""
+    frames = list(range(CONTACT_FRAME - 10, CONTACT_FRAME + 11))
+    straight = [(0.3 * (f - CONTACT_FRAME), 0.0, BALL_XYZ[2]) for f in frames]
+    _write_ball(tmp_path / "ball.h5", frames=frames, positions=straight)
+    _write_joints(
+        tmp_path / "joints.h5",
+        frames=frames,
+        rows={
+            "nose_x": [0.2 if f == CONTACT_FRAME else 50.0 for f in frames],
+            "nose_y": 0.0, "nose_z": BALL_XYZ[2],
+            "l_wrist_x": 5.0, "l_wrist_y": 5.0, "l_wrist_z": 0.5,
+            "r_wrist_x": 5.0, "r_wrist_y": -5.0, "r_wrist_z": 0.5,
+            "l_shoulder_x": 0.0, "l_shoulder_y": -0.2,
+            "r_shoulder_x": 0.0, "r_shoulder_y": 0.2,
+            "l_ankle_z": 0.1, "r_ankle_z": 0.1,
+        },
+    )
+    dataset = _Dataset(tmp_path)
+    recall = build_rule_based_model(_config(variant="h5_header_skeleton_recall"))
+    max_recall = build_rule_based_model(
+        _config(variant="h5_header_skeleton_max_recall"))
+
+    assert recall.predict(dataset)["data"][0]["events"] == []
+    assert len(max_recall.predict(dataset)["data"][0]["events"]) == 1

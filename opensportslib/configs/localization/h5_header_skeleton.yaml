@@ -64,10 +64,11 @@ MODEL:
         provider: opensportslib
         registry: rule_based
         # --- CHANGE THIS to switch variant -------------------------------
-        #   h5_header_skeleton         86.5% recall, 81.1% precision
-        #   h5_header_skeleton_recall  93.3% recall, 66.0% precision
+        #   h5_header_skeleton            91.4% recall, 86.5% precision
+        #   h5_header_skeleton_recall     97.1% recall, 69.4% precision
+        #   h5_header_skeleton_max_recall  100% recall, 61.4% precision
         #
-        # With h5_header_skeleton_recall, SKELETON_RULE_VARIANTS is applied
+        # With either recall variant, SKELETON_RULE_VARIANTS is applied
         # after these params and overwrites twelve of them: head_joints, the
         # five trajectory gates, both height bounds, ankle_height_max_m,
         # dwell_max_frames and nms_window_frames. Setting those below has no

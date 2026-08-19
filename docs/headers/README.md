@@ -46,7 +46,7 @@ utc = UTC_time_start + position_ms          position_ms = utc - UTC_time_start
 
 ## Methods
 
-Six variants in two families. Every one starts from the same question, "did the
+Seven variants in two families. Every one starts from the same question, "did the
 ball come close to a head", then differs in what else it demands before calling
 that a header.
 
@@ -58,6 +58,7 @@ that a header.
 | `distance_speed_angle` | distance | Both the bend and the speed change |
 | `skeleton` | skeleton | Ball at head height, path bends, hands clear of the head, player facing the ball, feet on the ground, contact brief |
 | `skeleton_recall` | skeleton | Hands and facing only, over a wide height band, matching any tracked head joint |
+| `skeleton_max_recall` | skeleton | The same without the bend test, finding every annotated header |
 
 The families differ in how they pair a player with the ball. The distance family
 matches on **timestamp**, taking the ball sample nearest in time within 60 ms.
@@ -165,7 +166,7 @@ Two configs ship with the library, one per family:
 | Config | Covers |
 |---|---|
 | `h5_header_distance.yaml` | All four distance variants |
-| `h5_header_skeleton.yaml` | Both skeleton variants |
+| `h5_header_skeleton.yaml` | All three skeleton variants |
 
 Each threshold in them is annotated with what it controls and what the parameter
 sweep measured when it was changed.
@@ -184,7 +185,7 @@ One line, under `MODEL.components.rule.source`:
 | Config | Valid `name:` values |
 |---|---|
 | `h5_header_distance.yaml` | `h5_header_distance`, `h5_header_distance_angle`, `h5_header_distance_speed`, `h5_header_distance_speed_angle` |
-| `h5_header_skeleton.yaml` | `h5_header_skeleton`, `h5_header_skeleton_recall` |
+| `h5_header_skeleton.yaml` | `h5_header_skeleton`, `h5_header_skeleton_recall`, `h5_header_skeleton_max_recall` |
 
 Nothing else needs to change. The name selects the variant's overrides from
 `HEADER_RULE_VARIANTS` or `SKELETON_RULE_VARIANTS`, so for the distance family it
@@ -446,7 +447,7 @@ run are still spotted and written, just not scored.
 | `--combined` | off | Spot every game in one pass and save the spotter's own output |
 | `--data-root` | `/home/giancos/FIFA_data` | Directory holding one sub-directory per game |
 | `--games` | `all` | Comma-separated game directory names |
-| `--variants` | `skeleton_recall` | Comma-separated subset of the six variants |
+| `--variants` | `skeleton_recall` | Comma-separated subset of the seven variants |
 | `--annotations` | none | Annotation JSON; when given, predictions are scored against it |
 | `--output-dir` | `outputs/header_spotting` | Where manifests, predictions and results are written |
 | `--output` | `<output-dir>/headers-<variant>.json` | Path of the combined OSL JSON |

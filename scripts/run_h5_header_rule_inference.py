@@ -40,6 +40,7 @@ sys.path.insert(0, str(REPO_ROOT))
 VARIANTS = [
     "skeleton",
     "skeleton_recall",
+    "skeleton_max_recall",
     "distance",
     "distance_speed",
     "distance_angle",
