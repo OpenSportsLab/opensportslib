@@ -243,6 +243,60 @@ MODEL:
 | `policies` | object | no | `{}` | free-form | model owner | Policy hooks for advanced runtimes. |
 | `metadata` | object | no | `{}` | free-form with common fields below | model owner | Used by helper accessors for family/runner fallbacks. |
 
+### 5.1.1 E2ESpot SpoTTA adaptation tool
+
+The reference configuration for attaching SpoTTA to an E2ESpot model is
+available in
+[`e2e_spotta.yaml`](../../opensportslib/configs/localization/e2e_spotta.yaml).
+It is attached after source checkpoint loading and maintains one continuous
+adaptation state across the ordinary dataloader batches produced during one
+`LocalizationModel.infer()` call. A later `infer()` call starts a fresh session
+from the loaded source checkpoint.
+
+```yaml
+MODEL:
+  policies:
+    test_time_adaptation:
+      name: spotta
+      enabled: true
+      prediction_timing: adapt_then_predict
+      robust_bn:
+        alpha: 0.05
+        tether: {mode: bayesian, cap: 0.5}
+      confidence_gate:
+        action_class_index: 1
+        min_action_frames: 1
+        uncertainty: one_minus_max_probability
+        aggregation: min_over_predicted_action_frames
+        threshold: 0.3
+      memory:
+        capacity: 8
+        update_frequency: 2
+        lambda_t: 1.0
+        lambda_u: 1.0
+      optimizer:
+        type: Adam
+        learning_rate: 0.001
+        beta: 0.9
+        trainable_parameters: batch_norm_affine_only
+      teacher:
+        type: ema
+        base_nu: 0.001
+        adaptive_from_bn_drift: true
+        max_nu: 0.02
+        drift_scale: 10.0
+        drift_threshold: 1.0
+        drift_gamma: 0.2
+      augmentation: {enabled: true, mode: framewise_rotta_strong}
+```
+
+The current integration requires the E2E family and a
+`VideoGameWithOpencvVideo` test split. `action_class_index` must identify a
+valid model output class. The test dataloader must use `shuffle: false`;
+updates occur after every two clips that pass the confidence gate, not after
+every two input clips. The provided config fixes
+`SYSTEM.reproducibility.seed: 42`, which also controls the strong augmentation.
+
 ### 5.2 `MODEL.components.<component_id>` matrix
 
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |

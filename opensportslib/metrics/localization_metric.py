@@ -561,8 +561,28 @@ def infer_and_process_predictions_e2e(
         )
         log_table_wandb(name="Confusion matrix table", rows=rows, headers=header)
 
-        mAPs, _ = compute_mAPs_E2E(dataset.labels, pred_events_high_recall)
-        avg_mAP = np.mean(mAPs[1:])
+        evaluation_labels = [
+            item
+            for item in dataset.labels
+            if item.get("annotation_status", "verified") == "verified"
+        ]
+        evaluation_paths = {item["path"] for item in evaluation_labels}
+        evaluation_predictions = [
+            item
+            for item in pred_events_high_recall
+            if item["video"] in evaluation_paths
+        ]
+        if evaluation_labels and any(
+            item.get("events") for item in evaluation_labels
+        ):
+            mAPs, _ = compute_mAPs_E2E(
+                evaluation_labels, evaluation_predictions
+            )
+            avg_mAP = np.mean(mAPs[1:])
+        else:
+            logging.info(
+                "Skipping inference mAP: no verified localization events."
+            )
 
     pred_events = build_snpro_prediction_json(pred_events, head_name=dataset.task_name, split=split, created_by="model")
     pred_events_high_recall = build_snpro_prediction_json(pred_events_high_recall, head_name=dataset.task_name, split=split, created_by="model")

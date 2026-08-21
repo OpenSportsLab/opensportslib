@@ -41,8 +41,10 @@ from opensportslib.core.config.accessors import (
 from opensportslib.core.optimizer.builder import build_optimizer
 from opensportslib.core.scheduler.builder import build_scheduler
 from opensportslib.core.utils.config import store_json
+from opensportslib.core.utils.load_annotations import expand_localization_intervals
 from opensportslib.datasets.builder import build_dataset
 import os
+import math
 import torch
 import wandb
 import time
@@ -847,8 +849,23 @@ class Evaluator:
             videos = GT_data["videos"]
             gt_is_v2 = False
         else:
-            videos = GT_data["data"]
+            all_segments = [
+                segment
+                for record in GT_data["data"]
+                for segment in expand_localization_intervals(record)
+            ]
+            videos = [
+                segment
+                for segment in all_segments
+                if segment["annotation_status"] == "verified"
+            ]
             gt_is_v2 = True
+            logging.info(
+                "Localization evaluation selected %d/%d verified logical "
+                "segments.",
+                len(videos),
+                len(all_segments),
+            )
 
         # --------------------------------------------------
         # BUILD PRED LOOKUP IF V2
@@ -874,11 +891,17 @@ class Evaluator:
             
             # ---------------- GT ----------------
             if gt_is_v2:
-                video_path = game["inputs"][0]["path"]
-                labels = [{"label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                          } for e in game.get("events", [])]
+                video_path = game["logical_path"]
+                labels = [
+                    {
+                        "label": event.get("label"),
+                        "gameTime": event.get("gameTime"),
+                        "position": int(
+                            event.get("position_ms", event.get("position"))
+                        ),
+                    }
+                    for event in game.get("events", [])
+                ]
             else:
                 video_path = game["path"]
                 labels = game["annotations"]
@@ -890,20 +913,24 @@ class Evaluator:
                     raw_key, no_ext_key = _normalize_pred_key(video_path)
                     item = pred_lookup.get(raw_key) or pred_lookup.get(no_ext_key)
                     if item is None:
-                        continue
-
-                    fps = item["inputs"][0].get("fps", self.extract_fps)
-
-                    predictions = [
-                        {
-                           "label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                           "frame": e.get("frame")
-                        }
-                        for e in item.get("events", [])
-                    ]
+                        fps = self.extract_fps
+                        predictions = []
+                    else:
+                        fps = item["inputs"][0].get(
+                            "fps", self.extract_fps
+                        )
+                        predictions = [
+                            {
+                               "label": e.get("label"),
+                               "gameTime": e.get("gameTime"),
+                               "confidence": e.get("confidence"),
+                               "position": int(
+                                   e.get("position_ms", e.get("position"))
+                               ),
+                               "frame": e.get("frame")
+                            }
+                            for e in item.get("events", [])
+                        ]
 
                 # ===== OLD PRED =====
                 else:
@@ -918,36 +945,74 @@ class Evaluator:
                 pred_file = os.path.join(results, os.path.splitext(video_path)[0], "results_spotting.json")
 
                 if not os.path.exists(pred_file):
-                    continue
-                
-                with open(pred_file, encoding="utf-8") as f:
-                    pred_data_local = json.load(f)
-
-                if "data" in pred_data_local:
-                    # v2 file inside folder
-                    item = pred_data_local["data"][0]
-                    fps = item["inputs"][0].get("fps", self.extract_fps)
-
-                    predictions = [
-                        {
-                           "label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                           "frame": e.get("frame")
-                        }
-                        for e in item.get("events", [])
-                    ]
+                    fps = self.extract_fps
+                    predictions = []
                 else:
-                    predictions = pred_data_local["predictions"]
-                    fps = pred_data_local.get("fps", self.extract_fps)
+                    with open(pred_file, encoding="utf-8") as f:
+                        pred_data_local = json.load(f)
+
+                    if "data" in pred_data_local:
+                        # v2 file inside folder
+                        item = pred_data_local["data"][0]
+                        fps = item["inputs"][0].get(
+                            "fps", self.extract_fps
+                        )
+
+                        predictions = [
+                            {
+                               "label": e.get("label"),
+                               "gameTime": e.get("gameTime"),
+                               "confidence": e.get("confidence"),
+                               "position": int(
+                                   e.get("position_ms", e.get("position"))
+                               ),
+                               "frame": e.get("frame")
+                            }
+                            for e in item.get("events", [])
+                        ]
+                    else:
+                        predictions = pred_data_local["predictions"]
+                        fps = pred_data_local.get("fps", self.extract_fps)
 
             # ---------------- VECTORS ----------------
-            dense_labels = label2vector(labels, num_classes=len(classes), EVENT_DICTIONARY=EVENT_DICTIONARY, framerate=fps)
+            if gt_is_v2:
+                frame_candidates = [1]
+                if game["end_time_ms"] is not None:
+                    frame_candidates.append(
+                        int(
+                            math.ceil(
+                                (game["end_time_ms"] - game["start_time_ms"])
+                                / 1000
+                                * fps
+                            )
+                        )
+                    )
+                for event in labels:
+                    frame_candidates.append(
+                        int(fps * (event["position"] / 1000)) + 1
+                    )
+                for event in predictions:
+                    if event.get("frame") is not None:
+                        frame_candidates.append(int(event["frame"]) + 1)
+                    elif event.get("position") is not None:
+                        frame_candidates.append(
+                            int(fps * (int(event["position"]) / 1000)) + 1
+                        )
+                vector_size = max(frame_candidates)
+            else:
+                vector_size = game.get("num_frames")
+
+            dense_labels = label2vector(
+                labels,
+                num_classes=len(classes),
+                EVENT_DICTIONARY=EVENT_DICTIONARY,
+                framerate=fps,
+                vector_size=vector_size,
+            )
 
             dense_predictions = predictions2vector(
                 predictions,
-                vector_size=None,
+                vector_size=vector_size,
                 framerate=fps,
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,

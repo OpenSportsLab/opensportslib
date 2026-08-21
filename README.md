@@ -18,6 +18,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 - Unified workflow for training and inference
 - Modular design for adding new tasks, datasets, and models
 - Config driven experiments for reproducibility
+- Optional SpoTTA test-time adaptation for E2ESpot inference
 - Support for multiple modalities and sports workflows
 - Research friendly while still usable in applied settings
 
@@ -175,7 +176,10 @@ Minimal localization sample:
 ```
 
 Relative paths in `inputs[].path` are resolved from the split media root in the
-YAML config, for example `DATA.common.splits.train.source_path`. See the full
+YAML config, for example `DATA.common.splits.train.source_path`. Localization
+records may also declare half-open physical-video ranges in
+`metadata.intervals`; the OpenCV loader treats them as ordered logical videos
+and evaluates only segments marked `verified`. See the full
 [OSL JSON format guide](docs/data/osl-json-format.md) for field definitions,
 multi-modal examples, prediction payloads, and conversion notes.
 
