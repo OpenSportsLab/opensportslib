@@ -238,10 +238,14 @@ def _extract_class_metadata(data_section):
     if not isinstance(data_section, dict):
         return None, None
 
+    from opensportslib.core.config.accessors import classes_to_ordered_list
+
     common = data_section.get("common", {}) if isinstance(data_section.get("common", {}), dict) else {}
     classes = common.get("classes")
     if classes is not None:
-        classes = list(classes)
+        # Order by class index: a saved config stores {name: index}, whose
+        # YAML key order is alphabetical and would otherwise permute labels.
+        classes = classes_to_ordered_list(classes)
 
     num_classes = common.get("num_classes")
     if num_classes is None:

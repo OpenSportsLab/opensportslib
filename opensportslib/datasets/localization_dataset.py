@@ -1464,6 +1464,23 @@ class TrackingActionSpotVideoDataset(Dataset, _TrackingGraphWindowMixin, Dataset
         graphs = self._build_graphs(window, positions)
         return {"video": video_path, "start": start // self._stride, "graphs": graphs}
 
+    @property
+    def frame_times(self):
+        """Map each video to the absolute match clock (ms) of its decimated frames.
+
+        Unlike a decoded video, a tracking parquet's frame index is not a
+        multiple of the frame period: recording starts mid-broadcast (row 0
+        can be ~80 s into the clock) and the clock jumps ~60-90 s across
+        half-time. process_frame_predictions uses this to report predictions
+        on the same clock the annotations' position_ms uses; without it every
+        prediction lands tens of seconds away from its ground truth.
+        """
+        return {
+            v["path"]: v["frame_times"]
+            for v in self._labels
+            if v.get("frame_times") is not None
+        }
+
 
 if DALI_AVAILABLE:
     class DaliDataSet(DALIGenericIterator):

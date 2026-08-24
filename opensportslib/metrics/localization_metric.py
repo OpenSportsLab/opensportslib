@@ -64,7 +64,11 @@ def parse_ground_truth(truth):
     label_dict = defaultdict(lambda: defaultdict(list))
     for x in truth:
         for e in x["events"]:
-            label_dict[e["label"]][x["path"]].append(e["frame"])
+            # Prefer the clock-based index when the modality provides one:
+            # predictions are reported on that axis, and for tracking data it
+            # is not interchangeable with the row-based "frame". RGB
+            # annotations carry no eval_frame and are unaffected.
+            label_dict[e["label"]][x["path"]].append(e.get("eval_frame", e["frame"]))
     return label_dict
 
 
@@ -366,6 +370,29 @@ def process_frame_predictions(
     for video, _, fps in dataset.videos:
         fps_dict[video] = fps
 
+    # Datasets whose frame index does not map linearly onto the match clock
+    # (tracking parquets: recording starts mid-broadcast, clock jumps at
+    # half-time) expose the real per-frame timestamps here. RGB datasets do
+    # not, and keep the frame/fps arithmetic below.
+    frame_times = getattr(dataset, "frame_times", None) or {}
+
+    def _locate(video, frame_idx):
+        """Map a clip-frame index to (timestamp_ms, evaluation frame index).
+
+        For decoded video the two coincide: the index already advances at a
+        fixed rate, so it doubles as the index into the dense evaluation
+        vector. For tracking the index is a parquet row number, so the
+        timestamp comes from the cached clock and the evaluation index is
+        re-derived from it exactly the way label2vector derives the ground
+        truth's, keeping both sides in one coordinate system.
+        """
+        fps = fps_dict[video]
+        times = frame_times.get(video)
+        if times is None:
+            return int((frame_idx * 1000) / fps), frame_idx
+        position_ms = int(times[min(frame_idx, len(times) - 1)])
+        return position_ms, int(fps * (position_ms / 1000))
+
     err = ErrorStat()
     f1 = ForegroundF1()
 
@@ -403,15 +430,16 @@ def process_frame_predictions(
                     tmp = i + 1
                 else:
                     tmp = i
-                seconds = int((tmp // fps_dict[video]) % 60)
-                minutes = int((tmp // fps_dict[video]) // 60)
+                position_ms, eval_frame = _locate(video, tmp)
+                seconds = int((position_ms // 1000) % 60)
+                minutes = int((position_ms // 1000) // 60)
                 events.append(
                     {
                         "label": classes_inv[pred[i]],
-                        "position": int((tmp * 1000) / fps_dict[video]),
+                        "position": position_ms,
                         "gameTime": f"{minutes:02.0f}:{seconds:02.0f}",
                         # 'frame': i,
-                        "frame": tmp,
+                        "frame": eval_frame,
                         "confidence": scores[tmp, pred[i]].item(),
                         # 'score': scores[i, pred[i]].item()
                     }
@@ -424,14 +452,15 @@ def process_frame_predictions(
                     tmp = i
                 if scores[tmp, j] >= high_recall_score_threshold:
                     # if scores[i, j] >= high_recall_score_threshold:
-                    seconds = int((tmp // fps_dict[video]) % 60)
-                    minutes = int((tmp // fps_dict[video]) // 60)
+                    position_ms, eval_frame = _locate(video, tmp)
+                    seconds = int((position_ms // 1000) % 60)
+                    minutes = int((position_ms // 1000) // 60)
                     events_high_recall.append(
                         {
                             "label": classes_inv[j],
-                            "position": int((tmp * 1000) / fps_dict[video]),
+                            "position": position_ms,
                             "gameTime": f"{minutes:02.0f}:{seconds:02.0f}",
-                            "frame": tmp,
+                            "frame": eval_frame,
                             # 'frame': i,
                             "confidence": scores[tmp, j].item(),
                             # 'score': scores[i, j].item()
@@ -561,7 +590,21 @@ def infer_and_process_predictions_e2e(
         )
         log_table_wandb(name="Confusion matrix table", rows=rows, headers=header)
 
-        mAPs, _ = compute_mAPs_E2E(dataset.labels, pred_events_high_recall)
+        # Tolerances in SECONDS, converted to frames with this run's sampling
+        # rate. compute_mAPs_E2E's default [0,1,2,3,4] is in frames, so its
+        # effective strictness silently scaled with extract_fps: at 2 fps a
+        # 4-frame window is 1.9 s, at 5 fps only 0.8 s. That made the metric
+        # incomparable between runs sampled at different rates (and between
+        # modalities). Seconds keep it fixed, and align it with the tight mAP
+        # this task is ultimately scored on.
+        eval_fps = next((f for _, _, f in dataset.videos), None)
+        tolerances = (
+            [int(round(s * eval_fps)) for s in (0, 1, 2, 3, 4)]
+            if eval_fps else [0, 1, 2, 3, 4]
+        )
+        mAPs, _ = compute_mAPs_E2E(
+            dataset.labels, pred_events_high_recall, tolerances=tolerances
+        )
         avg_mAP = np.mean(mAPs[1:])
 
     pred_events = build_snpro_prediction_json(pred_events, head_name=dataset.task_name, split=split, created_by="model")
@@ -1419,7 +1462,12 @@ def get_closest_action_index(dense_labels, closest_numpy):
 
 
 def compute_performances_mAP(
-    metric, targets_numpy, detections_numpy, closests_numpy, INVERSE_EVENT_DICTIONARY
+    metric,
+    targets_numpy,
+    detections_numpy,
+    closests_numpy,
+    INVERSE_EVENT_DICTIONARY,
+    framerate=2,
 ):
     """Compute the different mAP and display them.
 
@@ -1429,6 +1477,10 @@ def compute_performances_mAP(
         detections_numpy (List(np.array(vector_size - 1,num_classes)): List of closest action index of shape (number of videos, number of frames - 1,number of classes).
         closests_numpy (List(np.array(vector_size,num_classes)): List of predictions of shape (number of videos, number of frames,number of classes).
         INVERSE_EVENT_DICTIONARY (dict): mapping between indexes and class name.
+        framerate (int): Frame rate the dense vectors are sampled at. The
+            tolerances above are in seconds, so this must match the rate used
+            to build targets/detections or the effective tolerance is wrong.
+            Default: 2.
 
     Returns:
         results (dict): Dictionnary containing the different mAP computed.
@@ -1457,7 +1509,11 @@ def compute_performances_mAP(
         a_mAP_unshown,
         a_mAP_per_class_unshown,
     ) = average_mAP(
-        targets_numpy, detections_numpy, closests_numpy, framerate=2, deltas=deltas
+        targets_numpy,
+        detections_numpy,
+        closests_numpy,
+        framerate=framerate,
+        deltas=deltas,
     )
 
     results = {

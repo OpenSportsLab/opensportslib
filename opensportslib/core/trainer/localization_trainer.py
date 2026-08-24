@@ -397,15 +397,21 @@ class Trainer_e2e(Trainer):
 
             # ---------------- W&B LOG ----------------
             if wandb.run is not None:
-                wandb.log({
+                payload = {
                     "epoch": epoch + 1,
                     "train/loss": train_loss,
                     "valid/loss": valid_loss,
-                    "valid/mAP": valid_mAP,
                     "lr": self.optimizer.param_groups[0]["lr"],
                     "best/mAP": self.best_criterion_valid if self.criterion_valid == "map" else None,
                     "best/loss": self.best_criterion_valid if self.criterion_valid == "loss" else None,
-                })
+                }
+                # Whole-match mAP only runs every valid_map_every epochs.
+                # Logging a placeholder 0 on the other epochs drew a sawtooth
+                # collapsing to zero between real measurements; omit the key
+                # instead so the chart connects the points that exist.
+                if valid_mAP:
+                    payload["valid/mAP"] = valid_mAP
+                wandb.log(payload)
 
             if self.save_dir is not None:
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -866,6 +872,9 @@ class Evaluator:
         targets_numpy = []
         detections_numpy = []
         closests_numpy = []
+        # Rate the dense vectors below end up sampled at; the mAP tolerances
+        # are in seconds and must be converted with this same rate.
+        eval_framerate = self.extract_fps
 
         # ==================================================
         # LOOP
@@ -943,11 +952,27 @@ class Evaluator:
                     fps = pred_data_local.get("fps", self.extract_fps)
 
             # ---------------- VECTORS ----------------
-            dense_labels = label2vector(labels, num_classes=len(classes), EVENT_DICTIONARY=EVENT_DICTIONARY, framerate=fps)
+            # Size the dense vectors from the actual content instead of the
+            # 90-minute default: a match clock can run well past 90 min
+            # (kick-off offset, stoppage, half-time gap) and anything beyond
+            # the cap is clamped onto the final bin, silently merging events.
+            positions_ms = [a["position"] for a in labels] + [
+                p["position"] for p in predictions
+            ]
+            vector_size = int(fps * (max(positions_ms) / 1000)) + 2 if positions_ms else None
+            eval_framerate = fps
+
+            dense_labels = label2vector(
+                labels,
+                num_classes=len(classes),
+                EVENT_DICTIONARY=EVENT_DICTIONARY,
+                framerate=fps,
+                vector_size=vector_size,
+            )
 
             dense_predictions = predictions2vector(
                 predictions,
-                vector_size=None,
+                vector_size=vector_size,
                 framerate=fps,
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,
@@ -968,6 +993,7 @@ class Evaluator:
                 detections_numpy,
                 closests_numpy,
                 INVERSE_EVENT_DICTIONARY,
+                framerate=eval_framerate,
             )
         else:
             logging.warning("No predictions found.")

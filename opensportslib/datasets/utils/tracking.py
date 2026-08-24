@@ -722,18 +722,22 @@ def load_or_build_game_cache(parquet_path, mmap=True):
         positions: numpy.ndarray (num_frames, NUM_OBJECTS) int8 position
             codes (see _POSITION_CODES / positions_to_strings).
     """
-    features_path, times_path, positions_path = _cache_paths(parquet_path)
+    cache_paths = _cache_paths(parquet_path)
+    features_path, times_path, positions_path = cache_paths
 
-    if (
-        os.path.exists(features_path)
-        and os.path.exists(times_path)
-        and os.path.exists(positions_path)
-    ):
-        mmap_mode = "r" if mmap else None
-        features = np.load(features_path, mmap_mode=mmap_mode)
-        times = np.load(times_path, mmap_mode=mmap_mode)
-        positions = np.load(positions_path, mmap_mode=mmap_mode)
-        return features, times, positions
+    # Rebuild whenever the parquet is newer than its cache. Without this an
+    # existence-only check silently serves stale features after the source
+    # parquet is regenerated (e.g. create_action_spotting_dataset.py
+    # --overwrite), which trains and evaluates on the previous dataset with
+    # no visible error.
+    if all(os.path.exists(p) for p in cache_paths):
+        parquet_mtime = os.path.getmtime(parquet_path)
+        if all(os.path.getmtime(p) >= parquet_mtime for p in cache_paths):
+            mmap_mode = "r" if mmap else None
+            features = np.load(features_path, mmap_mode=mmap_mode)
+            times = np.load(times_path, mmap_mode=mmap_mode)
+            positions = np.load(positions_path, mmap_mode=mmap_mode)
+            return features, times, positions
 
     return build_game_cache(parquet_path)
 

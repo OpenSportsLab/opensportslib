@@ -96,7 +96,12 @@ def init_wandb(cfg_path, cfg, run_id, use_wandb=False):
 
     encoder_name = get_component_name_by_kind(cfg, "encoder") or "model"
     modality = get_data_modality(cfg)
-    run_name = f"{encoder_name}_{modality}" if modality else encoder_name
+    arch_name = f"{encoder_name}_{modality}" if modality else encoder_name
+    # Name the run after RUN_ID. Naming by architecture alone gave every run
+    # of the same model an identical display name, so a project of many
+    # experiments showed as a wall of indistinguishable entries; the
+    # architecture is still recorded in the logged config.
+    run_name = str(run_id) if run_id else arch_name
 
     config_flat = build_wandb_config(cfg)
 
