@@ -190,7 +190,7 @@ One line, under `MODEL.components.rule.source`:
 Nothing else needs to change. The name selects the variant's overrides from
 `HEADER_RULE_VARIANTS` or `SKELETON_RULE_VARIANTS`, so for the distance family it
 alone decides which trajectory test runs, and for the skeleton family it decides
-which of the two operating points you get.
+which of the three operating points you get.
 
 #### Changing thresholds
 
@@ -228,7 +228,8 @@ whole 178-minute tracking file.
 | Variant | Predictions | Recall | Precision | Tight avg mAP | Detection time |
 |---|---|---|---|---|---|
 | `skeleton` | 111 | 91.4% | **86.5%** | 69.2% | **12 s** |
-| `skeleton_recall` | 147 | **97.1%** | 69.4% | **69.2%** | 38 s |
+| `skeleton_recall` | 147 | 97.1% | 69.4% | **69.2%** | 38 s |
+| `skeleton_max_recall` | 171 | **100.0%** | 61.4% | 66.2% | 37 s |
 | `distance` | 142 | 95.2% | 70.4% | 59.4% | 368 s |
 | `distance_angle` | 134 | 92.4% | 72.4% | 59.0% | 364 s |
 | `distance_speed_angle` | 87 | 46.7% | 56.3% | 25.7% | 363 s |
@@ -312,19 +313,30 @@ Results land in `outputs/header_spotting/`: `map_results.json` for the scores,
 `raw/<variant>/<game>.json` for detections with their full diagnostics.
 
 
-### Choosing between `skeleton` and `skeleton_recall`
+### Choosing between the three skeleton variants
 
-They are the same detector at two operating points. `skeleton` finds 96 of the
-105 headers with 15 false positives; `skeleton_recall` finds 102 with 45. Six
-more real headers cost thirty more false ones, because the headers `skeleton`
-misses are genuinely ambiguous contacts.
+They are one detector at three operating points, and the whole difference is
+how many false positives you will accept to catch the last few headers:
 
-Their mAP is now level, 69.19 against 69.24, so neither ranks its detections
-better than the other. The choice is purely recall against precision.
+| Variant | Real headers found | False positives |
+|---|---|---|
+| `skeleton` | 96 of 105 | 15 |
+| `skeleton_recall` | 102 of 105 | 45 |
+| `skeleton_max_recall` | 105 of 105 | 66 |
+
+Six more real headers cost thirty more false ones, and the last three cost
+twenty-one more, because the headers `skeleton` misses are genuinely ambiguous
+contacts rather than obvious ones the gates got wrong.
+
+`skeleton` and `skeleton_recall` are level on mAP, 69.19 against 69.24, so
+neither ranks its detections better than the other. `skeleton_max_recall` gives
+up three points of mAP for the last three headers.
 
 Use `skeleton` when a prediction should be trustworthy on its own. Use
 `skeleton_recall` to build a candidate set that a human or a downstream
-classifier will filter, where a missed header is worse than a false one.
+classifier will filter, where a missed header is worse than a false one. Use
+`skeleton_max_recall` only when a miss is unacceptable and something else will
+do the filtering: two in five of its predictions are wrong.
 
 #### How `skeleton_recall` was tuned
 
