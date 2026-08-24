@@ -227,6 +227,19 @@ def select_device(config):
 
     return device
 
+def resolve_config_path(config, hf_token=None):
+    """Return a local path for a config given as a path or a HF repo id."""
+    path = expand(config)
+    if os.path.exists(path):
+        return path
+
+    from huggingface_hub import hf_hub_download
+
+    resolved = hf_hub_download(repo_id=config, filename="config.yaml", token=hf_token)
+    logging.info(f"Loaded config.yaml from HF repo {config}")
+    return resolved
+
+
 def is_local_path(p):
     return p and (
         os.path.exists(p) or
