@@ -29,3 +29,7 @@ dcgm
 
 
 checkpoints_tracking/
+
+# Release verification tests (tests/release/) download real datasets and
+# write checkpoints/logs here -- never commit it.
+.release_test_cache/
