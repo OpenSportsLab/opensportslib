@@ -40,7 +40,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 ### Create conda env
 
 ```bash
-conda create -n osl python=3.12 pip
+conda create -n osl python=3.12 pip -y
 conda activate osl
 ```
 
@@ -54,6 +54,12 @@ pip install opensportslib
 
 ```bash
 pip install --pre opensportslib
+```
+
+### Source development version
+
+```bash
+pip install -e .
 ```
 
 ### Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
