@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -13,6 +14,9 @@ import numpy as np
 
 from opensportslib.datasets.utils.tracking import MISSING_VALUE, MISSING_VALUE_NORMALIZED
 
+
+JOINTS_FILENAME = "live_joints.h5"
+BALL_FILENAME = "live_ball.h5"
 
 H5_FEATURE_DIM = 10
 H5_FEATURE_LAYOUT = (
@@ -336,3 +340,58 @@ def normalize_h5_features(
     for ch in (0, 1, 2, 6, 7, 8):
         out[~valid_mask, ch] = MISSING_VALUE_NORMALIZED
     return out
+
+
+def find_h5_games(
+    path,
+    joints_filename: str = JOINTS_FILENAME,
+    ball_filename: str = BALL_FILENAME,
+) -> list[Path]:
+    """List game directories holding both tracking files.
+
+    `path` is either one game directory or a directory of game directories.
+    """
+    def holds_both(directory: Path) -> bool:
+        try:
+            return (directory / joints_filename).exists() and (directory / ball_filename).exists()
+        except OSError:
+            return False
+
+    path = Path(path).resolve()
+    if holds_both(path):
+        return [path]
+    return sorted(d for d in path.iterdir() if d.is_dir() and holds_both(d))
+
+
+def write_h5_manifest(
+    path,
+    games: Iterable[Path],
+    label: str = "header",
+    head_name: str = "action",
+    joints_filename: str = JOINTS_FILENAME,
+    ball_filename: str = BALL_FILENAME,
+) -> Path:
+    """Write the OSL JSON manifest a rule-based H5 spotter reads its inputs from.
+
+    Input paths are absolute, so a config published without the data beside it
+    still resolves.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "version": "2.0",
+        "task": "action_spotting",
+        "labels": {head_name: {"type": "single_label", "labels": [label]}},
+        "data": [
+            {
+                "id": game.name,
+                "inputs": [{
+                    "type": "player_joints_h5",
+                    "path": str(game / joints_filename),
+                    "ball_path": str(game / ball_filename),
+                }],
+            }
+            for game in games
+        ],
+    }, indent=2))
+    return path

@@ -1,3 +1,15 @@
+# Skeleton-family header spotting.
+#
+# One config for both skeleton variants. Pick the variant on the `name:` line
+# under MODEL.components.rule.source, and tune the thresholds under `params:`.
+# Anything left out falls back to DEFAULT_SKELETON_RULE_PARAMS in
+# opensportslib/models/base/rule_based.py.
+#
+# The numbered checks below match the sequence in docs/headers/README.md. The
+# measured effects come from an 82-configuration sweep on the 2022 final,
+# recorded in header_skeleton_sweep.xlsx; each is the effect of changing that
+# one setting away from the strict defaults.
+
 TASK: localization
 VERSION: 2
 
@@ -11,16 +23,19 @@ SYSTEM:
 DATA:
   common:
     dataset_name: h5_headers
-    data_root: /home/giancos/FIFA_data/128083
+    # --- CHANGE THESE to point at your tracking data -------------------------
+    # data_root and source_path are the directory the manifest's relative paths
+    # resolve against. annotation_path is a manifest listing the joints/ball h5
+    # pairs to scan; generate one with --combined, or write your own. See
+    # docs/headers/README.md.
+    data_root: /home/giancos/FIFA_data
     classes:
       - header
     splits:
       test:
         type: H5OSLJsonSpotting
-        # Manifest listing the joints/ball h5 pair and the scan window; the
-        # eval scripts generate one per run under their own work dir.
-        annotation_path: ./outputs/header_wc22/manifest.json
-        source_path: /home/giancos/FIFA_data/128083
+        annotation_path: ./outputs/header_spotting/manifest_all.json
+        source_path: /home/giancos/FIFA_data
         dataloader:
           batch_size: 1
           shuffle: false
@@ -48,14 +63,95 @@ MODEL:
       source:
         provider: opensportslib
         registry: rule_based
+        # --- CHANGE THIS to switch variant -------------------------------
+        #   h5_header_skeleton            91.4% recall, 86.5% precision
+        #   h5_header_skeleton_recall     97.1% recall, 69.4% precision
+        #   h5_header_skeleton_max_recall  100% recall, 61.4% precision
+        #
+        # With either recall variant, SKELETON_RULE_VARIANTS is applied
+        # after these params and overwrites twelve of them: head_joints, the
+        # five trajectory gates, both height bounds, ankle_height_max_m,
+        # dwell_max_frames and nms_window_frames. Setting those below has no
+        # effect on that variant. Everything else still applies to both.
         name: h5_header_skeleton
-      # Thresholds default to DEFAULT_SKELETON_RULE_PARAMS in
-      # opensportslib/models/base/rule_based.py. Override here only what this
-      # run needs to differ — restating a default pins it, so later tuning of
-      # the defaults would silently not reach this config.
       params:
         label: header
         head_name: action
+
+        # --- check 4: contact ---------------------------------------------
+        # Distance from the ball to the nearest tracked head joint. Each joint
+        # is measured separately and the smallest wins; no midpoint is used.
+        # Measured: 0.5 gains 5 points of precision and 4.3 of mAP for 2.8 of
+        # recall, and is the single best change to these defaults. 0.25
+        # collapses recall to 49%.
+        head_ball_distance_max_m: 0.4
+        # Trim to [nose] to see how much the others contribute. All six help
+        # the recall variant, where 77% of detections match on something other
+        # than the nose, but cost the strict variant about 4 points of recall.
+        head_joints: [nose]
+
+        # --- check 1: ball height ------------------------------------------
+        # Measured: removing this band costs 4.6 points of precision. Worth
+        # keeping. Narrowing to 1.5-2.5 costs 10 points of recall.
+        ball_height_min_m: 1.3
+        ball_height_max_m: 3.0
+        # Sentinel marking an untracked coordinate.
+        invalid_value: -1.0
+
+        # --- checks 2 and 3: what the ball did ------------------------------
+        # Velocity comes from adjacent frames, acceleration from two frames
+        # either side.
+        #
+        # Measured: only the bend test earns its place. 25 degrees gains about
+        # 2 points of precision over 10. The other four are dead weight on this
+        # data: velocity_change actively costs recall and precision, while
+        # velocity_mag and accel_z_change produce byte-identical output whether
+        # on or off, meaning they never fire.
+        angle_change_min_deg: 10.0
+        velocity_change_min_mps: 2.0
+        velocity_mag_min_mps: 1.0
+        accel_z_change_min_mps2: 8.0
+        incoming_speed_min_mps: 4.0
+
+        # --- checks 5, 6, 7: the player -------------------------------------
+        # Facing is the dot product of the shoulder-line normal with the
+        # direction to the ball. Measured: inert at -0.5, it rejects nothing.
+        # Raising it to 0.0 costs 18 points of recall, so it is a blunt tool.
+        facing_dot_min: -0.5
+        # A hand nearer the ball than the head means an arm or a keeper's grab.
+        # Measured: worth 2.8 points of precision and free in recall.
+        hand_check_enabled: true
+        # Both ankles must be below this. Measured: harmful here, removing it
+        # improves recall, precision and F1 together.
+        ankle_height_max_m: 1.2
+
+        # --- check 8: dwell --------------------------------------------------
+        # Counts frames within dwell_window_frames either side where the head is
+        # within the dwell radius. A ball that lingers was carried, not headed.
+        # Measured: the strongest gate. Removing it costs 3.8 points of
+        # precision; tightening to 3 reaches 94.6% precision at 67% recall.
+        dwell_max_frames: 5
+        dwell_window_frames: 3
+        # The dwell radius is head_ball_distance_max_m * dwell_distance_factor
+        # unless dwell_distance_m is set. Set it when widening the contact
+        # threshold, or the dwell filter silently tightens with it.
+        dwell_distance_factor: 1.2
+        dwell_distance_m: null
+
+        # --- de-duplication --------------------------------------------------
+        # One detection per window, keeping the closest contact. Measured: 40
+        # gains 1.5 points of precision and 1.3 of mAP; 60 gains 4.3 of
+        # precision for 1.9 of recall.
+        nms_window_frames: 25
+        fps: 50.0
+
+        # --- output ----------------------------------------------------------
+        # Diagnostics carry the contact distance, which head joint matched, the
+        # player, the ball height, the dwell count and the trajectory values.
+        include_diagnostics: true
+        # Added to every position_ms. Leave at 0 unless correcting a known
+        # offset between the tracking and the clock you report against.
+        position_offset_ms: 0.0
   topology: []
 
 TRAIN:

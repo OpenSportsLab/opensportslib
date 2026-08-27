@@ -600,7 +600,14 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps):
                     adj_frame = 1
 
                 events.append({
+                    # Row-based index: what the training window slicer and
+                    # get_labels() address the cached features by.
                     "frame": int(adj_frame),
+                    # Clock-based index, matching what process_frame_predictions
+                    # emits for this modality. The two differ because parquet
+                    # rows do not advance at a fixed rate (see "frame_times"
+                    # below), so frame-vs-frame metrics must use this one.
+                    "eval_frame": int(sample_fps * (position_ms / 1000)),
                     "label": ann["label"],
                 })
 
@@ -615,6 +622,13 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps):
                 "video": full_video_path,
                 "path": video_path,
                 "stride": stride,
+                # Absolute match clock (videoTimeMs) of each decimated frame.
+                # A tracking parquet's row 0 is NOT t=0 (recording starts
+                # mid-broadcast) and the clock jumps across half-time, so a
+                # frame index cannot be turned back into a timestamp by
+                # dividing by fps. Predictions must be reported on this clock
+                # to line up with the annotations' position_ms.
+                "frame_times": times[::stride].astype(np.float64, copy=True),
             })
 
     base_classes = classes_by_label_dir[0]

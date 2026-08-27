@@ -227,6 +227,19 @@ def select_device(config):
 
     return device
 
+def resolve_config_path(config, hf_token=None):
+    """Return a local path for a config given as a path or a HF repo id."""
+    path = expand(config)
+    if os.path.exists(path):
+        return path
+
+    from huggingface_hub import hf_hub_download
+
+    resolved = hf_hub_download(repo_id=config, filename="config.yaml", token=hf_token)
+    logging.info(f"Loaded config.yaml from HF repo {config}")
+    return resolved
+
+
 def is_local_path(p):
     return p and (
         os.path.exists(p) or
@@ -238,10 +251,14 @@ def _extract_class_metadata(data_section):
     if not isinstance(data_section, dict):
         return None, None
 
+    from opensportslib.core.config.accessors import classes_to_ordered_list
+
     common = data_section.get("common", {}) if isinstance(data_section.get("common", {}), dict) else {}
     classes = common.get("classes")
     if classes is not None:
-        classes = list(classes)
+        # Order by class index: a saved config stores {name: index}, whose
+        # YAML key order is alphabetical and would otherwise permute labels.
+        classes = classes_to_ordered_list(classes)
 
     num_classes = common.get("num_classes")
     if num_classes is None:

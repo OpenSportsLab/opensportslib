@@ -14,6 +14,7 @@ from opensportslib.core.utils.config import (
     expand,
     load_config_omega,
     fetch_and_merge_config_from_HF,
+    resolve_config_path,
     resolve_inference_class_metadata,
 )
 
@@ -27,7 +28,7 @@ class BaseTaskModel(ABC):
         if config is None:
             raise ValueError("config path is required")
 
-        self.config_path = expand(config)
+        self.config_path = resolve_config_path(config)
         self.config = load_config_omega(self.config_path)
         self.last_loaded_weights = None
         self.best_checkpoint = None

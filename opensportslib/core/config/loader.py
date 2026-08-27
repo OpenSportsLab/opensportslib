@@ -148,10 +148,63 @@ def _dali_available() -> bool:
     return importlib.util.find_spec("nvidia.dali") is not None
 
 
+# DALI decodes video; any other input modality (tracking parquets, features)
+# has no DALI pipeline and must never be switched onto that backend.
+_DALI_CAPABLE_MODALITIES = {"video", "rgb", "video_mp4"}
+
+
+def _inputs_are_dali_capable(payload: dict[str, Any]) -> bool:
+    """Whether this config's inputs can be read by DALI at all.
+
+    A missing/unrecognised modality is treated as video so existing RGB
+    configs keep their behaviour; only an explicitly non-video modality
+    (e.g. tracking_parquet) opts out.
+    """
+    data = payload.get("DATA", {})
+    if not isinstance(data, dict):
+        return True
+    inputs = data.get("inputs", {})
+    if not isinstance(inputs, dict) or not inputs:
+        return True
+
+    for spec in inputs.values():
+        if not isinstance(spec, dict):
+            continue
+        modality = spec.get("modality")
+        if modality is not None and str(modality).lower() not in _DALI_CAPABLE_MODALITIES:
+            return False
+    return True
+
+
+def _declares_opencv_split_types(payload: dict[str, Any]) -> bool:
+    """Whether the config explicitly asks for the OpenCV video datasets."""
+    data = payload.get("DATA", {})
+    common = data.get("common", {}) if isinstance(data, dict) else {}
+    splits = common.get("splits", {}) if isinstance(common, dict) else {}
+    if not isinstance(splits, dict):
+        return False
+    opencv_types = set(_CPU_OPENCV_SPLIT_TYPES.values())
+    return any(
+        isinstance(cfg, dict) and cfg.get("type") in opencv_types
+        for cfg in splits.values()
+    )
+
+
 def _preferred_loader_backend(payload: dict[str, Any]) -> str | None:
     system = payload.get("SYSTEM", {})
     if not isinstance(system, dict):
         return None
+
+    # Selecting DALI for non-video data yields tracking/feature datasets driven
+    # through the DALI training branch, which fails with KeyError: 'frame'.
+    if not _inputs_are_dali_capable(payload):
+        return "opencv"
+
+    # Likewise honour split types that explicitly name the OpenCV datasets:
+    # forcing DALI leaves those types in place (only DALI->OpenCV is remapped
+    # below), producing the same mismatched-branch failure.
+    if _declares_opencv_split_types(payload):
+        return "opencv"
 
     mode = str(system.get("device", "auto")).lower()
     if mode == "cpu":
