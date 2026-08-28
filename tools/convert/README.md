@@ -12,6 +12,10 @@ Build (raw source -> OSL JSON):
 - `build_soccernet_gar.py`: PFF FC raw data -> SoccerNet-GAR classification dataset (OSL JSON manifest of windowed action clips).
 - `build_soccernet_gar_action_spotting.py`: SoccerNet-GAR classification manifest -> SoccerNet-GAR action-spotting dataset (per-game manifest with
   event timestamps).
+- `build_sngar_spotting.py`: raw event and tracking data -> the published SN-GAR action-spotting dataset **pair** (tracking + video, with identical
+  ground truth). Supported by `sngar_events.py` (event extraction primitives) and `sngar_dataset_card.py` (dataset card rendering). See
+  [docs/tools/sngar-spotting.md](../../docs/tools/sngar-spotting.md).
+- `verify_sngar_spotting.py`: verifies a built SN-GAR spotting release against its published contract.
 - `build_soccernet_gar_vqa.py`: SoccerNet-GAR frames dataset -> VQA-style test manifest.
 - `build_sn_vqa_2026_vqa.py`: SN-VQA-2026 raw test rows -> VQA-ready OSL manifest and evaluation report.
 

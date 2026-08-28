@@ -12,6 +12,11 @@ read file references from OSL JSON `data[].inputs[]`; see
 - `download_hf_repo.py`
 	- Downloads a full HuggingFace repository snapshot for a given repo and revision.
 	- Best when you want the entire repo content for a branch/tag/commit.
+- `push_sngar_spotting.py`
+	- Publishes the SN-GAR action-spotting dataset pair built by `tools/convert/build_sngar_spotting.py`.
+	- Dry run by default; nothing is created or uploaded without `--yes`.
+	- Re-hashes every file against `MANIFEST.sha256` before upload, and excludes loader caches (`*.npy`).
+	- Creates repos public with `gated="manual"`, gating applied before the repo goes public.
 - `upload_osl_hf.py`
 	- Uploads local dataset inputs from JSON to a HuggingFace dataset repo.
 	- Automatically creates the target dataset repo if it does not exist.
