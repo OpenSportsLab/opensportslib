@@ -253,7 +253,7 @@ class RegnetyExtractFeatures(BaseExtractFeatures):
         self._feat_dim = feat_dim
 
 
-class ResnetExtractFeatures(nn.Module):
+class ResnetExtractFeatures(BaseExtractFeatures):
     """Feature extractor which is based on the "resnet" models of the torchvision models.
     The model is adapted for this task by adding temporal shift modules.
 

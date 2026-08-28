@@ -36,3 +36,7 @@ checkpoints_gar/
 
 # Built dataset releases (rebuild with tools/convert/build_sngar_spotting.py)
 release/
+
+# Release verification tests (tests/release/) download real datasets and
+# write checkpoints/logs here -- never commit it.
+.release_test_cache/
