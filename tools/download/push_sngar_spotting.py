@@ -25,7 +25,7 @@ import hashlib
 import argparse
 import concurrent.futures
 
-from huggingface_hub import HfApi
+from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
 
 try:
     from tqdm import tqdm
@@ -115,6 +115,50 @@ def verify_manifest(repo_dir, kept, num_workers=16):
     return problems
 
 
+# Files small enough to fetch and byte-compare when deciding what changed.
+# Payload files are compared on size alone; they are large, content-addressed,
+# and never rewritten in place by the builder.
+SMALL_FILE_BYTES = 64 << 20
+
+
+def changed_files(api, repo_id, repo_dir, kept):
+    """Return the subset of `kept` whose content differs from the Hub.
+
+    Exists because upload_large_folder commits in batches, and a run that
+    touches only a few metadata files can still spend dozens of commits
+    against the 128/hour repository limit. Re-uploading a handful of changed
+    files as one commit costs exactly one.
+    """
+    try:
+        info = api.dataset_info(repo_id, files_metadata=True)
+    except Exception:
+        return kept, []           # repo absent: everything is new
+
+    remote = {s.rfilename: s.size for s in info.siblings}
+    changed, unchanged = [], []
+    for rel, path in kept:
+        size = os.path.getsize(path)
+        if rel not in remote:
+            changed.append((rel, path))
+            continue
+        if remote[rel] is not None and remote[rel] != size:
+            changed.append((rel, path))
+            continue
+        if size > SMALL_FILE_BYTES:
+            unchanged.append((rel, path))
+            continue
+        try:
+            local_copy = hf_hub_download(
+                repo_id, rel, repo_type="dataset",
+                cache_dir=os.path.join(repo_dir, ".cache", "compare"),
+            )
+            same = open(local_copy, "rb").read() == open(path, "rb").read()
+        except Exception:
+            same = False
+        (unchanged if same else changed).append((rel, path))
+    return changed, unchanged
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -130,6 +174,10 @@ def main():
                         help="skip the sha256 re-check (not recommended)")
     parser.add_argument("--verify-workers", type=int, default=16,
                         help="threads used to re-hash the release before upload")
+    parser.add_argument("--changed-only", action="store_true",
+                        help="upload only files whose content differs from the\n"
+                             "Hub, as a single commit per repo. Use when a build\n"
+                             "changed annotations or cards but not the payload.")
     parser.add_argument("--yes", action="store_true",
                         help="actually create repos and upload; without it this is a dry run")
     args = parser.parse_args()
@@ -151,9 +199,24 @@ def main():
         total = sum(os.path.getsize(p) for _, p in kept)
         repo_id = f"{args.org}/{hub_name}{args.repo_suffix}"
 
+        to_send, unchanged = (
+            changed_files(api, repo_id, repo_dir, kept)
+            if args.changed_only else (kept, [])
+        )
+        send_bytes = sum(os.path.getsize(p) for _, p in to_send)
+
         print(f"{repo_id}")
         print(f"  from      {repo_dir}")
-        print(f"  upload    {len(kept)} files, {total / 1e9:.2f} GB")
+        if args.changed_only:
+            print(f"  upload    {len(to_send)} changed files, "
+                  f"{send_bytes / 1e9:.2f} GB, in one commit")
+            print(f"  unchanged {len(unchanged)} files left as they are")
+            for rel, _ in to_send[:10]:
+                print(f"              {rel}")
+            if len(to_send) > 10:
+                print(f"              ... and {len(to_send) - 10} more")
+        else:
+            print(f"  upload    {len(kept)} files, {total / 1e9:.2f} GB")
         print(f"  exclude   {len(skipped)} files "
               f"({sum(os.path.getsize(p) for _, p in skipped) / 1e9:.2f} GB)")
         print(f"  access    {'private' if args.private else 'public + gated=manual'}")
@@ -168,13 +231,30 @@ def main():
             print(f"  MANIFEST  ok, {len(kept) - 1} files verified")
         print()
 
-        plans.append((repo_id, repo_dir))
+        plans.append((repo_id, repo_dir, to_send))
 
     if not args.yes:
         print("dry run - nothing created or uploaded. re-run with --yes to push.")
         return
 
-    for repo_id, repo_dir in plans:
+    for repo_id, repo_dir, changed in plans:
+        if args.changed_only:
+            if not changed:
+                print(f"{repo_id}: already up to date\n")
+                continue
+            print(f"{repo_id}: committing {len(changed)} file(s)")
+            api.create_commit(
+                repo_id=repo_id,
+                repo_type="dataset",
+                operations=[
+                    CommitOperationAdd(path_in_repo=rel, path_or_fileobj=path)
+                    for rel, path in changed
+                ],
+                commit_message="Update annotations and dataset card",
+            )
+            print(f"done https://huggingface.co/datasets/{repo_id}\n")
+            continue
+
         print(f"creating {repo_id} (private, gated)")
         api.create_repo(repo_id, repo_type="dataset", private=True, exist_ok=True)
         api.update_repo_settings(repo_id, repo_type="dataset", gated="manual")
@@ -200,6 +280,13 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 # Usage
 # ---------------------------------------------------------------------------
+#
+# Sync only what changed, as a single commit per repo. Use after a build that
+# rewrote annotations or dataset cards but left the payload alone -- the Hub
+# allows 128 repository commits per hour, and a full folder upload spends many
+# of them:
+#
+#     python push_sngar_spotting.py --out-root release --yes --changed-only
 #
 # Inspect the plan. Prints what would be uploaded, what is excluded and the
 # resulting access settings, and verifies the manifest. Creates nothing:
