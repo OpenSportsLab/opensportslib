@@ -36,6 +36,9 @@ nav:
 
   - Training & Inference:
       - Training & Inference: tni/tni.md
+
+  - Action Spotting:
+      - Tracking Action Spotting: spotting/tracking-action-spotting.md
   - Configuration:
       - Configuration Guide: config/configuration-guide.md
       - Legacy to Canonical Mapping: config/legacy-to-canonical-mapping.md
@@ -46,6 +49,7 @@ nav:
 
   - Tools:
       - Dataset Conversion: tools/dataset-conversion.md
+      - SN-GAR Action Spotting: tools/sngar-spotting.md
       - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
       - Hugging Face Model Upload: tools/hf-model-upload.md
 
