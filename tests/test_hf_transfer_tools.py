@@ -12,11 +12,14 @@ from opensportslib.tools.hf_transfer import (
     create_dataset_repo_on_hf,
     dataset_repo_exists_on_hf,
     download_dataset_split_from_hf,
+    download_dataset_splits_from_hf,
     extract_local_input_upload_entries_from_json,
     extract_repo_paths_from_json,
     is_hf_download_url_not_found_error,
     is_hf_repo_not_found_error,
     is_hf_revision_not_found_error,
+    list_dataset_branches_on_hf,
+    list_dataset_splits_on_hf,
     read_hf_source_metadata_from_dataset,
     upload_dataset_as_parquet_to_hf,
     upload_dataset_inputs_from_json_to_hf,
@@ -224,6 +227,127 @@ def test_dataset_repo_exists_on_hf_returns_false_for_repo_not_found(monkeypatch)
     )
 
     assert dataset_repo_exists_on_hf("OpenSportsLab/missing-repo", token="hf_token") is False
+
+
+def test_list_dataset_branches_on_hf_puts_main_first_then_alphabetical(monkeypatch):
+    class _FakeRefs:
+        branches = [
+            type("_Ref", (), {"name": "zeta"})(),
+            type("_Ref", (), {"name": "main"})(),
+            type("_Ref", (), {"name": "alpha"})(),
+        ]
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def list_repo_refs(self, repo_id, repo_type=None):
+            return _FakeRefs()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+
+    assert list_dataset_branches_on_hf("OpenSportsLab/repo") == ["main", "alpha", "zeta"]
+
+
+def test_list_dataset_splits_on_hf_detects_parquet_layout(monkeypatch):
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def list_repo_files(self, repo_id, revision=None, repo_type=None):
+            return [
+                "README.md",
+                "train/data-00000.parquet",
+                "train/shard-000.tar",
+                "test/data-00000.parquet",
+            ]
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+
+    result = list_dataset_splits_on_hf("OpenSportsLab/repo", "main")
+
+    assert result == {"format": "parquet", "splits": ["train", "test"]}
+
+
+def test_list_dataset_splits_on_hf_detects_json_layout(monkeypatch):
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def list_repo_files(self, repo_id, revision=None, repo_type=None):
+            return [
+                "dataset_infos.json",
+                "train.json",
+                "challenge.json",
+                "valid.json",
+            ]
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+
+    result = list_dataset_splits_on_hf("OpenSportsLab/repo", "main")
+
+    assert result == {"format": "json", "splits": ["train", "valid", "challenge"]}
+
+
+def test_list_dataset_splits_on_hf_returns_none_format_when_nothing_matches(monkeypatch):
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def list_repo_files(self, repo_id, revision=None, repo_type=None):
+            return ["README.md", "dataset_infos.json"]
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+
+    assert list_dataset_splits_on_hf("OpenSportsLab/repo", "main") == {"format": None, "splits": []}
+
+
+def test_download_dataset_splits_from_hf_downloads_each_split_with_prefixed_progress(monkeypatch, tmp_path):
+    progress_messages = []
+    calls = []
+
+    def _fake_download_dataset_split_from_hf(repo_id, revision, split, output_dir, **kwargs):
+        calls.append((repo_id, revision, split, output_dir))
+        kwargs["progress_cb"](f"working on {split}")
+        return {"split": split, "json_path": str(tmp_path / f"{split}.json")}
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer.download_dataset_split_from_hf",
+        _fake_download_dataset_split_from_hf,
+    )
+
+    results = download_dataset_splits_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        ["train", "valid"],
+        str(tmp_path),
+        download_format="json",
+        progress_cb=progress_messages.append,
+    )
+
+    assert [call[2] for call in calls] == ["train", "valid"]
+    assert [result["split"] for result in results] == ["train", "valid"]
+    assert progress_messages == [
+        "[1/2] train: working on train",
+        "[2/2] valid: working on valid",
+    ]
+
+
+def test_download_dataset_splits_from_hf_requires_at_least_one_split():
+    with pytest.raises(ValueError):
+        download_dataset_splits_from_hf("OpenSportsLab/repo", "main", [], "/tmp/out")
 
 
 def test_upload_dataset_inputs_from_json_to_hf_uploads_inputs_and_json(monkeypatch, tmp_path):
