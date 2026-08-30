@@ -607,6 +607,41 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
     assert result["output_dir"] == str(tmp_path / "dev" / "test")
     assert result["json_path"] == str(tmp_path / "dev" / "test" / "test.json")
     assert result["num_samples"] == 3
+    assert result["download_skipped"] is False
+
+
+def test_download_dataset_split_from_hf_parquet_skips_download_when_json_exists(
+    monkeypatch, tmp_path
+):
+    output_json_path = tmp_path / "dev" / "test" / "test.json"
+    output_json_path.parent.mkdir(parents=True)
+    output_json_path.write_text(json.dumps({"data": []}), encoding="utf-8")
+    progress_messages = []
+
+    def _fail_hf_import():
+        raise AssertionError("Hugging Face must not be imported for an existing JSON")
+
+    def _fail_conversion(**kwargs):
+        raise AssertionError("Existing JSON must not be converted again")
+
+    monkeypatch.setattr("opensportslib.tools.hf_transfer._import_hf_hub", _fail_hf_import)
+    monkeypatch.setattr("opensportslib.tools.hf_transfer.convert_parquet_to_json", _fail_conversion)
+
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "dev",
+        "test",
+        str(tmp_path),
+        download_format="parquet",
+        progress_cb=progress_messages.append,
+    )
+
+    assert result["json_path"] == str(output_json_path)
+    assert result["downloaded_file_count"] == 0
+    assert result["download_skipped"] is True
+    assert progress_messages == [
+        f"JSON already exists at {output_json_path}; skipping Parquet/WebDataset download and conversion."
+    ]
 
 
 def test_download_dataset_split_from_hf_json_writes_hf_metadata_on_non_dry_run(monkeypatch, tmp_path):

@@ -59,9 +59,13 @@ def install_xvars_dependencies(DEPENDENCY_PINS):
 def install_torch():
     python = sys.executable
     subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
-    
-    if CUDA_VERSION == "cu130":
-        cuda = "cu130"
+
+    # get_cuda_version() returns the dotted version reported by nvidia-smi
+    # (e.g. "13.0"), not a pip wheel tag (e.g. "cu130") -- convert before
+    # comparing, the same way install_pyg() below already does.
+    detected_tag = f"cu{CUDA_VERSION.replace('.', '')}" if CUDA_VERSION else None
+    if detected_tag in CUDA_SUPPORT:
+        cuda = detected_tag
         subprocess.check_call([
             python, "-m", "pip", "install",
             "torch", "torchvision", "torchaudio",
