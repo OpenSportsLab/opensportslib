@@ -260,9 +260,11 @@ def test_list_dataset_splits_on_hf_detects_parquet_layout(monkeypatch):
         def list_repo_files(self, repo_id, revision=None, repo_type=None):
             return [
                 "README.md",
-                "train/data-00000.parquet",
-                "train/shard-000.tar",
-                "test/data-00000.parquet",
+                "train/metadata.parquet",
+                "train/shard_manifest.parquet",
+                "train/shards/shard-000000.tar",
+                "test/metadata.parquet",
+                "test/shards/shard-000000.tar",
             ]
 
     monkeypatch.setattr(
@@ -273,6 +275,41 @@ def test_list_dataset_splits_on_hf_detects_parquet_layout(monkeypatch):
     result = list_dataset_splits_on_hf("OpenSportsLab/repo", "main")
 
     assert result == {"format": "parquet", "splits": ["train", "test"]}
+
+
+def test_list_dataset_splits_on_hf_treats_json_dataset_with_parquet_media_as_json(monkeypatch):
+    """
+    A JSON-format dataset can reference arbitrary media files (e.g. tensor-encoded
+    videos serialized as .parquet) inside a folder that happens to share a split's
+    name. That must not be misdetected as the canonical Parquet+WebDataset export
+    layout, which requires `{split}/metadata.parquet` + `{split}/shards/*.tar`.
+    Regression test for OpenSportsLab/SNGAR-Action-Spotting-Tracking.
+    """
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def list_repo_files(self, repo_id, revision=None, repo_type=None):
+            return [
+                "README.md",
+                "train.json",
+                "valid.json",
+                "test.json",
+                "train/videos/10502.parquet",
+                "train/videos/10503.parquet",
+                "valid/videos/3841.parquet",
+                "test/videos/3850.parquet",
+            ]
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+
+    result = list_dataset_splits_on_hf("OpenSportsLab/repo", "main")
+
+    assert result == {"format": "json", "splits": ["train", "valid", "test"]}
 
 
 def test_list_dataset_splits_on_hf_detects_json_layout(monkeypatch):

@@ -471,7 +471,18 @@ def list_dataset_splits_on_hf(
         normalized = _normalize_repo_path(path)
         if "/" in normalized:
             folder, filename = normalized.split("/", 1)
-            if folder and filename.lower().endswith((".parquet", ".tar")):
+            # Only the canonical Parquet+WebDataset export layout counts as a
+            # parquet split (produced by convert_json_to_parquet / expected by
+            # convert_parquet_to_json): `{split}/metadata.parquet` plus TAR
+            # shards under `{split}/shards/`. A JSON-format dataset can also
+            # reference arbitrary `.parquet` media files (e.g. tensor-encoded
+            # videos) under a folder that happens to share the split's name,
+            # so a loose "any .parquet/.tar anywhere under this folder" check
+            # would misclassify those as Parquet+WebDataset splits.
+            if folder and (
+                filename == "metadata.parquet"
+                or (filename.startswith("shards/") and filename.lower().endswith(".tar"))
+            ):
                 parquet_splits.add(folder)
         elif normalized.lower().endswith(".json") and normalized not in _NON_SPLIT_JSON_FILES:
             json_splits.add(normalized[: -len(".json")])
