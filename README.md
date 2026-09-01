@@ -349,6 +349,8 @@ python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_d
 ```
 
 Downloads are placed under `<output-dir>/<revision>/<split>`.
+For Parquet/WebDataset downloads, an existing `<split>.json` in that directory
+is reused without downloading or converting the split again.
 
 ---
 

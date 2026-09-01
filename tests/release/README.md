@@ -116,7 +116,9 @@ it via `_release_common.download_shard_split()` — a thin wrapper around
 `opensportslib.tools.hf_transfer.download_dataset_split_from_hf(...,
 download_format="parquet")`, which does
 `snapshot_download(allow_patterns=[f"{split}/*"])` and converts the result
-to a local OSL v2 JSON. Only if `primary` isn't populated yet does it fall
+to a local OSL v2 JSON. If that split's converted JSON already exists in the
+output directory, the Parquet/WebDataset download and conversion are skipped.
+Only if `primary` isn't populated yet does it fall
 back to `fallback` — a known-good, currently-populated but non-sharded
 dataset, downloaded with the file-count capping described below.
 

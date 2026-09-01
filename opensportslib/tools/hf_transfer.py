@@ -211,7 +211,6 @@ def _download_parquet_split_and_convert(
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    _, _, snapshot_download = _import_hf_hub()
     cleaned_repo_id = str(repo_id or "").strip()
     cleaned_revision = str(revision or "").strip() or "main"
     cleaned_split = _clean_hf_split(split)
@@ -219,9 +218,36 @@ def _download_parquet_split_and_convert(
         raise ValueError("repo_id is required.")
 
     os.makedirs(output_dir, exist_ok=True)
+    output_json_path = Path(output_dir) / f"{cleaned_split}.json"
+    if output_json_path.is_file():
+        _emit_progress(
+            progress_cb,
+            f"JSON already exists at {output_json_path}; skipping Parquet/WebDataset download and conversion.",
+        )
+        return {
+            "repo_id": cleaned_repo_id,
+            "revision": cleaned_revision,
+            "split": cleaned_split,
+            "folder_path": cleaned_split,
+            "output_dir": output_dir,
+            "json_path": str(output_json_path),
+            "source": "parquet_split",
+            "download_kind": "parquet",
+            "downloaded_file_count": 0,
+            "download_skipped": True,
+            "extracted_media": True,
+            "extracted_media_count": 0,
+            "hf_source_metadata": {
+                "repo_id": cleaned_repo_id,
+                "branch": cleaned_revision,
+                "split": cleaned_split,
+            },
+        }
+
     _ensure_not_cancelled(is_cancelled)
     _emit_progress(progress_cb, f"Downloading Parquet split '{cleaned_split}' from {cleaned_repo_id}@{cleaned_revision}...")
 
+    _, _, snapshot_download = _import_hf_hub()
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
         snapshot_download(
@@ -235,8 +261,6 @@ def _download_parquet_split_and_convert(
         _ensure_not_cancelled(is_cancelled)
 
         parquet_dataset_dir = Path(tmp_dir) / cleaned_split
-        output_json_path = Path(output_dir) / f"{cleaned_split}.json"
-
         _emit_progress(progress_cb, f"Converting Parquet split to JSON and extracting media into {output_dir}...")
         conversion_result = convert_parquet_to_json(
             dataset_dir=parquet_dataset_dir,
@@ -269,6 +293,7 @@ def _download_parquet_split_and_convert(
         "json_path": str(output_json_path),
         "source": "parquet_split",
         "download_kind": "parquet",
+        "download_skipped": False,
         "num_samples": int(conversion_result.get("num_samples") or 0),
         "extracted_media": True,
         "extracted_media_count": int(conversion_result.get("extracted_media_files") or 0),

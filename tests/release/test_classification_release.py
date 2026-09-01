@@ -104,6 +104,19 @@ os.environ.setdefault("OSL_PRETRAINED_WEIGHTS", "0")
 # Dataset prep
 # --------------------------------------------------------------------------
 
+# opensportslib.datasets.classification_dataset.ClassificationDataset
+# hardcodes exclude_labels = ["Unknown", "Dont know"] and drops them from
+# the label space it actually builds (label_map, class weights, etc). If
+# DATA.common.classes / num_classes don't apply the same exclusion, the
+# model is built with the wrong output size and weighted-loss class weights
+# come back the wrong shape ("weight tensor should be defined for all N
+# classes but got shape [N-k]"). Keep this in sync with that hardcoded list.
+_DATASET_EXCLUDED_LABELS = {"Unknown", "Dont know"}
+
+
+def _exclude_dataset_labels(classes: list[str]) -> list[str]:
+    return [c for c in classes if c not in _DATASET_EXCLUDED_LABELS]
+
 
 def _resolve_label(record: dict) -> str | None:
     for key in ("label", "action_class", "foul_type", "class", "action"):
@@ -225,8 +238,21 @@ def classification_dataset():
             split: download_shard_split(repo_id, split, root, revision=revision)
             for split in ("train", "valid", "test")
         }
-        classes = classes_from_osl_json(json.loads(split_paths["test"].read_text(encoding="utf-8")), head="action")
-        return {"data_root": root, "classes": classes, "split_paths": split_paths}
+        classes = _exclude_dataset_labels(
+            classes_from_osl_json(json.loads(split_paths["test"].read_text(encoding="utf-8")), head="action")
+        )
+        # Each split's media is extracted under its own split directory (see
+        # download_dataset_split_from_hf's split_output_dir), and the json's
+        # "inputs[].path" values (e.g. "train/action_0/clip_0.mp4") are
+        # relative to that directory -- NOT to a single shared data_root, so
+        # source_path must be resolved per split.
+        source_paths = {split: path.parent for split, path in split_paths.items()}
+        return {
+            "data_root": root,
+            "classes": classes,
+            "split_paths": split_paths,
+            "source_paths": source_paths,
+        }
 
     # Fallback: known-good, real (gated) dataset -- not sharded, but small
     # (13 clips), so downloaded and split locally rather than capped.
@@ -246,15 +272,20 @@ def classification_dataset():
         path.write_text(json.dumps(split_payload, indent=2), encoding="utf-8")
         split_paths[split] = path
 
-    classes = payload["labels"]["action"]["labels"]
+    classes = _exclude_dataset_labels(payload["labels"]["action"]["labels"])
     counts = Counter(item["labels"]["action"]["label"] for item in payload["data"])
     print(f"Classes ({len(classes)}): {classes}")
     print(f"Label distribution: {dict(counts)}")
+
+    # All splits share one media root here (processed_videos/<id>.mp4
+    # relative to `root`), unlike the sharded branch above.
+    source_paths = {split: root for split in split_paths}
 
     return {
         "data_root": root,
         "classes": classes,
         "split_paths": split_paths,
+        "source_paths": source_paths,
     }
 
 
@@ -312,7 +343,7 @@ def test_classification_mvnetwork_backbone(classification_dataset, backbone):
             "splits": {
                 split: {
                     "annotation_path": str(path),
-                    "source_path": str(dataset["data_root"]),
+                    "source_path": str(dataset["source_paths"][split]),
                 }
                 for split, path in dataset["split_paths"].items()
             },
@@ -356,7 +387,7 @@ def test_classification_video_mae_huggingface_backend(classification_dataset):
             "splits": {
                 split: {
                     "annotation_path": str(path),
-                    "source_path": str(dataset["data_root"]),
+                    "source_path": str(dataset["source_paths"][split]),
                 }
                 for split, path in dataset["split_paths"].items()
             },
