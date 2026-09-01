@@ -33,12 +33,13 @@ def get_cuda_version():
             if "CUDA Version" in line:
                 ver  = line.split("CUDA Version:")[1].strip().split()[0]
                 print(f"CUDA Version found : {ver}")
-                return ver
+                cuda_tag = f"cu{ver.replace('.', '')}"
+                return ver, cuda_tag
     except Exception:
-        return None
+        return None, None
 
 
-CUDA_VERSION = get_cuda_version()
+CUDA_VERSION, CUDA_TAG = get_cuda_version()
 
 def get_cpu_tag():
     if not CUDA_VERSION:
@@ -60,7 +61,7 @@ def install_torch():
     python = sys.executable
     subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
     
-    if CUDA_VERSION == "cu130":
+    if CUDA_TAG == "cu130":
         cuda = "cu130"
         subprocess.check_call([
             python, "-m", "pip", "install",
@@ -104,7 +105,7 @@ def install_dali():
     # DALI (only if GPU)
     if CUDA_VERSION:
         
-        if CUDA_VERSION == "cu130":
+        if CUDA_TAG == "cu130":
             subprocess.check_call([
                 python, "-m", "pip", "install",
                 "nvidia-dali-cuda130"
