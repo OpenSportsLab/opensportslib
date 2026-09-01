@@ -1,3 +1,4 @@
+import platform
 import subprocess
 import sys
 
@@ -7,9 +8,16 @@ CUDA_WHEEL_VERSIONS = {
     "cu128": (12, 8),
     "cu130": (13, 0),
 }
-MIN_SUPPORTED_COMPUTE_CAPABILITY = (7, 0)
+MIN_SUPPORTED_COMPUTE_CAPABILITY = (5, 0)
 LEGACY_GPU_MAX_COMPUTE_CAPABILITY = (7, 4)
 LEGACY_GPU_CUDA_WHEEL = "cu126"
+LEGACY_GPU_CUDA_WHEEL_MAX_COMPUTE_CAPABILITY = (9, 0)
+CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY = (10, 0)
+LEGACY_GPU_TORCH_PACKAGES = (
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "torchaudio==2.10.0",
+)
 
 XVARS_DEPENDENCY_PINS = {
     "transformers": "4.38.2",
@@ -83,12 +91,41 @@ def select_cuda_wheel(cuda_version, compute_capabilities):
     compatible_tags = [
         tag for tag, wheel_version in CUDA_WHEEL_VERSIONS.items() if wheel_version <= driver_version
     ]
-    if compute_capabilities and any(
+    has_legacy_gpu = compute_capabilities and any(
         capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
-    ):
+    )
+    if has_legacy_gpu:
+        if platform.machine().lower() in {"aarch64", "arm64"}:
+            raise RuntimeError(
+                "Official Linux ARM64 CUDA 12.6 PyTorch wheels support Ampere and newer GPUs only. "
+                "Use an x86_64 host or build PyTorch from source for the visible legacy GPU architecture."
+            )
+        if any(
+            capability > LEGACY_GPU_CUDA_WHEEL_MAX_COMPUTE_CAPABILITY
+            for capability in compute_capabilities
+        ):
+            raise RuntimeError(
+                "Visible GPUs require incompatible prebuilt PyTorch wheels. Set CUDA_VISIBLE_DEVICES to "
+                "either the legacy GPUs or the newer GPUs, then run setup again."
+            )
         compatible_tags = [tag for tag in compatible_tags if tag == LEGACY_GPU_CUDA_WHEEL]
 
+    if any(
+        capability >= CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY
+        for capability in compute_capabilities
+    ):
+        compatible_tags = [tag for tag in compatible_tags if tag == "cu130"]
+
     if not compatible_tags:
+        if any(
+            capability >= CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY
+            for capability in compute_capabilities
+        ):
+            raise RuntimeError(
+                "The visible GPU architecture requires the CUDA 13.0 PyTorch wheel. "
+                "Update the NVIDIA driver so nvidia-smi reports CUDA 13.0 or newer, "
+                "then run setup again."
+            )
         raise RuntimeError(
             f"CUDA {cuda_version} is too old for the supported PyTorch wheels: "
             f"{', '.join(CUDA_WHEEL_VERSIONS)}."
@@ -100,6 +137,14 @@ def select_cuda_wheel(cuda_version, compute_capabilities):
         f"{selected} for CUDA {cuda_version} and GPU compute capabilities {compute_capabilities or 'unknown'}"
     )
     return selected
+
+
+def select_torch_packages(compute_capabilities):
+    if compute_capabilities and any(
+        capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
+    ):
+        return LEGACY_GPU_TORCH_PACKAGES
+    return ("torch", "torchvision", "torchaudio")
 
 
 CUDA_VERSION, _DETECTED_CUDA_TAG = get_cuda_version()
@@ -121,14 +166,15 @@ def install_xvars_dependencies(DEPENDENCY_PINS):
 def install_torch():
     python = sys.executable
     subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
+    packages = select_torch_packages(GPU_COMPUTE_CAPABILITIES)
 
     subprocess.check_call([
         python, "-m", "pip", "install",
-        "torch", "torchvision", "torchaudio",
+        *packages,
         "--index-url",
         f"https://download.pytorch.org/whl/{CUDA_TAG}",
     ])
-    print(f"\nSuccess with {CUDA_TAG}")
+    print(f"\nSuccess with {CUDA_TAG}: {', '.join(packages)}")
     return CUDA_TAG
 
 def install_dali():
