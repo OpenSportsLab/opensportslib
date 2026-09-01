@@ -140,10 +140,10 @@ def select_cuda_wheel(cuda_version, compute_capabilities):
 
 
 def select_torch_packages(compute_capabilities):
-    if compute_capabilities and any(
-        capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
-    ):
-        return LEGACY_GPU_TORCH_PACKAGES
+    # if compute_capabilities and any(
+    #     capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
+    # ):
+    #     return LEGACY_GPU_TORCH_PACKAGES
     return ("torch", "torchvision", "torchaudio")
 
 
