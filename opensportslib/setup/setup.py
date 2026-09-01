@@ -13,11 +13,6 @@ LEGACY_GPU_MAX_COMPUTE_CAPABILITY = (7, 4)
 LEGACY_GPU_CUDA_WHEEL = "cu126"
 LEGACY_GPU_CUDA_WHEEL_MAX_COMPUTE_CAPABILITY = (9, 0)
 CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY = (10, 0)
-LEGACY_GPU_TORCH_PACKAGES = (
-    "torch==2.10.0",
-    "torchvision==0.25.0",
-    "torchaudio==2.10.0",
-)
 
 XVARS_DEPENDENCY_PINS = {
     "transformers": "4.38.2",
@@ -140,10 +135,6 @@ def select_cuda_wheel(cuda_version, compute_capabilities):
 
 
 def select_torch_packages(compute_capabilities):
-    # if compute_capabilities and any(
-    #     capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
-    # ):
-    #     return LEGACY_GPU_TORCH_PACKAGES
     return ("torch", "torchvision", "torchaudio")
 
 
