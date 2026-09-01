@@ -4,6 +4,18 @@ from opensportslib import cli
 from opensportslib.setup import setup as setup_lib
 
 
+def test_select_cuda_wheel_uses_cu126_for_pre_sm75_gpu_with_cuda_13():
+    assert setup_lib.select_cuda_wheel("13.0", [(7, 0)]) == "cu126"
+
+
+def test_select_cuda_wheel_uses_cu130_for_dgx_spark():
+    assert setup_lib.select_cuda_wheel("13.0", [(12, 1)]) == "cu130"
+
+
+def test_select_cuda_wheel_uses_highest_driver_compatible_wheel():
+    assert setup_lib.select_cuda_wheel("12.8", [(8, 0)]) == "cu128"
+
+
 def test_cli_setup_forwards_xvars_flag(monkeypatch):
     captured: dict[str, object] = {}
 

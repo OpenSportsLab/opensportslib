@@ -18,6 +18,9 @@ Notes:
 - For PyTorch, select one wheel tag: `cpu`, `cu126`, `cu128`, or `cu130`.
 - For DALI, CUDA 12.x uses the `nvidia-dali-cuda120` package, while CUDA 13.x uses `nvidia-dali-cuda130`.
 - For CuPy, CUDA 12.x uses `cupy-cuda12x`, while CUDA 13.x uses `cupy-cuda13x`.
+- `opensportslib setup` selects the wheel using both the driver CUDA version and visible GPU compute capabilities.
+- GPUs below `SM 7.5` use `cu126` even when the installed driver reports CUDA 13.0, because newer CUDA 13 PyTorch wheels do not include kernels for those architectures.
+- GPUs at `SM 7.5` or newer, including DGX Spark (`SM 12.1`), use the highest wheel supported by the installed driver.
 
 ## 1. Create a clean environment
 

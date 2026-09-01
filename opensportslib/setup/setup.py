@@ -2,12 +2,14 @@ import subprocess
 import sys
 
 
-CUDA_SUPPORT = [
-    "cu126",
-    "cu128",
-    "cu130",
-    "cpu"
-]
+CUDA_WHEEL_VERSIONS = {
+    "cu126": (12, 6),
+    "cu128": (12, 8),
+    "cu130": (13, 0),
+}
+MIN_SUPPORTED_COMPUTE_CAPABILITY = (7, 0)
+LEGACY_GPU_MAX_COMPUTE_CAPABILITY = (7, 4)
+LEGACY_GPU_CUDA_WHEEL = "cu126"
 
 XVARS_DEPENDENCY_PINS = {
     "transformers": "4.38.2",
@@ -37,13 +39,72 @@ def get_cuda_version():
                 return ver, cuda_tag
     except Exception:
         return None, None
+    return None, None
 
 
-CUDA_VERSION, CUDA_TAG = get_cuda_version()
+def get_gpu_compute_capabilities():
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            text=True,
+        )
+    except Exception:
+        return []
 
-def get_cpu_tag():
-    if not CUDA_VERSION:
+    capabilities = []
+    for line in output.splitlines():
+        value = line.strip()
+        if not value:
+            continue
+        try:
+            major, minor = value.split(".", 1)
+            capabilities.append((int(major), int(minor)))
+        except ValueError:
+            print(f"Ignoring unrecognized GPU compute capability: {value}")
+    return capabilities
+
+
+def select_cuda_wheel(cuda_version, compute_capabilities):
+    if not cuda_version:
         return "cpu"
+
+    try:
+        driver_version = tuple(int(part) for part in cuda_version.split(".", 1))
+    except ValueError as exc:
+        raise RuntimeError(f"Unable to parse CUDA version reported by nvidia-smi: {cuda_version}") from exc
+
+    if any(capability < MIN_SUPPORTED_COMPUTE_CAPABILITY for capability in compute_capabilities):
+        raise RuntimeError(
+            "OpenSportsLib PyTorch wheels require GPUs with compute capability "
+            f"{MIN_SUPPORTED_COMPUTE_CAPABILITY[0]}.{MIN_SUPPORTED_COMPUTE_CAPABILITY[1]} or newer. "
+            f"Detected: {compute_capabilities}."
+        )
+
+    compatible_tags = [
+        tag for tag, wheel_version in CUDA_WHEEL_VERSIONS.items() if wheel_version <= driver_version
+    ]
+    if compute_capabilities and any(
+        capability <= LEGACY_GPU_MAX_COMPUTE_CAPABILITY for capability in compute_capabilities
+    ):
+        compatible_tags = [tag for tag in compatible_tags if tag == LEGACY_GPU_CUDA_WHEEL]
+
+    if not compatible_tags:
+        raise RuntimeError(
+            f"CUDA {cuda_version} is too old for the supported PyTorch wheels: "
+            f"{', '.join(CUDA_WHEEL_VERSIONS)}."
+        )
+
+    selected = max(compatible_tags, key=lambda tag: CUDA_WHEEL_VERSIONS[tag])
+    print(
+        "Selected PyTorch wheel "
+        f"{selected} for CUDA {cuda_version} and GPU compute capabilities {compute_capabilities or 'unknown'}"
+    )
+    return selected
+
+
+CUDA_VERSION, _DETECTED_CUDA_TAG = get_cuda_version()
+GPU_COMPUTE_CAPABILITIES = get_gpu_compute_capabilities()
+CUDA_TAG = select_cuda_wheel(CUDA_VERSION, GPU_COMPUTE_CAPABILITIES)
 
 
 def install_xvars_dependencies(DEPENDENCY_PINS):
@@ -59,42 +120,16 @@ def install_xvars_dependencies(DEPENDENCY_PINS):
 
 def install_torch():
     python = sys.executable
-    subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
-    
-    if CUDA_TAG == "cu130":
-        cuda = "cu130"
-        subprocess.check_call([
-            python, "-m", "pip", "install",
-            "torch", "torchvision", "torchaudio",
-            "--index-url",
-            f"https://download.pytorch.org/whl/{cuda}"
-        ])
-        print(f"\nSuccess with {cuda}")
-        return cuda
-    for cuda in CUDA_SUPPORT:
+    subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
 
-        print(f"\n Trying installation: {cuda}\n")
-        try:
-            if get_cpu_tag() == "cpu":
-                subprocess.check_call([
-                    python, "-m", "pip", "install",
-                    "torch", "torchvision", "torchaudio"
-                ])
-            else:
-
-                subprocess.check_call([
-                    python, "-m", "pip", "install",
-                    "torch", "torchvision", "torchaudio",
-                    "--index-url",
-                    f"https://download.pytorch.org/whl/{cuda}"
-                ])
-            print(f"\nSuccess with {cuda}")
-            return cuda
-
-        except Exception as e:
-            print(f"Failed with {cuda}: {e}")
-
-    raise RuntimeError("All CUDA installs failed")
+    subprocess.check_call([
+        python, "-m", "pip", "install",
+        "torch", "torchvision", "torchaudio",
+        "--index-url",
+        f"https://download.pytorch.org/whl/{CUDA_TAG}",
+    ])
+    print(f"\nSuccess with {CUDA_TAG}")
+    return CUDA_TAG
 
 def install_dali():
 
@@ -134,8 +169,7 @@ def install_pyg():
 
     python = sys.executable
     torch_version = "2.10.0" if version.parse(torch.__version__.split("+")[0]) > version.parse("2.10.0") else torch.__version__.split("+")[0]
-    cuda_tag = next((f"cu{CUDA_VERSION.replace('.', '')}" for _ in [0] if CUDA_VERSION), CUDA_SUPPORT[0])
-    cuda_tag = cuda_tag if cuda_tag in CUDA_SUPPORT else CUDA_SUPPORT[0]
+    cuda_tag = CUDA_TAG
     print("\nInstalling Py-Geometric ecosystem...\n")
     if cuda_tag == "cpu":
         url =  f"https://data.pyg.org/whl/torch-{torch_version}+cpu.html"
