@@ -39,4 +39,14 @@ def build_optimizer(parameters, cfg, default_args=None):
             weight_decay=cfg.weight_decay,
             amsgrad=cfg.amsgrad,
         )
+    elif cfg.type == "SGD":
+        optimizer = torch.optim.SGD(
+            parameters,
+            lr=cfg.lr,
+            momentum=getattr(cfg, "momentum", 0.0),
+            weight_decay=getattr(cfg, "weight_decay", 0.0),
+            nesterov=getattr(cfg, "nesterov", False),
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer type: {cfg.type}")
     return optimizer

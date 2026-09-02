@@ -627,12 +627,15 @@ DEFAULT_SKELETON_RULE_PARAMS = {
     "accel_z_change_min_mps2": 8.0,
     "incoming_speed_min_mps": 4.0,
     # player gates
+    "head_joints": ["nose"],
     "head_ball_distance_max_m": 0.4,
     "facing_dot_min": -0.5,
     "ankle_height_max_m": 1.2,
+    "hand_check_enabled": True,
     # dwell filter (rejects the ball resting near a head)
     "dwell_window_frames": 3,
     "dwell_distance_factor": 1.2,
+    "dwell_distance_m": None,
     "dwell_max_frames": 5,
     # de-duplication
     "nms_window_frames": 25,
@@ -649,6 +652,48 @@ DEFAULT_SKELETON_RULE_PARAMS = {
     "metadata_end_field": "end_utc",
     "confidence_output_key": "confidence_score",
     "position_offset_ms": 0.0,
+}
+
+
+SKELETON_RULE_VARIANTS = {
+    "h5_header_skeleton": {},
+    # Recall-first: keep only the gates that cost (almost) no true headers.
+    # The trajectory gates and the narrow height band together reject about a
+    # tenth of real headers -- flick-ons and glancing contacts barely disturb
+    # the ball -- so they are dropped. The hand check is kept because it is
+    # nearly free in recall and removes many arm and keeper contacts, and the
+    # wider suppression window merges the extra detections each duel produces.
+    "h5_header_skeleton_recall": {
+        # Any tracked head joint counts, not just the nose: a nose is often
+        # untracked while an ear or the neck is, and skipping those players
+        # loses contacts outright.
+        "head_joints": ["nose", "neck", "l_ear", "r_ear", "l_eye", "r_eye"],
+        "velocity_change_min_mps": 0.0,
+        "velocity_mag_min_mps": 0.0,
+        # A 10 degree bend is the one trajectory test worth keeping here. It
+        # costs 2.9 points of recall and returns 8 of precision: 97.1/69.4 with
+        # it, 100.0/61.4 without. Set to 0.0 when a missed header matters more
+        # than a false one; that finds every annotated header on the 2022 final.
+        "angle_change_min_deg": 10.0,
+        "accel_z_change_min_mps2": 0.0,
+        "incoming_speed_min_mps": 0.0,
+        "ball_height_min_m": 0.5,
+        "ball_height_max_m": 8.0,
+        "ankle_height_max_m": 99.0,
+        "dwell_max_frames": 999999,
+        "nms_window_frames": 40,
+        "created_by": "h5_header_skeleton_recall_rule",
+    },
+}
+
+# Recall taken as far as it goes: the same settings with the bend test off.
+# On the 2022 final that finds every annotated header, 100% recall at 61.4%
+# precision, against 97.1/69.4 with the bend test. Two in five predictions are
+# then wrong, so this is for building a candidate set something else filters.
+SKELETON_RULE_VARIANTS["h5_header_skeleton_max_recall"] = {
+    **SKELETON_RULE_VARIANTS["h5_header_skeleton_recall"],
+    "angle_change_min_deg": 0.0,
+    "created_by": "h5_header_skeleton_max_recall_rule",
 }
 
 
@@ -681,8 +726,9 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
             rule_params = get_data_params(config)
         params = dict(DEFAULT_SKELETON_RULE_PARAMS)
         params.update(rule_params or {})
-        params.pop("type", None)
-        params["model_variant"] = self.variant_name
+        configured_variant = params.pop("type", None) or self.variant_name
+        params.update(SKELETON_RULE_VARIANTS.get(configured_variant, {}))
+        params["model_variant"] = configured_variant
         self.params = params
 
     def _predict_sample(self, sample, source_path):
@@ -820,13 +866,91 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
         return True, diagnostics
 
     # ------------------------------------------------------------ joints
-    _JOINT_COLUMNS = (
-        "nose_x", "nose_y", "nose_z",
+    _BODY_COLUMNS = (
         "l_wrist_x", "l_wrist_y", "l_wrist_z",
         "r_wrist_x", "r_wrist_y", "r_wrist_z",
         "l_shoulder_x", "l_shoulder_y", "r_shoulder_x", "r_shoulder_y",
         "l_ankle_z", "r_ankle_z",
     )
+
+    @property
+    def _JOINT_COLUMNS(self):
+        """Columns this run needs: the configured head joints plus the body."""
+        head = tuple(f"{joint}_{axis}"
+                     for joint in self.params["head_joints"] for axis in "xyz")
+        return head + self._BODY_COLUMNS
+
+    def _heads_within(self, joints, rows, ball_pos, max_dist):
+        """Find players at a frame whose head is inside the contact radius.
+
+        Vectorised across players and head joints; a frame usually has many
+        players and almost none of them near the ball.
+
+        Args:
+            joints (dict): Loaded joint columns.
+            rows (range): Row indexes for this frame.
+            ball_pos (np.ndarray): Ball position of shape (3,).
+            max_dist (float): Contact radius in metres.
+
+        Returns:
+            rows (List[int]): Row indexes inside the radius, nearest first.
+            distances (List[float]): Head-ball distance for each row.
+            joints_used (List[str]): Which head joint was nearest, per row.
+        """
+        lo, hi = rows.start, rows.stop
+        if lo >= hi:
+            return [], [], []
+
+        names = list(self.params["head_joints"])
+        invalid = float(self.params["invalid_value"])
+        points = np.stack(
+            [np.stack([joints[f"{n}_x"][lo:hi],
+                       joints[f"{n}_y"][lo:hi],
+                       joints[f"{n}_z"][lo:hi]], axis=1) for n in names],
+            axis=1,
+        )
+        distances = np.linalg.norm(points - ball_pos, axis=2)
+        untracked = (points[:, :, 0] == invalid) | ~np.isfinite(points).all(axis=2)
+        distances[untracked] = np.inf
+
+        nearest_joint = distances.argmin(axis=1)
+        nearest = distances.min(axis=1)
+        inside = np.flatnonzero(nearest < max_dist)
+        inside = inside[np.argsort(nearest[inside])]
+        return (
+            [lo + int(i) for i in inside],
+            [float(nearest[i]) for i in inside],
+            [names[int(nearest_joint[i])] for i in inside],
+        )
+
+    def _closest_head(self, joints, row, ball_pos):
+        """Find the tracked head joint nearest the ball for one player row.
+
+        Args:
+            joints (dict): Loaded joint columns.
+            row (int): Row index for the player at this frame.
+            ball_pos (np.ndarray): Ball position of shape (3,).
+
+        Returns:
+            distance (float): Distance to the nearest tracked head joint, or
+                None when no configured head joint is tracked on this row.
+            position (np.ndarray): That joint's position, or None.
+            name (str): That joint's name, or None.
+        """
+        invalid = float(self.params["invalid_value"])
+        best = (None, None, None)
+        for joint in self.params["head_joints"]:
+            point = np.array([
+                joints[f"{joint}_x"][row],
+                joints[f"{joint}_y"][row],
+                joints[f"{joint}_z"][row],
+            ])
+            if point[0] == invalid or not np.isfinite(point).all():
+                continue
+            distance = float(np.linalg.norm(point - ball_pos))
+            if best[0] is None or distance < best[0]:
+                best = (distance, point, joint)
+        return best
 
     def _load_joints(self, joint_path, wanted_frames=None):
         """Load joint rows, sorted by frame.
@@ -919,8 +1043,12 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
             count (int): Samples in the window with the head close to the ball.
         """
         p = self.params
-        invalid = float(p["invalid_value"])
-        near = float(p["head_ball_distance_max_m"]) * float(p["dwell_distance_factor"])
+        # Defaults to a multiple of the contact threshold; set dwell_distance_m
+        # to keep the dwell radius fixed when widening that threshold.
+        near = (
+            float(p["dwell_distance_m"]) if p.get("dwell_distance_m") is not None
+            else float(p["head_ball_distance_max_m"]) * float(p["dwell_distance_factor"])
+        )
         window = int(p["dwell_window_frames"])
         count = 0
         for offset in range(-window, window + 1):
@@ -928,12 +1056,10 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
             if check_idx < 0 or check_idx >= len(ball_frames):
                 continue
             row = self._row_for_player(joints, ball_frames[check_idx], player_id)
-            if row is None or joints["nose_x"][row] == invalid:
+            if row is None:
                 continue
-            nose = np.array([
-                joints["nose_x"][row], joints["nose_y"][row], joints["nose_z"][row],
-            ])
-            if float(np.linalg.norm(nose - ball_xyz[check_idx])) < near:
+            distance, _, _ = self._closest_head(joints, row, ball_xyz[check_idx])
+            if distance is not None and distance < near:
                 count += 1
         return count
 
@@ -997,15 +1123,17 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
             if not passed:
                 continue
             ball_pos = xyz[ball_idx]
-            for row in self._rows_at_frame(joints, frames[ball_idx]):
-                if joints["nose_x"][row] == invalid:
-                    continue
+            # Screen every player at this frame at once; only those with a head
+            # inside the contact radius are worth the per-player checks below.
+            rows = self._rows_at_frame(joints, frames[ball_idx])
+            near_rows, head_dists, head_joints = self._heads_within(
+                joints, rows, ball_pos, max_dist)
+            for row, head_dist, head_joint in zip(near_rows, head_dists, head_joints):
                 nose = np.array([
-                    joints["nose_x"][row], joints["nose_y"][row], joints["nose_z"][row],
+                    joints[f"{head_joint}_x"][row],
+                    joints[f"{head_joint}_y"][row],
+                    joints[f"{head_joint}_z"][row],
                 ])
-                head_dist = float(np.linalg.norm(nose - ball_pos))
-                if head_dist >= max_dist:
-                    continue
                 # facing: shoulder-line normal vs. direction to the ball (2-D)
                 facing = np.array([
                     -(joints["r_shoulder_y"][row] - joints["l_shoulder_y"][row]),
@@ -1025,7 +1153,7 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
                     float(np.linalg.norm(l_hand - ball_pos)),
                     float(np.linalg.norm(r_hand - ball_pos)),
                 )
-                if hand_dist < head_dist:
+                if p["hand_check_enabled"] and hand_dist < head_dist:
                     continue
                 # acrobatic pose: both feet must be below ankle_height_max
                 if (
@@ -1041,6 +1169,7 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
                     "ball_idx": int(ball_idx),
                     "frame": int(frames[ball_idx]),
                     "head_dist": head_dist,
+                    "joint": head_joint,
                     "player_id": player_id,
                     "is_home": (
                         int(joints["is_home"][row]) if joints["is_home"] is not None else None
@@ -1112,7 +1241,7 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
         if p["include_diagnostics"]:
             event["metadata"] = {
                 "distance_m": det["head_dist"],
-                "joint": "nose",
+                "joint": det["joint"],
                 "player_id": str(player_id) if player_id else None,
                 "team": (
                     None if det["is_home"] is None
@@ -1125,6 +1254,30 @@ class H5HeaderSkeletonSpotter(H5HeaderSpotterBase):
         return event
 
 
+class H5HeaderSkeletonRecallSpotter(H5HeaderSkeletonSpotter):
+    """Skeleton header spotting tuned for recall over precision.
+
+    Drops the trajectory and pose gates that reject real headers, keeping the
+    hand and facing checks. Finds nearly every header the tracking supports at
+    the cost of more false positives; use it to build a candidate set for
+    review or for a downstream classifier rather than as a final answer.
+    """
+
+    variant_name = "h5_header_skeleton_recall"
+
+
+class H5HeaderSkeletonMaxRecallSpotter(H5HeaderSkeletonSpotter):
+    """Skeleton header spotting with every gate that costs recall removed.
+
+    The recall variant without its bend test. It finds every annotated header
+    on the game it was measured against, at the cost of roughly two wrong
+    predictions in five, so it suits building a candidate set for review or for
+    a downstream classifier rather than answering on its own.
+    """
+
+    variant_name = "h5_header_skeleton_max_recall"
+
+
 def build_rule_based_model(config):
     rule_params = get_component_params_by_kind(config, "algorithm")
     variant = (rule_params or {}).get("type", "h5_header_distance")
@@ -1134,6 +1287,8 @@ def build_rule_based_model(config):
         "h5_header_distance_angle": H5HeaderDistanceAngleSpotter,
         "h5_header_distance_speed_angle": H5HeaderDistanceSpeedAngleSpotter,
         "h5_header_skeleton": H5HeaderSkeletonSpotter,
+        "h5_header_skeleton_recall": H5HeaderSkeletonRecallSpotter,
+        "h5_header_skeleton_max_recall": H5HeaderSkeletonMaxRecallSpotter,
     }
     try:
         return registry[variant](config)

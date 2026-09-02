@@ -1,7 +1,38 @@
 from __future__ import annotations
 
+import pytest
+
 from opensportslib import cli
 from opensportslib.setup import setup as setup_lib
+
+
+def test_select_cuda_wheel_uses_cu126_for_pre_sm75_gpu_with_cuda_13():
+    assert setup_lib.select_cuda_wheel("13.0", [(7, 0)]) == "cu126"
+
+
+def test_select_cuda_wheel_uses_cu126_for_pascal_with_cuda_13():
+    assert setup_lib.select_cuda_wheel("13.0", [(6, 0)]) == "cu126"
+
+
+def test_select_torch_packages_pins_pre_sm75_gpu_compatibility_stack():
+    assert setup_lib.select_torch_packages([(7, 0)]) == (
+        "torch==2.10.0",
+        "torchvision==0.25.0",
+        "torchaudio==2.10.0",
+    )
+
+
+def test_select_cuda_wheel_uses_cu130_for_dgx_spark():
+    assert setup_lib.select_cuda_wheel("13.0", [(12, 1)]) == "cu130"
+
+
+def test_select_cuda_wheel_rejects_new_architecture_without_cuda_13_driver():
+    with pytest.raises(RuntimeError, match="CUDA 13.0"):
+        setup_lib.select_cuda_wheel("12.8", [(10, 0)])
+
+
+def test_select_cuda_wheel_uses_highest_driver_compatible_wheel():
+    assert setup_lib.select_cuda_wheel("12.8", [(8, 0)]) == "cu128"
 
 
 def test_cli_setup_forwards_xvars_flag(monkeypatch):

@@ -1,3 +1,12 @@
+# Distance-family header spotting.
+#
+# One config for all four distance variants. Pick the variant on the `name:`
+# line under MODEL.components.rule.source, and tune the thresholds under
+# `params:`. Anything left out of `params:` falls back to
+# DEFAULT_HEADER_RULE_PARAMS in opensportslib/models/base/rule_based.py.
+#
+# The skeleton family has its own config, h5_header_skeleton.yaml.
+
 TASK: localization
 VERSION: 2
 
@@ -11,14 +20,19 @@ SYSTEM:
 DATA:
   common:
     dataset_name: h5_headers
-    data_root: ./data
+    # --- CHANGE THESE to point at your tracking data -------------------------
+    # data_root and source_path are the directory the manifest's relative paths
+    # resolve against. annotation_path is a manifest listing the joints/ball h5
+    # pairs to scan; generate one with --combined, or write your own. See
+    # docs/headers/README.md.
+    data_root: /home/giancos/FIFA_data
     classes:
       - header
     splits:
       test:
         type: H5OSLJsonSpotting
-        annotation_path: ./data/h5.json
-        source_path: ./data
+        annotation_path: ./outputs/header_spotting/manifest_all.json
+        source_path: /home/giancos/FIFA_data
         dataloader:
           batch_size: 1
           shuffle: false
@@ -46,44 +60,56 @@ MODEL:
       source:
         provider: opensportslib
         registry: rule_based
+        # --- CHANGE THIS to switch variant -------------------------------
+        #   h5_header_distance              no check on the ball path
+        #   h5_header_distance_angle        path must bend by 25 degrees
+        #   h5_header_distance_speed        speed must change by 25 per cent
+        #   h5_header_distance_speed_angle  both
+        # The name alone selects the trajectory mode. Setting
+        # trajectory_change_mode below has no effect: HEADER_RULE_VARIANTS is
+        # applied after these params and overwrites it.
         name: h5_header_distance
       params:
         label: header
         head_name: action
+
+        # --- contact ------------------------------------------------------
+        # A detection needs distance < distance_threshold_m AND confidence >
+        # min_confidence, where confidence is 1 - distance/threshold. The two
+        # multiply: 0.5 and 0.5 mean the ball must come within 25 cm.
         distance_threshold_m: 0.5
         min_confidence: 0.5
-        confidence_mode: linear_inverse_distance
-        confidence_power: 1.0
-        nms_window_ms: 1000
-        nms_scope: sample
-        ball_tolerance_ms: 60
-        chunk_size: 100000
+        # Which joints count as the head. Trim to [nose] to see how much the
+        # others contribute.
         head_joints: [nose, neck, l_eye, r_eye, l_ear, r_ear]
-        required_input_type: player_joints_h5
-        ball_path_field: ball_path
-        timestamp_field: timestamp_utc
-        output_task: action_spotting
-        include_diagnostics: true
-        position_ms_origin: joint_h5_start
-        metadata_start_field: start_utc
-        metadata_end_field: end_utc
-        ball_coordinate_fields: [x, y, z]
-        joint_coordinate_suffixes: [x, y, z]
-        identity_fields: [player_id, jersey_number, team_id, is_home]
-        invalid_coordinate_values: [-200.0]
-        sideline_filter_enabled: true
-        pitch_half_width_m: 50.0
-        sideline_exclusion_m: 1.0
-        sideline_reference: ball_y
-        trajectory_filter_enabled: false
-        trajectory_change_mode: either_angle_or_speed
+        # How stale a ball sample may be when matched to a joint row by time.
+        ball_tolerance_ms: 60
+
+        # --- trajectory, used by the angle and speed variants --------------
+        # Vectors are built from a ball sample this far before and after the
+        # contact, then compared for bend and for speed change.
         trajectory_pre_window_ms: 200
         trajectory_post_window_ms: 200
         trajectory_min_angle_deg: 25.0
         trajectory_min_speed_delta_ratio: 0.25
+        # Below this the ball has barely moved and the test is skipped.
         trajectory_min_vector_norm_m: 0.05
         trajectory_use_xy_only: false
-        confidence_output_key: confidence_score
+
+        # --- throw-ins ----------------------------------------------------
+        # Contacts nearer the touchline than sideline_exclusion_m are dropped.
+        sideline_filter_enabled: true
+        pitch_half_width_m: 50.0
+        sideline_exclusion_m: 1.0
+
+        # --- de-duplication -----------------------------------------------
+        # One detection per window, keeping the most confident.
+        nms_window_ms: 1000
+
+        # --- output --------------------------------------------------------
+        # Diagnostics carry the contact distance, joint, player and the
+        # measured trajectory values on every event.
+        include_diagnostics: true
   topology: []
 
 TRAIN:

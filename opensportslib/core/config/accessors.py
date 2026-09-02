@@ -182,11 +182,32 @@ def get_split_source_path(cfg: Any, split: str) -> str | None:
     return getattr(split_cfg, "source_path", None)
 
 
+def classes_to_ordered_list(classes: Any) -> list[str]:
+    """Normalise a classes spec to a list ordered by class index.
+
+    Classes appear either as a list (already in index order) or as a
+    ``{name: index}`` mapping - the form written into a run's saved
+    config.yaml. ``list(mapping)`` returns keys in *insertion* order, and a
+    mapping round-tripped through YAML comes back alphabetically sorted, so
+    that would silently permute the class<->index mapping when a checkpoint's
+    config is reloaded for inference. Always order a mapping by its indices.
+    """
+    if classes is None:
+        return []
+    if OmegaConf is not None and OmegaConf.is_config(classes):
+        classes = OmegaConf.to_container(classes, resolve=True)
+    if isinstance(classes, dict):
+        try:
+            return [name for name, _ in sorted(classes.items(), key=lambda kv: int(kv[1]))]
+        except (TypeError, ValueError):
+            return list(classes)
+    return list(classes)
+
+
 def get_data_classes(cfg: Any) -> list[str]:
     data = _as_dict(getattr(cfg, "DATA", None))
     common = _as_dict(data.get("common"))
-    classes = common.get("classes", [])
-    return list(classes) if classes is not None else []
+    return classes_to_ordered_list(common.get("classes", []))
 
 
 def get_data_num_classes(cfg: Any, default: int = 0) -> int:

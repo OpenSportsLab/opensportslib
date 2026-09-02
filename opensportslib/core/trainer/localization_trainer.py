@@ -41,8 +41,10 @@ from opensportslib.core.config.accessors import (
 from opensportslib.core.optimizer.builder import build_optimizer
 from opensportslib.core.scheduler.builder import build_scheduler
 from opensportslib.core.utils.config import store_json
+from opensportslib.core.utils.load_annotations import expand_localization_intervals
 from opensportslib.datasets.builder import build_dataset
 import os
+import math
 import torch
 import wandb
 import time
@@ -397,15 +399,21 @@ class Trainer_e2e(Trainer):
 
             # ---------------- W&B LOG ----------------
             if wandb.run is not None:
-                wandb.log({
+                payload = {
                     "epoch": epoch + 1,
                     "train/loss": train_loss,
                     "valid/loss": valid_loss,
-                    "valid/mAP": valid_mAP,
                     "lr": self.optimizer.param_groups[0]["lr"],
                     "best/mAP": self.best_criterion_valid if self.criterion_valid == "map" else None,
                     "best/loss": self.best_criterion_valid if self.criterion_valid == "loss" else None,
-                })
+                }
+                # Whole-match mAP only runs every valid_map_every epochs.
+                # Logging a placeholder 0 on the other epochs drew a sawtooth
+                # collapsing to zero between real measurements; omit the key
+                # instead so the chart connects the points that exist.
+                if valid_mAP:
+                    payload["valid/mAP"] = valid_mAP
+                wandb.log(payload)
 
             if self.save_dir is not None:
                 os.makedirs(self.save_dir, exist_ok=True)
@@ -847,8 +855,23 @@ class Evaluator:
             videos = GT_data["videos"]
             gt_is_v2 = False
         else:
-            videos = GT_data["data"]
+            all_segments = [
+                segment
+                for record in GT_data["data"]
+                for segment in expand_localization_intervals(record)
+            ]
+            videos = [
+                segment
+                for segment in all_segments
+                if segment["annotation_status"] == "verified"
+            ]
             gt_is_v2 = True
+            logging.info(
+                "Localization evaluation selected %d/%d verified logical "
+                "segments.",
+                len(videos),
+                len(all_segments),
+            )
 
         # --------------------------------------------------
         # BUILD PRED LOOKUP IF V2
@@ -866,6 +889,9 @@ class Evaluator:
         targets_numpy = []
         detections_numpy = []
         closests_numpy = []
+        # Rate the dense vectors below end up sampled at; the mAP tolerances
+        # are in seconds and must be converted with this same rate.
+        eval_framerate = self.extract_fps
 
         # ==================================================
         # LOOP
@@ -874,11 +900,17 @@ class Evaluator:
             
             # ---------------- GT ----------------
             if gt_is_v2:
-                video_path = game["inputs"][0]["path"]
-                labels = [{"label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                          } for e in game.get("events", [])]
+                video_path = game["logical_path"]
+                labels = [
+                    {
+                        "label": event.get("label"),
+                        "gameTime": event.get("gameTime"),
+                        "position": int(
+                            event.get("position_ms", event.get("position"))
+                        ),
+                    }
+                    for event in game.get("events", [])
+                ]
             else:
                 video_path = game["path"]
                 labels = game["annotations"]
@@ -890,20 +922,24 @@ class Evaluator:
                     raw_key, no_ext_key = _normalize_pred_key(video_path)
                     item = pred_lookup.get(raw_key) or pred_lookup.get(no_ext_key)
                     if item is None:
-                        continue
-
-                    fps = item["inputs"][0].get("fps", self.extract_fps)
-
-                    predictions = [
-                        {
-                           "label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                           "frame": e.get("frame")
-                        }
-                        for e in item.get("events", [])
-                    ]
+                        fps = self.extract_fps
+                        predictions = []
+                    else:
+                        fps = item["inputs"][0].get(
+                            "fps", self.extract_fps
+                        )
+                        predictions = [
+                            {
+                               "label": e.get("label"),
+                               "gameTime": e.get("gameTime"),
+                               "confidence": e.get("confidence"),
+                               "position": int(
+                                   e.get("position_ms", e.get("position"))
+                               ),
+                               "frame": e.get("frame")
+                            }
+                            for e in item.get("events", [])
+                        ]
 
                 # ===== OLD PRED =====
                 else:
@@ -918,36 +954,57 @@ class Evaluator:
                 pred_file = os.path.join(results, os.path.splitext(video_path)[0], "results_spotting.json")
 
                 if not os.path.exists(pred_file):
-                    continue
-                
-                with open(pred_file, encoding="utf-8") as f:
-                    pred_data_local = json.load(f)
-
-                if "data" in pred_data_local:
-                    # v2 file inside folder
-                    item = pred_data_local["data"][0]
-                    fps = item["inputs"][0].get("fps", self.extract_fps)
-
-                    predictions = [
-                        {
-                           "label": e.get("label"),  
-                           "gameTime": e.get("gameTime"),
-                           "confidence": e.get("confidence"),
-                           "position": int(e.get("position_ms", e.get("position"))),
-                           "frame": e.get("frame")
-                        }
-                        for e in item.get("events", [])
-                    ]
+                    fps = self.extract_fps
+                    predictions = []
                 else:
-                    predictions = pred_data_local["predictions"]
-                    fps = pred_data_local.get("fps", self.extract_fps)
+                    with open(pred_file, encoding="utf-8") as f:
+                        pred_data_local = json.load(f)
+
+                    if "data" in pred_data_local:
+                        # v2 file inside folder
+                        item = pred_data_local["data"][0]
+                        fps = item["inputs"][0].get(
+                            "fps", self.extract_fps
+                        )
+
+                        predictions = [
+                            {
+                               "label": e.get("label"),
+                               "gameTime": e.get("gameTime"),
+                               "confidence": e.get("confidence"),
+                               "position": int(
+                                   e.get("position_ms", e.get("position"))
+                               ),
+                               "frame": e.get("frame")
+                            }
+                            for e in item.get("events", [])
+                        ]
+                    else:
+                        predictions = pred_data_local["predictions"]
+                        fps = pred_data_local.get("fps", self.extract_fps)
 
             # ---------------- VECTORS ----------------
-            dense_labels = label2vector(labels, num_classes=len(classes), EVENT_DICTIONARY=EVENT_DICTIONARY, framerate=fps)
+            # Size the dense vectors from the actual content instead of the
+            # 90-minute default: a match clock can run well past 90 min
+            # (kick-off offset, stoppage, half-time gap) and anything beyond
+            # the cap is clamped onto the final bin, silently merging events.
+            positions_ms = [a["position"] for a in labels] + [
+                p["position"] for p in predictions
+            ]
+            vector_size = int(fps * (max(positions_ms) / 1000)) + 2 if positions_ms else None
+            eval_framerate = fps
+
+            dense_labels = label2vector(
+                labels,
+                num_classes=len(classes),
+                EVENT_DICTIONARY=EVENT_DICTIONARY,
+                framerate=fps,
+                vector_size=vector_size,
+            )
 
             dense_predictions = predictions2vector(
                 predictions,
-                vector_size=None,
+                vector_size=vector_size,
                 framerate=fps,
                 num_classes=len(classes),
                 EVENT_DICTIONARY=EVENT_DICTIONARY,
@@ -968,6 +1025,7 @@ class Evaluator:
                 detections_numpy,
                 closests_numpy,
                 INVERSE_EVENT_DICTIONARY,
+                framerate=eval_framerate,
             )
         else:
             logging.warning("No predictions found.")

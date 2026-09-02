@@ -569,7 +569,15 @@ class FrameReader:
             img = img[1:, :, :]  # GB channels contain data
         return img
 
-    def load_frames_ocv(self, video_name, start, end, pad=False):
+    def load_frames_ocv(
+        self,
+        video_name,
+        start,
+        end,
+        pad=False,
+        source_start_frame=None,
+        source_end_frame=None,
+    ):
         """Load frames from a video to create a clip of frames.
 
         Args:
@@ -578,6 +586,10 @@ class FrameReader:
             start (int): Start frame at which we load the clip.
             end (int): End frame at which we finish the clip.
             pad (bool): Whether to apply padding to the clip or not.
+            source_start_frame (int | None): First physical frame of a logical
+                interval. Both source bounds must be provided together.
+            source_end_frame (int | None): Exclusive physical end frame of a
+                logical interval.
         """
         import cv2
         import torch.nn as nn
@@ -600,6 +612,7 @@ class FrameReader:
         #     video_path = os.path.join(self._video_dir, video_name + self.extension)
         vc = cv2.VideoCapture(video_name)
         fps = vc.get(cv2.CAP_PROP_FPS)
+        total_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
 
         oh = self.TARGET_HEIGHT
         ow = self.TARGET_WIDTH
@@ -608,13 +621,57 @@ class FrameReader:
         rand_crop_state = None
         rand_state_backup = None
         ret = []
+        requested_frames = end - start
+        if requested_frames <= 0:
+            vc.release()
+            raise ValueError(f"Invalid requested frame range [{start}, {end})")
+
+        stride_extract = get_stride(fps)
+        bounded = source_start_frame is not None or source_end_frame is not None
+        if bounded and (
+            source_start_frame is None or source_end_frame is None
+        ):
+            vc.release()
+            raise ValueError(
+                "Both source_start_frame and source_end_frame are required."
+            )
+
         n_pad_start = 0
         n_pad_end = 0
-        stride_extract = get_stride(fps)
-        vc.set(cv2.CAP_PROP_POS_FRAMES, start * stride_extract)
+        if bounded:
+            source_start_frame = int(source_start_frame)
+            source_end_frame = int(source_end_frame)
+            if not 0 <= source_start_frame < source_end_frame <= total_frames:
+                vc.release()
+                raise ValueError(
+                    f"Invalid source interval [{source_start_frame}, "
+                    f"{source_end_frame}) for {video_name} with "
+                    f"{total_frames} frames."
+                )
+            logical_num_frames = int(
+                math.ceil(
+                    (source_end_frame - source_start_frame) / stride_extract
+                )
+            )
+            n_pad_start = max(0, -start)
+            logical_start = max(0, start)
+            logical_end = min(end, logical_num_frames)
+            frames_to_read = max(0, logical_end - logical_start)
+            target_start_frame = (
+                source_start_frame + logical_start * stride_extract
+            )
+            physical_stop_frame = source_end_frame
+        else:
+            frames_to_read = requested_frames
+            target_start_frame = start * stride_extract
+            physical_stop_frame = total_frames
+
+        vc.set(cv2.CAP_PROP_POS_FRAMES, target_start_frame)
         out_frame_num = 0
         i = 0
-        while True:
+        while out_frame_num < frames_to_read:
+            if target_start_frame + i >= physical_stop_frame:
+                break
             ret, frame = vc.read()
             if ret:
                 if i % stride_extract == 0:
@@ -640,12 +697,15 @@ class FrameReader:
                     frames.append(img)
                     out_frame_num += 1
                 i += 1
-                if out_frame_num == (end - start):
-                    break
             else:
-                n_pad_end = (end - start) - out_frame_num
                 break
+        n_pad_end = requested_frames - n_pad_start - out_frame_num
         vc.release()
+        if not frames:
+            raise ValueError(
+                f"No frames read for logical range [{start}, {end}) from "
+                f"{video_name}."
+            )
         # In the multicrop case, the shape is (B, T, C, H, W)
         frames = torch.stack(frames, dim=int(len(frames[0].shape) == 4))
         if self._same_transform:
@@ -877,6 +937,8 @@ class ActionSpotDataset(Dataset):
             base_idx,
             base_idx + self._clip_len * self._stride,
             pad=True,
+            source_start_frame=video_meta.get("source_start_frame"),
+            source_end_frame=video_meta.get("source_end_frame"),
         )
 
         return {
@@ -1093,7 +1155,15 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
                 (clip_len - overlap_len) * self._stride,
             ):
                 has_clip = True
-                self._clips.append((l["path"], l["video"], i))
+                self._clips.append(
+                    (
+                        l["path"],
+                        l["video"],
+                        i,
+                        l.get("source_start_frame"),
+                        l.get("source_end_frame"),
+                    )
+                )
             assert has_clip, l
 
     def __len__(self):
@@ -1108,9 +1178,20 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
         Returns:
             dict :{"video","start","frame"}.
         """
-        video_path, video_name, start = self._clips[idx]
+        (
+            video_path,
+            video_name,
+            start,
+            source_start_frame,
+            source_end_frame,
+        ) = self._clips[idx]
         frames = self._frame_reader.load_frames_ocv(
-            video_name, start, start + self._clip_len * self._stride, pad=True
+            video_name,
+            start,
+            start + self._clip_len * self._stride,
+            pad=True,
+            source_start_frame=source_start_frame,
+            source_end_frame=source_end_frame,
         )
         # ,stride=self._stride)
 
@@ -1463,6 +1544,23 @@ class TrackingActionSpotVideoDataset(Dataset, _TrackingGraphWindowMixin, Dataset
         window, positions = self._slice_window(video_meta, start)
         graphs = self._build_graphs(window, positions)
         return {"video": video_path, "start": start // self._stride, "graphs": graphs}
+
+    @property
+    def frame_times(self):
+        """Map each video to the absolute match clock (ms) of its decimated frames.
+
+        Unlike a decoded video, a tracking parquet's frame index is not a
+        multiple of the frame period: recording starts mid-broadcast (row 0
+        can be ~80 s into the clock) and the clock jumps ~60-90 s across
+        half-time. process_frame_predictions uses this to report predictions
+        on the same clock the annotations' position_ms uses; without it every
+        prediction lands tens of seconds away from its ground truth.
+        """
+        return {
+            v["path"]: v["frame_times"]
+            for v in self._labels
+            if v.get("frame_times") is not None
+        }
 
 
 if DALI_AVAILABLE:

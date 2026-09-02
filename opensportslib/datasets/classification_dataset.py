@@ -437,6 +437,8 @@ class TrackingDataset(ClassificationDataset):
         super().__init__(config, annotations_path, processor=None, split=split)
 
         from opensportslib.datasets.utils.tracking import (
+            FEATURE_DIM,
+            NUM_OBJECTS,
             HorizontalFlip,
             TeamFlip,
             VerticalFlip,
@@ -458,8 +460,12 @@ class TrackingDataset(ClassificationDataset):
         self.r = encoder_cfg.get("radius", encoder_cfg.get("r"))
         self.preload_data = params_cfg.get("preload_data", False)
         objects_cfg = params_cfg.get("objects", {}) or {}
-        self._NUM_OBJECTS = int(objects_cfg.get("num_objects", self._NUM_OBJECTS))
-        self._FEATURE_DIM = int(objects_cfg.get("feature_dim", self._FEATURE_DIM))
+        # Fall back to the canonical layout constants rather than to these
+        # attributes themselves - they have no class-level definition, so the
+        # self-referencing default raised AttributeError and made this dataset
+        # impossible to construct.
+        self._NUM_OBJECTS = int(objects_cfg.get("num_objects", NUM_OBJECTS))
+        self._FEATURE_DIM = int(objects_cfg.get("feature_dim", FEATURE_DIM))
         self._pitch_half_length = float(objects_cfg.get("pitch_half_length", 85.0))
         self._pitch_half_width = float(objects_cfg.get("pitch_half_width", 50.0))
         self._max_displacement = float(objects_cfg.get("max_displacement", 110.0))

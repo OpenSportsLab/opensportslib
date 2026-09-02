@@ -211,7 +211,6 @@ def _download_parquet_split_and_convert(
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    _, _, snapshot_download = _import_hf_hub()
     cleaned_repo_id = str(repo_id or "").strip()
     cleaned_revision = str(revision or "").strip() or "main"
     cleaned_split = _clean_hf_split(split)
@@ -219,9 +218,36 @@ def _download_parquet_split_and_convert(
         raise ValueError("repo_id is required.")
 
     os.makedirs(output_dir, exist_ok=True)
+    output_json_path = Path(output_dir) / f"{cleaned_split}.json"
+    if output_json_path.is_file():
+        _emit_progress(
+            progress_cb,
+            f"JSON already exists at {output_json_path}; skipping Parquet/WebDataset download and conversion.",
+        )
+        return {
+            "repo_id": cleaned_repo_id,
+            "revision": cleaned_revision,
+            "split": cleaned_split,
+            "folder_path": cleaned_split,
+            "output_dir": output_dir,
+            "json_path": str(output_json_path),
+            "source": "parquet_split",
+            "download_kind": "parquet",
+            "downloaded_file_count": 0,
+            "download_skipped": True,
+            "extracted_media": True,
+            "extracted_media_count": 0,
+            "hf_source_metadata": {
+                "repo_id": cleaned_repo_id,
+                "branch": cleaned_revision,
+                "split": cleaned_split,
+            },
+        }
+
     _ensure_not_cancelled(is_cancelled)
     _emit_progress(progress_cb, f"Downloading Parquet split '{cleaned_split}' from {cleaned_repo_id}@{cleaned_revision}...")
 
+    _, _, snapshot_download = _import_hf_hub()
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
         snapshot_download(
@@ -235,8 +261,6 @@ def _download_parquet_split_and_convert(
         _ensure_not_cancelled(is_cancelled)
 
         parquet_dataset_dir = Path(tmp_dir) / cleaned_split
-        output_json_path = Path(output_dir) / f"{cleaned_split}.json"
-
         _emit_progress(progress_cb, f"Converting Parquet split to JSON and extracting media into {output_dir}...")
         conversion_result = convert_parquet_to_json(
             dataset_dir=parquet_dataset_dir,
@@ -269,6 +293,7 @@ def _download_parquet_split_and_convert(
         "json_path": str(output_json_path),
         "source": "parquet_split",
         "download_kind": "parquet",
+        "download_skipped": False,
         "num_samples": int(conversion_result.get("num_samples") or 0),
         "extracted_media": True,
         "extracted_media_count": int(conversion_result.get("extracted_media_files") or 0),
@@ -408,6 +433,131 @@ def _download_json_path_from_hf(
     result["hf_source_metadata"] = hf_source_metadata
     _emit_progress(progress_cb, "Download completed.")
     return result
+
+
+_PREFERRED_SPLIT_ORDER = ["train", "valid", "val", "validation", "test", "challenge"]
+_NON_SPLIT_JSON_FILES = {"dataset_infos.json", "dataset_dict.json"}
+
+
+def _sort_splits(splits: set[str]) -> list[str]:
+    def _sort_key(name: str) -> tuple[int, str]:
+        try:
+            rank = _PREFERRED_SPLIT_ORDER.index(name.lower())
+        except ValueError:
+            rank = len(_PREFERRED_SPLIT_ORDER)
+        return (rank, name.lower())
+
+    return sorted(splits, key=_sort_key)
+
+
+def list_dataset_branches_on_hf(
+    repo_id: str,
+    *,
+    token: str | None = None,
+) -> list[str]:
+    cleaned_repo_id = str(repo_id or "").strip()
+    if not cleaned_repo_id:
+        raise ValueError("repo_id is required.")
+
+    HfApi, _, _ = _import_hf_hub()
+    api = HfApi(token=token or None)
+    refs = api.list_repo_refs(cleaned_repo_id, repo_type="dataset")
+    branch_names = [str(branch.name) for branch in getattr(refs, "branches", [])]
+
+    unique_names = sorted(set(branch_names))
+    if "main" in unique_names:
+        unique_names.remove("main")
+        return ["main"] + unique_names
+    return unique_names
+
+
+def list_dataset_splits_on_hf(
+    repo_id: str,
+    revision: str,
+    *,
+    token: str | None = None,
+) -> dict[str, Any]:
+    cleaned_repo_id = str(repo_id or "").strip()
+    cleaned_revision = str(revision or "").strip() or "main"
+    if not cleaned_repo_id:
+        raise ValueError("repo_id is required.")
+
+    HfApi, _, _ = _import_hf_hub()
+    api = HfApi(token=token or None)
+    repo_files = api.list_repo_files(
+        cleaned_repo_id,
+        revision=cleaned_revision,
+        repo_type="dataset",
+    )
+
+    parquet_splits: set[str] = set()
+    json_splits: set[str] = set()
+    for path in repo_files:
+        normalized = _normalize_repo_path(path)
+        if "/" in normalized:
+            folder, filename = normalized.split("/", 1)
+            # Only the canonical Parquet+WebDataset export layout counts as a
+            # parquet split (produced by convert_json_to_parquet / expected by
+            # convert_parquet_to_json): `{split}/metadata.parquet` plus TAR
+            # shards under `{split}/shards/`. A JSON-format dataset can also
+            # reference arbitrary `.parquet` media files (e.g. tensor-encoded
+            # videos) under a folder that happens to share the split's name,
+            # so a loose "any .parquet/.tar anywhere under this folder" check
+            # would misclassify those as Parquet+WebDataset splits.
+            if folder and (
+                filename == "metadata.parquet"
+                or (filename.startswith("shards/") and filename.lower().endswith(".tar"))
+            ):
+                parquet_splits.add(folder)
+        elif normalized.lower().endswith(".json") and normalized not in _NON_SPLIT_JSON_FILES:
+            json_splits.add(normalized[: -len(".json")])
+
+    if parquet_splits:
+        return {"format": "parquet", "splits": _sort_splits(parquet_splits)}
+    if json_splits:
+        return {"format": "json", "splits": _sort_splits(json_splits)}
+    return {"format": None, "splits": []}
+
+
+def download_dataset_splits_from_hf(
+    repo_id: str,
+    revision: str,
+    splits: list[str],
+    output_dir: str,
+    *,
+    download_format: str = "parquet",
+    dry_run: bool = False,
+    token: str | None = None,
+    progress_cb: ProgressCallback | None = None,
+    is_cancelled: CancelCheck | None = None,
+) -> list[dict[str, Any]]:
+    cleaned_splits = [str(split or "").strip() for split in (splits or [])]
+    cleaned_splits = [split for split in cleaned_splits if split]
+    if not cleaned_splits:
+        raise ValueError("At least one split is required.")
+
+    total = len(cleaned_splits)
+    results: list[dict[str, Any]] = []
+    for idx, split in enumerate(cleaned_splits, start=1):
+        _ensure_not_cancelled(is_cancelled)
+
+        def _scoped_progress(message: str, _idx: int = idx, _split: str = split) -> None:
+            _emit_progress(progress_cb, f"[{_idx}/{total}] {_split}: {message}")
+
+        result = download_dataset_split_from_hf(
+            repo_id,
+            revision,
+            split,
+            output_dir,
+            download_format=download_format,
+            dry_run=dry_run,
+            token=token,
+            progress_cb=_scoped_progress,
+            is_cancelled=is_cancelled,
+        )
+        results.append(result)
+
+    return results
 
 
 def download_dataset_split_from_hf(

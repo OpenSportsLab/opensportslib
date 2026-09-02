@@ -18,6 +18,11 @@ Notes:
 - For PyTorch, select one wheel tag: `cpu`, `cu126`, `cu128`, or `cu130`.
 - For DALI, CUDA 12.x uses the `nvidia-dali-cuda120` package, while CUDA 13.x uses `nvidia-dali-cuda130`.
 - For CuPy, CUDA 12.x uses `cupy-cuda12x`, while CUDA 13.x uses `cupy-cuda13x`.
+- `opensportslib setup` selects the wheel using both the driver CUDA version and visible GPU compute capabilities.
+- On Linux x86_64, GPUs from `SM 5.0` through `SM 7.4` use the pinned `torch==2.10.0`, `torchvision==0.25.0`, and `torchaudio==2.10.0` `cu126` builds. Newer PyTorch/cuDNN releases no longer support those architectures.
+- Linux ARM64 `cu126` wheels support Ampere and newer GPUs only. The installer reports a clear error instead of installing an unusable wheel for an older ARM64 GPU.
+- A host exposing both a legacy GPU (`SM 5.0` through `SM 7.4`) and a Blackwell GPU must select one compatible GPU group with `CUDA_VISIBLE_DEVICES` before setup.
+- GPUs from `SM 7.5` through `SM 9.x` use the highest wheel supported by the installed driver. GPUs at `SM 10.0` or newer, including DGX Spark (`SM 12.1`), require a CUDA 13.0-capable driver and use `cu130`.
 
 ## 1. Create a clean environment
 

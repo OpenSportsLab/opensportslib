@@ -101,6 +101,7 @@ def load_checkpoint(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    original_path = path
     ckpt_path = None
     hf_error = None
     is_local = os.path.exists(path)
@@ -110,18 +111,24 @@ def load_checkpoint(
     try:
         from huggingface_hub import hf_hub_download, whoami, login, list_repo_files
 
-        # Ensure auth if needed
-        if hf_token is None:
-            try:
-                whoami()
-            except Exception:
-                if sys.stdin.isatty():
-                    login()
-
         if not is_local:
             print(f"[HF] Inspecting repo: {path}")
-
-            files = list_repo_files(path, token=hf_token)
+            try:
+                files = list_repo_files(path, token=hf_token)
+            except PermissionError:
+                # Public repos should not require access to the local token cache.
+                # If the cache path is unreadable, retry unauthenticated instead of
+                # forcing an interactive login for a model that is already public.
+                files = list_repo_files(path, token=False)
+            except Exception:
+                # Only attempt auth recovery after an actual repo access failure.
+                if hf_token is None:
+                    try:
+                        whoami()
+                    except Exception:
+                        if sys.stdin.isatty():
+                            login()
+                files = list_repo_files(path, token=hf_token)
 
             # find checkpoint file automatically
             candidates = [
@@ -139,11 +146,18 @@ def load_checkpoint(
             hf_filename = candidates[0]
             print(f"[HF] Using checkpoint file: {hf_filename}")
 
-            ckpt_path = hf_hub_download(
-                repo_id=path,
-                filename=hf_filename,
-                token=hf_token,
-            )
+            try:
+                ckpt_path = hf_hub_download(
+                    repo_id=path,
+                    filename=hf_filename,
+                    token=hf_token,
+                )
+            except PermissionError:
+                ckpt_path = hf_hub_download(
+                    repo_id=path,
+                    filename=hf_filename,
+                    token=False,
+                )
 
             print(f"[HF] Loaded from cache: {ckpt_path}")
 
@@ -156,8 +170,12 @@ def load_checkpoint(
     path = expand(path)
     if ckpt_path is None:
         if not is_local:
+            details = ""
+            if hf_error is not None:
+                details = f" | HuggingFace error: {type(hf_error).__name__}: {hf_error}"
             raise FileNotFoundError(
-                f"Checkpoint not found on HuggingFace OR locally: {path}"
+                "Checkpoint not found on HuggingFace or locally. "
+                f"Input: {original_path} | expanded local path: {path}{details}"
             ) from hf_error
 
         ckpt_path = path
@@ -266,4 +284,3 @@ def load_checkpoint(
 def load_huggingface_checkpoint(config, path, device):
     from opensportslib.models.base.video_mae import load_video_mae_checkpoint
     return load_video_mae_checkpoint(config, device=device, ckpt_path=path)
-

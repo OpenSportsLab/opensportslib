@@ -17,6 +17,7 @@ checkpoints/
 runs/
 outputs/
 wandb/
+*.log
 
 # IDE
 .vscode/
@@ -29,3 +30,13 @@ dcgm
 
 
 checkpoints_tracking/
+checkpoints_as_tracking/
+checkpoints_as_video/
+checkpoints_gar/
+
+# Built dataset releases (rebuild with tools/convert/build_sngar_spotting.py)
+release/
+
+# Release verification tests (tests/release/) download real datasets and
+# write checkpoints/logs here -- never commit it.
+.release_test_cache/
