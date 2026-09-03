@@ -246,7 +246,12 @@ class BaseTrainerClassification:
         logging.info("Starting training")
         monitor = self.monitor
         mode = self.mode
-        best_metric = -float("inf") if mode == "max" else float("inf")
+        # when resuming, Trainer_Classification.train() seeds self.best_metric
+        # from the checkpoint before calling us; fresh runs leave it at the
+        # constructor default of None, so this is a no-op for them.
+        best_metric = self.best_metric
+        if best_metric is None:
+            best_metric = -float("inf") if mode == "max" else float("inf")
         best_path = None
 
         for epoch in range(epoch_start, self.max_epochs):
@@ -785,6 +790,9 @@ class Trainer_Classification:
         self.epoch = 0
         self.trainer = None
         self.predictions_payload = None
+        # populated by load(..., resume_training=True); consumed by train()
+        # to continue an interrupted run instead of starting fresh.
+        self._resume_state = None
 
     def compute_metrics(self, pred, mode="logits"):
         """thin wrapper around the metric module.
@@ -802,10 +810,13 @@ class Trainer_Classification:
 
     # -- training -----------------------------------------------
 
-    def train(self, model, train_dataset, val_dataset=None, rank=0, world_size=1):
+    def train(
+        self, model, train_dataset, val_dataset=None, rank=0, world_size=1,
+        resume_from=None,
+    ):
         """build all training components and run the loop.
 
-        detects the model type (HuggingFace vs. custom) and the data 
+        detects the model type (HuggingFace vs. custom) and the data
         modality (video vs. tracking) to select the right trainer class,
         sampler, and collate function.
 
@@ -815,6 +826,15 @@ class Trainer_Classification:
             val_dataset: validation ClassificationDataset (optional).
             rank: GPU rank (0-indexed).
             world_size: total number of GPUs.
+            resume_from: optional dict from `load(..., resume_training=True)`
+                -- {"optimizer", "scheduler", "epoch", "best_metric"}. When
+                given, the already-restored optimizer/scheduler are reused
+                instead of being built fresh, and training continues from
+                the saved epoch and best-metric rather than epoch 0. When
+                None (the default), behavior is unchanged from before this
+                parameter existed: a fresh optimizer/scheduler is built and
+                training starts at epoch 0 (or at self.epoch, for callers
+                that set it directly).
         """
         from opensportslib.core.loss.builder import build_criterion
         from opensportslib.core.optimizer.builder import build_optimizer
@@ -846,12 +866,29 @@ class Trainer_Classification:
             self.model = DDP(self.model, device_ids=[rank])
 
         # Build components
-        optimizer = build_optimizer(
-            self.model.parameters(), cfg=self.config.TRAIN.optimizer
-        )
-        scheduler = build_scheduler(
-            optimizer, cfg=self.config.TRAIN.scheduler
-        )
+        if resume_from is not None:
+            optimizer = resume_from["optimizer"]
+            scheduler = resume_from["scheduler"]
+            start_epoch = resume_from["epoch"]
+            target_epochs = self.config.TRAIN.epochs
+            if start_epoch >= target_epochs:
+                logging.error(f"Model already trained for {start_epoch} epochs")
+                logging.error(f"Target epochs in config: {target_epochs}")
+                logging.error(
+                    "Please increase TRAIN.epochs in config to continue training"
+                )
+                raise ValueError("Need to increase TRAIN.epochs to continue training")
+            logging.info(
+                f"Resuming training from epoch {start_epoch} to {target_epochs}"
+            )
+            self.epoch = start_epoch
+        else:
+            optimizer = build_optimizer(
+                self.model.parameters(), cfg=self.config.TRAIN.optimizer
+            )
+            scheduler = build_scheduler(
+                optimizer, cfg=self.config.TRAIN.scheduler
+            )
         criterion = build_criterion(self.config.TRAIN.criterion)
         train_sampling = get_train_sampling(self.config)
         train_selection = get_train_selection(self.config)
@@ -1006,6 +1043,9 @@ class Trainer_Classification:
             revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
             config=self.config,
         )
+
+        if resume_from is not None:
+            self.trainer.best_metric = resume_from.get("best_metric")
 
         self.trainer.train(
             epoch_start=self.epoch,
@@ -1261,13 +1301,39 @@ class Trainer_Classification:
         save_checkpoint(model, path, processor, tokenizer, optimizer, epoch)
         logging.info(f"Model saved at {path}")
 
-    def load(self, path, optimizer=None, scheduler=None):
+    def load(self, path, optimizer=None, scheduler=None, resume_training=False):
         """
-        Load model checkpoint. Returns loaded model, optimizer, epoch
+        Load model checkpoint. Returns loaded model, optimizer, epoch.
+
+        Args:
+            path: checkpoint path (local file or HuggingFace repo id).
+            optimizer: optional pre-built optimizer to restore state into.
+                Ignored when `resume_training` is True -- a fresh one is
+                built from this trainer's config instead.
+            scheduler: optional pre-built scheduler; same caveat as
+                `optimizer`.
+            resume_training: when True, also build a fresh optimizer/
+                scheduler from config, restore their state from the
+                checkpoint, and stash everything `train()` needs to
+                continue training (momentum, LR schedule, best-metric
+                tracking) in `self._resume_state`. Has no effect on the
+                model weights themselves -- only on whether training state
+                is reconstructed alongside them.
         """
         from opensportslib.models.builder import build_model
         if self.model is None:
             self.model, _ = build_model(self.config, self.device)
+
+        if resume_training:
+            from opensportslib.core.optimizer.builder import build_optimizer
+            from opensportslib.core.scheduler.builder import build_scheduler
+
+            logging.info("Building optimizer + scheduler for checkpoint restore...")
+            optimizer = build_optimizer(
+                self.model.parameters(), cfg=self.config.TRAIN.optimizer
+            )
+            scheduler = build_scheduler(optimizer, cfg=self.config.TRAIN.scheduler)
+
         self.model, optimizer, scheduler, scaler, epoch, checkpoint = load_checkpoint(
             self.model, path, optimizer, scheduler, device=self.device
         )
@@ -1276,4 +1342,18 @@ class Trainer_Classification:
         self.scaler = scaler
         self.epoch = epoch
         logging.info(f"Model loaded from {path}, epoch: {epoch}")
+
+        if resume_training:
+            self._resume_state = {
+                "optimizer": optimizer,
+                "scheduler": scheduler,
+                "epoch": epoch if epoch is not None else 0,
+                "best_metric": (
+                    checkpoint.get("best_metric")
+                    if isinstance(checkpoint, dict) else None
+                ),
+            }
+        else:
+            self._resume_state = None
+
         return self.model, self.optimizer, self.scheduler, self.epoch
