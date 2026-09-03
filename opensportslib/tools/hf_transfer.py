@@ -117,9 +117,13 @@ def extract_repo_paths_from_json(
                 if not isinstance(inp, dict):
                     continue
                 path = inp.get("path")
-                if not path:
-                    continue
-                repo_paths.append(str(path).lstrip("/"))
+                if path:
+                    repo_paths.append(str(path).lstrip("/"))
+                # player_joints_h5 / player_centroids_h5 inputs may carry a
+                # sidecar ball_path; download it alongside the primary input.
+                ball_path = inp.get("ball_path")
+                if ball_path:
+                    repo_paths.append(str(ball_path).lstrip("/"))
 
     if not repo_paths:
         raise ValueError("No file paths found in the provided JSON (no inputs with 'path').")
@@ -637,27 +641,36 @@ def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list
         for inp in inputs:
             if not isinstance(inp, dict):
                 continue
-            raw_path = str(inp.get("path") or "").strip()
-            if not raw_path:
-                continue
 
-            local_path = raw_path if os.path.isabs(raw_path) else os.path.join(base_dir, raw_path)
-            local_path = os.path.abspath(local_path)
-            if not os.path.isfile(local_path):
-                raise FileNotFoundError(
-                    f"Input file from dataset JSON not found on disk: {raw_path} (resolved: {local_path})"
+            raw_paths = []
+            path = str(inp.get("path") or "").strip()
+            if path:
+                raw_paths.append(path)
+            # player_joints_h5 / player_centroids_h5 inputs may carry a sidecar
+            # ball_path pointing at a separate ball-tracking h5 file; include it
+            # alongside the primary input when present.
+            ball_path = str(inp.get("ball_path") or "").strip()
+            if ball_path:
+                raw_paths.append(ball_path)
+
+            for raw_path in raw_paths:
+                local_path = raw_path if os.path.isabs(raw_path) else os.path.join(base_dir, raw_path)
+                local_path = os.path.abspath(local_path)
+                if not os.path.isfile(local_path):
+                    raise FileNotFoundError(
+                        f"Input file from dataset JSON not found on disk: {raw_path} (resolved: {local_path})"
+                    )
+
+                path_in_repo = _normalize_repo_path(raw_path)
+                if not path_in_repo:
+                    raise ValueError(f"Invalid input path in dataset JSON: {raw_path}")
+
+                entries.append(
+                    {
+                        "local_path": local_path,
+                        "path_in_repo": path_in_repo,
+                    }
                 )
-
-            path_in_repo = _normalize_repo_path(raw_path)
-            if not path_in_repo:
-                raise ValueError(f"Invalid input path in dataset JSON: {raw_path}")
-
-            entries.append(
-                {
-                    "local_path": local_path,
-                    "path_in_repo": path_in_repo,
-                }
-            )
 
     if not entries:
         raise ValueError("No valid data[].inputs[].path entries found in the provided dataset JSON.")

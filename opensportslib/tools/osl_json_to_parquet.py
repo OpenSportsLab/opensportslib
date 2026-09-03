@@ -149,9 +149,14 @@ def _estimate_sample_tar_size(
     for input_item in _extract_inputs_with_path(sample):
         rel_path = str(input_item["path"])
         resolved = _resolve_media_path(media_root, rel_path, missing_policy=missing_policy)
-        if resolved is None:
-            continue
-        total += _tar_member_size(resolved.stat().st_size)
+        if resolved is not None:
+            total += _tar_member_size(resolved.stat().st_size)
+
+        ball_rel_path = str(input_item.get("ball_path") or "").strip()
+        if ball_rel_path:
+            ball_resolved = _resolve_media_path(media_root, ball_rel_path, missing_policy=missing_policy)
+            if ball_resolved is not None:
+                total += _tar_member_size(ball_resolved.stat().st_size)
     return total
 
 
@@ -312,6 +317,7 @@ def convert_json_to_parquet(
                 for input_idx, input_item in enumerate(_extract_inputs_with_path(sample)):
                     rel_path = str(input_item["path"])
                     resolved = _resolve_media_path(media_root, rel_path, missing_policy=missing_policy)
+                    input_type = str(input_item.get("type", "")).strip()
 
                     if resolved is None:
                         total_missing_input_files += 1
@@ -319,25 +325,65 @@ def convert_json_to_parquet(
                             "sample_id": sample_id,
                             "shard_name": shard_name,
                             "input_index": input_idx,
-                            "input_type": str(input_item.get("type", "")).strip(),
+                            "file_role": "primary",
+                            "input_type": input_type,
                             "relative_path": rel_path,
+                            "resolved_path": None,
+                            "status": "missing",
+                        })
+                    else:
+                        ext = resolved.suffix.lstrip(".").lower() or "bin"
+                        arcname = f"{key}.{input_idx}.{ext}"
+                        _add_file_to_tar(tar, resolved, arcname)
+                        shard_manifest.append({
+                            "sample_id": sample_id,
+                            "shard_name": shard_name,
+                            "input_index": input_idx,
+                            "file_role": "primary",
+                            "input_type": input_type,
+                            "relative_path": rel_path,
+                            "resolved_path": str(resolved if not keep_relative_paths_in_parquet else rel_path),
+                            "status": "ok",
+                            "wds_member": arcname,
+                        })
+                        total_input_files_added += 1
+
+                    # player_joints_h5 / player_centroids_h5 inputs may carry a
+                    # sidecar ball_path pointing at a separate ball-tracking h5
+                    # file; bundle it into the same shard, tagged with a distinct
+                    # arcname (".ball.") so it doesn't collide with the primary
+                    # input's tar member.
+                    ball_rel_path = str(input_item.get("ball_path") or "").strip()
+                    if not ball_rel_path:
+                        continue
+                    ball_resolved = _resolve_media_path(media_root, ball_rel_path, missing_policy=missing_policy)
+                    if ball_resolved is None:
+                        total_missing_input_files += 1
+                        shard_manifest.append({
+                            "sample_id": sample_id,
+                            "shard_name": shard_name,
+                            "input_index": input_idx,
+                            "file_role": "ball",
+                            "input_type": input_type,
+                            "relative_path": ball_rel_path,
                             "resolved_path": None,
                             "status": "missing",
                         })
                         continue
 
-                    ext = resolved.suffix.lstrip(".").lower() or "bin"
-                    arcname = f"{key}.{input_idx}.{ext}"
-                    _add_file_to_tar(tar, resolved, arcname)
+                    ball_ext = ball_resolved.suffix.lstrip(".").lower() or "bin"
+                    ball_arcname = f"{key}.{input_idx}.ball.{ball_ext}"
+                    _add_file_to_tar(tar, ball_resolved, ball_arcname)
                     shard_manifest.append({
                         "sample_id": sample_id,
                         "shard_name": shard_name,
                         "input_index": input_idx,
-                        "input_type": str(input_item.get("type", "")).strip(),
-                        "relative_path": rel_path,
-                        "resolved_path": str(resolved if not keep_relative_paths_in_parquet else rel_path),
+                        "file_role": "ball",
+                        "input_type": input_type,
+                        "relative_path": ball_rel_path,
+                        "resolved_path": str(ball_resolved if not keep_relative_paths_in_parquet else ball_rel_path),
                         "status": "ok",
-                        "wds_member": arcname,
+                        "wds_member": ball_arcname,
                     })
                     total_input_files_added += 1
 
@@ -349,10 +395,21 @@ def convert_json_to_parquet(
             ok_manifest = manifest_df[manifest_df["status"] == "ok"].copy()
             if not ok_manifest.empty:
                 ok_manifest["input_index"] = ok_manifest["input_index"].astype(int)
+                primary_manifest = ok_manifest[ok_manifest["file_role"] == "primary"]
+                ball_manifest = ok_manifest[ok_manifest["file_role"] == "ball"]
+
                 by_sample_input_paths: Dict[str, Dict[int, str]] = {}
-                for sample_id, sample_manifest in ok_manifest.groupby("sample_id", sort=False):
+                for sample_id, sample_manifest in primary_manifest.groupby("sample_id", sort=False):
                     sample_manifest = sample_manifest.sort_values("input_index")
                     by_sample_input_paths[str(sample_id)] = {
+                        int(rec["input_index"]): str(rec["resolved_path"])
+                        for _, rec in sample_manifest.iterrows()
+                    }
+
+                by_sample_ball_paths: Dict[str, Dict[int, str]] = {}
+                for sample_id, sample_manifest in ball_manifest.groupby("sample_id", sort=False):
+                    sample_manifest = sample_manifest.sort_values("input_index")
+                    by_sample_ball_paths[str(sample_id)] = {
                         int(rec["input_index"]): str(rec["resolved_path"])
                         for _, rec in sample_manifest.iterrows()
                     }
@@ -368,6 +425,7 @@ def convert_json_to_parquet(
                         return json_dumps_compact(payload_copy)
 
                     resolved_by_index = by_sample_input_paths.get(str(row.get("sample_id")), {})
+                    resolved_ball_by_index = by_sample_ball_paths.get(str(row.get("sample_id")), {})
                     with_path_idx = 0
                     rewritten: List[Any] = []
                     for inp in inputs_value:
@@ -379,6 +437,10 @@ def convert_json_to_parquet(
                             resolved = resolved_by_index.get(with_path_idx)
                             if resolved is not None:
                                 inp_copy["path"] = resolved
+                            if inp_copy.get("ball_path"):
+                                resolved_ball = resolved_ball_by_index.get(with_path_idx)
+                                if resolved_ball is not None:
+                                    inp_copy["ball_path"] = resolved_ball
                             with_path_idx += 1
                         rewritten.append(inp_copy)
                     payload_copy["inputs"] = rewritten
