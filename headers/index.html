@@ -1,0 +1,2214 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="OpenSportsLib is the professional library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Header spotting from skeletal tracking - OpenSportsLib</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="green" data-md-color-accent="lime">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#header-spotting-from-skeletal-tracking" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="OpenSportsLib" class="md-header__button md-logo" aria-label="OpenSportsLib" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            OpenSportsLib
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Header spotting from skeletal tracking
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="green" data-md-color-accent="lime"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="green" data-md-color-accent="lime"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/OpenSportsLab/opensportslib" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenSportsLab/opensportslib
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../model-zoo/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Model Zoo
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tni/tni/" class="md-tabs__link">
+          
+  
+  
+  Training & Inference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../spotting/tracking-action-spotting/" class="md-tabs__link">
+          
+  
+  
+  Action Spotting
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../config/configuration-guide/" class="md-tabs__link">
+          
+  
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../data/osl-json-format/" class="md-tabs__link">
+          
+  
+  
+  Data Formats
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tools/dataset-conversion/" class="md-tabs__link">
+          
+  
+  
+  Tools
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="OpenSportsLib" class="md-nav__button md-logo" aria-label="OpenSportsLib" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    OpenSportsLib
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/OpenSportsLab/opensportslib" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenSportsLab/opensportslib
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../model-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Zoo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/project_structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/slurm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SLURM Guide (salloc, srun)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training & Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Training & Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tni/tni/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training & Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Action Spotting
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Action Spotting
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spotting/tracking-action-spotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tracking Action Spotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/configuration-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/legacy-to-canonical-mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy to Canonical Mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/developer-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Formats
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Formats
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/osl-json-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OSL JSON Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/dataset-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Conversion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/sngar-spotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SN-GAR Action Spotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/hf-dataset-transfer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hugging Face Dataset Transfer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/hf-model-upload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hugging Face Model Upload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/OpenSportsLab/opensportslib/edit/master/docs/headers/README.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="header-spotting-from-skeletal-tracking">Header spotting from skeletal tracking<a class="headerlink" href="#header-spotting-from-skeletal-tracking" title="Permanent link">&para;</a></h1>
+<p>Detect headers directly from 3-D player joints and ball tracking, with no
+trained model, and score the result against video annotations using the
+library's action-spotting mAP.</p>
+<h2 id="data">Data<a class="headerlink" href="#data" title="Permanent link">&para;</a></h2>
+<p>One directory per game, each holding two files:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Required columns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>live_ball.h5</code></td>
+<td><code>frame</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>timestamp_utc</code></td>
+</tr>
+<tr>
+<td><code>live_joints.h5</code></td>
+<td><code>frame</code>, <code>player_id</code>, and the joint coordinates below</td>
+</tr>
+</tbody>
+</table>
+<p>The joint coordinates the skeleton family reads are <code>l_wrist_x/y/z</code>,
+<code>r_wrist_x/y/z</code>, <code>l_shoulder_x/y</code>, <code>r_shoulder_x/y</code>, <code>l_ankle_z</code>, <code>r_ankle_z</code>,
+and <code>x/y/z</code> for every joint named in <code>head_joints</code>. Missing any of them raises
+rather than silently degrading, so a bad file fails immediately.</p>
+<p>Missing coordinates must be marked with the sentinel <code>-1.0</code>, which is what
+<code>invalid_value</code> matches; those rows are skipped.</p>
+<h3 id="annotations-only-for-scoring">Annotations, only for scoring<a class="headerlink" href="#annotations-only-for-scoring" title="Permanent link">&para;</a></h3>
+<p>Detection needs no annotations at all. They are required only by
+<code>--annotations</code>, which expects an OSL v2 file with <code>Header</code> and <code>Kickoff</code>
+events and the video's <code>UTC_time_start</code>.</p>
+<p>Tracking data and annotations are not part of the repository; pass your own with
+<code>--data-root</code> and <code>--annotations</code>.</p>
+<p>The annotations used to measure every number below are published in
+<a href="https://github.com/drishyakarki/pixels_vs_positions/blob/main/headers_data/FWC2022-final-224p-Milli-OpenSportsLib.json">pixels vs positions</a>.
+They cover the 2022 World Cup final and carry millisecond-precise header
+timings, which matters: see <a href="#reproducing-these-numbers">Reproducing these numbers</a>.</p>
+<p>Headers are annotated as positions inside the video file, while tracking rows
+are stamped in UTC. The video's <code>UTC_time_start</code> bridges the two:</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>utc = UTC_time_start + position_ms          position_ms = utc - UTC_time_start
+</code></pre></div>
+<h2 id="methods">Methods<a class="headerlink" href="#methods" title="Permanent link">&para;</a></h2>
+<p>Seven variants in two families. Every one starts from the same question, "did the
+ball come close to a head", then differs in what else it demands before calling
+that a header.</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Family</th>
+<th>What it adds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>distance</code></td>
+<td>distance</td>
+<td>Nothing. Ball within 25 cm of a head joint</td>
+</tr>
+<tr>
+<td><code>distance_angle</code></td>
+<td>distance</td>
+<td>Ball path bends by 25° at the contact</td>
+</tr>
+<tr>
+<td><code>distance_speed</code></td>
+<td>distance</td>
+<td>Ball speed changes by 25% at the contact</td>
+</tr>
+<tr>
+<td><code>distance_speed_angle</code></td>
+<td>distance</td>
+<td>Both the bend and the speed change</td>
+</tr>
+<tr>
+<td><code>skeleton</code></td>
+<td>skeleton</td>
+<td>Ball at head height, path bends, hands clear of the head, player facing the ball, feet on the ground, contact brief</td>
+</tr>
+<tr>
+<td><code>skeleton_recall</code></td>
+<td>skeleton</td>
+<td>Hands and facing only, over a wide height band, matching any tracked head joint</td>
+</tr>
+<tr>
+<td><code>skeleton_max_recall</code></td>
+<td>skeleton</td>
+<td>The same without the bend test, finding every annotated header</td>
+</tr>
+</tbody>
+</table>
+<p>The families differ in how they pair a player with the ball. The distance family
+matches on <strong>timestamp</strong>, taking the ball sample nearest in time within 60 ms.
+The skeleton family matches on <strong>frame number and player id</strong>, which is what
+lets it follow one player across neighbouring frames and measure how long the
+ball stayed near their head.</p>
+<h3 id="the-distance-family">The distance family<a class="headerlink" href="#the-distance-family" title="Permanent link">&para;</a></h3>
+<p><code>distance</code> is the plain version. For every joint row it takes the nearest ball
+sample in time, measures from six head joints (nose, neck, both eyes, both
+ears), and keeps contacts under <code>distance_threshold_m</code>, which is 0.5 m. Two
+filters then run: contacts within 1 m of the touchline are dropped as throw-ins,
+and overlapping detections are reduced to one per second, keeping the most
+confident.</p>
+<p>Confidence is <code>1 - distance / 0.5</code>, and a detection also has to clear
+<code>min_confidence</code>, which is 0.5. Those two settings interact, and the result is
+not obvious from either alone: requiring confidence above 0.5 means the ball
+must come within <strong>25 cm</strong>, half the nominal threshold.</p>
+<p>The other three add a check on what the ball did. At each contact the spotter
+takes a ball sample 200 ms before and 200 ms after, builds the vectors
+<code>before to contact</code> and <code>contact to after</code>, then measures the angle between them
+and the change in speed. <code>distance_angle</code> wants the angle to reach 25°,
+<code>distance_speed</code> wants the speed to change by 25%, and <code>distance_speed_angle</code>
+wants both. The measurement lives in <code>_trajectory_diagnostics</code>; each variant
+only sets <code>trajectory_change_mode</code>.</p>
+<p>Of the three, only the angle test earns its place. Speed is a poor signal for
+heading, because a flick-on or a glancing contact barely disturbs the ball, so
+both speed variants throw away more than half the real headers.</p>
+<h3 id="the-skeleton-family">The skeleton family<a class="headerlink" href="#the-skeleton-family" title="Permanent link">&para;</a></h3>
+<p>These judge the player, not only the ball, and that is where their advantage
+comes from. A contact has to survive eight checks, applied in a fixed order:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>Threshold</th>
+<th>Rejects</th>
+<th>Applied to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Ball at head height, coordinate valid, inside the scan window</td>
+<td><code>ball_height_min_m</code> 1.3, <code>ball_height_max_m</code> 3.0</td>
+<td>Ground passes and high clearances</td>
+<td>Every ball sample at once</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Ball speed changed</td>
+<td><code>velocity_change_min_mps</code> 2.0, <code>velocity_mag_min_mps</code> 1.0</td>
+<td>The ball drifting past untouched</td>
+<td>One candidate ball sample</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Ball path bent, and dropped or rose sharply, having arrived fast</td>
+<td><code>angle_change_min_deg</code> 10, <code>accel_z_change_min_mps2</code> 8.0, <code>incoming_speed_min_mps</code> 4.0</td>
+<td>A ball merely passing near a head</td>
+<td>One candidate ball sample</td>
+</tr>
+<tr>
+<td>4</td>
+<td>A head joint close to the ball</td>
+<td><code>head_ball_distance_max_m</code> 0.4, over <code>head_joints</code></td>
+<td>Everyone not in contact</td>
+<td>Every player on that frame at once</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Player facing the ball</td>
+<td><code>facing_dot_min</code> -0.5</td>
+<td>The ball striking the back of the head</td>
+<td>One player</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Both hands farther from the ball than the head</td>
+<td><code>hand_check_enabled</code></td>
+<td>Arm contacts and keeper grabs</td>
+<td>One player</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Both ankles low</td>
+<td><code>ankle_height_max_m</code> 1.2</td>
+<td>Acrobatic poses where the geometry is accidental</td>
+<td>One player</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Ball near the head on few enough neighbouring frames</td>
+<td><code>dwell_max_frames</code> 5, over <code>dwell_window_frames</code> 3</td>
+<td>A ball carried or held, rather than headed</td>
+<td>One player, across nearby frames</td>
+</tr>
+</tbody>
+</table>
+<p>Survivors are then reduced to one detection per <code>nms_window_frames</code>, which is 25
+frames or half a second, keeping the closest contact.</p>
+<p>The order does not change which contacts survive, since every check is an AND.
+It changes only the cost. Step 1 is a single vectorised mask that discards about
+96% of ball samples before any per-player work, step 4 screens every player on a
+frame in one operation so steps 5 to 8 usually run on nobody, and the dwell check
+is last because it is the most expensive: it has to look one player up across
+neighbouring frames, so only contacts that already passed everything else pay
+for it.</p>
+<p>One consequence worth knowing: because a rejected contact never becomes an
+event, the output cannot tell you which check turned it away. Diagnosing a
+missed header means instrumenting the gates directly.</p>
+<p><code>skeleton_recall</code> is the same detector with checks 2, 7 and 8 switched off,
+check 1 widened and check 3 reduced to the bend test at 10 degrees. It also
+matches on any tracked head joint instead of the nose alone.</p>
+<h3 id="how-confidence-is-scored">How confidence is scored<a class="headerlink" href="#how-confidence-is-scored" title="Permanent link">&para;</a></h3>
+<p>Confidence is the contact distance and nothing else, in both families:</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>distance family    1 - distance / 0.5
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>skeleton family    1 - distance / 0.4
+</code></pre></div>
+<p>Every other check is a pass or fail gate, so a contact that scraped through the
+trajectory test scores the same as one that sailed through it, if the distance
+matches. The measured angle and speed are recorded in each event's <code>metadata</code>
+for inspection, but nothing reads them back.</p>
+<p>This matters when reading mAP. All variants rank their detections the same way,
+by proximity, so a variant only improves its score by removing false positives,
+not by ordering the survivors better. It also makes confidence the natural knob
+for trimming <code>skeleton_recall</code>'s output after the fact.</p>
+<h3 id="where-the-settings-are">Where the settings are<a class="headerlink" href="#where-the-settings-are" title="Permanent link">&para;</a></h3>
+<p>All in <code>opensportslib/models/base/rule_based.py</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEFAULT_HEADER_RULE_PARAMS</code></td>
+<td>Defaults for the distance family</td>
+</tr>
+<tr>
+<td><code>HEADER_RULE_VARIANTS</code></td>
+<td>Per-variant trajectory mode</td>
+</tr>
+<tr>
+<td><code>DEFAULT_SKELETON_RULE_PARAMS</code></td>
+<td>Defaults for the skeleton family</td>
+</tr>
+<tr>
+<td><code>SKELETON_RULE_VARIANTS</code></td>
+<td>The <code>skeleton_recall</code> overrides</td>
+</tr>
+</tbody>
+</table>
+<p>Any of it can be overridden from a config, under <code>MODEL.components.rule.params</code>.</p>
+<h3 id="configs">Configs<a class="headerlink" href="#configs" title="Permanent link">&para;</a></h3>
+<p>Two configs ship with the library, one per family:</p>
+<table>
+<thead>
+<tr>
+<th>Config</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>h5_header_distance.yaml</code></td>
+<td>All four distance variants</td>
+</tr>
+<tr>
+<td><code>h5_header_skeleton.yaml</code></td>
+<td>All three skeleton variants</td>
+</tr>
+</tbody>
+</table>
+<p>Each threshold in them is annotated with what it controls and what the parameter
+sweep measured when it was changed.</p>
+<h4 id="choosing-the-variant">Choosing the variant<a class="headerlink" href="#choosing-the-variant" title="Permanent link">&para;</a></h4>
+<p>One line, under <code>MODEL.components.rule.source</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="w">      </span><span class="nt">source</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">        </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">opensportslib</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">        </span><span class="nt">registry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rule_based</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">h5_header_distance</span><span class="w">     </span><span class="c1"># &lt;- this line</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Config</th>
+<th>Valid <code>name:</code> values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>h5_header_distance.yaml</code></td>
+<td><code>h5_header_distance</code>, <code>h5_header_distance_angle</code>, <code>h5_header_distance_speed</code>, <code>h5_header_distance_speed_angle</code></td>
+</tr>
+<tr>
+<td><code>h5_header_skeleton.yaml</code></td>
+<td><code>h5_header_skeleton</code>, <code>h5_header_skeleton_recall</code>, <code>h5_header_skeleton_max_recall</code></td>
+</tr>
+</tbody>
+</table>
+<p>Nothing else needs to change. The name selects the variant's overrides from
+<code>HEADER_RULE_VARIANTS</code> or <code>SKELETON_RULE_VARIANTS</code>, so for the distance family it
+alone decides which trajectory test runs, and for the skeleton family it decides
+which of the three operating points you get.</p>
+<h4 id="changing-thresholds">Changing thresholds<a class="headerlink" href="#changing-thresholds" title="Permanent link">&para;</a></h4>
+<p>Copy a config, edit the <code>params:</code> block, and run it with <code>--config</code>. Values you
+set there win over the defaults in <code>rule_based.py</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cp<span class="w"> </span>opensportslib/configs/localization/h5_header_distance.yaml<span class="w"> </span>my_run.yaml
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># in my_run.yaml: set name: to the variant, then edit params:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--config<span class="w"> </span>my_run.yaml<span class="w"> </span>--output<span class="w"> </span>test.json
+</code></pre></div>
+<p>Two things to know before you tune:</p>
+<p><strong>Some settings cannot be overridden from a config.</strong> Variant tables are
+applied after your params. For the distance family that means
+<code>trajectory_change_mode</code>: the <code>name:</code> line alone decides whether the angle test,
+the speed test, both or neither runs. For <code>h5_header_skeleton_recall</code> it means
+twelve keys, including the head joints, the trajectory gates, both height bounds
+and the suppression window. Both configs list which ones.</p>
+<p><strong>The sweep ignores your params.</strong> <code>--games</code> and <code>--combined</code> generate their own
+config carrying only <code>label</code> and <code>head_name</code>, so they always run the defaults.
+Threshold experiments have to go through <code>--config</code>. Once you settle on values
+worth keeping, add them to <code>HEADER_RULE_VARIANTS</code> or <code>SKELETON_RULE_VARIANTS</code> as
+a named variant and they become available everywhere.</p>
+<h3 id="how-they-score">How they score<a class="headerlink" href="#how-they-score" title="Permanent link">&para;</a></h3>
+<p>Measured on the 2022 World Cup final against 105 annotated headers, at a
+one-second tolerance. Tight average mAP averages the score over tolerances of
+one to five seconds. Detection time is for that one game, on CPU, scanning the
+whole 178-minute tracking file.</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Predictions</th>
+<th>Recall</th>
+<th>Precision</th>
+<th>Tight avg mAP</th>
+<th>Detection time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>skeleton</code></td>
+<td>111</td>
+<td>91.4%</td>
+<td><strong>86.5%</strong></td>
+<td>69.2%</td>
+<td><strong>12 s</strong></td>
+</tr>
+<tr>
+<td><code>skeleton_recall</code></td>
+<td>147</td>
+<td>97.1%</td>
+<td>69.4%</td>
+<td><strong>69.2%</strong></td>
+<td>38 s</td>
+</tr>
+<tr>
+<td><code>skeleton_max_recall</code></td>
+<td>171</td>
+<td><strong>100.0%</strong></td>
+<td>61.4%</td>
+<td>66.2%</td>
+<td>37 s</td>
+</tr>
+<tr>
+<td><code>distance</code></td>
+<td>142</td>
+<td>95.2%</td>
+<td>70.4%</td>
+<td>59.4%</td>
+<td>368 s</td>
+</tr>
+<tr>
+<td><code>distance_angle</code></td>
+<td>134</td>
+<td>92.4%</td>
+<td>72.4%</td>
+<td>59.0%</td>
+<td>364 s</td>
+</tr>
+<tr>
+<td><code>distance_speed_angle</code></td>
+<td>87</td>
+<td>46.7%</td>
+<td>56.3%</td>
+<td>25.7%</td>
+<td>363 s</td>
+</tr>
+<tr>
+<td><code>distance_speed</code></td>
+<td>88</td>
+<td>46.7%</td>
+<td>55.7%</td>
+<td>25.1%</td>
+<td>367 s</td>
+</tr>
+</tbody>
+</table>
+<p>These numbers depend on the annotations being millisecond-precise. Scored
+against a second-rounded copy of the same annotations every variant loses
+three to seven points of mAP, because half a second of rounding noise sits
+right on the one-second tolerance.</p>
+<p>The two speed variants are not competitive: requiring the ball's speed to change
+by a quarter throws away more than half the real headers, because flick-ons and
+glancing contacts barely disturb it. Direction change is the gentler test, and
+<code>distance_angle</code> trades 2.8 points of recall for 2 of precision against plain
+<code>distance</code>, ending up marginally behind it on mAP.</p>
+<p>The skeleton variants lead because they judge the player, not only the ball:
+hands clear of the head, facing the ball, feet on the ground, contact brief.</p>
+<p>They are also about thirty times faster, which comes from how each family pairs
+a player with the ball. The distance family matches every joint row to a ball
+sample by timestamp, a per-row search over millions of rows. The skeleton family
+joins on frame number with a binary search and only reads joint rows near
+candidate frames. The four distance variants all cost the same, around six
+minutes a game, because the trajectory test runs after that matching and is
+cheap by comparison.</p>
+<h3 id="reproducing-these-numbers">Reproducing these numbers<a class="headerlink" href="#reproducing-these-numbers" title="Permanent link">&para;</a></h3>
+<p>Everything in the table above comes from one command against one game. To check
+it yourself:</p>
+<p><strong>1. Get the annotations.</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-LO<span class="w"> </span>https://raw.githubusercontent.com/drishyakarki/pixels_vs_positions/main/headers_data/FWC2022-final-224p-Milli-OpenSportsLib.json
+</code></pre></div>
+<p><strong>2. Point at your tracking data.</strong> You need the game's directory holding
+<code>live_joints.h5</code> and <code>live_ball.h5</code>. The annotations describe game <code>128083</code>, the
+2022 World Cup final.</p>
+<p><strong>3. Run the strict variant and score it.</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--data-root<span class="w"> </span>/path/to/FIFA_data<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span>--variants<span class="w"> </span>skeleton<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span>--annotations<span class="w"> </span>FWC2022-final-224p-Milli-OpenSportsLib.json
+</code></pre></div>
+<p>About 20 seconds, CPU only. Expect:</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>variant       #pred   mAP@1s   mAP@2s   ...   tight avg   rec@1s   prec@1s
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>skeleton        111   70.13%   70.13%         69.19%      91.4%    86.5%
+</code></pre></div>
+<p><strong>4. Compare variants</strong> by naming more of them. Add <code>--force</code> to re-detect
+rather than reuse the cache:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--data-root<span class="w"> </span>/path/to/FIFA_data<span class="w"> </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--variants<span class="w"> </span>skeleton,skeleton_recall<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--annotations<span class="w"> </span>FWC2022-final-224p-Milli-OpenSportsLib.json
+</code></pre></div>
+<p><strong>5. Re-score without re-detecting.</strong> Detection is cached per game and variant,
+so this returns in seconds:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>--data-root<span class="w"> </span>/path/to/FIFA_data<span class="w"> </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--variants<span class="w"> </span>skeleton<span class="w"> </span>--annotations<span class="w"> </span>FWC2022-final-224p-Milli-OpenSportsLib.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--assemble-only
+</code></pre></div>
+<p>Results land in <code>outputs/header_spotting/</code>: <code>map_results.json</code> for the scores,
+<code>raw/&lt;variant&gt;/&lt;game&gt;.json</code> for detections with their full diagnostics.</p>
+<h3 id="choosing-between-the-three-skeleton-variants">Choosing between the three skeleton variants<a class="headerlink" href="#choosing-between-the-three-skeleton-variants" title="Permanent link">&para;</a></h3>
+<p>They are one detector at three operating points, and the whole difference is
+how many false positives you will accept to catch the last few headers:</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Real headers found</th>
+<th>False positives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>skeleton</code></td>
+<td>96 of 105</td>
+<td>15</td>
+</tr>
+<tr>
+<td><code>skeleton_recall</code></td>
+<td>102 of 105</td>
+<td>45</td>
+</tr>
+<tr>
+<td><code>skeleton_max_recall</code></td>
+<td>105 of 105</td>
+<td>66</td>
+</tr>
+</tbody>
+</table>
+<p>Six more real headers cost thirty more false ones, and the last three cost
+twenty-one more, because the headers <code>skeleton</code> misses are genuinely ambiguous
+contacts rather than obvious ones the gates got wrong.</p>
+<p><code>skeleton</code> and <code>skeleton_recall</code> are level on mAP, 69.19 against 69.24, so
+neither ranks its detections better than the other. <code>skeleton_max_recall</code> gives
+up three points of mAP for the last three headers.</p>
+<p>Use <code>skeleton</code> when a prediction should be trustworthy on its own. Use
+<code>skeleton_recall</code> to build a candidate set that a human or a downstream
+classifier will filter, where a missed header is worse than a false one. Use
+<code>skeleton_max_recall</code> only when a miss is unacceptable and something else will
+do the filtering: two in five of its predictions are wrong.</p>
+<h4 id="how-skeleton_recall-was-tuned">How <code>skeleton_recall</code> was tuned<a class="headerlink" href="#how-skeleton_recall-was-tuned" title="Permanent link">&para;</a></h4>
+<p>Each gate was switched off on its own and the result measured, rather than
+guessed at. No single gate was to blame: each cost only one or two points of
+recall alone, but the four trajectory gates and the narrow height band together
+were rejecting about a tenth of the real headers, because a flick-on or a
+glancing contact barely disturbs the ball.</p>
+<p>Two gates earned their keep and stayed on. The hand check costs no recall at
+all and returns three points of precision. The facing check rejects nothing on
+this data, so it is free.</p>
+<p>A later sweep of 82 configurations added a third: a 10 degree bend test costs
+about three points of recall and returns eight of precision, so it is now on by
+default. <code>header_skeleton_sweep.xlsx</code> records every configuration tried.</p>
+<p>Widening the contact radius, the obvious next lever, backfires. At 0.6 m recall
+does not move and precision halves, partly because the dwell radius is derived
+from the contact threshold, so widening one tightens the other. <code>dwell_distance_m</code>
+exists to decouple them.</p>
+<h4 id="why-any-head-joint-not-just-the-nose">Why any head joint, not just the nose<a class="headerlink" href="#why-any-head-joint-not-just-the-nose" title="Permanent link">&para;</a></h4>
+<p>Across a 64-game run, only 23% of <code>skeleton_recall</code>'s detections match on the
+nose:</p>
+<table>
+<thead>
+<tr>
+<th>Joint</th>
+<th>Detections</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nose</td>
+<td>2,747</td>
+</tr>
+<tr>
+<td>l_eye</td>
+<td>2,293</td>
+</tr>
+<tr>
+<td>r_eye</td>
+<td>2,124</td>
+</tr>
+<tr>
+<td>r_ear</td>
+<td>1,971</td>
+</tr>
+<tr>
+<td>l_ear</td>
+<td>1,926</td>
+</tr>
+<tr>
+<td>neck</td>
+<td>1,008</td>
+</tr>
+</tbody>
+</table>
+<p>The other 9,322 come from an eye, an ear or the neck. The nose-only rule skipped
+a player outright whenever their nose was untracked, so every one of those
+contacts was lost. Those counts come from a run made before the bend gate became
+the default, so the totals have since changed; the proportion has not.</p>
+<h2 id="running-it">Running it<a class="headerlink" href="#running-it" title="Permanent link">&para;</a></h2>
+<p>One script covers everything. It runs on CPU; use an environment with <code>h5py</code>
+installed. Roughly 45 seconds per game.</p>
+<p>Spot headers across every game in a directory:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--data-root<span class="w"> </span>/path/to/games
+</code></pre></div>
+<p>One game, one variant:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span>--variants<span class="w"> </span>skeleton
+</code></pre></div>
+<p>Score against annotations, comparing variants:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span>--variants<span class="w"> </span>skeleton,skeleton_recall,distance<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span>--annotations<span class="w"> </span>WC22_multi.json
+</code></pre></div>
+<p>Rebuild the output files without re-detecting, once predictions are cached:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--assemble-only
+</code></pre></div>
+<p>Run a hand-written config as-is, without the sweep:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span>--config<span class="w"> </span>opensportslib/configs/localization/h5_header_skeleton.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span>--output<span class="w"> </span>predictions.json
+</code></pre></div>
+<p>Spot every game in a single pass and keep the spotter's own output, diagnostics
+and all, instead of reassembling per-game runs:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--combined<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--variants<span class="w"> </span>skeleton_recall<span class="w"> </span>--output<span class="w"> </span>h5_header_predictions.json
+</code></pre></div>
+<h3 id="three-ways-in">Three ways in<a class="headerlink" href="#three-ways-in" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>What it does</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code></td>
+<td>Runs one YAML config exactly as written</td>
+<td>Whatever that config covers</td>
+</tr>
+<tr>
+<td><code>--combined</code></td>
+<td>One manifest over every game, one <code>infer()</code> call</td>
+<td>The spotter's own payload, full diagnostics</td>
+</tr>
+<tr>
+<td>default sweep</td>
+<td>One game at a time, cached, then reassembled</td>
+<td>Trimmed events, and <code>--halves</code> selects periods</td>
+</tr>
+</tbody>
+</table>
+<p><code>--combined</code> is closest to how the spotter is meant to be driven: the OSL JSON
+manifest lists every game under <code>data</code>, and <code>predict()</code> walks them in one pass.
+The sweep exists for the extras built on top: per-period filtering and
+resuming an interrupted run.</p>
+<p><code>--annotations</code> works with either, so a run can be scored the same way whichever
+mode produced it:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--combined<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span>--games<span class="w"> </span><span class="m">128083</span><span class="w"> </span>--variants<span class="w"> </span>skeleton_recall<span class="w"> </span>--annotations<span class="w"> </span>WC22_multi.json
+</code></pre></div>
+<p>Scoring covers whichever game the annotations describe; the other games in the
+run are still spotted and written, just not scored.</p>
+<h3 id="options">Options<a class="headerlink" href="#options" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code></td>
+<td>none</td>
+<td>Run this YAML config as written, instead of sweeping a directory</td>
+</tr>
+<tr>
+<td><code>--combined</code></td>
+<td>off</td>
+<td>Spot every game in one pass and save the spotter's own output</td>
+</tr>
+<tr>
+<td><code>--data-root</code></td>
+<td><code>/home/giancos/FIFA_data</code></td>
+<td>Directory holding one sub-directory per game</td>
+</tr>
+<tr>
+<td><code>--games</code></td>
+<td><code>all</code></td>
+<td>Comma-separated game directory names</td>
+</tr>
+<tr>
+<td><code>--variants</code></td>
+<td><code>skeleton_recall</code></td>
+<td>Comma-separated subset of the seven variants</td>
+</tr>
+<tr>
+<td><code>--annotations</code></td>
+<td>none</td>
+<td>Annotation JSON; when given, predictions are scored against it</td>
+</tr>
+<tr>
+<td><code>--output-dir</code></td>
+<td><code>outputs/header_spotting</code></td>
+<td>Where manifests, predictions and results are written</td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td><code>&lt;output-dir&gt;/headers-&lt;variant&gt;.json</code></td>
+<td>Path of the combined OSL JSON</td>
+</tr>
+<tr>
+<td><code>--dataset-name</code></td>
+<td><code>Header predictions</code></td>
+<td>Name recorded in the combined file</td>
+</tr>
+<tr>
+<td><code>--halves</code></td>
+<td><code>all</code></td>
+<td>Comma-separated period tags to report</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td>off</td>
+<td>Re-detect even when raw predictions are cached</td>
+</tr>
+<tr>
+<td><code>--assemble-only</code></td>
+<td>off</td>
+<td>Skip detection, only rebuild the outputs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="periods">Periods<a class="headerlink" href="#periods" title="Permanent link">&para;</a></h3>
+<p>The ball track tags every sample with a <code>half</code>. Period 0 is everything
+<strong>outside</strong> active play, meaning warm-up, stoppages and the interval, spread across the
+whole broadcast; periods 1 and up are the played halves and any extra time.</p>
+<p>Detection always scans the whole file, so <code>--halves</code> only filters what gets
+reported and can be changed without re-detecting:</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--assemble-only<span class="w"> </span>--halves<span class="w"> </span><span class="m">0</span><span class="w">     </span><span class="c1"># out of play only</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>python<span class="w"> </span>scripts/run_h5_header_rule_inference.py<span class="w"> </span>--assemble-only<span class="w"> </span>--halves<span class="w"> </span><span class="m">1</span>,2<span class="w">   </span><span class="c1"># regular time</span>
+</code></pre></div>
+<h2 id="what-it-produces">What it produces<a class="headerlink" href="#what-it-produces" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>outputs/header_spotting/
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>├── manifest_&lt;game&gt;.json              inputs and scan window given to the model
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>├── config_&lt;game&gt;_&lt;variant&gt;.yaml      generated config
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>├── raw/&lt;variant&gt;/&lt;game&gt;.json         detections on the UTC clock, with diagnostics
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>├── headers-&lt;variant&gt;.json            all games in one OSL JSON
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>└── map_results.json                  scores, when --annotations was given
+</code></pre></div>
+<p>The combined file follows the OSL v2 action-spotting schema, with one entry per
+game under <code>data</code>:</p>
+<div class="language-json highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">"head"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Actions"</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Header"</span><span class="p">,</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span><span class="nt">"position_ms"</span><span class="p">:</span><span class="w"> </span><span class="mi">53280</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">  </span><span class="nt">"timestamp_utc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-12-03 15:00:23.285000"</span><span class="p">,</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">  </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.3993</span><span class="p">,</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"note"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">}</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>position_ms</code> counts from the first sample of that game's tracking file. Each
+game's <code>metadata</code> records <code>track_start_utc</code>, <code>track_end_utc</code> and the kickoff of
+every period, so positions can be rebased onto any other clock.</p>
+<p>Each raw detection also carries diagnostics: contact distance, which head joint
+matched, the player, the ball height, the measured trajectory change and the
+dwell count. Useful for inspecting why something was or was not detected.</p>
+<h2 id="reading-the-output">Reading the output<a class="headerlink" href="#reading-the-output" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>variant                   #pred    mAP@1s    mAP@2s   tight avg   rec@1s  prec@1s
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>skeleton                    111    63.03%    64.68%      64.85%    86.5%    81.1%
+</code></pre></div>
+<ul>
+<li><code>mAP@Ns</code>: mean average precision allowing a prediction to sit up to N
+  seconds from the annotation.</li>
+<li><code>tight avg</code>: the mAP values averaged over 1 to 5 seconds. The headline score.</li>
+<li><code>rec@1s</code>: share of annotated headers found within one second.</li>
+<li><code>prec@1s</code>: share of predictions that correspond to a real header.</li>
+</ul>
+<p>Scoring is confined to the play windows, which run from each kickoff to the
+last tracked ball sample of that half. Extra time is excluded from both the
+annotations and the predictions, so the comparison stays fair.</p>
+<h2 id="three-stages">Three stages<a class="headerlink" href="#three-stages" title="Permanent link">&para;</a></h2>
+<p>The script runs these in order; each can be repeated on its own.</p>
+<ol>
+<li><strong>Detect</strong>: write a manifest naming the H5 pair and the scan window, then
+   run the variant through <code>LocalizationModel.infer()</code>. Detections come out on
+   the UTC clock and are cached per game and variant.</li>
+<li><strong>Assemble</strong>: collect every game's detections into one OSL JSON, converting
+   each to a <code>position_ms</code> from that game's first tracking sample.</li>
+<li><strong>Evaluate</strong>: only with <code>--annotations</code>. Places detections on the video
+   clock using the annotations' <code>UTC_time_start</code>, restricts both sides to the
+   annotated play windows, bins them at 20 ms and scores with <code>delta_curve</code>
+   from <code>opensportslib/metrics/localization_metric.py</code>.</li>
+</ol>
+<h2 id="how-the-model-is-wired-in">How the model is wired in<a class="headerlink" href="#how-the-model-is-wired-in" title="Permanent link">&para;</a></h2>
+<p>The variants are a <code>RuleBased</code> model family: no weights, no training, but the
+same config schema, inference API and JSON output as a trained model.</p>
+<ul>
+<li><code>family: RuleBased</code> in a config routes the builder to
+  <code>build_rule_based_model</code> in <code>opensportslib/models/base/rule_based.py</code>.</li>
+<li>Dataset type <code>H5OSLJsonSpotting</code> reads the manifest and skips the dataloader.</li>
+<li>Runner <code>runner_h5_header_rule</code> makes <code>infer()</code> call <code>model.predict()</code> directly.</li>
+<li><code>train()</code> raises <code>NotImplementedError</code>; these models are inference only.</li>
+</ul>
+<p>Ready-made configs sit in <code>opensportslib/configs/localization/</code>, one per
+family. To use a variant directly, without the evaluation pipeline:</p>
+<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"RUN_ID"</span><span class="p">,</span> <span class="s2">"headers"</span><span class="p">)</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opensportslib.apis</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalizationModel</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="n">api</span> <span class="o">=</span> <span class="n">LocalizationModel</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="s2">"opensportslib/configs/localization/h5_header_skeleton.yaml"</span><span class="p">)</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="n">predictions</span> <span class="o">=</span> <span class="n">api</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="n">use_wandb</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="n">api</span><span class="o">.</span><span class="n">save_predictions</span><span class="p">(</span><span class="s2">"predictions.json"</span><span class="p">,</span> <span class="n">predictions</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_h5_header_skeleton_spotter.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">                 </span>tests/test_h5_header_rule_spotter.py
+</code></pre></div>
+<p>These build small synthetic H5 files, so they need no tracking data.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "content.tabs.link", "search.highlight", "search.suggest", "toc.integrate", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
