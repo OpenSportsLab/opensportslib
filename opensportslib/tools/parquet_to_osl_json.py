@@ -52,18 +52,23 @@ def _extract_sample_media_from_tar(
     sample_index: int,
     output_media_root: Path,
     original_paths: List[str],
+    original_ball_paths: Optional[List[Optional[str]]] = None,
     overwrite: bool = False,
 ) -> int:
     """
-    Extract all input files for *sample_index* from the shard.
+    Extract all input files for *sample_index* from the shard, including any
+    sidecar ball-tracking files (tar members named ``<key>.<idx>.ball.<ext>``).
 
-    Files are written to ``output_media_root / original_path``, preserving the
-    original relative path structure so that ``inputs[].path`` values stay valid.
+    Files are written to ``output_media_root / original_path`` (or
+    ``output_media_root / original_ball_path`` for ball members), preserving
+    the original relative path structure so that ``inputs[].path`` /
+    ``inputs[].ball_path`` values stay valid.
 
     Returns the number of files extracted.
     """
     key_prefix = f"{sample_index:09d}."
     extracted = 0
+    ball_paths = original_ball_paths or []
 
     with tarfile.open(tar_path, "r") as tar:
         members = [
@@ -72,20 +77,27 @@ def _extract_sample_media_from_tar(
             if m.isfile() and m.name.startswith(key_prefix) and not m.name.endswith(".json")
         ]
 
-        def _input_idx(m: tarfile.TarInfo) -> int:
-            part = m.name[len(key_prefix) :].split(".", 1)[0]
+        def _member_info(m: tarfile.TarInfo) -> tuple[int, bool]:
+            parts = m.name[len(key_prefix) :].split(".")
             try:
-                return int(part)
+                idx = int(parts[0])
             except ValueError:
-                return 0
+                idx = 0
+            is_ball = len(parts) >= 3 and parts[1] == "ball"
+            return idx, is_ball
 
-        members.sort(key=_input_idx)
+        members.sort(key=_member_info)
 
         for member in members:
-            input_idx = _input_idx(member)
-            if input_idx >= len(original_paths):
-                continue
-            out_path = output_media_root / original_paths[input_idx]
+            input_idx, is_ball = _member_info(member)
+            if is_ball:
+                if input_idx >= len(ball_paths) or not ball_paths[input_idx]:
+                    continue
+                out_path = output_media_root / ball_paths[input_idx]
+            else:
+                if input_idx >= len(original_paths):
+                    continue
+                out_path = output_media_root / original_paths[input_idx]
             if out_path.exists() and not overwrite:
                 extracted += 1
                 continue
@@ -230,16 +242,20 @@ def convert_parquet_to_json(
 
         if extract_media:
             inputs = sample.get("inputs", []) if isinstance(sample, dict) else []
-            original_input_paths = [
-                str(inp["path"])
-                for inp in inputs
-                if isinstance(inp, dict) and inp.get("path")
-            ]
+            original_input_paths: List[str] = []
+            original_ball_paths: List[Optional[str]] = []
+            for inp in inputs:
+                if not isinstance(inp, dict) or not inp.get("path"):
+                    continue
+                original_input_paths.append(str(inp["path"]))
+                ball_path = inp.get("ball_path")
+                original_ball_paths.append(str(ball_path) if ball_path else None)
             extracted_media_count += _extract_sample_media_from_tar(
                 tar_path=tar_path,
                 sample_index=sample_index,
                 output_media_root=output_media_root_path,
                 original_paths=original_input_paths,
+                original_ball_paths=original_ball_paths,
                 overwrite=overwrite_media,
             )
 
