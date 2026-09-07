@@ -86,6 +86,41 @@ metrics = m.evaluate(
 )
 ```
 
+## Remote Inference
+
+Pass `remote` to send inference to an `opensportslib-server` worker. Local
+training and evaluation are unchanged. For a test-set call, OpenSportsLib
+packages the JSON manifest and every local media path it references into one
+ZIP upload, waits for the server job, and returns predictions like local inference.
+
+```python
+model = ClassificationModel(
+    config="/path/to/classification.yaml",
+    remote="http://server-ip:8000",
+    remote_model_id="OpenSportsLab/OSL-cls-action-mvitv2",  # optional server registry ID
+)
+
+predictions = model.infer(test_set="/path/to/test.json")
+```
+
+Use `submit_inference(...)`, `get_remote_job(job_id)`, and
+`get_remote_result(job_id)` only when your application needs manual asynchronous
+job control. `remote_task_options={...}` passes task-specific options through
+to the server. Direct VQA calls upload one video, and a VQA follow-up can pass
+`session_id` with a new question.
+
+For long test sets, process each sample as a separate remote job while
+preserving all media referenced by that sample:
+
+```python
+predictions = model.infer(test_set="/path/to/test.json", remote_mode="per_sample")
+failures = model.last_remote_failures
+```
+
+`remote_mode="full_test_set"` is the default. Per-sample submission continues
+after individual upload failures; successful predictions are returned and failed
+samples are available through `model.last_remote_failures`.
+
 ## Localization Usage
 
 ```python

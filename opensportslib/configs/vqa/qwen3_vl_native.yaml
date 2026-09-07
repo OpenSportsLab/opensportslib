@@ -5,6 +5,12 @@ SYSTEM:
     count: 4
     id: null
 
+DATA:
+  common:
+    # Override VQA defaults: native Qwen VL uses raw video/frames, not X-VARS indexes.
+    feature_index: null
+    prediction_index: null
+
 MODEL:
   topology: []
   components:

@@ -260,6 +260,38 @@ class ClassificationModel(BaseTaskModel):
         **kwargs,
     ):
         """Run model inference and return predictions in OSL JSON format."""
+        remote_mode_provided = "remote_mode" in kwargs
+        remote_mode = kwargs.pop("remote_mode", "full_test_set")
+        if self.is_remote:
+            remote_model_id = kwargs.pop("remote_model_id", None)
+            remote_task_options = kwargs.pop("remote_task_options", None)
+            if kwargs:
+                raise TypeError(f"Unsupported remote inference options: {', '.join(kwargs)}")
+            test_set = self._resolve_split_path("test", test_set)
+            if remote_mode == "per_sample":
+                batch = self.submit_per_sample_inference(
+                    task_type="classification",
+                    test_set=test_set,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                collected = self.wait_for_remote_batch(batch)
+                self.last_remote_failures = collected["failures"]
+                if self.last_remote_failures:
+                    logging.warning("Remote per-sample inference completed with %d failures.", len(self.last_remote_failures))
+                return collected["predictions"]
+            if remote_mode != "full_test_set":
+                raise ValueError("`remote_mode` must be `full_test_set` or `per_sample`.")
+            job = self.submit_inference(
+                task_type="classification",
+                test_set=test_set,
+                model_id=remote_model_id,
+                task_options=remote_task_options,
+            )
+            self.last_remote_failures = []
+            return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+        if remote_mode_provided:
+            raise ValueError("`remote_mode` is available only when `remote` is configured.")
         del kwargs
 
         import torch
