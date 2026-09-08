@@ -51,10 +51,21 @@ evaluation, include a root `labels` schema and task-specific sample payloads.
 | `metadata` | object | Optional | Dataset-level custom metadata. |
 | `labels` | object | Required for supervised tasks | Shared label schema by annotation head. |
 | `data` | array[object] | Required | Sample list. Must be a list. |
+| `hf_repo_id` | string | Optional | Hugging Face dataset repository recorded by the split downloader. |
+| `hf_branch` | string | Optional | Requested branch, tag, or revision. |
+| `hf_split` | string | Optional | Remote split containing this dataset. |
+| `hf_format` | string | Optional | Remote storage format: `json` or `parquet`. |
+| `hf_commit` | string | Optional | Resolved immutable commit used for the download. |
 
 Unknown top-level keys are preserved by conversion tools where possible. Keep
 custom dataset metadata under `metadata` unless another key is part of a
 documented workflow.
+
+The five `hf_*` provenance fields form the source locator for selective media
+downloads. They are written together after a successful Hugging Face split
+download. Consumers should require a complete locator before fetching assets;
+older JSON files with only repository/branch/split metadata should be
+downloaded again to acquire the format and commit pin.
 
 ## Label Schema
 

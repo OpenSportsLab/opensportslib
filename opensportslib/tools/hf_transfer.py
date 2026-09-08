@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
@@ -11,6 +12,8 @@ CancelCheck = Callable[[], bool]
 HF_REPO_ID_KEY = "hf_repo_id"
 HF_BRANCH_KEY = "hf_branch"
 HF_SPLIT_KEY = "hf_split"
+HF_FORMAT_KEY = "hf_format"
+HF_COMMIT_KEY = "hf_commit"
 DEFAULT_SHARD_SIZE = 1_000_000_000
 
 
@@ -42,6 +45,19 @@ def _import_parquet_to_osl_json():
     return module_convert_parquet_to_json
 
 
+def _import_parquet_metadata_to_osl_json():
+    try:
+        from .parquet_to_osl_json import (
+            convert_parquet_metadata_to_json as module_convert_parquet_metadata_to_json,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "Missing conversion dependencies for Parquet metadata -> OSL JSON tools. "
+            "Install the package with its data-conversion dependencies, including 'pandas' and 'pyarrow'."
+        ) from exc
+    return module_convert_parquet_metadata_to_json
+
+
 def parse_shard_size(value: int | str) -> int:
     _, _, module_parse_shard_size = _import_osl_json_to_parquet()
     return module_parse_shard_size(value)
@@ -55,6 +71,11 @@ def convert_json_to_parquet(*args, **kwargs):
 def convert_parquet_to_json(*args, **kwargs):
     module_convert_parquet_to_json = _import_parquet_to_osl_json()
     return module_convert_parquet_to_json(*args, **kwargs)
+
+
+def convert_parquet_metadata_to_json(*args, **kwargs):
+    module_convert_parquet_metadata_to_json = _import_parquet_metadata_to_osl_json()
+    return module_convert_parquet_metadata_to_json(*args, **kwargs)
 
 
 def _emit_progress(progress_cb: ProgressCallback | None, message: str) -> None:
@@ -149,6 +170,8 @@ def write_hf_source_metadata_to_dataset_json(
     repo_id: str,
     branch: str,
     split: str = "",
+    source_format: str = "",
+    commit: str = "",
 ) -> dict[str, str]:
     cleaned_path = os.path.abspath(str(dataset_json_path or "").strip())
     if not cleaned_path:
@@ -165,10 +188,16 @@ def write_hf_source_metadata_to_dataset_json(
         "repo_id": str(repo_id or "").strip(),
         "branch": str(branch or "").strip(),
         "split": str(split or "").strip(),
+        "format": str(source_format or "").strip().lower(),
+        "commit": str(commit or "").strip(),
     }
     payload[HF_REPO_ID_KEY] = metadata["repo_id"]
     payload[HF_BRANCH_KEY] = metadata["branch"]
     payload[HF_SPLIT_KEY] = metadata["split"]
+    if metadata["format"]:
+        payload[HF_FORMAT_KEY] = metadata["format"]
+    if metadata["commit"]:
+        payload[HF_COMMIT_KEY] = metadata["commit"]
 
     with open(cleaned_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
@@ -184,7 +213,24 @@ def read_hf_source_metadata_from_dataset(dataset_json: dict[str, Any] | None) ->
         "repo_id": str(payload.get(HF_REPO_ID_KEY) or "").strip(),
         "branch": str(payload.get(HF_BRANCH_KEY) or "").strip(),
         "split": str(payload.get(HF_SPLIT_KEY) or "").strip(),
+        "format": str(payload.get(HF_FORMAT_KEY) or "").strip().lower(),
+        "commit": str(payload.get(HF_COMMIT_KEY) or "").strip(),
     }
+
+
+def _resolve_hf_commit(repo_id: str, revision: str, token: str | None) -> str:
+    """Resolve a moving revision to a commit, falling back for test doubles/old hubs."""
+    HfApi, _, _ = _import_hf_hub()
+    try:
+        info = HfApi(token=token or None).repo_info(
+            repo_id=repo_id,
+            revision=revision,
+            repo_type="dataset",
+        )
+        commit = str(getattr(info, "sha", "") or "").strip()
+        return commit or revision
+    except (AttributeError, TypeError):
+        return revision
 
 
 def _clean_hf_split(split: str) -> str:
@@ -211,6 +257,8 @@ def _download_parquet_split_and_convert(
     split: str,
     output_dir: str,
     *,
+    commit: str,
+    annotations_only: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
@@ -223,60 +271,60 @@ def _download_parquet_split_and_convert(
 
     os.makedirs(output_dir, exist_ok=True)
     output_json_path = Path(output_dir) / f"{cleaned_split}.json"
-    if output_json_path.is_file():
-        _emit_progress(
-            progress_cb,
-            f"JSON already exists at {output_json_path}; skipping Parquet/WebDataset download and conversion.",
-        )
-        return {
-            "repo_id": cleaned_repo_id,
-            "revision": cleaned_revision,
-            "split": cleaned_split,
-            "folder_path": cleaned_split,
-            "output_dir": output_dir,
-            "json_path": str(output_json_path),
-            "source": "parquet_split",
-            "download_kind": "parquet",
-            "downloaded_file_count": 0,
-            "download_skipped": True,
-            "extracted_media": True,
-            "extracted_media_count": 0,
-            "hf_source_metadata": {
-                "repo_id": cleaned_repo_id,
-                "branch": cleaned_revision,
-                "split": cleaned_split,
-            },
-        }
 
     _ensure_not_cancelled(is_cancelled)
-    _emit_progress(progress_cb, f"Downloading Parquet split '{cleaned_split}' from {cleaned_repo_id}@{cleaned_revision}...")
+    scope_label = "metadata" if annotations_only else "Parquet split"
+    _emit_progress(
+        progress_cb,
+        f"Downloading {scope_label} '{cleaned_split}' from {cleaned_repo_id}@{commit}...",
+    )
 
-    _, _, snapshot_download = _import_hf_hub()
+    _, hf_hub_download, snapshot_download = _import_hf_hub()
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
-        snapshot_download(
-            repo_id=cleaned_repo_id,
-            repo_type="dataset",
-            revision=cleaned_revision,
-            allow_patterns=[f"{cleaned_split}/*"],
-            local_dir=tmp_dir,
-            token=token or None,
-        )
+        if annotations_only:
+            metadata_path = hf_hub_download(
+                repo_id=cleaned_repo_id,
+                repo_type="dataset",
+                filename=f"{cleaned_split}/metadata.parquet",
+                revision=commit,
+                local_dir=tmp_dir,
+                local_dir_use_symlinks=False,
+                token=token or None,
+            )
+        else:
+            snapshot_download(
+                repo_id=cleaned_repo_id,
+                repo_type="dataset",
+                revision=commit,
+                allow_patterns=[f"{cleaned_split}/*"],
+                local_dir=tmp_dir,
+                token=token or None,
+            )
         _ensure_not_cancelled(is_cancelled)
 
-        parquet_dataset_dir = Path(tmp_dir) / cleaned_split
-        _emit_progress(progress_cb, f"Converting Parquet split to JSON and extracting media into {output_dir}...")
-        conversion_result = convert_parquet_to_json(
-            dataset_dir=parquet_dataset_dir,
-            output_json_path=output_json_path,
-            extract_media=True,
-            output_media_root=output_dir,
-        )
+        if annotations_only:
+            _emit_progress(progress_cb, "Reconstructing JSON from metadata.parquet without shards...")
+            conversion_result = convert_parquet_metadata_to_json(
+                metadata_path=metadata_path,
+                output_json_path=output_json_path,
+            )
+        else:
+            parquet_dataset_dir = Path(tmp_dir) / cleaned_split
+            _emit_progress(progress_cb, f"Converting Parquet split to JSON and extracting media into {output_dir}...")
+            conversion_result = convert_parquet_to_json(
+                dataset_dir=parquet_dataset_dir,
+                output_json_path=output_json_path,
+                extract_media=True,
+                output_media_root=output_dir,
+            )
         write_hf_source_metadata_to_dataset_json(
             str(output_json_path),
             repo_id=cleaned_repo_id,
             branch=cleaned_revision,
             split=cleaned_split,
+            source_format="parquet",
+            commit=commit,
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -297,14 +345,19 @@ def _download_parquet_split_and_convert(
         "json_path": str(output_json_path),
         "source": "parquet_split",
         "download_kind": "parquet",
+        "download_scope": "annotations" if annotations_only else "full",
+        "annotations_only": bool(annotations_only),
+        "commit": commit,
         "download_skipped": False,
         "num_samples": int(conversion_result.get("num_samples") or 0),
-        "extracted_media": True,
+        "extracted_media": not annotations_only,
         "extracted_media_count": int(conversion_result.get("extracted_media_files") or 0),
         "hf_source_metadata": {
             "repo_id": cleaned_repo_id,
             "branch": cleaned_revision,
             "split": cleaned_split,
+            "format": "parquet",
+            "commit": commit,
         },
     }
 
@@ -315,6 +368,8 @@ def _download_json_path_from_hf(
     split: str,
     output_dir: str,
     *,
+    commit: str,
+    annotations_only: bool = False,
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -328,13 +383,13 @@ def _download_json_path_from_hf(
 
     os.makedirs(output_dir, exist_ok=True)
     _ensure_not_cancelled(is_cancelled)
-    _emit_progress(progress_cb, f"Downloading JSON from {repo_id}@{revision}: {path_in_repo}")
+    _emit_progress(progress_cb, f"Downloading JSON from {repo_id}@{commit}: {path_in_repo}")
 
     json_path = hf_hub_download(
         repo_id=repo_id,
         repo_type="dataset",
         filename=path_in_repo,
-        revision=revision,
+        revision=commit,
         local_dir=output_dir,
         local_dir_use_symlinks=False,
         token=token or None,
@@ -344,7 +399,10 @@ def _download_json_path_from_hf(
     with open(json_path, "r", encoding="utf-8") as handle:
         osl_json = json.load(handle)
 
-    repo_paths = extract_repo_paths_from_json(osl_json)
+    try:
+        repo_paths = extract_repo_paths_from_json(osl_json)
+    except ValueError:
+        repo_paths = []
     allow_patterns = _build_allow_patterns(repo_paths, repo_json_folder)
 
     result: dict[str, Any] = {
@@ -355,8 +413,28 @@ def _download_json_path_from_hf(
         "json_path": json_path,
         "output_dir": output_dir,
         "dry_run": bool(dry_run),
+        "download_scope": "annotations" if annotations_only else "full",
+        "annotations_only": bool(annotations_only),
+        "commit": commit,
         "referenced_file_count": len(allow_patterns),
+        "num_samples": len(osl_json.get("data", [])) if isinstance(osl_json.get("data"), list) else 0,
     }
+
+    if annotations_only:
+        _emit_progress(progress_cb, "Persisting Hugging Face source metadata into downloaded JSON.")
+        hf_source_metadata = write_hf_source_metadata_to_dataset_json(
+            json_path,
+            repo_id=repo_id,
+            branch=revision,
+            split=cleaned_split,
+            source_format="json",
+            commit=commit,
+        )
+        result["download_kind"] = "json"
+        result["downloaded_file_count"] = 0
+        result["hf_source_metadata"] = hf_source_metadata
+        _emit_progress(progress_cb, "Annotation-only download completed.")
+        return result
 
     if dry_run:
         _emit_progress(progress_cb, "Collecting repository file metadata for dry-run.")
@@ -365,7 +443,7 @@ def _download_json_path_from_hf(
         try:
             info_obj = api.repo_info(
                 repo_id=repo_id,
-                revision=revision,
+                revision=commit,
                 repo_type="dataset",
                 files_metadata=True,
             )
@@ -417,7 +495,7 @@ def _download_json_path_from_hf(
             repo_id=repo_id,
             repo_type="dataset",
             filename=full_repo_path,
-            revision=revision,
+            revision=commit,
             local_dir=output_dir,
             local_dir_use_symlinks=False,
             token=token or None,
@@ -430,6 +508,8 @@ def _download_json_path_from_hf(
         repo_id=repo_id,
         branch=revision,
         split=cleaned_split,
+        source_format="json",
+        commit=commit,
     )
 
     result["download_kind"] = "json"
@@ -530,6 +610,7 @@ def download_dataset_splits_from_hf(
     output_dir: str,
     *,
     download_format: str = "parquet",
+    annotations_only: bool = False,
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -554,6 +635,7 @@ def download_dataset_splits_from_hf(
             split,
             output_dir,
             download_format=download_format,
+            annotations_only=annotations_only,
             dry_run=dry_run,
             token=token,
             progress_cb=_scoped_progress,
@@ -571,6 +653,7 @@ def download_dataset_split_from_hf(
     output_dir: str,
     *,
     download_format: str = "parquet",
+    annotations_only: bool = False,
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -584,7 +667,10 @@ def download_dataset_split_from_hf(
         raise ValueError("download_format must be 'json' or 'parquet'.")
     if not cleaned_repo_id:
         raise ValueError("repo_id is required.")
+    if annotations_only and dry_run:
+        raise ValueError("dry_run cannot be combined with annotations_only.")
     split_output_dir = _build_split_output_dir(output_dir, cleaned_revision, cleaned_split)
+    resolved_commit = _resolve_hf_commit(cleaned_repo_id, cleaned_revision, token)
 
     if cleaned_format == "parquet":
         if dry_run:
@@ -594,6 +680,8 @@ def download_dataset_split_from_hf(
             cleaned_revision,
             cleaned_split,
             split_output_dir,
+            commit=resolved_commit,
+            annotations_only=annotations_only,
             token=token,
             progress_cb=progress_cb,
             is_cancelled=is_cancelled,
@@ -604,11 +692,400 @@ def download_dataset_split_from_hf(
         cleaned_revision,
         cleaned_split,
         split_output_dir,
+        commit=resolved_commit,
+        annotations_only=annotations_only,
         dry_run=dry_run,
         token=token,
         progress_cb=progress_cb,
         is_cancelled=is_cancelled,
     )
+
+
+def _safe_local_asset_path(dataset_root: Path, relative_path: str) -> Path:
+    raw = str(relative_path or "").strip().replace("\\", "/")
+    if not raw or raw.startswith("/"):
+        raise ValueError(f"Unsafe dataset asset path: {relative_path!r}")
+    parts = Path(raw).parts
+    if ".." in parts or (parts and parts[0].endswith(":")):
+        raise ValueError(f"Unsafe dataset asset path: {relative_path!r}")
+    root = dataset_root.resolve()
+    candidate = (root / raw).resolve(strict=False)
+    try:
+        relative_candidate = candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Dataset asset path escapes the dataset root: {relative_path!r}") from exc
+    ancestor = root
+    for part in relative_candidate.parts[:-1]:
+        ancestor /= part
+        if ancestor.exists() and not ancestor.is_dir():
+            raise ValueError(
+                f"Dataset asset parent collides with a file: {ancestor}"
+            )
+    if candidate.exists() and not candidate.is_file():
+        raise ValueError(f"Dataset asset destination is not a regular file: {candidate}")
+    return candidate
+
+
+def _sample_requested_asset_paths(
+    dataset_json: dict[str, Any],
+    sample_id: str,
+    input_path: str | None,
+) -> list[str]:
+    samples = dataset_json.get("data", []) if isinstance(dataset_json, dict) else []
+    sample = next(
+        (
+            item
+            for item in samples
+            if isinstance(item, dict) and str(item.get("id") or "") == str(sample_id or "")
+        ),
+        None,
+    )
+    if sample is None:
+        raise ValueError(f"Sample not found in dataset JSON: {sample_id}")
+
+    cleaned_input_path = str(input_path or "").strip()
+    selected_inputs: list[dict[str, Any]] = []
+    for input_item in sample.get("inputs", []) if isinstance(sample.get("inputs"), list) else []:
+        if not isinstance(input_item, dict) or not input_item.get("path"):
+            continue
+        if cleaned_input_path and str(input_item.get("path")) != cleaned_input_path:
+            continue
+        selected_inputs.append(input_item)
+    if cleaned_input_path and not selected_inputs:
+        raise ValueError(f"Input not found in sample {sample_id}: {cleaned_input_path}")
+
+    paths: list[str] = []
+    seen: set[str] = set()
+    for input_item in selected_inputs:
+        for key in ("path", "ball_path"):
+            value = str(input_item.get(key) or "").strip()
+            normalized = value.replace("\\", "/")
+            if value and normalized not in seen:
+                seen.add(normalized)
+                paths.append(value)
+    if not paths:
+        raise ValueError(f"Sample has no downloadable input paths: {sample_id}")
+    return paths
+
+
+def _selective_result(
+    *,
+    source_format: str,
+    repo_id: str,
+    commit: str,
+    sample_id: str,
+    input_path: str | None,
+) -> dict[str, Any]:
+    return {
+        "operation": "assets",
+        "source_format": source_format,
+        "repo_id": repo_id,
+        "commit": commit,
+        "sample_id": sample_id,
+        "input_path": input_path or "",
+        "requested_downloaded_paths": [],
+        "requested_overwritten_paths": [],
+        "requested_skipped_paths": [],
+        "opportunistic_downloaded_paths": [],
+        "collateral_skipped_paths": [],
+        "missing_paths": [],
+        "failed_paths": [],
+    }
+
+
+def _finish_selective_result(result: dict[str, Any]) -> dict[str, Any]:
+    for key in (
+        "requested_downloaded_paths",
+        "requested_overwritten_paths",
+        "requested_skipped_paths",
+        "opportunistic_downloaded_paths",
+        "collateral_skipped_paths",
+        "missing_paths",
+        "failed_paths",
+    ):
+        result[f"{key.removesuffix('_paths')}_count"] = len(result[key])
+    return result
+
+
+def _download_json_sample_inputs(
+    dataset_root: Path,
+    requested_paths: list[str],
+    *,
+    repo_id: str,
+    split: str,
+    commit: str,
+    sample_id: str,
+    input_path: str | None,
+    overwrite: bool,
+    token: str | None,
+    progress_cb: ProgressCallback | None,
+    is_cancelled: CancelCheck | None,
+) -> dict[str, Any]:
+    result = _selective_result(
+        source_format="json",
+        repo_id=repo_id,
+        commit=commit,
+        sample_id=sample_id,
+        input_path=input_path,
+    )
+    destinations = {
+        raw_path: _safe_local_asset_path(dataset_root, raw_path)
+        for raw_path in requested_paths
+    }
+    if not overwrite and all(path.is_file() for path in destinations.values()):
+        result["requested_skipped_paths"].extend(
+            path.replace("\\", "/") for path in requested_paths
+        )
+        return _finish_selective_result(result)
+    _, hf_hub_download, _ = _import_hf_hub()
+    repo_folder = get_json_repo_folder(f"{_clean_hf_split(split)}.json")
+    total = len(requested_paths)
+    for index, raw_path in enumerate(requested_paths, start=1):
+        _ensure_not_cancelled(is_cancelled)
+        destination = destinations[raw_path]
+        normalized = raw_path.replace("\\", "/")
+        if destination.is_file() and not overwrite:
+            result["requested_skipped_paths"].append(normalized)
+            continue
+        existed = destination.is_file()
+        repo_path = _build_allow_patterns([raw_path], repo_folder)[0]
+        _emit_progress(progress_cb, f"[{index}/{total}] Downloading {repo_path}")
+        try:
+            hf_hub_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                filename=repo_path,
+                revision=commit,
+                local_dir=str(dataset_root),
+                local_dir_use_symlinks=False,
+                force_download=bool(existed and overwrite),
+                token=token or None,
+            )
+            _ensure_not_cancelled(is_cancelled)
+        except Exception as exc:
+            if isinstance(exc, HfTransferCancelled):
+                raise
+            result["failed_paths"].append({"path": normalized, "error": str(exc)})
+            continue
+        key = "requested_overwritten_paths" if existed else "requested_downloaded_paths"
+        result[key].append(normalized)
+    return _finish_selective_result(result)
+
+
+def _extract_tar_member_atomic(tar: tarfile.TarFile, member_name: str, destination: Path) -> None:
+    member = tar.getmember(member_name)
+    if not member.isfile():
+        raise ValueError(f"WebDataset member is not a regular file: {member_name}")
+    source = tar.extractfile(member)
+    if source is None:
+        raise ValueError(f"Could not read WebDataset member: {member_name}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary_path = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".part",
+        dir=str(destination.parent),
+    )
+    try:
+        with os.fdopen(file_descriptor, "wb") as output:
+            shutil.copyfileobj(source, output)
+        os.replace(temporary_path, destination)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _download_parquet_sample_inputs(
+    dataset_root: Path,
+    requested_paths: list[str],
+    *,
+    repo_id: str,
+    split: str,
+    commit: str,
+    sample_id: str,
+    input_path: str | None,
+    overwrite: bool,
+    token: str | None,
+    progress_cb: ProgressCallback | None,
+    is_cancelled: CancelCheck | None,
+) -> dict[str, Any]:
+    import pandas as pd
+
+    _, hf_hub_download, _ = _import_hf_hub()
+    result = _selective_result(
+        source_format="parquet",
+        repo_id=repo_id,
+        commit=commit,
+        sample_id=sample_id,
+        input_path=input_path,
+    )
+    requested_normalized = {path.replace("\\", "/") for path in requested_paths}
+    requested_destinations = {
+        path.replace("\\", "/"): _safe_local_asset_path(dataset_root, path)
+        for path in requested_paths
+    }
+    if not overwrite and all(path.is_file() for path in requested_destinations.values()):
+        result["requested_skipped_paths"].extend(requested_destinations)
+        return _finish_selective_result(result)
+
+    temporary_dir = tempfile.mkdtemp(prefix="hf_selective_parquet_")
+    try:
+        _ensure_not_cancelled(is_cancelled)
+        metadata_path = hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=f"{split}/metadata.parquet",
+            revision=commit,
+            local_dir=temporary_dir,
+            local_dir_use_symlinks=False,
+            token=token or None,
+        )
+        _ensure_not_cancelled(is_cancelled)
+        manifest_path = hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=f"{split}/shard_manifest.parquet",
+            revision=commit,
+            local_dir=temporary_dir,
+            local_dir_use_symlinks=False,
+            token=token or None,
+        )
+        _ensure_not_cancelled(is_cancelled)
+        metadata = pd.read_parquet(metadata_path)
+        matches = metadata[metadata["sample_id"].astype(str) == str(sample_id)]
+        if matches.empty:
+            raise ValueError(f"Sample not found in remote metadata: {sample_id}")
+        shard_name = str(matches.iloc[0].get("shard_name") or "").strip()
+        if not shard_name:
+            raise ValueError(f"Remote metadata has no shard for sample: {sample_id}")
+
+        manifest = pd.read_parquet(manifest_path)
+        shard_rows = manifest[
+            manifest["shard_name"].astype(str) == shard_name
+        ].sort_values(["sample_id", "input_index"])
+        available_requested: set[str] = set()
+        rows_by_path: dict[str, Any] = {}
+        for _, row in shard_rows.iterrows():
+            raw_path = str(row.get("relative_path") or "").strip()
+            normalized = raw_path.replace("\\", "/")
+            if not normalized or normalized in rows_by_path:
+                continue
+            rows_by_path[normalized] = row
+            if normalized in requested_normalized and str(row.get("status") or "") == "ok":
+                available_requested.add(normalized)
+        result["missing_paths"].extend(sorted(requested_normalized - available_requested))
+        if not available_requested:
+            return _finish_selective_result(result)
+
+        needs_shard = False
+        for normalized, row in rows_by_path.items():
+            if str(row.get("status") or "") != "ok" or not str(row.get("wds_member") or "").strip():
+                continue
+            try:
+                destination = _safe_local_asset_path(dataset_root, normalized)
+            except ValueError as exc:
+                result["failed_paths"].append({"path": normalized, "error": str(exc)})
+                continue
+            requested = normalized in requested_normalized
+            if destination.is_file() and (not requested or not overwrite):
+                key = "requested_skipped_paths" if requested else "collateral_skipped_paths"
+                result[key].append(normalized)
+                continue
+            needs_shard = True
+
+        if not needs_shard:
+            return _finish_selective_result(result)
+
+        _ensure_not_cancelled(is_cancelled)
+        _emit_progress(progress_cb, f"Downloading shard {shard_name} and extracting missing assets...")
+        shard_path = hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=f"{split}/shards/{shard_name}",
+            revision=commit,
+            local_dir=temporary_dir,
+            local_dir_use_symlinks=False,
+            token=token or None,
+        )
+        _ensure_not_cancelled(is_cancelled)
+        with tarfile.open(shard_path, "r") as archive:
+            for normalized, row in rows_by_path.items():
+                _ensure_not_cancelled(is_cancelled)
+                if str(row.get("status") or "") != "ok":
+                    continue
+                member_name = str(row.get("wds_member") or "").strip()
+                if not member_name:
+                    continue
+                try:
+                    destination = _safe_local_asset_path(dataset_root, normalized)
+                except ValueError:
+                    continue
+                requested = normalized in requested_normalized
+                existed = destination.is_file()
+                if existed and (not requested or not overwrite):
+                    continue
+                try:
+                    _extract_tar_member_atomic(archive, member_name, destination)
+                except Exception as exc:
+                    result["failed_paths"].append({"path": normalized, "error": str(exc)})
+                    continue
+                if requested:
+                    key = "requested_overwritten_paths" if existed else "requested_downloaded_paths"
+                else:
+                    key = "opportunistic_downloaded_paths"
+                result[key].append(normalized)
+    finally:
+        shutil.rmtree(temporary_dir, ignore_errors=True)
+    return _finish_selective_result(result)
+
+
+def download_dataset_sample_inputs_from_hf(
+    dataset_json_path: str,
+    sample_id: str,
+    *,
+    input_path: str | None = None,
+    overwrite: bool = False,
+    token: str | None = None,
+    progress_cb: ProgressCallback | None = None,
+    is_cancelled: CancelCheck | None = None,
+) -> dict[str, Any]:
+    """Download one sample or input from the immutable HF source of a local JSON."""
+    cleaned_json_path = Path(str(dataset_json_path or "").strip()).resolve()
+    if not cleaned_json_path.is_file():
+        raise ValueError(f"Dataset JSON does not exist: {cleaned_json_path}")
+    with open(cleaned_json_path, "r", encoding="utf-8") as handle:
+        dataset_json = json.load(handle)
+    if not isinstance(dataset_json, dict):
+        raise ValueError("Invalid dataset JSON: expected root object.")
+
+    source = read_hf_source_metadata_from_dataset(dataset_json)
+    missing_source = [key for key in ("repo_id", "split", "format", "commit") if not source.get(key)]
+    if missing_source:
+        raise ValueError(
+            "Dataset lacks selective-download provenance (missing: "
+            f"{', '.join(missing_source)}). Re-download its annotations with a newer OpenSportsLib checkout."
+        )
+    if source["format"] not in {"json", "parquet"}:
+        raise ValueError(f"Unsupported Hugging Face dataset format: {source['format']}")
+
+    requested_paths = _sample_requested_asset_paths(dataset_json, sample_id, input_path)
+    common = {
+        "repo_id": source["repo_id"],
+        "split": source["split"],
+        "commit": source["commit"],
+        "sample_id": str(sample_id),
+        "input_path": input_path,
+        "overwrite": bool(overwrite),
+        "token": token,
+        "progress_cb": progress_cb,
+        "is_cancelled": is_cancelled,
+    }
+    _ensure_not_cancelled(is_cancelled)
+    if source["format"] == "json":
+        return _download_json_sample_inputs(cleaned_json_path.parent, requested_paths, **common)
+    return _download_parquet_sample_inputs(cleaned_json_path.parent, requested_paths, **common)
 
 
 def _normalize_repo_path(path: str) -> str:

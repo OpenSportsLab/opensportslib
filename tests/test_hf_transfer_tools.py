@@ -1,10 +1,15 @@
 import json
+import shutil
+import tarfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from opensportslib.tools.hf_transfer import (
     HF_BRANCH_KEY,
+    HF_COMMIT_KEY,
+    HF_FORMAT_KEY,
     HF_REPO_ID_KEY,
     HF_SPLIT_KEY,
     HfTransferCancelled,
@@ -12,6 +17,7 @@ from opensportslib.tools.hf_transfer import (
     create_dataset_repo_on_hf,
     dataset_repo_exists_on_hf,
     download_dataset_split_from_hf,
+    download_dataset_sample_inputs_from_hf,
     download_dataset_splits_from_hf,
     extract_local_input_upload_entries_from_json,
     extract_repo_paths_from_json,
@@ -25,6 +31,19 @@ from opensportslib.tools.hf_transfer import (
     upload_dataset_inputs_from_json_to_hf,
     write_hf_source_metadata_to_dataset_json,
 )
+
+
+def _copying_hf_download(remote_root: Path, downloaded: list[str]):
+    def _download(**kwargs):
+        filename = kwargs["filename"]
+        downloaded.append(filename)
+        source = remote_root / filename
+        destination = Path(kwargs["local_dir"]) / filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        return str(destination)
+
+    return _download
 
 
 def test_extract_repo_paths_from_json_supports_legacy_and_osl_v2():
@@ -771,7 +790,7 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
     assert result["download_skipped"] is False
 
 
-def test_download_dataset_split_from_hf_parquet_skips_download_when_json_exists(
+def test_download_dataset_split_from_hf_parquet_completes_existing_json(
     monkeypatch, tmp_path
 ):
     output_json_path = tmp_path / "dev" / "test" / "test.json"
@@ -779,14 +798,29 @@ def test_download_dataset_split_from_hf_parquet_skips_download_when_json_exists(
     output_json_path.write_text(json.dumps({"data": []}), encoding="utf-8")
     progress_messages = []
 
-    def _fail_hf_import():
-        raise AssertionError("Hugging Face must not be imported for an existing JSON")
+    calls = {}
 
-    def _fail_conversion(**kwargs):
-        raise AssertionError("Existing JSON must not be converted again")
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
 
-    monkeypatch.setattr("opensportslib.tools.hf_transfer._import_hf_hub", _fail_hf_import)
-    monkeypatch.setattr("opensportslib.tools.hf_transfer.convert_parquet_to_json", _fail_conversion)
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "abc123"})()
+
+    def _fake_snapshot_download(**kwargs):
+        calls["snapshot"] = kwargs
+        (Path(kwargs["local_dir"]) / "test" / "shards").mkdir(parents=True)
+
+    def _fake_conversion(**kwargs):
+        calls["conversion"] = kwargs
+        kwargs["output_json_path"].write_text(json.dumps({"data": []}), encoding="utf-8")
+        return {"num_samples": 0, "extracted_media_files": 0}
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), _fake_snapshot_download),
+    )
+    monkeypatch.setattr("opensportslib.tools.hf_transfer.convert_parquet_to_json", _fake_conversion)
 
     result = download_dataset_split_from_hf(
         "OpenSportsLab/repo",
@@ -798,11 +832,440 @@ def test_download_dataset_split_from_hf_parquet_skips_download_when_json_exists(
     )
 
     assert result["json_path"] == str(output_json_path)
+    assert result["download_skipped"] is False
+    assert calls["snapshot"]["revision"] == "abc123"
+    assert calls["conversion"]
+    assert progress_messages
+
+
+def test_json_annotations_only_downloads_json_and_persists_pinned_source(monkeypatch, tmp_path):
+    remote_root = tmp_path / "remote"
+    remote_root.mkdir()
+    (remote_root / "test.json").write_text(
+        json.dumps({"data": [{"id": "one", "inputs": [{"path": "clips/one.mp4"}]}]}),
+        encoding="utf-8",
+    )
+    downloaded = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "pinned-json"})()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, _copying_hf_download(remote_root, downloaded), object()),
+    )
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path / "output"),
+        download_format="json",
+        annotations_only=True,
+    )
+
+    assert downloaded == ["test.json"]
+    payload = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    assert payload[HF_FORMAT_KEY] == "json"
+    assert payload[HF_COMMIT_KEY] == "pinned-json"
+    assert result["annotations_only"] is True
     assert result["downloaded_file_count"] == 0
-    assert result["download_skipped"] is True
-    assert progress_messages == [
-        f"JSON already exists at {output_json_path}; skipping Parquet/WebDataset download and conversion."
+
+
+def test_parquet_annotations_only_reconstructs_without_shards(monkeypatch, tmp_path):
+    remote_root = tmp_path / "remote"
+    metadata_path = remote_root / "test" / "metadata.parquet"
+    metadata_path.parent.mkdir(parents=True)
+    sample = {"id": "one", "inputs": [{"path": "clips/one.mp4", "type": "video"}]}
+    pd.DataFrame(
+        [{
+            "sample_id": "one",
+            "sample_index": 0,
+            "shard_name": "shard-000000.tar",
+            "header": json.dumps({"version": "2.0", "data": []}),
+            "sample_payload": json.dumps(sample),
+        }]
+    ).to_parquet(metadata_path, index=False)
+    downloaded = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "pinned-parquet"})()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, _copying_hf_download(remote_root, downloaded), object()),
+    )
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path / "output"),
+        download_format="parquet",
+        annotations_only=True,
+    )
+
+    assert downloaded == ["test/metadata.parquet"]
+    payload = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    assert payload["data"] == [sample]
+    assert payload[HF_FORMAT_KEY] == "parquet"
+    assert payload[HF_COMMIT_KEY] == "pinned-parquet"
+    assert not list((tmp_path / "output").rglob("*.parquet"))
+
+
+def test_parquet_annotations_only_rejects_legacy_metadata_without_fetching_shards(
+    monkeypatch, tmp_path
+):
+    remote_root = tmp_path / "remote"
+    split_root = remote_root / "test"
+    split_root.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "sample_id": "legacy",
+                "sample_index": 0,
+                "shard_name": "shard-000000.tar",
+                "header": json.dumps({"data": []}),
+            }
+        ]
+    ).to_parquet(split_root / "metadata.parquet", index=False)
+    downloaded = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "pinned"})()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, _copying_hf_download(remote_root, downloaded), object()),
+    )
+
+    with pytest.raises(ValueError, match="missing required columns: sample_payload"):
+        download_dataset_split_from_hf(
+            "OpenSportsLab/repo",
+            "main",
+            "test",
+            str(tmp_path / "output"),
+            download_format="parquet",
+            annotations_only=True,
+        )
+
+    assert downloaded == ["test/metadata.parquet"]
+    assert not list((tmp_path / "output").rglob("*.tar"))
+
+
+def test_parquet_selective_download_extracts_all_missing_shard_assets(monkeypatch, tmp_path):
+    remote_root = tmp_path / "remote"
+    split_root = remote_root / "test"
+    (split_root / "shards").mkdir(parents=True)
+    samples = [
+        {"id": "requested", "inputs": [{"path": "clips/requested.mp4"}]},
+        {"id": "existing", "inputs": [{"path": "clips/existing.mp4"}]},
+        {"id": "missing", "inputs": [{"path": "clips/missing.mp4"}]},
     ]
+    pd.DataFrame(
+        [{
+            "sample_id": sample["id"],
+            "sample_index": index,
+            "shard_name": "shard-000000.tar",
+            "header": json.dumps({"data": []}),
+            "sample_payload": json.dumps(sample),
+        } for index, sample in enumerate(samples)]
+    ).to_parquet(split_root / "metadata.parquet", index=False)
+    pd.DataFrame(
+        [{
+            "sample_id": sample["id"],
+            "shard_name": "shard-000000.tar",
+            "input_index": 0,
+            "file_role": "primary",
+            "relative_path": sample["inputs"][0]["path"],
+            "status": "ok",
+            "wds_member": f"{index:09d}.0.mp4",
+        } for index, sample in enumerate(samples)]
+    ).to_parquet(split_root / "shard_manifest.parquet", index=False)
+    with tarfile.open(split_root / "shards" / "shard-000000.tar", "w") as archive:
+        for index, sample in enumerate(samples):
+            source = tmp_path / f"source-{index}.mp4"
+            source.write_bytes(sample["id"].encode())
+            archive.add(source, arcname=f"{index:09d}.0.mp4")
+
+    local_root = tmp_path / "local"
+    local_root.mkdir()
+    dataset_path = local_root / "test.json"
+    dataset_path.write_text(
+        json.dumps({
+            "hf_repo_id": "OpenSportsLab/repo",
+            "hf_branch": "main",
+            "hf_split": "test",
+            "hf_format": "parquet",
+            "hf_commit": "pinned",
+            "data": samples,
+        }),
+        encoding="utf-8",
+    )
+    existing_path = local_root / "clips" / "existing.mp4"
+    existing_path.parent.mkdir(parents=True)
+    existing_path.write_bytes(b"keep-me")
+    downloaded = []
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (object(), _copying_hf_download(remote_root, downloaded), object()),
+    )
+
+    result = download_dataset_sample_inputs_from_hf(str(dataset_path), "requested")
+
+    assert downloaded == [
+        "test/metadata.parquet",
+        "test/shard_manifest.parquet",
+        "test/shards/shard-000000.tar",
+    ]
+    assert (local_root / "clips" / "requested.mp4").read_bytes() == b"requested"
+    assert existing_path.read_bytes() == b"keep-me"
+    assert (local_root / "clips" / "missing.mp4").read_bytes() == b"missing"
+    assert result["requested_downloaded_count"] == 1
+    assert result["opportunistic_downloaded_count"] == 1
+    assert result["collateral_skipped_count"] == 1
+    assert not list(local_root.rglob("*.tar"))
+
+
+def test_json_selective_input_download_includes_ball_and_overwrites_only_requested(
+    monkeypatch, tmp_path
+):
+    remote_root = tmp_path / "remote"
+    (remote_root / "tracking").mkdir(parents=True)
+    (remote_root / "tracking" / "players.h5").write_bytes(b"new-players")
+    (remote_root / "tracking" / "ball.h5").write_bytes(b"new-ball")
+    local_root = tmp_path / "local"
+    (local_root / "tracking").mkdir(parents=True)
+    (local_root / "tracking" / "players.h5").write_bytes(b"old-players")
+    dataset_path = local_root / "test.json"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "hf_repo_id": "OpenSportsLab/repo",
+                "hf_branch": "main",
+                "hf_split": "test",
+                "hf_format": "json",
+                "hf_commit": "pinned",
+                "data": [
+                    {
+                        "id": "sample-1",
+                        "inputs": [
+                            {
+                                "path": "tracking/players.h5",
+                                "ball_path": "tracking/ball.h5",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    downloaded = []
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (object(), _copying_hf_download(remote_root, downloaded), object()),
+    )
+
+    result = download_dataset_sample_inputs_from_hf(
+        str(dataset_path),
+        "sample-1",
+        input_path="tracking/players.h5",
+        overwrite=True,
+    )
+
+    assert downloaded == ["tracking/players.h5", "tracking/ball.h5"]
+    assert (local_root / "tracking" / "players.h5").read_bytes() == b"new-players"
+    assert (local_root / "tracking" / "ball.h5").read_bytes() == b"new-ball"
+    assert result["requested_overwritten_paths"] == ["tracking/players.h5"]
+    assert result["requested_downloaded_paths"] == ["tracking/ball.h5"]
+
+
+def test_parquet_selective_overwrite_preserves_existing_collateral(monkeypatch, tmp_path):
+    remote_root = tmp_path / "remote"
+    split_root = remote_root / "test"
+    (split_root / "shards").mkdir(parents=True)
+    samples = [
+        {"id": "requested", "inputs": [{"path": "clips/requested.mp4"}]},
+        {"id": "collateral", "inputs": [{"path": "clips/collateral.mp4"}]},
+    ]
+    pd.DataFrame(
+        [
+            {
+                "sample_id": sample["id"],
+                "sample_index": index,
+                "shard_name": "shard-000000.tar",
+                "header": json.dumps({"data": []}),
+                "sample_payload": json.dumps(sample),
+            }
+            for index, sample in enumerate(samples)
+        ]
+    ).to_parquet(split_root / "metadata.parquet", index=False)
+    pd.DataFrame(
+        [
+            {
+                "sample_id": sample["id"],
+                "shard_name": "shard-000000.tar",
+                "input_index": 0,
+                "file_role": "primary",
+                "relative_path": sample["inputs"][0]["path"],
+                "status": "ok",
+                "wds_member": f"{index:09d}.0.mp4",
+            }
+            for index, sample in enumerate(samples)
+        ]
+    ).to_parquet(split_root / "shard_manifest.parquet", index=False)
+    with tarfile.open(split_root / "shards" / "shard-000000.tar", "w") as archive:
+        for index, sample in enumerate(samples):
+            source = tmp_path / f"payload-{index}.mp4"
+            source.write_bytes(f"remote-{sample['id']}".encode())
+            archive.add(source, arcname=f"{index:09d}.0.mp4")
+
+    local_root = tmp_path / "local"
+    (local_root / "clips").mkdir(parents=True)
+    (local_root / "clips" / "requested.mp4").write_bytes(b"old-requested")
+    (local_root / "clips" / "collateral.mp4").write_bytes(b"keep-collateral")
+    dataset_path = local_root / "test.json"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "hf_repo_id": "OpenSportsLab/repo",
+                "hf_branch": "main",
+                "hf_split": "test",
+                "hf_format": "parquet",
+                "hf_commit": "pinned",
+                "data": samples,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (object(), _copying_hf_download(remote_root, []), object()),
+    )
+
+    result = download_dataset_sample_inputs_from_hf(
+        str(dataset_path), "requested", overwrite=True
+    )
+
+    assert (local_root / "clips" / "requested.mp4").read_bytes() == b"remote-requested"
+    assert (local_root / "clips" / "collateral.mp4").read_bytes() == b"keep-collateral"
+    assert result["requested_overwritten_count"] == 1
+    assert result["collateral_skipped_count"] == 1
+
+
+def test_selective_download_rejects_unsafe_requested_destination_before_network(
+    monkeypatch, tmp_path
+):
+    dataset_path = tmp_path / "test.json"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "hf_repo_id": "OpenSportsLab/repo",
+                "hf_branch": "main",
+                "hf_split": "test",
+                "hf_format": "json",
+                "hf_commit": "pinned",
+                "data": [{"id": "sample-1", "inputs": [{"path": "../escape.mp4"}]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: pytest.fail("Network must not be used for an unsafe path"),
+    )
+
+    with pytest.raises(ValueError, match="Unsafe dataset asset path"):
+        download_dataset_sample_inputs_from_hf(str(dataset_path), "sample-1")
+
+
+def test_parquet_selective_cancellation_removes_downloaded_shard(monkeypatch, tmp_path):
+    remote_root = tmp_path / "remote"
+    split_root = remote_root / "test"
+    (split_root / "shards").mkdir(parents=True)
+    sample = {"id": "sample-1", "inputs": [{"path": "clips/one.mp4"}]}
+    pd.DataFrame(
+        [
+            {
+                "sample_id": "sample-1",
+                "sample_index": 0,
+                "shard_name": "shard-000000.tar",
+                "header": json.dumps({"data": []}),
+                "sample_payload": json.dumps(sample),
+            }
+        ]
+    ).to_parquet(split_root / "metadata.parquet", index=False)
+    pd.DataFrame(
+        [
+            {
+                "sample_id": "sample-1",
+                "shard_name": "shard-000000.tar",
+                "input_index": 0,
+                "file_role": "primary",
+                "relative_path": "clips/one.mp4",
+                "status": "ok",
+                "wds_member": "000000000.0.mp4",
+            }
+        ]
+    ).to_parquet(split_root / "shard_manifest.parquet", index=False)
+    with tarfile.open(split_root / "shards" / "shard-000000.tar", "w") as archive:
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"video")
+        archive.add(source, arcname="000000000.0.mp4")
+
+    local_root = tmp_path / "local"
+    local_root.mkdir()
+    dataset_path = local_root / "test.json"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "hf_repo_id": "OpenSportsLab/repo",
+                "hf_branch": "main",
+                "hf_split": "test",
+                "hf_format": "parquet",
+                "hf_commit": "pinned",
+                "data": [sample],
+            }
+        ),
+        encoding="utf-8",
+    )
+    downloaded = []
+    temporary_dir = tmp_path / "selective-temp"
+
+    def _make_temp_dir(prefix):
+        assert prefix == "hf_selective_parquet_"
+        temporary_dir.mkdir()
+        return str(temporary_dir)
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (object(), _copying_hf_download(remote_root, downloaded), object()),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer.tempfile.mkdtemp", _make_temp_dir
+    )
+
+    with pytest.raises(HfTransferCancelled):
+        download_dataset_sample_inputs_from_hf(
+            str(dataset_path),
+            "sample-1",
+            is_cancelled=lambda: len(downloaded) >= 3,
+        )
+
+    assert downloaded[-1] == "test/shards/shard-000000.tar"
+    assert not temporary_dir.exists()
+    assert not (local_root / "clips" / "one.mp4").exists()
 
 
 def test_download_dataset_split_from_hf_json_writes_hf_metadata_on_non_dry_run(monkeypatch, tmp_path):

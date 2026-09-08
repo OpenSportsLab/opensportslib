@@ -9,6 +9,7 @@ read file references from OSL JSON `data[].inputs[]`; see
 - `download_osl_hf.py`
 	- Downloads an OSL split by repo, revision, and split name.
 	- JSON mode downloads `<split>.json` and all referenced inputs; Parquet mode downloads `<split>/`.
+	- `--annotations-only` downloads or reconstructs only `<split>.json`.
 - `download_hf_repo.py`
 	- Downloads a full HuggingFace repository snapshot for a given repo and revision.
 	- Best when you want the entire repo content for a branch/tag/commit.
@@ -97,13 +98,64 @@ for revision in 224p 720p; do
 for split in test valid train; do
 python tools/download/download_osl_hf.py \
 	--repo-id OpenSportsLab/OSL-XFoul --revision $revision --split $split --format parquet \
-	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul
+	--output-dir /ibex/project/c2134/opensportslab/datasets/OSL-XFoul \
+	--annotations-only
 done
 done
 ```
 
 The split downloader treats `--output-dir` as a root and writes files under
 `<output-dir>/<revision>/<split>`.
+
+## Metadata-first and selective downloads
+
+The Python split API accepts `annotations_only=True`. In JSON format it fetches
+only `<split>.json`. In Parquet format it fetches only
+`<split>/metadata.parquet`, reconstructs `<split>.json`, validates the metadata,
+and removes the temporary Parquet file without downloading any WebDataset
+shards.
+
+```python
+from opensportslib.tools import (
+    download_dataset_split_from_hf,
+    download_dataset_sample_inputs_from_hf,
+)
+
+metadata = download_dataset_split_from_hf(
+    repo_id="OpenSportsLab/example",
+    revision="main",
+    split="test",
+    output_dir="downloaded_data",
+    format="parquet",
+    annotations_only=True,
+)
+
+assets = download_dataset_sample_inputs_from_hf(
+    dataset_json_path=metadata["json_path"],
+    sample_id="sample-001",
+    # Omit input_path to request every input in the sample.
+    input_path="videos/sample-001.mp4",
+    overwrite=False,
+)
+```
+
+Every downloaded JSON records `hf_repo_id`, `hf_branch`, `hf_split`,
+`hf_format`, and `hf_commit`. Selective downloads require all five fields so
+that later media requests use the same immutable repository commit as the
+metadata.
+
+For native JSON repositories, requested assets are downloaded directly. For
+Parquet/WebDataset repositories, the required shard is downloaded once to
+temporary storage. Requested files obey `overwrite`; every other safely mapped
+asset in that shard is extracted only when it is absent locally. Existing
+collateral files are never overwritten. Primary inputs and `ball_path`
+companions are supported, duplicate paths are coalesced, and temporary shard
+artifacts are always removed.
+
+The selective result contains `requested`, `opportunistic`, `overwritten`,
+`skipped`, `missing`, and `failed` asset lists. Unsafe destinations—including
+absolute paths, traversal outside the JSON directory, symlink escapes, and
+directory collisions—are rejected.
 
 ## Upload
 
@@ -151,9 +203,16 @@ done
 - `download_hf_repo.py` accepts `--repo-type` (`dataset`, `model`, `space`) and optional `--ignore` glob patterns.
 - `upload_osl_hf.py` accepts `--format` (`json`, `parquet`).
 - In parquet mode, output is uploaded under a folder named after the JSON file stem.
+- `annotations_only=True` and `dry_run=True` are mutually exclusive.
+- Starting a later full Parquet download completes a metadata-only dataset; an
+  existing reconstructed JSON does not cause the shard download to be skipped.
 
 ## Python API
 
 ```python
-from opensportslib.tools import download_dataset_split_from_hf, upload_dataset_inputs_from_json_to_hf
+from opensportslib.tools import (
+    download_dataset_split_from_hf,
+    download_dataset_sample_inputs_from_hf,
+    upload_dataset_inputs_from_json_to_hf,
+)
 ```
