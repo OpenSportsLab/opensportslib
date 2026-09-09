@@ -23,6 +23,22 @@ class HfTransferCancelled(RuntimeError):
     pass
 
 
+class MissingDatasetInputsError(FileNotFoundError):
+    """Raised before upload when dataset references are absent locally."""
+
+    def __init__(self, missing_inputs: list[dict[str, str]]):
+        self.missing_inputs = list(missing_inputs)
+        preview = ", ".join(
+            item["path"] for item in self.missing_inputs[:5]
+        )
+        if len(self.missing_inputs) > 5:
+            preview += f", and {len(self.missing_inputs) - 5} more"
+        super().__init__(
+            f"Dataset upload blocked: {len(self.missing_inputs)} referenced input "
+            f"file(s) are missing locally: {preview}"
+        )
+
+
 def _import_osl_json_to_parquet():
     try:
         from .osl_json_to_parquet import DEFAULT_SHARD_SIZE as module_default_shard_size
@@ -209,6 +225,16 @@ def _import_hf_commit_operation_add():
             "Missing dependency 'huggingface_hub'. Install it with: pip install huggingface_hub"
         ) from exc
     return CommitOperationAdd
+
+
+def _import_hf_commit_operation_delete():
+    try:
+        from huggingface_hub import CommitOperationDelete
+    except ImportError as exc:
+        raise RuntimeError(
+            "Deleting obsolete Hugging Face shards requires 'huggingface_hub'."
+        ) from exc
+    return CommitOperationDelete
 
 
 def human_size(num: int) -> str:
@@ -1240,6 +1266,121 @@ def _normalize_repo_path(path: str) -> str:
     return str(path or "").strip().replace("\\", "/").lstrip("/")
 
 
+def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
+    """Return referenced primary and companion inputs that are absent locally."""
+    cleaned_json_path = Path(str(dataset_json_path or "").strip()).resolve()
+    if not cleaned_json_path.is_file():
+        raise ValueError(f"Dataset JSON does not exist: {cleaned_json_path}")
+    with open(cleaned_json_path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    data_items = payload.get("data", []) if isinstance(payload, dict) else []
+    if not isinstance(data_items, list):
+        raise ValueError("Invalid dataset JSON: expected top-level 'data' list.")
+
+    missing: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for sample in data_items:
+        if not isinstance(sample, dict):
+            continue
+        sample_id = str(sample.get("id") or "").strip()
+        for input_item in sample.get("inputs", []) or []:
+            if not isinstance(input_item, dict):
+                continue
+            primary_path = str(input_item.get("path") or "").strip()
+            for role, raw_path in (
+                ("primary", primary_path),
+                ("ball", str(input_item.get("ball_path") or "").strip()),
+            ):
+                if not raw_path:
+                    continue
+                local_path = (
+                    Path(raw_path)
+                    if os.path.isabs(raw_path)
+                    else cleaned_json_path.parent / raw_path
+                ).resolve(strict=False)
+                if local_path.is_file():
+                    continue
+                key = (sample_id, role, raw_path.replace("\\", "/"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                missing.append(
+                    {
+                        "sample_id": sample_id,
+                        "input_path": primary_path,
+                        "path": raw_path,
+                        "role": role,
+                        "local_path": str(local_path),
+                    }
+                )
+    return missing
+
+
+def download_dataset_missing_inputs_from_hf(
+    dataset_json_path: str,
+    *,
+    token: str | None = None,
+    progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
+    is_cancelled: CancelCheck | None = None,
+) -> dict[str, Any]:
+    """Hydrate all locally missing inputs from the JSON's pinned HF source."""
+    initial_missing = find_missing_dataset_inputs(dataset_json_path)
+    sample_ids = list(
+        dict.fromkeys(item["sample_id"] for item in initial_missing if item["sample_id"])
+    )
+    if initial_missing and len(sample_ids) != len(
+        {item["sample_id"] for item in initial_missing}
+    ):
+        raise ValueError("Every sample with a missing input must have an id.")
+
+    results = []
+    total = len(sample_ids)
+    for index, sample_id in enumerate(sample_ids, start=1):
+        _ensure_not_cancelled(is_cancelled)
+
+        def _scoped_progress(
+            message: str,
+            _index: int = index,
+            _sample_id: str = sample_id,
+        ) -> None:
+            _emit_progress(
+                progress_cb,
+                f"[{_index}/{total}] {_sample_id}: {message}",
+            )
+
+        results.append(
+            download_dataset_sample_inputs_from_hf(
+                dataset_json_path,
+                sample_id,
+                overwrite=False,
+                token=token,
+                progress_cb=_scoped_progress,
+                byte_progress_cb=byte_progress_cb,
+                is_cancelled=is_cancelled,
+            )
+        )
+
+    remaining_missing = find_missing_dataset_inputs(dataset_json_path)
+    return {
+        "operation": "missing_assets",
+        "dataset_json_path": str(Path(dataset_json_path).resolve()),
+        "initial_missing": initial_missing,
+        "initial_missing_count": len(initial_missing),
+        "remaining_missing": remaining_missing,
+        "remaining_missing_count": len(remaining_missing),
+        "sample_results": results,
+        "requested_downloaded_count": sum(
+            int(result.get("requested_downloaded_count") or 0) for result in results
+        ),
+        "opportunistic_downloaded_count": sum(
+            int(result.get("opportunistic_downloaded_count") or 0)
+            for result in results
+        ),
+        "failed_count": sum(int(result.get("failed_count") or 0) for result in results),
+    }
+
+
 def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list[dict[str, str]]:
     cleaned_json_path = os.path.abspath(str(dataset_json_path or "").strip())
     if not cleaned_json_path:
@@ -1498,15 +1639,19 @@ def upload_dataset_as_parquet_to_hf(
 
     A temporary directory is used for the conversion output and removed when done.
     """
-    HfApi, _, _ = _import_hf_hub()
-    CommitOperationAdd = _import_hf_commit_operation_add()
-
     cleaned_repo_id = str(repo_id or "").strip()
     cleaned_json_path = os.path.abspath(str(json_path or "").strip())
     if not cleaned_repo_id:
         raise ValueError("repo_id is required.")
     if not os.path.isfile(cleaned_json_path):
         raise ValueError(f"JSON file does not exist: {cleaned_json_path}")
+    missing_inputs = find_missing_dataset_inputs(cleaned_json_path)
+    if missing_inputs:
+        raise MissingDatasetInputsError(missing_inputs)
+
+    HfApi, _, _ = _import_hf_hub()
+    CommitOperationAdd = _import_hf_commit_operation_add()
+    CommitOperationDelete = _import_hf_commit_operation_delete()
 
     cleaned_revision = str(revision or "").strip() or "main"
     effective_commit_message = (commit_message or "").strip() or "Upload dataset as Parquet + WebDataset"
@@ -1545,7 +1690,7 @@ def upload_dataset_as_parquet_to_hf(
             shard_mode=cleaned_shard_mode,
             shard_size=cleaned_shard_size,
             samples_per_shard=cleaned_samples_per_shard,
-            missing_policy="skip",
+            missing_policy="raise",
             overwrite=True,
         )
 
@@ -1566,7 +1711,32 @@ def upload_dataset_as_parquet_to_hf(
             f"Preparing batched parquet upload of {total} files to {cleaned_repo_id}@{cleaned_revision} under '{folder_name}/'..."
         )
 
-        operations = []
+        generated_repo_paths = {entry["path_in_repo"] for entry in upload_entries}
+        existing_repo_paths = set(
+            api.list_repo_files(
+                cleaned_repo_id,
+                revision=cleaned_revision,
+                repo_type="dataset",
+            )
+        )
+        target_prefix = f"{folder_name}/"
+        stale_repo_paths = sorted(
+            path
+            for path in existing_repo_paths
+            if path.startswith(target_prefix)
+            and path not in generated_repo_paths
+            and (
+                path in {
+                    f"{folder_name}/metadata.parquet",
+                    f"{folder_name}/shard_manifest.parquet",
+                }
+                or path.startswith(f"{folder_name}/shards/")
+            )
+        )
+
+        operations = [
+            CommitOperationDelete(path_in_repo=path) for path in stale_repo_paths
+        ]
         for idx, entry in enumerate(upload_entries, start=1):
             _ensure_not_cancelled(is_cancelled)
             _emit_progress(progress_cb, f"[{idx}/{total}] Queueing {entry['path_in_repo']}")
@@ -1578,7 +1748,12 @@ def upload_dataset_as_parquet_to_hf(
             )
 
         _ensure_not_cancelled(is_cancelled)
-        _emit_progress(progress_cb, f"Submitting one Hugging Face commit with {len(operations)} parquet files...")
+        _emit_progress(
+            progress_cb,
+            "Submitting one Hugging Face commit with "
+            f"{total} generated file(s) and {len(stale_repo_paths)} obsolete "
+            "shard deletion(s)...",
+        )
         commit_info = api.create_commit(
             repo_id=cleaned_repo_id,
             repo_type="dataset",
@@ -1611,6 +1786,7 @@ def upload_dataset_as_parquet_to_hf(
         "num_samples": int(conversion_result.get("num_samples") or 0),
         "input_file_count": input_file_count,
         "uploaded_file_count": total,
+        "deleted_file_count": len(stale_repo_paths),
         "commit_message": effective_commit_message,
         "commit_ref": commit_ref,
     }

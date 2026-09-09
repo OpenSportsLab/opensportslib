@@ -16,14 +16,17 @@ from opensportslib.tools.hf_transfer import (
     HF_REPO_ID_KEY,
     HF_SPLIT_KEY,
     HfTransferCancelled,
+    MissingDatasetInputsError,
     create_dataset_branch_on_hf,
     create_dataset_repo_on_hf,
     dataset_repo_exists_on_hf,
     download_dataset_split_from_hf,
     download_dataset_sample_inputs_from_hf,
+    download_dataset_missing_inputs_from_hf,
     download_dataset_splits_from_hf,
     extract_local_input_upload_entries_from_json,
     extract_repo_paths_from_json,
+    find_missing_dataset_inputs,
     is_hf_download_url_not_found_error,
     is_hf_repo_not_found_error,
     is_hf_revision_not_found_error,
@@ -140,6 +143,85 @@ def test_download_hf_file_rejects_unsafe_destination(tmp_path):
             token=None,
             byte_progress_cb=lambda *_args: None,
         )
+
+
+def test_find_missing_dataset_inputs_includes_primary_and_ball_paths(tmp_path):
+    present_path = tmp_path / "clips" / "present.mp4"
+    present_path.parent.mkdir()
+    present_path.write_bytes(b"present")
+    json_path = tmp_path / "test.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "sample-1",
+                        "inputs": [
+                            {"path": "clips/present.mp4", "type": "video"},
+                            {
+                                "path": "tracking/joints.h5",
+                                "ball_path": "tracking/ball.h5",
+                                "type": "player_joints_h5",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    missing = find_missing_dataset_inputs(str(json_path))
+
+    assert [(item["role"], item["path"]) for item in missing] == [
+        ("primary", "tracking/joints.h5"),
+        ("ball", "tracking/ball.h5"),
+    ]
+    assert all(item["sample_id"] == "sample-1" for item in missing)
+
+
+def test_download_dataset_missing_inputs_revalidates_after_hydration(
+    monkeypatch, tmp_path
+):
+    json_path = tmp_path / "test.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "sample-1",
+                        "inputs": [{"path": "clips/one.mp4", "type": "video"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def _hydrate(dataset_json_path, sample_id, **kwargs):
+        calls.append((dataset_json_path, sample_id, kwargs))
+        destination = tmp_path / "clips" / "one.mp4"
+        destination.parent.mkdir()
+        destination.write_bytes(b"video")
+        return {
+            "requested_downloaded_count": 1,
+            "opportunistic_downloaded_count": 0,
+            "failed_count": 0,
+        }
+
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "download_dataset_sample_inputs_from_hf",
+        _hydrate,
+    )
+
+    result = download_dataset_missing_inputs_from_hf(str(json_path))
+
+    assert [sample_id for _, sample_id, _ in calls] == ["sample-1"]
+    assert result["initial_missing_count"] == 1
+    assert result["remaining_missing_count"] == 0
+    assert result["requested_downloaded_count"] == 1
 
 
 def test_extract_repo_paths_from_json_supports_legacy_and_osl_v2():
@@ -571,6 +653,38 @@ def test_upload_dataset_inputs_from_json_to_hf_uploads_inputs_and_json(monkeypat
     assert result["commit_ref"] == "abc123"
 
 
+def test_upload_dataset_as_parquet_to_hf_blocks_missing_inputs_before_conversion(
+    monkeypatch, tmp_path
+):
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "sample-1",
+                        "inputs": [{"path": "clips/missing.mp4", "type": "video"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "convert_json_to_parquet",
+        lambda **_kwargs: pytest.fail("Conversion must not start with missing inputs"),
+    )
+
+    with pytest.raises(MissingDatasetInputsError) as error:
+        upload_dataset_as_parquet_to_hf(
+            repo_id="OpenSportsLab/test-repo",
+            json_path=str(json_path),
+        )
+
+    assert error.value.missing_inputs[0]["path"] == "clips/missing.mp4"
+
+
 def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_commit(monkeypatch, tmp_path):
     json_path = tmp_path / "annotations.json"
     json_path.write_text(json.dumps({"data": []}), encoding="utf-8")
@@ -586,6 +700,13 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
     class _FakeApi:
         def __init__(self, token=None):
             pass
+
+        def list_repo_files(self, *args, **kwargs):
+            return [
+                "test/shards/shard-999999.tar",
+                "test/notes.txt",
+                "other/shards/shard-000000.tar",
+            ]
 
         def create_commit(self, **kwargs):
             commit_calls.append(kwargs)
@@ -631,8 +752,9 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
     assert commit_kwargs["revision"] == "dev-branch"
     assert commit_kwargs["commit_message"] == "Upload parquet test"
     operations = commit_kwargs["operations"]
-    assert len(operations) == 3
+    assert len(operations) == 4
     assert [op.path_in_repo for op in operations] == [
+        "test/shards/shard-999999.tar",
         "test/dataset.parquet",
         "test/samples/shard-00000.tar",
         "test/samples/shard-00001.tar",
@@ -641,6 +763,7 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
     assert result["split"] == "test"
     assert result["folder_name"] == "test"
     assert result["uploaded_file_count"] == 3
+    assert result["deleted_file_count"] == 1
     assert result["num_samples"] == 2
     assert result["shard_mode"] == "size"
     assert result["shard_size"] == 1_000_000_000
@@ -653,6 +776,7 @@ def test_upload_dataset_as_parquet_to_hf_uploads_all_generated_files_in_one_comm
     assert convert_calls[0]["shard_mode"] == "size"
     assert convert_calls[0]["shard_size"] == 1_000_000_000
     assert convert_calls[0]["samples_per_shard"] == 100
+    assert convert_calls[0]["missing_policy"] == "raise"
 
 
 def test_upload_dataset_as_parquet_to_hf_forwards_custom_shard_size(monkeypatch, tmp_path):
@@ -669,6 +793,9 @@ def test_upload_dataset_as_parquet_to_hf_forwards_custom_shard_size(monkeypatch,
     class _FakeApi:
         def __init__(self, token=None):
             pass
+
+        def list_repo_files(self, *args, **kwargs):
+            return []
 
         def create_commit(self, **kwargs):
             return type("_CommitInfo", (), {"oid": "parquetsha"})()
@@ -719,6 +846,9 @@ def test_upload_dataset_as_parquet_to_hf_forwards_sample_mode(monkeypatch, tmp_p
     class _FakeApi:
         def __init__(self, token=None):
             pass
+
+        def list_repo_files(self, *args, **kwargs):
+            return []
 
         def create_commit(self, **kwargs):
             return type("_CommitInfo", (), {"oid": "parquetsha"})()

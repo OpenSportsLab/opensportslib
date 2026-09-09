@@ -166,6 +166,20 @@ only after completion. A total of `0` means that the remote size is unknown.
 
 ## Upload
 
+Parquet + WebDataset upload is strict: every `data[].inputs[].path` and
+`ball_path` reference must resolve to a local file before conversion starts.
+`find_missing_dataset_inputs(json_path)` provides a preflight list. For a
+metadata-first dataset with complete Hugging Face provenance,
+`download_dataset_missing_inputs_from_hf(json_path)` hydrates those files from
+the recorded immutable commit and rechecks the dataset afterward. It reuses the
+selective downloader, so a Parquet shard is downloaded only until its missing
+assets have been extracted.
+
+When an existing Parquet split is replaced, the upload commit atomically
+deletes obsolete files under the managed `shards/` path while adding the new
+metadata, manifest, and shards. Unrelated files in the split folder are left
+untouched.
+
 ```bash
 # JSON mode (upload dataset JSON + referenced input files)
 python tools/download/upload_osl_hf.py \
