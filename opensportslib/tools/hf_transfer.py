@@ -3,10 +3,12 @@ import os
 import shutil
 import tarfile
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
 ProgressCallback = Callable[[str], None]
+ByteProgressCallback = Callable[[str, int, int], None]
 CancelCheck = Callable[[], bool]
 
 HF_REPO_ID_KEY = "hf_repo_id"
@@ -96,6 +98,107 @@ def _import_hf_hub():
             "Missing dependency 'huggingface_hub'. Install it with: pip install huggingface_hub"
         ) from exc
     return HfApi, hf_hub_download, snapshot_download
+
+
+def _import_hf_file_system():
+    try:
+        from fsspec.callbacks import TqdmCallback
+        from huggingface_hub import HfFileSystem
+    except ImportError as exc:
+        raise RuntimeError(
+            "Byte-level Hugging Face progress requires 'huggingface_hub' and "
+            "'fsspec'."
+        ) from exc
+    return HfFileSystem, TqdmCallback
+
+
+def _download_hf_file(
+    hf_hub_download,
+    *,
+    repo_id: str,
+    filename: str,
+    revision: str,
+    local_dir: str,
+    token: str | None,
+    force_download: bool = False,
+    byte_progress_cb: ByteProgressCallback | None = None,
+    is_cancelled: CancelCheck | None = None,
+) -> str:
+    """Download one file, optionally reporting transferred and total bytes."""
+    normalized_filename = str(filename or "").strip().replace("\\", "/")
+    filename_parts = Path(normalized_filename).parts
+    if (
+        not normalized_filename
+        or normalized_filename.startswith("/")
+        or ".." in filename_parts
+        or (filename_parts and filename_parts[0].endswith(":"))
+    ):
+        raise ValueError(f"Unsafe Hugging Face file path: {filename!r}")
+    local_root = Path(local_dir).resolve()
+    destination = (local_root / normalized_filename).resolve(strict=False)
+    try:
+        destination.relative_to(local_root)
+    except ValueError as exc:
+        raise ValueError(f"Unsafe Hugging Face file path: {filename!r}") from exc
+    _ensure_not_cancelled(is_cancelled)
+    if byte_progress_cb is None:
+        return hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=normalized_filename,
+            revision=revision,
+            local_dir=local_dir,
+            local_dir_use_symlinks=False,
+            force_download=force_download,
+            token=token or None,
+        )
+
+    HfFileSystem, TqdmCallback = _import_hf_file_system()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary_path = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".part",
+        dir=str(destination.parent),
+    )
+    os.close(file_descriptor)
+    lock = threading.Lock()
+
+    class _CallbackProgress:
+        def __init__(self, *args, total=None, initial=0, **kwargs):
+            del args, kwargs
+            self.total = max(0, int(total or 0))
+            self.n = max(0, int(initial or 0))
+            _ensure_not_cancelled(is_cancelled)
+            byte_progress_cb(normalized_filename, self.n, self.total)
+
+        def update(self, amount=1):
+            with lock:
+                _ensure_not_cancelled(is_cancelled)
+                self.n += max(0, int(amount or 0))
+                if self.total:
+                    self.n = min(self.n, self.total)
+                byte_progress_cb(normalized_filename, self.n, self.total)
+
+        def close(self):
+            pass
+
+    callback = TqdmCallback(tqdm_cls=_CallbackProgress)
+    remote_path = f"datasets/{repo_id}/{normalized_filename}"
+    try:
+        with callback:
+            HfFileSystem(token=token or None).get_file(
+                remote_path,
+                temporary_path,
+                callback=callback,
+                revision=revision,
+            )
+        os.replace(temporary_path, destination)
+    finally:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+    return str(destination)
 
 
 def _import_hf_commit_operation_add():
@@ -261,6 +364,7 @@ def _download_parquet_split_and_convert(
     annotations_only: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     cleaned_repo_id = str(repo_id or "").strip()
@@ -279,28 +383,56 @@ def _download_parquet_split_and_convert(
         f"Downloading {scope_label} '{cleaned_split}' from {cleaned_repo_id}@{commit}...",
     )
 
-    _, hf_hub_download, snapshot_download = _import_hf_hub()
+    HfApi, hf_hub_download, snapshot_download = _import_hf_hub()
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
         if annotations_only:
-            metadata_path = hf_hub_download(
+            metadata_path = _download_hf_file(
+                hf_hub_download,
                 repo_id=cleaned_repo_id,
-                repo_type="dataset",
                 filename=f"{cleaned_split}/metadata.parquet",
                 revision=commit,
                 local_dir=tmp_dir,
-                local_dir_use_symlinks=False,
                 token=token or None,
+                byte_progress_cb=byte_progress_cb,
+                is_cancelled=is_cancelled,
             )
         else:
-            snapshot_download(
-                repo_id=cleaned_repo_id,
-                repo_type="dataset",
-                revision=commit,
-                allow_patterns=[f"{cleaned_split}/*"],
-                local_dir=tmp_dir,
-                token=token or None,
-            )
+            if byte_progress_cb is None:
+                snapshot_download(
+                    repo_id=cleaned_repo_id,
+                    repo_type="dataset",
+                    revision=commit,
+                    allow_patterns=[f"{cleaned_split}/*"],
+                    local_dir=tmp_dir,
+                    token=token or None,
+                )
+            else:
+                split_prefix = f"{cleaned_split}/"
+                repo_files = HfApi(token=token or None).list_repo_files(
+                    cleaned_repo_id,
+                    revision=commit,
+                    repo_type="dataset",
+                )
+                split_files = sorted(
+                    path for path in repo_files if path.startswith(split_prefix)
+                )
+                if not split_files:
+                    raise FileNotFoundError(
+                        f"No files found for Parquet split: {cleaned_split}"
+                    )
+                for remote_path in split_files:
+                    _ensure_not_cancelled(is_cancelled)
+                    _download_hf_file(
+                        hf_hub_download,
+                        repo_id=cleaned_repo_id,
+                        filename=remote_path,
+                        revision=commit,
+                        local_dir=tmp_dir,
+                        token=token,
+                        byte_progress_cb=byte_progress_cb,
+                        is_cancelled=is_cancelled,
+                    )
         _ensure_not_cancelled(is_cancelled)
 
         if annotations_only:
@@ -373,6 +505,7 @@ def _download_json_path_from_hf(
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     HfApi, hf_hub_download, _ = _import_hf_hub()
@@ -385,14 +518,15 @@ def _download_json_path_from_hf(
     _ensure_not_cancelled(is_cancelled)
     _emit_progress(progress_cb, f"Downloading JSON from {repo_id}@{commit}: {path_in_repo}")
 
-    json_path = hf_hub_download(
+    json_path = _download_hf_file(
+        hf_hub_download,
         repo_id=repo_id,
-        repo_type="dataset",
         filename=path_in_repo,
         revision=commit,
         local_dir=output_dir,
-        local_dir_use_symlinks=False,
         token=token or None,
+        byte_progress_cb=byte_progress_cb,
+        is_cancelled=is_cancelled,
     )
 
     _ensure_not_cancelled(is_cancelled)
@@ -491,14 +625,15 @@ def _download_json_path_from_hf(
     for idx, full_repo_path in enumerate(allow_patterns, start=1):
         _ensure_not_cancelled(is_cancelled)
         _emit_progress(progress_cb, f"[{idx}/{len(allow_patterns)}] Downloading {full_repo_path}")
-        hf_hub_download(
+        _download_hf_file(
+            hf_hub_download,
             repo_id=repo_id,
-            repo_type="dataset",
             filename=full_repo_path,
             revision=commit,
             local_dir=output_dir,
-            local_dir_use_symlinks=False,
             token=token or None,
+            byte_progress_cb=byte_progress_cb,
+            is_cancelled=is_cancelled,
         )
         downloaded_count += 1
 
@@ -614,6 +749,7 @@ def download_dataset_splits_from_hf(
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> list[dict[str, Any]]:
     cleaned_splits = [str(split or "").strip() for split in (splits or [])]
@@ -639,6 +775,7 @@ def download_dataset_splits_from_hf(
             dry_run=dry_run,
             token=token,
             progress_cb=_scoped_progress,
+            byte_progress_cb=byte_progress_cb,
             is_cancelled=is_cancelled,
         )
         results.append(result)
@@ -657,6 +794,7 @@ def download_dataset_split_from_hf(
     dry_run: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     cleaned_repo_id = str(repo_id or "").strip()
@@ -684,6 +822,7 @@ def download_dataset_split_from_hf(
             annotations_only=annotations_only,
             token=token,
             progress_cb=progress_cb,
+            byte_progress_cb=byte_progress_cb,
             is_cancelled=is_cancelled,
         )
 
@@ -697,6 +836,7 @@ def download_dataset_split_from_hf(
         dry_run=dry_run,
         token=token,
         progress_cb=progress_cb,
+        byte_progress_cb=byte_progress_cb,
         is_cancelled=is_cancelled,
     )
 
@@ -819,6 +959,7 @@ def _download_json_sample_inputs(
     overwrite: bool,
     token: str | None,
     progress_cb: ProgressCallback | None,
+    byte_progress_cb: ByteProgressCallback | None,
     is_cancelled: CancelCheck | None,
 ) -> dict[str, Any]:
     result = _selective_result(
@@ -851,15 +992,16 @@ def _download_json_sample_inputs(
         repo_path = _build_allow_patterns([raw_path], repo_folder)[0]
         _emit_progress(progress_cb, f"[{index}/{total}] Downloading {repo_path}")
         try:
-            hf_hub_download(
+            _download_hf_file(
+                hf_hub_download,
                 repo_id=repo_id,
-                repo_type="dataset",
                 filename=repo_path,
                 revision=commit,
                 local_dir=str(dataset_root),
-                local_dir_use_symlinks=False,
                 force_download=bool(existed and overwrite),
                 token=token or None,
+                byte_progress_cb=byte_progress_cb,
+                is_cancelled=is_cancelled,
             )
             _ensure_not_cancelled(is_cancelled)
         except Exception as exc:
@@ -909,6 +1051,7 @@ def _download_parquet_sample_inputs(
     overwrite: bool,
     token: str | None,
     progress_cb: ProgressCallback | None,
+    byte_progress_cb: ByteProgressCallback | None,
     is_cancelled: CancelCheck | None,
 ) -> dict[str, Any]:
     import pandas as pd
@@ -933,24 +1076,26 @@ def _download_parquet_sample_inputs(
     temporary_dir = tempfile.mkdtemp(prefix="hf_selective_parquet_")
     try:
         _ensure_not_cancelled(is_cancelled)
-        metadata_path = hf_hub_download(
+        metadata_path = _download_hf_file(
+            hf_hub_download,
             repo_id=repo_id,
-            repo_type="dataset",
             filename=f"{split}/metadata.parquet",
             revision=commit,
             local_dir=temporary_dir,
-            local_dir_use_symlinks=False,
             token=token or None,
+            byte_progress_cb=byte_progress_cb,
+            is_cancelled=is_cancelled,
         )
         _ensure_not_cancelled(is_cancelled)
-        manifest_path = hf_hub_download(
+        manifest_path = _download_hf_file(
+            hf_hub_download,
             repo_id=repo_id,
-            repo_type="dataset",
             filename=f"{split}/shard_manifest.parquet",
             revision=commit,
             local_dir=temporary_dir,
-            local_dir_use_symlinks=False,
             token=token or None,
+            byte_progress_cb=byte_progress_cb,
+            is_cancelled=is_cancelled,
         )
         _ensure_not_cancelled(is_cancelled)
         metadata = pd.read_parquet(metadata_path)
@@ -1000,14 +1145,15 @@ def _download_parquet_sample_inputs(
 
         _ensure_not_cancelled(is_cancelled)
         _emit_progress(progress_cb, f"Downloading shard {shard_name} and extracting missing assets...")
-        shard_path = hf_hub_download(
+        shard_path = _download_hf_file(
+            hf_hub_download,
             repo_id=repo_id,
-            repo_type="dataset",
             filename=f"{split}/shards/{shard_name}",
             revision=commit,
             local_dir=temporary_dir,
-            local_dir_use_symlinks=False,
             token=token or None,
+            byte_progress_cb=byte_progress_cb,
+            is_cancelled=is_cancelled,
         )
         _ensure_not_cancelled(is_cancelled)
         with tarfile.open(shard_path, "r") as archive:
@@ -1049,6 +1195,7 @@ def download_dataset_sample_inputs_from_hf(
     overwrite: bool = False,
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
+    byte_progress_cb: ByteProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Download one sample or input from the immutable HF source of a local JSON."""
@@ -1080,6 +1227,7 @@ def download_dataset_sample_inputs_from_hf(
         "overwrite": bool(overwrite),
         "token": token,
         "progress_cb": progress_cb,
+        "byte_progress_cb": byte_progress_cb,
         "is_cancelled": is_cancelled,
     }
     _ensure_not_cancelled(is_cancelled)

@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from fsspec.callbacks import TqdmCallback
+
+import opensportslib.tools.hf_transfer as hf_transfer_module
 
 from opensportslib.tools.hf_transfer import (
     HF_BRANCH_KEY,
@@ -44,6 +47,99 @@ def _copying_hf_download(remote_root: Path, downloaded: list[str]):
         return str(destination)
 
     return _download
+
+
+def test_download_hf_file_reports_transferred_and_total_bytes(monkeypatch, tmp_path):
+    class _FakeFileSystem:
+        def __init__(self, token=None):
+            assert token == "hf_test"
+
+        def get_file(self, remote_path, local_path, callback, revision):
+            assert remote_path == "datasets/OpenSportsLab/repo/clips/large.mp4"
+            assert revision == "pinned"
+            callback.set_size(6)
+            Path(local_path).write_bytes(b"abcdef")
+            callback.tqdm.update(2)
+            callback.tqdm.update(4)
+
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_file_system",
+        lambda: (_FakeFileSystem, TqdmCallback),
+    )
+    progress = []
+
+    result = hf_transfer_module._download_hf_file(
+        pytest.fail,
+        repo_id="OpenSportsLab/repo",
+        filename="clips/large.mp4",
+        revision="pinned",
+        local_dir=str(tmp_path),
+        token="hf_test",
+        byte_progress_cb=lambda filename, current, total: progress.append(
+            (filename, current, total)
+        ),
+    )
+
+    assert result == str(tmp_path / "clips" / "large.mp4")
+    assert Path(result).read_bytes() == b"abcdef"
+    assert progress[0] == ("clips/large.mp4", 0, 6)
+    assert ("clips/large.mp4", 2, 6) in progress
+    assert progress[-1] == ("clips/large.mp4", 6, 6)
+    assert [current for _, current, _ in progress] == sorted(
+        current for _, current, _ in progress
+    )
+
+
+def test_download_hf_file_cancels_during_transfer_and_removes_partial(
+    monkeypatch, tmp_path
+):
+    cancelled = {"value": False}
+
+    class _FakeFileSystem:
+        def __init__(self, token=None):
+            del token
+
+        def get_file(self, remote_path, local_path, callback, revision):
+            del remote_path, revision
+            callback.set_size(10)
+            Path(local_path).write_bytes(b"partial")
+            cancelled["value"] = True
+            callback.tqdm.update(7)
+
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_file_system",
+        lambda: (_FakeFileSystem, TqdmCallback),
+    )
+
+    with pytest.raises(HfTransferCancelled):
+        hf_transfer_module._download_hf_file(
+            pytest.fail,
+            repo_id="OpenSportsLab/repo",
+            filename="clips/large.mp4",
+            revision="pinned",
+            local_dir=str(tmp_path),
+            token=None,
+            byte_progress_cb=lambda *_args: None,
+            is_cancelled=lambda: cancelled["value"],
+        )
+
+    assert not (tmp_path / "clips" / "large.mp4").exists()
+    assert list((tmp_path / "clips").glob("*.part")) == []
+
+
+def test_download_hf_file_rejects_unsafe_destination(tmp_path):
+    with pytest.raises(ValueError, match="Unsafe Hugging Face file path"):
+        hf_transfer_module._download_hf_file(
+            pytest.fail,
+            repo_id="OpenSportsLab/repo",
+            filename="../escape.mp4",
+            revision="pinned",
+            local_dir=str(tmp_path),
+            token=None,
+            byte_progress_cb=lambda *_args: None,
+        )
 
 
 def test_extract_repo_paths_from_json_supports_legacy_and_osl_v2():

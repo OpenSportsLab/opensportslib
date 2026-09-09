@@ -126,7 +126,7 @@ metadata = download_dataset_split_from_hf(
     revision="main",
     split="test",
     output_dir="downloaded_data",
-    format="parquet",
+    download_format="parquet",
     annotations_only=True,
 )
 
@@ -156,6 +156,13 @@ The selective result contains `requested`, `opportunistic`, `overwritten`,
 `skipped`, `missing`, and `failed` asset lists. Unsafe destinations—including
 absolute paths, traversal outside the JSON directory, symlink escapes, and
 directory collisions—are rejected.
+
+Both split download APIs and `download_dataset_sample_inputs_from_hf` accept an
+optional `byte_progress_cb(filename, downloaded_bytes, total_bytes)` callback.
+It is called while each remote file is transferring, allowing clients to show
+file-size progress instead of only item or split counts. When this callback is
+provided, files are streamed to an atomic temporary path and moved into place
+only after completion. A total of `0` means that the remote size is unknown.
 
 ## Upload
 
