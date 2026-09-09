@@ -1381,7 +1381,9 @@ def download_dataset_missing_inputs_from_hf(
     }
 
 
-def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list[dict[str, str]]:
+def _collect_local_input_upload_entries_from_json(
+    dataset_json_path: str,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     cleaned_json_path = os.path.abspath(str(dataset_json_path or "").strip())
     if not cleaned_json_path:
         raise ValueError("json_path is required.")
@@ -1397,6 +1399,7 @@ def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list
 
     base_dir = os.path.dirname(cleaned_json_path)
     entries: list[dict[str, str]] = []
+    missing_entries: list[dict[str, str]] = []
     for sample in data_items:
         if not isinstance(sample, dict):
             continue
@@ -1423,9 +1426,13 @@ def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list
                 local_path = raw_path if os.path.isabs(raw_path) else os.path.join(base_dir, raw_path)
                 local_path = os.path.abspath(local_path)
                 if not os.path.isfile(local_path):
-                    raise FileNotFoundError(
-                        f"Input file from dataset JSON not found on disk: {raw_path} (resolved: {local_path})"
+                    missing_entries.append(
+                        {
+                            "local_path": local_path,
+                            "path_in_repo": _normalize_repo_path(raw_path),
+                        }
                     )
+                    continue
 
                 path_in_repo = _normalize_repo_path(raw_path)
                 if not path_in_repo:
@@ -1438,8 +1445,19 @@ def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list
                     }
                 )
 
-    if not entries:
+    if not entries and not missing_entries:
         raise ValueError("No valid data[].inputs[].path entries found in the provided dataset JSON.")
+    return entries, missing_entries
+
+
+def extract_local_input_upload_entries_from_json(dataset_json_path: str) -> list[dict[str, str]]:
+    entries, missing_entries = _collect_local_input_upload_entries_from_json(dataset_json_path)
+    if missing_entries:
+        missing = missing_entries[0]
+        raise FileNotFoundError(
+            "Input file from dataset JSON not found on disk: "
+            f"{missing['path_in_repo']} (resolved: {missing['local_path']})"
+        )
     return entries
 
 
@@ -1468,7 +1486,20 @@ def upload_dataset_inputs_from_json_to_hf(
     cleaned_revision = str(revision or "").strip() or "main"
 
     effective_commit_message = (commit_message or "").strip() or "Upload dataset inputs from JSON"
-    input_upload_entries = extract_local_input_upload_entries_from_json(cleaned_json_path)
+    input_upload_entries, missing_input_entries = _collect_local_input_upload_entries_from_json(
+        cleaned_json_path
+    )
+    missing_input_paths = list(
+        dict.fromkeys(entry["path_in_repo"] for entry in missing_input_entries)
+    )
+    if missing_input_paths:
+        _emit_progress(
+            progress_cb,
+            (
+                f"Skipping {len(missing_input_paths)} referenced input files that "
+                "are not available locally."
+            ),
+        )
     unique_input_entries: list[dict[str, str]] = []
     input_entry_by_repo_path: dict[str, dict[str, str]] = {}
     duplicate_input_refs = 0
@@ -1562,6 +1593,8 @@ def upload_dataset_inputs_from_json_to_hf(
         "json_path_in_repo": json_path_in_repo,
         "input_file_count": len(input_upload_entries),
         "unique_input_file_count": len(unique_input_entries),
+        "skipped_missing_input_count": len(missing_input_paths),
+        "skipped_missing_input_paths": missing_input_paths,
         "uploaded_file_count": len(upload_entries),
         "uploaded_json_separately": not json_already_listed_in_inputs,
         "commit_message": effective_commit_message,

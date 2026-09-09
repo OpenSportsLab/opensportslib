@@ -653,6 +653,130 @@ def test_upload_dataset_inputs_from_json_to_hf_uploads_inputs_and_json(monkeypat
     assert result["commit_ref"] == "abc123"
 
 
+def test_upload_dataset_inputs_from_json_to_hf_skips_missing_inputs(monkeypatch, tmp_path):
+    clip_path = tmp_path / "train" / "present.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "sample_1",
+                        "inputs": [
+                            {"path": "train/present.mp4", "type": "video"},
+                            {"path": "train/missing.mp4", "type": "video"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commit_calls = []
+
+    class _FakeCommitOperationAdd:
+        def __init__(self, *, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def create_commit(self, **kwargs):
+            commit_calls.append(kwargs)
+            return type("_CommitInfo", (), {"oid": "abc123"})()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_commit_operation_add",
+        lambda: _FakeCommitOperationAdd,
+    )
+    progress_messages = []
+
+    result = upload_dataset_inputs_from_json_to_hf(
+        repo_id="OpenSportsLab/test-repo",
+        json_path=str(json_path),
+        split="test",
+        progress_cb=progress_messages.append,
+    )
+
+    operations = commit_calls[0]["operations"]
+    assert [operation.path_in_repo for operation in operations] == [
+        "test.json",
+        "train/present.mp4",
+    ]
+    assert result["input_file_count"] == 1
+    assert result["uploaded_file_count"] == 2
+    assert result["skipped_missing_input_count"] == 1
+    assert result["skipped_missing_input_paths"] == ["train/missing.mp4"]
+    assert progress_messages[0] == (
+        "Skipping 1 referenced input files that are not available locally."
+    )
+
+
+def test_upload_dataset_inputs_from_json_to_hf_can_upload_json_when_all_inputs_missing(
+    monkeypatch, tmp_path
+):
+    json_path = tmp_path / "annotations.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "sample_1",
+                        "inputs": [{"path": "train/missing.mp4", "type": "video"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commit_calls = []
+
+    class _FakeCommitOperationAdd:
+        def __init__(self, *, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def create_commit(self, **kwargs):
+            commit_calls.append(kwargs)
+            return type("_CommitInfo", (), {"oid": "abc123"})()
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_commit_operation_add",
+        lambda: _FakeCommitOperationAdd,
+    )
+
+    result = upload_dataset_inputs_from_json_to_hf(
+        repo_id="OpenSportsLab/test-repo",
+        json_path=str(json_path),
+        split="test",
+    )
+
+    assert [operation.path_in_repo for operation in commit_calls[0]["operations"]] == [
+        "test.json"
+    ]
+    assert result["input_file_count"] == 0
+    assert result["uploaded_file_count"] == 1
+    assert result["skipped_missing_input_count"] == 1
+
+
 def test_upload_dataset_as_parquet_to_hf_blocks_missing_inputs_before_conversion(
     monkeypatch, tmp_path
 ):

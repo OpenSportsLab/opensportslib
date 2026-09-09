@@ -166,6 +166,13 @@ only after completion. A total of `0` means that the remote size is unknown.
 
 ## Upload
 
+JSON upload is incremental and tolerant of a partially downloaded local
+dataset. It commits the dataset JSON and every referenced input currently
+available on disk. Missing references are skipped and reported in
+`skipped_missing_input_count` and `skipped_missing_input_paths`; existing
+remote files that are not part of the commit are left untouched. Files queued
+at an existing repository path update that path.
+
 Parquet + WebDataset upload is strict: every `data[].inputs[].path` and
 `ball_path` reference must resolve to a local file before conversion starts.
 `find_missing_dataset_inputs(json_path)` provides a preflight list. For a

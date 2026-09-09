@@ -356,6 +356,12 @@ The JSON records the resolved Hugging Face commit and can later be passed to
 Parquet/WebDataset download always completes the local split even when a
 metadata-only `<split>.json` already exists.
 
+JSON uploads support partially downloaded datasets: the JSON and all
+referenced files available locally are committed, while missing referenced
+files are skipped and reported. Remote files not included in that commit are
+left untouched. Parquet/WebDataset uploads remain strict and require every
+referenced file locally before conversion.
+
 ---
 
 ## What you can do with OpenSportsLib
