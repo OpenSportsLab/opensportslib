@@ -70,9 +70,18 @@ def test_constructor_is_minimal_and_sets_run_id(
     loc_sig = inspect.signature(LocalizationModel)
     vqa_sig = inspect.signature(VQAModel)
 
-    assert list(cls_sig.parameters.keys()) == ["config", "weights"]
-    assert list(loc_sig.parameters.keys()) == ["config", "weights"]
-    assert list(vqa_sig.parameters.keys()) == ["config", "weights"]
+    expected_parameters = [
+        "config",
+        "weights",
+        "remote",
+        "remote_timeout",
+        "remote_poll_interval",
+        "remote_result_timeout",
+        "remote_model_id",
+    ]
+    assert list(cls_sig.parameters.keys()) == expected_parameters
+    assert list(loc_sig.parameters.keys()) == expected_parameters
+    assert list(vqa_sig.parameters.keys()) == expected_parameters
 
     cls_api = ClassificationModel(config=classification_config_path)
     loc_api = LocalizationModel(config=localization_config_path)

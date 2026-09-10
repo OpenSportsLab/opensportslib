@@ -76,17 +76,22 @@ class VQADataset(Dataset):
         self.feature_source = feature_source
         self.feature_mode = get_vqa_xvars_feature_mode(config, default="strict_xvars")
         self.expected_feature_tokens = get_xvars_train_video_token_len(config)
-        self.feature_index = self._load_feature_index(
-            feature_index_path,
-            split=split,
-            strict=strict_feature_index,
-            allow_missing=fallback_feature_index,
-        )
-        self.prediction_index = (
-            load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)), split=split)
-            if prediction_index_path
-            else {}
-        )
+        if self.native_vl:
+            # Native Qwen VL consumes raw video or frames and never uses X-VARS indexes.
+            self.feature_index = {}
+            self.prediction_index = {}
+        else:
+            self.feature_index = self._load_feature_index(
+                feature_index_path,
+                split=split,
+                strict=strict_feature_index,
+                allow_missing=fallback_feature_index,
+            )
+            self.prediction_index = (
+                load_prediction_index(os.path.abspath(os.path.expanduser(prediction_index_path)), split=split)
+                if prediction_index_path
+                else {}
+            )
 
         self.samples: list[dict[str, Any]] = []
         for item in data:
