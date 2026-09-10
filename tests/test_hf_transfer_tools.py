@@ -70,6 +70,7 @@ def test_download_hf_file_reports_transferred_and_total_bytes(monkeypatch, tmp_p
         "_import_hf_file_system",
         lambda: (_FakeFileSystem, TqdmCallback),
     )
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_xet_download", lambda: None)
     progress = []
 
     result = hf_transfer_module._download_hf_file(
@@ -115,6 +116,7 @@ def test_download_hf_file_cancels_during_transfer_and_removes_partial(
         "_import_hf_file_system",
         lambda: (_FakeFileSystem, TqdmCallback),
     )
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_xet_download", lambda: None)
 
     with pytest.raises(HfTransferCancelled):
         hf_transfer_module._download_hf_file(
@@ -130,6 +132,62 @@ def test_download_hf_file_cancels_during_transfer_and_removes_partial(
 
     assert not (tmp_path / "clips" / "large.mp4").exists()
     assert list((tmp_path / "clips").glob("*.part")) == []
+
+
+def test_download_hf_file_reports_bytes_while_using_xet(monkeypatch, tmp_path):
+    xet_file_data = object()
+
+    class _Metadata:
+        size = 6
+
+    _Metadata.xet_file_data = xet_file_data
+
+    def _fake_xet_get(**kwargs):
+        assert kwargs["xet_file_data"] is xet_file_data
+        assert kwargs["headers"] == {"authorization": "Bearer hf_test"}
+        assert kwargs["expected_size"] == 6
+        assert kwargs["displayed_filename"] == "clips/large.mp4"
+        Path(kwargs["incomplete_path"]).write_bytes(b"abcdef")
+        kwargs["_tqdm_bar"].update(2)
+        kwargs["_tqdm_bar"].update(4)
+
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_xet_download",
+        lambda: (
+            lambda url, token: _Metadata(),
+            lambda **kwargs: "https://huggingface.test/file",
+            _fake_xet_get,
+            lambda token: {"authorization": f"Bearer {token}"},
+            lambda: True,
+        ),
+    )
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_file_system",
+        lambda: pytest.fail("classic HTTP fallback should not be used"),
+    )
+    progress = []
+
+    result = hf_transfer_module._download_hf_file(
+        pytest.fail,
+        repo_id="OpenSportsLab/repo",
+        filename="clips/large.mp4",
+        revision="pinned",
+        local_dir=str(tmp_path),
+        token="hf_test",
+        byte_progress_cb=lambda filename, current, total: progress.append(
+            (filename, current, total)
+        ),
+    )
+
+    assert result == str(tmp_path / "clips" / "large.mp4")
+    assert Path(result).read_bytes() == b"abcdef"
+    assert progress == [
+        ("clips/large.mp4", 0, 6),
+        ("clips/large.mp4", 2, 6),
+        ("clips/large.mp4", 6, 6),
+    ]
 
 
 def test_download_hf_file_rejects_unsafe_destination(tmp_path):

@@ -356,6 +356,12 @@ The JSON records the resolved Hugging Face commit and can later be passed to
 Parquet/WebDataset download always completes the local split even when a
 metadata-only `<split>.json` already exists.
 
+Download APIs accept `byte_progress_cb(filename, downloaded_bytes,
+total_bytes)`. When the repository file is Xet-backed, OpenSportsLib keeps the
+accelerated Xet transfer and adapts Xet's byte updates to this callback. It
+falls back to classic HTTP progress when Xet is unavailable, disabled, or not
+used by the file.
+
 JSON uploads support partially downloaded datasets: the JSON and all
 referenced files available locally are committed, while missing referenced
 files are skipped and reported. Remote files not included in that commit are

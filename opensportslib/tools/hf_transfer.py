@@ -128,6 +128,23 @@ def _import_hf_file_system():
     return HfFileSystem, TqdmCallback
 
 
+def _import_hf_xet_download():
+    try:
+        from huggingface_hub import get_hf_file_metadata, hf_hub_url
+        from huggingface_hub.file_download import xet_get
+        from huggingface_hub.utils import build_hf_headers
+        from huggingface_hub.utils._runtime import is_xet_available
+    except ImportError:
+        return None
+    return (
+        get_hf_file_metadata,
+        hf_hub_url,
+        xet_get,
+        build_hf_headers,
+        is_xet_available,
+    )
+
+
 def _download_hf_file(
     hf_hub_download,
     *,
@@ -169,7 +186,6 @@ def _download_hf_file(
             token=token or None,
         )
 
-    HfFileSystem, TqdmCallback = _import_hf_file_system()
     destination.parent.mkdir(parents=True, exist_ok=True)
     file_descriptor, temporary_path = tempfile.mkstemp(
         prefix=f".{destination.name}.",
@@ -198,9 +214,43 @@ def _download_hf_file(
         def close(self):
             pass
 
-    callback = TqdmCallback(tqdm_cls=_CallbackProgress)
     remote_path = f"datasets/{repo_id}/{normalized_filename}"
     try:
+        xet_download = _import_hf_xet_download()
+        if xet_download is not None:
+            (
+                get_hf_file_metadata,
+                hf_hub_url,
+                xet_get,
+                build_hf_headers,
+                is_xet_available,
+            ) = xet_download
+            if is_xet_available():
+                metadata = get_hf_file_metadata(
+                    hf_hub_url(
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        filename=normalized_filename,
+                        revision=revision,
+                    ),
+                    token=token or None,
+                )
+                if metadata.xet_file_data is not None:
+                    progress = _CallbackProgress(total=metadata.size)
+                    xet_get(
+                        incomplete_path=Path(temporary_path),
+                        xet_file_data=metadata.xet_file_data,
+                        headers=build_hf_headers(token=token or None),
+                        expected_size=metadata.size,
+                        displayed_filename=normalized_filename,
+                        _tqdm_bar=progress,
+                    )
+                    _ensure_not_cancelled(is_cancelled)
+                    os.replace(temporary_path, destination)
+                    return str(destination)
+
+        HfFileSystem, TqdmCallback = _import_hf_file_system()
+        callback = TqdmCallback(tqdm_cls=_CallbackProgress)
         with callback:
             HfFileSystem(token=token or None).get_file(
                 remote_path,
