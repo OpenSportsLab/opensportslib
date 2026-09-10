@@ -9,6 +9,9 @@ from typing import Any, Callable
 
 ProgressCallback = Callable[[str], None]
 ByteProgressCallback = Callable[[str, int, int], None]
+FilePlanCallback = Callable[[list[str]], None]
+FileCompletedCallback = Callable[[str, str], None]
+JsonReadyCallback = Callable[[str, str], None]
 CancelCheck = Callable[[], bool]
 
 HF_REPO_ID_KEY = "hf_repo_id"
@@ -99,6 +102,29 @@ def convert_parquet_metadata_to_json(*args, **kwargs):
 def _emit_progress(progress_cb: ProgressCallback | None, message: str) -> None:
     if progress_cb:
         progress_cb(message)
+
+
+def _emit_file_plan(
+    file_plan_cb: FilePlanCallback | None, filenames: list[str]
+) -> None:
+    if file_plan_cb and filenames:
+        file_plan_cb(list(filenames))
+
+
+def _emit_file_completed(
+    file_completed_cb: FileCompletedCallback | None,
+    filename: str,
+    local_path: str,
+) -> None:
+    if file_completed_cb:
+        file_completed_cb(filename, local_path)
+
+
+def _emit_json_ready(
+    json_ready_cb: JsonReadyCallback | None, split: str, json_path: str
+) -> None:
+    if json_ready_cb:
+        json_ready_cb(split, json_path)
 
 
 def _ensure_not_cancelled(is_cancelled: CancelCheck | None) -> None:
@@ -441,6 +467,9 @@ def _download_parquet_split_and_convert(
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     byte_progress_cb: ByteProgressCallback | None = None,
+    file_plan_cb: FilePlanCallback | None = None,
+    file_completed_cb: FileCompletedCallback | None = None,
+    json_ready_cb: JsonReadyCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     cleaned_repo_id = str(repo_id or "").strip()
@@ -463,15 +492,20 @@ def _download_parquet_split_and_convert(
     tmp_dir = tempfile.mkdtemp(prefix="hf_parquet_dl_", dir=output_dir)
     try:
         if annotations_only:
+            metadata_filename = f"{cleaned_split}/metadata.parquet"
+            _emit_file_plan(file_plan_cb, [metadata_filename])
             metadata_path = _download_hf_file(
                 hf_hub_download,
                 repo_id=cleaned_repo_id,
-                filename=f"{cleaned_split}/metadata.parquet",
+                filename=metadata_filename,
                 revision=commit,
                 local_dir=tmp_dir,
                 token=token or None,
                 byte_progress_cb=byte_progress_cb,
                 is_cancelled=is_cancelled,
+            )
+            _emit_file_completed(
+                file_completed_cb, metadata_filename, metadata_path
             )
         else:
             if byte_progress_cb is None:
@@ -497,9 +531,14 @@ def _download_parquet_split_and_convert(
                     raise FileNotFoundError(
                         f"No files found for Parquet split: {cleaned_split}"
                     )
-                for remote_path in split_files:
+                _emit_file_plan(file_plan_cb, split_files)
+                for index, remote_path in enumerate(split_files, start=1):
                     _ensure_not_cancelled(is_cancelled)
-                    _download_hf_file(
+                    _emit_progress(
+                        progress_cb,
+                        f"[{index}/{len(split_files)}] Downloading {remote_path}",
+                    )
+                    downloaded_path = _download_hf_file(
                         hf_hub_download,
                         repo_id=cleaned_repo_id,
                         filename=remote_path,
@@ -508,6 +547,9 @@ def _download_parquet_split_and_convert(
                         token=token,
                         byte_progress_cb=byte_progress_cb,
                         is_cancelled=is_cancelled,
+                    )
+                    _emit_file_completed(
+                        file_completed_cb, remote_path, downloaded_path
                     )
         _ensure_not_cancelled(is_cancelled)
 
@@ -533,6 +575,9 @@ def _download_parquet_split_and_convert(
             split=cleaned_split,
             source_format="parquet",
             commit=commit,
+        )
+        _emit_json_ready(
+            json_ready_cb, cleaned_split, str(output_json_path)
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -582,6 +627,9 @@ def _download_json_path_from_hf(
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     byte_progress_cb: ByteProgressCallback | None = None,
+    file_plan_cb: FilePlanCallback | None = None,
+    file_completed_cb: FileCompletedCallback | None = None,
+    json_ready_cb: JsonReadyCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     HfApi, hf_hub_download, _ = _import_hf_hub()
@@ -593,6 +641,7 @@ def _download_json_path_from_hf(
     os.makedirs(output_dir, exist_ok=True)
     _ensure_not_cancelled(is_cancelled)
     _emit_progress(progress_cb, f"Downloading JSON from {repo_id}@{commit}: {path_in_repo}")
+    _emit_file_plan(file_plan_cb, [path_in_repo])
 
     json_path = _download_hf_file(
         hf_hub_download,
@@ -604,6 +653,7 @@ def _download_json_path_from_hf(
         byte_progress_cb=byte_progress_cb,
         is_cancelled=is_cancelled,
     )
+    _emit_file_completed(file_completed_cb, path_in_repo, json_path)
 
     _ensure_not_cancelled(is_cancelled)
     with open(json_path, "r", encoding="utf-8") as handle:
@@ -614,6 +664,7 @@ def _download_json_path_from_hf(
     except ValueError:
         repo_paths = []
     allow_patterns = _build_allow_patterns(repo_paths, repo_json_folder)
+    _emit_file_plan(file_plan_cb, allow_patterns)
 
     result: dict[str, Any] = {
         "repo_id": repo_id,
@@ -630,8 +681,11 @@ def _download_json_path_from_hf(
         "num_samples": len(osl_json.get("data", [])) if isinstance(osl_json.get("data"), list) else 0,
     }
 
-    if annotations_only:
-        _emit_progress(progress_cb, "Persisting Hugging Face source metadata into downloaded JSON.")
+    if not dry_run:
+        _emit_progress(
+            progress_cb,
+            "Persisting Hugging Face source metadata into downloaded JSON.",
+        )
         hf_source_metadata = write_hf_source_metadata_to_dataset_json(
             json_path,
             repo_id=repo_id,
@@ -640,9 +694,12 @@ def _download_json_path_from_hf(
             source_format="json",
             commit=commit,
         )
+        result["hf_source_metadata"] = hf_source_metadata
+        _emit_json_ready(json_ready_cb, cleaned_split, json_path)
+
+    if annotations_only:
         result["download_kind"] = "json"
         result["downloaded_file_count"] = 0
-        result["hf_source_metadata"] = hf_source_metadata
         _emit_progress(progress_cb, "Annotation-only download completed.")
         return result
 
@@ -701,7 +758,7 @@ def _download_json_path_from_hf(
     for idx, full_repo_path in enumerate(allow_patterns, start=1):
         _ensure_not_cancelled(is_cancelled)
         _emit_progress(progress_cb, f"[{idx}/{len(allow_patterns)}] Downloading {full_repo_path}")
-        _download_hf_file(
+        downloaded_path = _download_hf_file(
             hf_hub_download,
             repo_id=repo_id,
             filename=full_repo_path,
@@ -711,21 +768,13 @@ def _download_json_path_from_hf(
             byte_progress_cb=byte_progress_cb,
             is_cancelled=is_cancelled,
         )
+        _emit_file_completed(
+            file_completed_cb, full_repo_path, downloaded_path
+        )
         downloaded_count += 1
-
-    _emit_progress(progress_cb, "Persisting Hugging Face source metadata into downloaded JSON.")
-    hf_source_metadata = write_hf_source_metadata_to_dataset_json(
-        json_path,
-        repo_id=repo_id,
-        branch=revision,
-        split=cleaned_split,
-        source_format="json",
-        commit=commit,
-    )
 
     result["download_kind"] = "json"
     result["downloaded_file_count"] = downloaded_count
-    result["hf_source_metadata"] = hf_source_metadata
     _emit_progress(progress_cb, "Download completed.")
     return result
 
@@ -826,6 +875,9 @@ def download_dataset_splits_from_hf(
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     byte_progress_cb: ByteProgressCallback | None = None,
+    file_plan_cb: FilePlanCallback | None = None,
+    file_completed_cb: FileCompletedCallback | None = None,
+    json_ready_cb: JsonReadyCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> list[dict[str, Any]]:
     cleaned_splits = [str(split or "").strip() for split in (splits or [])]
@@ -852,6 +904,9 @@ def download_dataset_splits_from_hf(
             token=token,
             progress_cb=_scoped_progress,
             byte_progress_cb=byte_progress_cb,
+            file_plan_cb=file_plan_cb,
+            file_completed_cb=file_completed_cb,
+            json_ready_cb=json_ready_cb,
             is_cancelled=is_cancelled,
         )
         results.append(result)
@@ -871,6 +926,9 @@ def download_dataset_split_from_hf(
     token: str | None = None,
     progress_cb: ProgressCallback | None = None,
     byte_progress_cb: ByteProgressCallback | None = None,
+    file_plan_cb: FilePlanCallback | None = None,
+    file_completed_cb: FileCompletedCallback | None = None,
+    json_ready_cb: JsonReadyCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
     cleaned_repo_id = str(repo_id or "").strip()
@@ -899,6 +957,9 @@ def download_dataset_split_from_hf(
             token=token,
             progress_cb=progress_cb,
             byte_progress_cb=byte_progress_cb,
+            file_plan_cb=file_plan_cb,
+            file_completed_cb=file_completed_cb,
+            json_ready_cb=json_ready_cb,
             is_cancelled=is_cancelled,
         )
 
@@ -913,6 +974,9 @@ def download_dataset_split_from_hf(
         token=token,
         progress_cb=progress_cb,
         byte_progress_cb=byte_progress_cb,
+        file_plan_cb=file_plan_cb,
+        file_completed_cb=file_completed_cb,
+        json_ready_cb=json_ready_cb,
         is_cancelled=is_cancelled,
     )
 

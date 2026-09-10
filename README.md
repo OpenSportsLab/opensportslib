@@ -361,6 +361,13 @@ total_bytes)`. When the repository file is Xet-backed, OpenSportsLib keeps the
 accelerated Xet transfer and adapts Xet's byte updates to this callback. It
 falls back to classic HTTP progress when Xet is unavailable, disabled, or not
 used by the file.
+When byte progress is enabled, Parquet downloads also emit `[current/total]`
+file messages through `progress_cb` so clients can present file-count progress.
+High-level split downloads also accept `file_plan_cb(filenames)`,
+`file_completed_cb(filename, local_path)`, and
+`json_ready_cb(split, json_path)`. These are transfer lifecycle notifications;
+callers remain responsible for queue policy and presentation. For non-dry-run
+JSON datasets, pinned source metadata is persisted before `json_ready_cb` runs.
 
 JSON uploads support partially downloaded datasets: the JSON and all
 referenced files available locally are committed, while missing referenced

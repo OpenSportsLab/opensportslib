@@ -1111,6 +1111,9 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
         ]
     }
     downloaded = []
+    planned = []
+    completed = []
+    json_ready = []
 
     class _FakeApi:
         def __init__(self, token=None):
@@ -1140,6 +1143,11 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
         "test",
         str(tmp_path),
         download_format="json",
+        file_plan_cb=planned.append,
+        file_completed_cb=lambda filename, path: completed.append(
+            (filename, path)
+        ),
+        json_ready_cb=lambda split, path: json_ready.append((split, path)),
     )
 
     assert downloaded == ["test.json", "test/captions.json", "test/clip_0.mp4"]
@@ -1152,6 +1160,12 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
     assert result["output_dir"] == str(expected_output_dir)
     assert result["json_path"] == str(expected_output_dir / "test.json")
     assert result["downloaded_file_count"] == 2
+    assert planned == [
+        ["test.json"],
+        ["test/captions.json", "test/clip_0.mp4"],
+    ]
+    assert [filename for filename, _path in completed] == downloaded
+    assert json_ready == [("test", str(expected_output_dir / "test.json"))]
 
 
 def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypatch, tmp_path):
@@ -1196,6 +1210,78 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
     assert result["json_path"] == str(tmp_path / "dev" / "test" / "test.json")
     assert result["num_samples"] == 3
     assert result["download_skipped"] is False
+
+
+def test_parquet_byte_download_reports_file_count_progress(monkeypatch, tmp_path):
+    progress_messages = []
+    downloaded = []
+    planned = []
+    completed = []
+    json_ready = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "pinned"})()
+
+        def list_repo_files(self, *args, **kwargs):
+            return [
+                "test/metadata.parquet",
+                "test/shards/shard-000000.tar",
+            ]
+
+    def _fake_download_file(_hf_hub_download, **kwargs):
+        downloaded.append(kwargs["filename"])
+        return str(Path(kwargs["local_dir"]) / kwargs["filename"])
+
+    def _fake_conversion(**kwargs):
+        kwargs["output_json_path"].write_text(
+            json.dumps({"data": []}), encoding="utf-8"
+        )
+        return {"num_samples": 0, "extracted_media_files": 0}
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._download_hf_file",
+        _fake_download_file,
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer.convert_parquet_to_json",
+        _fake_conversion,
+    )
+
+    download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path),
+        download_format="parquet",
+        progress_cb=progress_messages.append,
+        byte_progress_cb=lambda *_args: None,
+        file_plan_cb=planned.append,
+        file_completed_cb=lambda filename, path: completed.append(
+            (filename, path)
+        ),
+        json_ready_cb=lambda split, path: json_ready.append((split, path)),
+    )
+
+    assert downloaded == [
+        "test/metadata.parquet",
+        "test/shards/shard-000000.tar",
+    ]
+    assert "[1/2] Downloading test/metadata.parquet" in progress_messages
+    assert "[2/2] Downloading test/shards/shard-000000.tar" in progress_messages
+    assert planned == [[
+        "test/metadata.parquet",
+        "test/shards/shard-000000.tar",
+    ]]
+    assert [filename for filename, _path in completed] == downloaded
+    assert json_ready == [("test", str(tmp_path / "main" / "test" / "test.json"))]
 
 
 def test_download_dataset_split_from_hf_parquet_completes_existing_json(

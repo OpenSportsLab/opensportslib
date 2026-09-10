@@ -166,6 +166,19 @@ transfer with classic HTTP. If Xet is unavailable, explicitly disabled, or not
 used by the remote file, the same callback is driven by the HTTP fallback.
 Files are written to an atomic temporary path and moved into place only after
 completion. A total of `0` means that the remote size is unknown.
+For full Parquet downloads, `progress_cb` also receives a
+`[current/total] Downloading <path>` message before each repository file.
+
+The split download APIs additionally expose three low-level lifecycle hooks:
+
+- `file_plan_cb(filenames)` reports newly discovered repository files.
+- `file_completed_cb(filename, local_path)` reports an atomically completed
+  file.
+- `json_ready_cb(split, json_path)` reports that a usable JSON—with pinned
+  source metadata for non-dry-run JSON downloads—is available.
+
+These callbacks report transfer facts only. Scheduling, queue state, UI labels,
+and user prompts belong to the calling application.
 
 ## Upload
 
