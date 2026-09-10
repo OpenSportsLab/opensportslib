@@ -1,5 +1,23 @@
 # OpenSportsLib APIs
 
+## Configuration From Hugging Face
+
+When `weights` is a Hugging Face model ID, `config` may be omitted if the
+repository contains a compatible OpenSportsLib `config.yaml`:
+
+```python
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
+```
+
+This also applies to localization and VQA wrappers. Local checkpoints and
+repositories containing only a Transformers `config.json` still require an
+explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
+Provide your own input data when running inference; published dataset paths may
+refer to the machine used for training.
+
+
 This folder contains the high-level task wrappers used by users of OpenSportsLib.
 
 ## Public Entry Points

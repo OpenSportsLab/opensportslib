@@ -79,7 +79,22 @@ class BaseTaskModel(ABC):
             raise ValueError("Remote timeout values must be positive.")
 
         if config is None:
-            raise ValueError("config path is required")
+            from huggingface_hub.utils import HFValidationError, validate_repo_id
+
+            if (not isinstance(weights, str) or os.path.exists(expand(weights))
+                    or weights.endswith((".pt", ".pth", ".tar"))):
+                raise ValueError("config path is required unless weights is a Hugging Face model ID")
+            try:
+                validate_repo_id(weights)
+            except HFValidationError as exc:
+                raise ValueError("config path is required unless weights is a Hugging Face model ID") from exc
+            try:
+                config = resolve_config_path(weights)
+            except Exception as exc:
+                raise ValueError(
+                    f"Could not load OpenSportsLib config.yaml from {weights!r}; "
+                    "provide config explicitly or publish a compatible config.yaml."
+                ) from exc
 
         self.config_path = resolve_config_path(config)
         self.config = load_config_omega(self.config_path)

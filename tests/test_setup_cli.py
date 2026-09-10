@@ -14,11 +14,11 @@ def test_select_cuda_wheel_uses_cu126_for_pascal_with_cuda_13():
     assert setup_lib.select_cuda_wheel("13.0", [(6, 0)]) == "cu126"
 
 
-def test_select_torch_packages_pins_pre_sm75_gpu_compatibility_stack():
+def test_select_torch_packages_returns_unpinned_package_names():
     assert setup_lib.select_torch_packages([(7, 0)]) == (
-        "torch==2.10.0",
-        "torchvision==0.25.0",
-        "torchaudio==2.10.0",
+        "torch",
+        "torchvision",
+        "torchaudio",
     )
 
 

@@ -1,12 +1,10 @@
 import numpy as np
-from evaluate import load
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import (
+    accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score,
+)
 
-# Load HuggingFace metrics
-accuracy_metric = load("accuracy")
-f1_metric = load("f1")
-precision_metric = load("precision")
-recall_metric = load("recall")
+# These metrics are local computations; importing a task must not fetch code
+# from Hugging Face or require an already-populated evaluate cache.
 
 def process_preds_labels(eval_pred, top_k=None):
     """
@@ -60,19 +58,19 @@ def compute_classification_metrics(eval_pred, top_k=None, mode="logits"):
             metrics[f"top_{top_k}_accuracy"] = topk_correct / len(labels)
 
     # Accuracy
-    metrics["accuracy"] = accuracy_metric.compute(predictions=preds, references=labels)["accuracy"]
+    metrics["accuracy"] = accuracy_score(labels, preds)
 
     # Balanced accuracy
     metrics["balanced_accuracy"] = balanced_accuracy_score(labels, preds)
 
     # F1 (macro)
-    metrics["f1"] = f1_metric.compute(predictions=preds, references=labels, average="macro")["f1"]
+    metrics["f1"] = f1_score(labels, preds, average="macro")
 
     # Precision
-    metrics["precision"] = precision_metric.compute(predictions=preds, references=labels, average="macro")["precision"]
+    metrics["precision"] = precision_score(labels, preds, average="macro")
 
     # Recall
-    metrics["recall"] = recall_metric.compute(predictions=preds, references=labels, average="macro")["recall"]
+    metrics["recall"] = recall_score(labels, preds, average="macro")
 
 
     return metrics
