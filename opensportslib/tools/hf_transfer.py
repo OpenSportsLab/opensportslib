@@ -664,7 +664,8 @@ def _download_json_path_from_hf(
     except ValueError:
         repo_paths = []
     allow_patterns = _build_allow_patterns(repo_paths, repo_json_folder)
-    _emit_file_plan(file_plan_cb, allow_patterns)
+    if not annotations_only:
+        _emit_file_plan(file_plan_cb, allow_patterns)
 
     result: dict[str, Any] = {
         "repo_id": repo_id,

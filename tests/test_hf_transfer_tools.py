@@ -1340,6 +1340,7 @@ def test_json_annotations_only_downloads_json_and_persists_pinned_source(monkeyp
         encoding="utf-8",
     )
     downloaded = []
+    planned = []
 
     class _FakeApi:
         def __init__(self, token=None):
@@ -1359,9 +1360,11 @@ def test_json_annotations_only_downloads_json_and_persists_pinned_source(monkeyp
         str(tmp_path / "output"),
         download_format="json",
         annotations_only=True,
+        file_plan_cb=planned.append,
     )
 
     assert downloaded == ["test.json"]
+    assert planned == [["test.json"]]
     payload = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
     assert payload[HF_FORMAT_KEY] == "json"
     assert payload[HF_COMMIT_KEY] == "pinned-json"
