@@ -104,7 +104,15 @@ class ClassificationModel(BaseTaskModel):
         trainer.device = device
 
         if weights:
-            model, processor, _, _ = trainer.load(weights)
+            # resume_training=True only for the training path: it makes
+            # load() also rebuild the optimizer/scheduler and restore their
+            # state from the checkpoint (momentum, LR schedule, best-metric
+            # tracking) so `trainer.train(..., resume_from=trainer._resume_state)`
+            # below continues training rather than restarting it. Inference
+            # has no use for that state, so it stays out of scope there.
+            model, processor, _, _ = trainer.load(
+                weights, resume_training=(mode == "train")
+            )
         else:
             model, processor = build_model(config, device)
 
@@ -129,6 +137,7 @@ class ClassificationModel(BaseTaskModel):
                     valid_data,
                     rank=rank,
                     world_size=world_size,
+                    resume_from=trainer._resume_state,
                 )
                 if rank == 0 and return_queue is not None:
                     best_ckpt = best_ckpt or getattr(trainer.trainer, "best_checkpoint_path", None)
