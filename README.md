@@ -336,6 +336,7 @@ OpenSportsLib provides APIs and scripts for downloading and uploading OSL datase
 ```python
 from opensportslib.tools import (
     download_dataset_split_from_hf,
+    download_dataset_sample_inputs_from_hf,
     upload_dataset_inputs_from_json_to_hf,
     upload_dataset_as_parquet_to_hf,
 )
@@ -344,13 +345,22 @@ from opensportslib.tools import (
 ### Scripts
 
 ```bash
-python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data --annotations-only
 python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
 
 Downloads are placed under `<output-dir>/<revision>/<split>`.
-For Parquet/WebDataset downloads, an existing `<split>.json` in that directory
-is reused without downloading or converting the split again.
+Pass `annotations_only=True` to download or reconstruct only `<split>.json`.
+The JSON records the resolved Hugging Face commit and can later be passed to
+`download_dataset_sample_inputs_from_hf()` to fetch one sample or input. A full
+Parquet/WebDataset download always completes the local split even when a
+metadata-only `<split>.json` already exists.
+
+JSON uploads support partially downloaded datasets: the JSON and all
+referenced files available locally are committed, while missing referenced
+files are skipped and reported. Remote files not included in that commit are
+left untouched. Parquet/WebDataset uploads remain strict and require every
+referenced file locally before conversion.
 
 ---
 

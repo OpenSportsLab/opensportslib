@@ -7,10 +7,10 @@ back into an OpenSportsLib-style JSON file.
 
 Notes
 -----
-- Reconstruction relies on the per-sample sidecar JSON stored inside each TAR shard.
-  The sidecar is the canonical full-fidelity annotation source.
-- metadata.parquet is used only for routing (sample_index, shard_name) and lightweight
-  filtering; it does not store a full copy of each sample.
+- Full reconstruction prefers the per-sample sidecar JSON stored inside each
+  TAR shard.
+- Current metadata.parquet files also store a full ``sample_payload`` copy, so
+  annotation-only reconstruction does not need to fetch any shard.
 - By default, reconstructed ``inputs[].path`` values remain the original relative paths.
   Pass ``extract_media=True`` to also extract the input files from the shards.
 
@@ -152,6 +152,65 @@ def _reconstruct_sample_from_row(
     return sample
 
 
+def convert_parquet_metadata_to_json(
+    metadata_path: str | Path,
+    output_json_path: str | Path,
+    *,
+    json_indent: int = 2,
+) -> Dict[str, Any]:
+    """Reconstruct OSL JSON using only a WebDataset ``metadata.parquet`` file.
+
+    Metadata-only reconstruction requires the current schema's full-fidelity
+    ``sample_payload`` column.  No TAR shards are opened or required.
+    """
+    metadata_path = Path(metadata_path)
+    output_json_path = Path(output_json_path)
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"Missing metadata file: {metadata_path}")
+
+    df = (
+        pd.read_parquet(metadata_path)
+        .sort_values("sample_index")
+        .reset_index(drop=True)
+    )
+    if len(df) == 0:
+        raise ValueError("metadata.parquet is empty.")
+
+    required_cols = {"sample_id", "sample_index", "header", "sample_payload"}
+    missing = sorted(required_cols.difference(df.columns))
+    if missing:
+        raise ValueError(
+            "metadata.parquet cannot be converted without shards; missing required "
+            f"columns: {', '.join(missing)}"
+        )
+
+    top_doc = maybe_json_loads(df.iloc[0].get("header"), None)
+    if not isinstance(top_doc, dict):
+        raise ValueError(
+            "metadata.parquet has invalid 'header' payload; expected JSON object."
+        )
+    top_doc = dict(top_doc)
+    top_doc.pop("data", None)
+    top_doc["data"] = [
+        _reconstruct_sample_from_row(row, sidecar=None)
+        for _, row in df.iterrows()
+    ]
+
+    output_json_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_json_path, "w", encoding="utf-8") as handle:
+        json.dump(top_doc, handle, ensure_ascii=False, indent=json_indent)
+        handle.write("\n")
+
+    return {
+        "metadata_path": str(metadata_path),
+        "output_json_path": str(output_json_path),
+        "num_samples": len(top_doc["data"]),
+        "extract_media": False,
+        "extracted_input_files": 0,
+        "extracted_media_files": 0,
+    }
+
+
 def convert_parquet_to_json(
     dataset_dir: str | Path,
     output_json_path: str | Path,
@@ -278,4 +337,4 @@ def convert_parquet_to_json(
     }
 
 
-__all__ = ["convert_parquet_to_json"]
+__all__ = ["convert_parquet_metadata_to_json", "convert_parquet_to_json"]

@@ -17,6 +17,7 @@ def main(
     split: str,
     output_dir: str = "downloaded_data",
     download_format: str = "parquet",
+    annotations_only: bool = False,
     dry_run: bool = False,
     token: str | None = None,
 ) -> None:
@@ -26,6 +27,7 @@ def main(
         split,
         output_dir,
         download_format=download_format,
+        annotations_only=annotations_only,
         dry_run=dry_run,
         token=token,
         progress_cb=lambda msg: print(f"[HF] {msg}"),
@@ -98,6 +100,11 @@ if __name__ == "__main__":
         help="Download format. JSON downloads <split>.json and all referenced inputs; parquet downloads <split>/.",
     )
     parser.add_argument(
+        "--annotations-only",
+        action="store_true",
+        help="Download or reconstruct only the split JSON without referenced media.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="List files without downloading them and estimate storage size.",
@@ -115,6 +122,7 @@ if __name__ == "__main__":
         split=args.split,
         output_dir=args.output_dir,
         download_format=args.download_format,
+        annotations_only=args.annotations_only,
         dry_run=args.dry_run,
         token=args.token,
     )
