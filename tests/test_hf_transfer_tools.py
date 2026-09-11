@@ -70,6 +70,7 @@ def test_download_hf_file_reports_transferred_and_total_bytes(monkeypatch, tmp_p
         "_import_hf_file_system",
         lambda: (_FakeFileSystem, TqdmCallback),
     )
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_xet_download", lambda: None)
     progress = []
 
     result = hf_transfer_module._download_hf_file(
@@ -115,6 +116,7 @@ def test_download_hf_file_cancels_during_transfer_and_removes_partial(
         "_import_hf_file_system",
         lambda: (_FakeFileSystem, TqdmCallback),
     )
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_xet_download", lambda: None)
 
     with pytest.raises(HfTransferCancelled):
         hf_transfer_module._download_hf_file(
@@ -130,6 +132,62 @@ def test_download_hf_file_cancels_during_transfer_and_removes_partial(
 
     assert not (tmp_path / "clips" / "large.mp4").exists()
     assert list((tmp_path / "clips").glob("*.part")) == []
+
+
+def test_download_hf_file_reports_bytes_while_using_xet(monkeypatch, tmp_path):
+    xet_file_data = object()
+
+    class _Metadata:
+        size = 6
+
+    _Metadata.xet_file_data = xet_file_data
+
+    def _fake_xet_get(**kwargs):
+        assert kwargs["xet_file_data"] is xet_file_data
+        assert kwargs["headers"] == {"authorization": "Bearer hf_test"}
+        assert kwargs["expected_size"] == 6
+        assert kwargs["displayed_filename"] == "clips/large.mp4"
+        Path(kwargs["incomplete_path"]).write_bytes(b"abcdef")
+        kwargs["_tqdm_bar"].update(2)
+        kwargs["_tqdm_bar"].update(4)
+
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_xet_download",
+        lambda: (
+            lambda url, token: _Metadata(),
+            lambda **kwargs: "https://huggingface.test/file",
+            _fake_xet_get,
+            lambda token: {"authorization": f"Bearer {token}"},
+            lambda: True,
+        ),
+    )
+    monkeypatch.setattr(
+        hf_transfer_module,
+        "_import_hf_file_system",
+        lambda: pytest.fail("classic HTTP fallback should not be used"),
+    )
+    progress = []
+
+    result = hf_transfer_module._download_hf_file(
+        pytest.fail,
+        repo_id="OpenSportsLab/repo",
+        filename="clips/large.mp4",
+        revision="pinned",
+        local_dir=str(tmp_path),
+        token="hf_test",
+        byte_progress_cb=lambda filename, current, total: progress.append(
+            (filename, current, total)
+        ),
+    )
+
+    assert result == str(tmp_path / "clips" / "large.mp4")
+    assert Path(result).read_bytes() == b"abcdef"
+    assert progress == [
+        ("clips/large.mp4", 0, 6),
+        ("clips/large.mp4", 2, 6),
+        ("clips/large.mp4", 6, 6),
+    ]
 
 
 def test_download_hf_file_rejects_unsafe_destination(tmp_path):
@@ -1053,6 +1111,9 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
         ]
     }
     downloaded = []
+    planned = []
+    completed = []
+    json_ready = []
 
     class _FakeApi:
         def __init__(self, token=None):
@@ -1082,6 +1143,11 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
         "test",
         str(tmp_path),
         download_format="json",
+        file_plan_cb=planned.append,
+        file_completed_cb=lambda filename, path: completed.append(
+            (filename, path)
+        ),
+        json_ready_cb=lambda split, path: json_ready.append((split, path)),
     )
 
     assert downloaded == ["test.json", "test/captions.json", "test/clip_0.mp4"]
@@ -1094,6 +1160,12 @@ def test_download_dataset_split_from_hf_json_downloads_split_json_and_all_inputs
     assert result["output_dir"] == str(expected_output_dir)
     assert result["json_path"] == str(expected_output_dir / "test.json")
     assert result["downloaded_file_count"] == 2
+    assert planned == [
+        ["test.json"],
+        ["test/captions.json", "test/clip_0.mp4"],
+    ]
+    assert [filename for filename, _path in completed] == downloaded
+    assert json_ready == [("test", str(expected_output_dir / "test.json"))]
 
 
 def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypatch, tmp_path):
@@ -1138,6 +1210,78 @@ def test_download_dataset_split_from_hf_parquet_downloads_split_folder(monkeypat
     assert result["json_path"] == str(tmp_path / "dev" / "test" / "test.json")
     assert result["num_samples"] == 3
     assert result["download_skipped"] is False
+
+
+def test_parquet_byte_download_reports_file_count_progress(monkeypatch, tmp_path):
+    progress_messages = []
+    downloaded = []
+    planned = []
+    completed = []
+    json_ready = []
+
+    class _FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_info(self, **kwargs):
+            return type("_Info", (), {"sha": "pinned"})()
+
+        def list_repo_files(self, *args, **kwargs):
+            return [
+                "test/metadata.parquet",
+                "test/shards/shard-000000.tar",
+            ]
+
+    def _fake_download_file(_hf_hub_download, **kwargs):
+        downloaded.append(kwargs["filename"])
+        return str(Path(kwargs["local_dir"]) / kwargs["filename"])
+
+    def _fake_conversion(**kwargs):
+        kwargs["output_json_path"].write_text(
+            json.dumps({"data": []}), encoding="utf-8"
+        )
+        return {"num_samples": 0, "extracted_media_files": 0}
+
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._import_hf_hub",
+        lambda: (_FakeApi, object(), object()),
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer._download_hf_file",
+        _fake_download_file,
+    )
+    monkeypatch.setattr(
+        "opensportslib.tools.hf_transfer.convert_parquet_to_json",
+        _fake_conversion,
+    )
+
+    download_dataset_split_from_hf(
+        "OpenSportsLab/repo",
+        "main",
+        "test",
+        str(tmp_path),
+        download_format="parquet",
+        progress_cb=progress_messages.append,
+        byte_progress_cb=lambda *_args: None,
+        file_plan_cb=planned.append,
+        file_completed_cb=lambda filename, path: completed.append(
+            (filename, path)
+        ),
+        json_ready_cb=lambda split, path: json_ready.append((split, path)),
+    )
+
+    assert downloaded == [
+        "test/metadata.parquet",
+        "test/shards/shard-000000.tar",
+    ]
+    assert "[1/2] Downloading test/metadata.parquet" in progress_messages
+    assert "[2/2] Downloading test/shards/shard-000000.tar" in progress_messages
+    assert planned == [[
+        "test/metadata.parquet",
+        "test/shards/shard-000000.tar",
+    ]]
+    assert [filename for filename, _path in completed] == downloaded
+    assert json_ready == [("test", str(tmp_path / "main" / "test" / "test.json"))]
 
 
 def test_download_dataset_split_from_hf_parquet_completes_existing_json(
@@ -1196,6 +1340,7 @@ def test_json_annotations_only_downloads_json_and_persists_pinned_source(monkeyp
         encoding="utf-8",
     )
     downloaded = []
+    planned = []
 
     class _FakeApi:
         def __init__(self, token=None):
@@ -1215,9 +1360,11 @@ def test_json_annotations_only_downloads_json_and_persists_pinned_source(monkeyp
         str(tmp_path / "output"),
         download_format="json",
         annotations_only=True,
+        file_plan_cb=planned.append,
     )
 
     assert downloaded == ["test.json"]
+    assert planned == [["test.json"]]
     payload = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
     assert payload[HF_FORMAT_KEY] == "json"
     assert payload[HF_COMMIT_KEY] == "pinned-json"
