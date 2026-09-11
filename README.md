@@ -2,6 +2,31 @@
 
 ## Configuration From Hugging Face
 
+Prepare and inspect configuration before model weights are allocated:
+
+```python
+from opensportslib.apis import Config, ClassificationModel
+
+config = Config.from_pretrained("OpenSportsLab/OSL-cls-action-mvitv2")
+# Or: Config.from_file("opensportslib/configs/classification/video.yaml")
+
+config.update(
+    data={"data_root": "/datasets/fouls"},
+    training={"epochs": 30, "batch_size": 8},
+    inference={"batch_size": 4},
+    overrides={"TRAIN.scheduler.step_size": 5},
+)
+print(config.options())
+model = ClassificationModel(config=config)
+```
+
+`options()` reports editable parameters supported by the selected task and
+backend. `get_config()` returns a detached canonical dictionary for discovering
+advanced dotted paths. Dotted overrides must already exist, are validated as
+one atomic update, and are intended for local execution. Initialization-sensitive
+settings such as device and output directory must be changed before creating the
+model. `model.update_config(...)` supports safe settings for the next operation.
+
 When `weights` is a Hugging Face model ID, `config` may be omitted if the
 repository contains a compatible OpenSportsLib `config.yaml`:
 

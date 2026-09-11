@@ -2,6 +2,29 @@
 
 ## Configuration From Hugging Face
 
+The public `Config` class composes bundled configuration layers and keeps
+interpolation links until user changes have been applied:
+
+```python
+from opensportslib.apis import Config, LocalizationModel
+
+config = Config.from_file("opensportslib/configs/localization/video_ocv.yaml")
+config.update(
+    data={"data_root": "/datasets/soccernet"},
+    training={"epochs": 20},
+    overrides={"TRAIN.scheduler.warm_up_epochs": 2},
+)
+model = LocalizationModel(config=config)
+```
+
+Use `config.options()` for friendly task/backend settings and
+`config.get_config()` to inspect valid canonical dotted paths. Updates are
+transactional: unsupported names, unknown paths, invalid types, collisions, and
+ineffective variant-controlled settings leave the configuration unchanged.
+An explicit `train_set`, `valid_set`, or `test_set` method argument applies only
+to that call. Remote inference accepts advertised friendly inference settings;
+remote dotted overrides, worker counts, device changes, and training are rejected.
+
 When `weights` is a Hugging Face model ID, `config` may be omitted if the
 repository contains a compatible OpenSportsLib `config.yaml`:
 
@@ -24,6 +47,7 @@ This folder contains the high-level task wrappers used by users of OpenSportsLib
 
 Use task model classes from `opensportslib.apis`:
 
+- `Config.from_file(...)` / `Config.from_pretrained(...)`
 - `ClassificationModel(...)`
 - `LocalizationModel(...)`
 - `VQAModel(...)`

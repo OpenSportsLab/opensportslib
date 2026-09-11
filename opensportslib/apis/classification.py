@@ -7,6 +7,7 @@ import os
 import json
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import (
     get_component_provider_by_kind,
     get_data_modality,
@@ -180,6 +181,7 @@ class ClassificationModel(BaseTaskModel):
     # public training interface
     # -----------------------------------------------------------------
 
+    @config_operation
     def train(
         self,
         train_set=None,
@@ -200,7 +202,7 @@ class ClassificationModel(BaseTaskModel):
         train_set = self._resolve_split_path("train", train_set)
         valid_set = self._resolve_split_path("valid", valid_set)
         
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         logging.info("Configuration:")
         logging.info(self.config)
 
@@ -251,6 +253,7 @@ class ClassificationModel(BaseTaskModel):
         self.last_loaded_weights = self.best_checkpoint
         return self.best_checkpoint
 
+    @config_operation
     def infer(
         self,
         test_set=None,
@@ -300,7 +303,7 @@ class ClassificationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         logging.info("Configuration:")
         logging.info(self.config)
@@ -349,6 +352,7 @@ class ClassificationModel(BaseTaskModel):
                 predictions = json.load(f)
         return predictions
 
+    @config_operation
     def evaluate(
         self,
         test_set=None,
@@ -367,7 +371,7 @@ class ClassificationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         logging.info("Configuration:")
         logging.info(self.config)

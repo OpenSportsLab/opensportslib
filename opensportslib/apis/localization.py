@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import (
     get_data_classes,
     get_loader_backend,
@@ -290,6 +291,7 @@ class LocalizationModel(BaseTaskModel):
             "best_criterion_valid": best_criterion_valid,
         }
 
+    @config_operation
     def train(
         self,
         train_set=None,
@@ -327,7 +329,7 @@ class LocalizationModel(BaseTaskModel):
         # with explicit valid annotation overrides.
         self._set_split_path("valid_data_frames", valid_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -418,6 +420,7 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return self.best_checkpoint
 
+    @config_operation
     def infer(
         self,
         test_set=None,
@@ -473,7 +476,7 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -530,6 +533,7 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return predictions
 
+    @config_operation
     def evaluate(
         self,
         test_set=None,
@@ -551,7 +555,7 @@ class LocalizationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)

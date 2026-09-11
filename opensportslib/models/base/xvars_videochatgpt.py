@@ -1127,6 +1127,7 @@ class XVarsVideoChatGPTModel(nn.Module):
         if max_new_tokens_cap is not None:
             max_new_tokens = min(max_new_tokens, int(max_new_tokens_cap))
         temperature = float(generation_cfg.get("temperature", 0.2))
+        do_sample = bool(generation_cfg.get("do_sample", temperature > 0))
         try:
             with torch.inference_mode():
                 if self.native_generation:
@@ -1153,22 +1154,24 @@ class XVarsVideoChatGPTModel(nn.Module):
                     output_ids = self.model.generate(
                         input_ids,
                         video_spatio_temporal_features=native_features,
-                        do_sample=False if use_demo_parity_sampling else False,
+                        do_sample=False if use_demo_parity_sampling else do_sample,
                         temperature=effective_temperature,
+                        top_p=float(generation_cfg.get("top_p", 1.0)),
                         max_new_tokens=max_new_tokens,
                         stopping_criteria=[stopping_criteria],
                     )
                 else:
                     generation_kwargs = {
-                        "do_sample": temperature > 0,
+                        "do_sample": do_sample,
                         "max_new_tokens": max_new_tokens,
                         "pad_token_id": self.tokenizer.eos_token_id,
                         "eos_token_id": self.tokenizer.eos_token_id,
                         "repetition_penalty": float(generation_cfg.get("repetition_penalty", 1.0)),
                         "no_repeat_ngram_size": int(generation_cfg.get("no_repeat_ngram_size", 0)),
                     }
-                    if temperature > 0:
+                    if do_sample:
                         generation_kwargs["temperature"] = temperature
+                        generation_kwargs["top_p"] = float(generation_cfg.get("top_p", 1.0))
                     output_ids = self.model.generate(
                         input_ids,
                         tokenizer=self.tokenizer,
