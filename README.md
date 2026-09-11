@@ -42,6 +42,17 @@ explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
 Provide your own input data when running inference; published dataset paths may
 refer to the machine used for training.
 
+Classification and localization accept a video directly, without a manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+Direct classification treats the file as one sample. Direct localization treats
+it as one timeline and returns detected events. Both return the regular OSL JSON
+prediction document; use `test_set=` instead when evaluating labeled data.
+
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.

@@ -40,6 +40,19 @@ explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
 Provide your own input data when running inference; published dataset paths may
 refer to the machine used for training.
 
+## Direct Video Inference
+
+Classification and localization can infer one video without a JSON manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+The result is the regular one-item OSL prediction document. Classification uses
+the configured sampling policy for one sample; localization returns events on
+the complete video timeline. Use `test_set=` for batch inference or evaluation.
+
 
 This folder contains the high-level task wrappers used by users of OpenSportsLib.
 

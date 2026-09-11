@@ -282,7 +282,7 @@ class BaseTaskModel(ConfigurationMixin, ABC):
         model_id: str | None = None,
         task_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Submit a single uploaded video, primarily for direct VQA inference."""
+        """Submit one video for direct task inference."""
 
         if not self.remote:
             raise RuntimeError("Remote inference is not configured. Pass `remote=` to the model constructor.")
