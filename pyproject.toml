@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opensportslib"
-version = "0.3.1.dev3"
+version = "0.3.1.dev4"
 description = "OpenSportsLib is the professional library, designed for advanced video understanding in sports. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with sports video data."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -22,12 +22,12 @@ opensportslib = "opensportslib.cli:main"
 opensportslib = [ "legacy_config/*.yaml", "configs/**/*.yaml",]
 
 [tool.coverage.run]
-source = ["opensportslib"]
+source = [ "opensportslib",]
 branch = true
-omit = ["*/.ipynb_checkpoints/*"]
+omit = [ "*/.ipynb_checkpoints/*",]
 
 [tool.coverage.report]
 show_missing = true
 
 [tool.setuptools.packages.find]
-exclude = ["server", "server.*"]
+exclude = [ "server", "server.*",]
