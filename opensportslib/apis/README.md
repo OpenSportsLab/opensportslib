@@ -1,11 +1,66 @@
 # OpenSportsLib APIs
 
+## Configuration From Hugging Face
+
+The public `Config` class composes bundled configuration layers and keeps
+interpolation links until user changes have been applied:
+
+```python
+from opensportslib.apis import Config, LocalizationModel
+
+config = Config.from_file("opensportslib/configs/localization/video_ocv.yaml")
+config.update(
+    data={"data_root": "/datasets/soccernet"},
+    training={"epochs": 20},
+    overrides={"TRAIN.scheduler.warm_up_epochs": 2},
+)
+model = LocalizationModel(config=config)
+```
+
+Use `config.options()` for friendly task/backend settings and
+`config.get_config()` to inspect valid canonical dotted paths. Updates are
+transactional: unsupported names, unknown paths, invalid types, collisions, and
+ineffective variant-controlled settings leave the configuration unchanged.
+An explicit `train_set`, `valid_set`, or `test_set` method argument applies only
+to that call. Remote inference accepts advertised friendly inference settings;
+remote dotted overrides, worker counts, device changes, and training are rejected.
+
+When `weights` is a Hugging Face model ID, `config` may be omitted if the
+repository contains a compatible OpenSportsLib `config.yaml`:
+
+```python
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
+```
+
+This also applies to localization and VQA wrappers. Local checkpoints and
+repositories containing only a Transformers `config.json` still require an
+explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
+Provide your own input data when running inference; published dataset paths may
+refer to the machine used for training.
+
+## Direct Video Inference
+
+Classification and localization can infer one video without a JSON manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+The result is the regular one-item OSL prediction document. Classification uses
+the configured sampling policy for one sample; localization returns events on
+the complete video timeline. Use `test_set=` for batch inference or evaluation.
+
+
 This folder contains the high-level task wrappers used by users of OpenSportsLib.
 
 ## Public Entry Points
 
 Use task model classes from `opensportslib.apis`:
 
+- `Config.from_file(...)` / `Config.from_pretrained(...)`
 - `ClassificationModel(...)`
 - `LocalizationModel(...)`
 - `VQAModel(...)`

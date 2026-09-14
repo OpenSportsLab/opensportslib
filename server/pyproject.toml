@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opensportslib-server"
+version = "0.1.0"
+description = "Async FastAPI + RQ backend for OpenSportsLib inference"
+requires-python = ">=3.12"
+dependencies = [
+  "opensportslib==0.3.1.dev3",
+  "fastapi>=0.116,<1.0",
+  "uvicorn>=0.35,<1.0",
+  "redis>=6.4,<7.0",
+  "rq>=2.6,<3.0",
+  "pydantic>=2.11,<3.0",
+  "python-dotenv>=1.1,<2.0",
+  "python-multipart>=0.0.20,<1.0",
+  "PyYAML>=6.0,<7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "config*", "services*", "storage*", "worker*"]
+
+[tool.setuptools.package-data]
+config = ["*.yaml"]
+

@@ -1,3 +1,5 @@
+pytest_plugins = ["suite_support.plugin"]
+
 from pathlib import Path
 import json
 import pickle

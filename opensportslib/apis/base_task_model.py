@@ -16,10 +16,12 @@ from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from opensportslib.apis.configuration import ConfigurationMixin
 from opensportslib.core.config.accessors import get_component_name_by_kind
+from opensportslib.core.config.editable import Config
+from opensportslib.core.config.runtime_adapter import dict_to_namespace
 from opensportslib.core.utils.config import (
     expand,
-    load_config_omega,
     fetch_and_merge_config_from_HF,
     resolve_config_path,
     resolve_inference_class_metadata,
@@ -55,8 +57,7 @@ def _manifest_media_references(payload: dict[str, Any]):
                     if isinstance(value, str):
                         yield value, lambda replacement, values=values, index=index: values.__setitem__(index, replacement)
 
-
-class BaseTaskModel(ABC):
+class BaseTaskModel(ConfigurationMixin, ABC):
     """Thin shared contract for task-level OpenSportsLib wrappers."""
 
     def __init__(
@@ -78,11 +79,38 @@ class BaseTaskModel(ABC):
         if self.remote_timeout <= 0 or self.remote_poll_interval <= 0 or self.remote_result_timeout <= 0:
             raise ValueError("Remote timeout values must be positive.")
 
-        if config is None:
-            raise ValueError("config path is required")
+        self._config_editor = copy.deepcopy(config) if isinstance(config, Config) else None
+        if self._config_editor is not None:
+            weights = weights if weights is not None else self._config_editor.weights
+            config = self._config_editor.source
+            if self.is_remote:
+                self._config_editor.remote_overrides()
 
-        self.config_path = resolve_config_path(config)
-        self.config = load_config_omega(self.config_path)
+        if config is None and self._config_editor is None:
+            from huggingface_hub.utils import HFValidationError, validate_repo_id
+
+            if (not isinstance(weights, str) or os.path.exists(expand(weights))
+                    or weights.endswith((".pt", ".pth", ".tar"))):
+                raise ValueError("config path is required unless weights is a Hugging Face model ID")
+            try:
+                validate_repo_id(weights)
+            except HFValidationError as exc:
+                raise ValueError("config path is required unless weights is a Hugging Face model ID") from exc
+            try:
+                config = resolve_config_path(weights)
+            except Exception as exc:
+                raise ValueError(
+                    f"Could not load OpenSportsLib config.yaml from {weights!r}; "
+                    "provide config explicitly or publish a compatible config.yaml."
+                ) from exc
+
+        if self._config_editor is not None:
+            self.config_path = self._config_editor.source
+            self.config = dict_to_namespace(self._config_editor.get_config())
+        else:
+            self.config_path = resolve_config_path(config)
+            self._config_editor = Config.from_file(self.config_path)
+            self.config = dict_to_namespace(self._config_editor.get_config())
         self.last_loaded_weights = None
         self.best_checkpoint = None
 
@@ -96,6 +124,7 @@ class BaseTaskModel(ABC):
             self.last_loaded_weights = weights
             self.best_checkpoint = weights
 
+        self.config = self._effective_config(self.config)
         self.train_flag = False  # Flag to indicate whether we're in training mode (affects checkpoint loading behavior)
 
         data_cfg = getattr(self.config, "DATA", None)
@@ -253,7 +282,7 @@ class BaseTaskModel(ABC):
         model_id: str | None = None,
         task_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Submit a single uploaded video, primarily for direct VQA inference."""
+        """Submit one video for direct task inference."""
 
         if not self.remote:
             raise RuntimeError("Remote inference is not configured. Pass `remote=` to the model constructor.")
@@ -405,6 +434,8 @@ class BaseTaskModel(ABC):
         return self._open_request(request)
 
     def _post_multipart(self, endpoint: str, *, fields: dict[str, str], files: dict[str, Path]) -> dict[str, Any]:
+        if endpoint == "/predict":
+            fields = self._config_request_fields(fields)
         boundary = f"----OpenSportsLib{uuid.uuid4().hex}"
         chunks: list[bytes] = []
         for name, value in fields.items():

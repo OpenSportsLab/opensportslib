@@ -186,7 +186,7 @@ def install_dali():
             # CuPy (CUDA-aware but auto-resolves internally)
             subprocess.check_call([
                 python, "-m", "pip", "install",
-                "cupy-cuda130"
+                "cupy-cuda13x"
             ])
         else:
             subprocess.check_call([

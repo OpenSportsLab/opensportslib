@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import (
     get_data_classes,
     get_loader_backend,
@@ -290,6 +291,7 @@ class LocalizationModel(BaseTaskModel):
             "best_criterion_valid": best_criterion_valid,
         }
 
+    @config_operation
     def train(
         self,
         train_set=None,
@@ -327,7 +329,7 @@ class LocalizationModel(BaseTaskModel):
         # with explicit valid annotation overrides.
         self._set_split_path("valid_data_frames", valid_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -418,14 +420,18 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return self.best_checkpoint
 
+    @config_operation
     def infer(
         self,
         test_set=None,
         weights=None,
         use_wandb=True,
+        video_path: str | None = None,
         **kwargs,
     ):
         """Run model inference and return predictions in OSL JSON format."""
+        if test_set is not None and video_path is not None:
+            raise ValueError("Provide either `test_set` or `video_path`, not both.")
         remote_mode_provided = "remote_mode" in kwargs
         remote_mode = kwargs.pop("remote_mode", "full_test_set")
         if self.is_remote:
@@ -433,6 +439,17 @@ class LocalizationModel(BaseTaskModel):
             remote_task_options = kwargs.pop("remote_task_options", None)
             if kwargs:
                 raise TypeError(f"Unsupported remote inference options: {', '.join(kwargs)}")
+            if video_path is not None:
+                if remote_mode != "full_test_set":
+                    raise ValueError("`remote_mode=per_sample` requires `test_set`, not direct video input.")
+                job = self.submit_video_inference(
+                    task_type="localization",
+                    video_path=video_path,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                self.last_remote_failures = []
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
             test_set = self._resolve_split_path("test", test_set)
             if remote_mode == "per_sample":
                 batch = self.submit_per_sample_inference(
@@ -458,6 +475,18 @@ class LocalizationModel(BaseTaskModel):
             return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
         if remote_mode_provided:
             raise ValueError("`remote_mode` is available only when `remote` is configured.")
+        if video_path is not None:
+            from opensportslib.core.utils.direct_video import direct_video_manifest
+            from opensportslib.core.utils.config import resolve_config_omega
+
+            manifest_config = self._effective_config(resolve_config_omega(self.config, weights=weights))
+            manifest_config = resolve_inference_class_metadata(manifest_config)
+            with direct_video_manifest(manifest_config, video_path, "localization") as manifest:
+                return self.infer(
+                    test_set=manifest,
+                    weights=weights,
+                    use_wandb=use_wandb,
+                )
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_inferer
@@ -473,7 +502,7 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -530,6 +559,7 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return predictions
 
+    @config_operation
     def evaluate(
         self,
         test_set=None,
@@ -551,7 +581,7 @@ class LocalizationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)

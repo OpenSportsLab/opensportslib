@@ -9,6 +9,7 @@ dist/
 
 # Virtual env
 venv/
+.venv/
 .env/
 
 # Logs & outputs

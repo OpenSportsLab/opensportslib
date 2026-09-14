@@ -54,6 +54,7 @@ def _make_config(loader_backend="dali"):
 
 def _make_api(config):
     api = LocalizationModel.__new__(LocalizationModel)
+    api.remote = None
     api.config = config
     api.config_path = "/tmp/localization.yaml"
     api.model = None

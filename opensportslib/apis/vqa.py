@@ -8,6 +8,7 @@ import os
 from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution, get_vqa_backend
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
@@ -132,6 +133,7 @@ class VQAModel(BaseTaskModel):
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
 
+    @config_operation
     def train(
         self,
         train_set: str | None = None,
@@ -144,7 +146,7 @@ class VQAModel(BaseTaskModel):
     ) -> str | None:
         del kwargs
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
         vqa_backend = get_vqa_backend(self.config)
@@ -227,6 +229,7 @@ class VQAModel(BaseTaskModel):
             "Only 'xvars_videochatgpt_lora' and 'qwen_xvars_lora' are supported."
         )
 
+    @config_operation
     def infer(
         self,
         test_set: str | None = None,
@@ -309,7 +312,7 @@ class VQAModel(BaseTaskModel):
         if direct_requested and (not video_path or not str(question or "").strip()):
             raise ValueError("Direct VQA inference requires both `video_path` and a non-empty `question`.")
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         backend = get_vqa_backend(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         _set_model_checkpoint_path(self.config, effective_weights)
@@ -346,6 +349,7 @@ class VQAModel(BaseTaskModel):
         self._init_wandb(use_wandb=use_wandb)
         return self.trainer.infer(model, test_data, use_wandb=use_wandb)
 
+    @config_operation
     def evaluate(
         self,
         test_set: str | None = None,
@@ -358,7 +362,7 @@ class VQAModel(BaseTaskModel):
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         test_set = self._resolve_split_path("test", test_set)
         test_data = build_dataset(self.config, test_set, None, split="test")
         self._init_wandb(use_wandb=use_wandb)

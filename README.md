@@ -1,4 +1,58 @@
 # OpenSportsLib
+
+## Configuration From Hugging Face
+
+Prepare and inspect configuration before model weights are allocated:
+
+```python
+from opensportslib.apis import Config, ClassificationModel
+
+config = Config.from_pretrained("OpenSportsLab/OSL-cls-action-mvitv2")
+# Or: Config.from_file("opensportslib/configs/classification/video.yaml")
+
+config.update(
+    data={"data_root": "/datasets/fouls"},
+    training={"epochs": 30, "batch_size": 8},
+    inference={"batch_size": 4},
+    overrides={"TRAIN.scheduler.step_size": 5},
+)
+print(config.options())
+model = ClassificationModel(config=config)
+```
+
+`options()` reports editable parameters supported by the selected task and
+backend. `get_config()` returns a detached canonical dictionary for discovering
+advanced dotted paths. Dotted overrides must already exist, are validated as
+one atomic update, and are intended for local execution. Initialization-sensitive
+settings such as device and output directory must be changed before creating the
+model. `model.update_config(...)` supports safe settings for the next operation.
+
+When `weights` is a Hugging Face model ID, `config` may be omitted if the
+repository contains a compatible OpenSportsLib `config.yaml`:
+
+```python
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
+```
+
+This also applies to localization and VQA wrappers. Local checkpoints and
+repositories containing only a Transformers `config.json` still require an
+explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
+Provide your own input data when running inference; published dataset paths may
+refer to the machine used for training.
+
+Classification and localization accept a video directly, without a manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+Direct classification treats the file as one sample. Direct localization treats
+it as one timeline and returns detected events. Both return the regular OSL JSON
+prediction document; use `test_set=` instead when evaluating labeled data.
+
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.
@@ -520,3 +574,25 @@ If you use OpenSportsLib in your research, please cite the project.
 ## Acknowledgments
 
 OpenSportsLib is developed within the broader OpenSportsLab effort for sports video understanding.
+
+## Inference server
+
+The optional FastAPI + Redis/RQ inference server lives in [`server/`](server/README.md),
+beside the main library package. It supports classification, localization, VQA,
+video/manifest uploads, and the library's remote inference client.
+
+`pip install opensportslib` installs the library only. To run the server from
+this repository, activate a fresh Python 3.12 or newer environment and install the server:
+
+```bash
+pip install -e ./server
+bash server/scripts/setup_env.sh
+bash server/scripts/start_all.sh
+```
+
+The server installs the OpenSportsLib release from PyPI pinned to the root project
+version. That release must be published before installing or building the server.
+
+See the [server guide](server/README.md) for uv setup, model configuration,
+Redis and GPU deployment with Docker Compose. Server dependencies
+and runtime data are managed separately from the library.

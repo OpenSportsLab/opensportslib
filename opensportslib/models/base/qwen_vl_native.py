@@ -588,12 +588,14 @@ class QwenVLNativeModel(nn.Module):
                 if max_new_tokens_cap is not None:
                     max_new_tokens = min(max_new_tokens, int(max_new_tokens_cap))
                 temperature = float(generation_cfg.get("temperature", 0.0))
+                do_sample = bool(generation_cfg.get("do_sample", temperature > 0))
                 generation_kwargs = {
-                    "do_sample": temperature > 0,
+                    "do_sample": do_sample,
                     "max_new_tokens": max_new_tokens,
                 }
-                if temperature > 0:
+                if do_sample:
                     generation_kwargs["temperature"] = temperature
+                    generation_kwargs["top_p"] = float(generation_cfg.get("top_p", 1.0))
                 with torch.inference_mode():
                     output_ids = self.model.generate(**moved_inputs, **generation_kwargs)
                 input_ids = moved_inputs["input_ids"]

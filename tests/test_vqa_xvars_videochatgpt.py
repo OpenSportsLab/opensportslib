@@ -840,18 +840,14 @@ def test_xvars_prompt_places_prior_and_video_tokens_in_user_turn():
     )
 
 
-def test_xvars_demo_token_ids_match_base_checkpoint():
+@pytest.mark.pretrained
+def test_xvars_demo_token_ids_match_base_checkpoint(model_root):
     from transformers import AutoTokenizer
     from opensportslib.core.utils.hf_runtime import _ensure_video_special_tokens
     from opensportslib.models.base.xvars_videochatgpt import XVARS_BASE_TOKEN_IDS
 
-    candidates = [
-        Path("/home/vorajv/X-VARS/weights/LLaVA-7B-Lightening-v1-1"),
-        Path("/home/vorajv/xvars-weights/llava"),
-    ]
-    tokenizer_path = next((path for path in candidates if path.exists()), None)
-    if tokenizer_path is None:
-        pytest.skip("No local X-VARS tokenizer checkpoint available for token ID parity test.")
+    tokenizer_path = model_root / "xvars_tokenizer"
+    assert tokenizer_path.is_dir(), "MODEL: expected OSL_TEST_MODEL_ROOT/xvars_tokenizer"
 
     tokenizer = AutoTokenizer.from_pretrained(
         str(tokenizer_path),
