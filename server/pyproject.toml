@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Async FastAPI + RQ backend for OpenSportsLib inference"
 requires-python = ">=3.12"
 dependencies = [
-  "opensportslib==0.3.1.dev3",
+  "opensportslib==0.3.1.dev5",
   "fastapi>=0.116,<1.0",
   "uvicorn>=0.35,<1.0",
   "redis>=6.4,<7.0",
