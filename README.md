@@ -574,3 +574,25 @@ If you use OpenSportsLib in your research, please cite the project.
 ## Acknowledgments
 
 OpenSportsLib is developed within the broader OpenSportsLab effort for sports video understanding.
+
+## Inference server
+
+The optional FastAPI + Redis/RQ inference server lives in [`server/`](server/README.md),
+beside the main library package. It supports classification, localization, VQA,
+video/manifest uploads, and the library's remote inference client.
+
+`pip install opensportslib` installs the library only. To run the server from
+this repository, activate a fresh Python 3.12 or newer environment and install the server:
+
+```bash
+pip install -e ./server
+bash server/scripts/setup_env.sh
+bash server/scripts/start_all.sh
+```
+
+The server installs the OpenSportsLib release from PyPI pinned to the root project
+version. That release must be published before installing or building the server.
+
+See the [server guide](server/README.md) for uv setup, model configuration,
+Redis and GPU deployment with Docker Compose. Server dependencies
+and runtime data are managed separately from the library.

@@ -30,3 +30,4 @@ omit = ["*/.ipynb_checkpoints/*"]
 show_missing = true
 
 [tool.setuptools.packages.find]
+exclude = ["server", "server.*"]

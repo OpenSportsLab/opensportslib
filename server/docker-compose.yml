@@ -1,0 +1,51 @@
+x-osl-runtime-environment: &osl-runtime-environment
+  OSL_REDIS_URL: redis://redis:6379/0
+  OSL_RUNTIME_DIR: /app/runtime
+  OSL_DOCKER_PREDOWNLOAD_ON_START: ${OSL_DOCKER_PREDOWNLOAD_ON_START:-false}
+  OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY: ${OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY:-true}
+
+x-osl-common: &osl-common
+  build:
+    context: ..
+    dockerfile: server/Dockerfile
+  working_dir: /app
+  env_file:
+    - .env
+  environment:
+    <<: *osl-runtime-environment
+  volumes:
+    - ./runtime:/app/runtime
+    - ./logs:/app/logs
+    - ./config:/app/config
+    - ${HOST_HF_CACHE:-./runtime/huggingface-cache}:/root/.cache/huggingface
+  depends_on:
+    - redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./runtime/redis:/data
+
+  api:
+    <<: *osl-common
+    environment:
+      <<: *osl-runtime-environment
+      OSL_DOCKER_SERVICE_ROLE: api
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *osl-common
+    environment:
+      <<: *osl-runtime-environment
+      OSL_DOCKER_SERVICE_ROLE: worker
+    command: ["python", "-m", "worker.main"]
+    restart: unless-stopped
+    gpus: all
+    shm_size: "50gb"
