@@ -9,6 +9,10 @@ See the [complete inference server guide](docs/server/inference-server.md) for
 installation, registry administration, curl requests, single-video inference,
 full-test-set and per-sample remote inference, job polling, and sessions.
 
+For Docker administration, set `OSL_MODEL_ADMIN_TOKEN` in the private
+`server/.env` file, recreate the containers after changes, and use the exact
+same value as the Python client's `admin_token`. Never commit the real token.
+
 ## Configuration From Hugging Face
 
 Prepare and inspect configuration before model weights are allocated:

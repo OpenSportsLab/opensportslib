@@ -33,6 +33,59 @@ Important settings include `OSL_REDIS_URL`, `OSL_RUNTIME_DIR`,
 `OSL_MODEL_OPERATION_TIMEOUT_SECONDS`, `OSL_SESSION_TTL_SECONDS`,
 `OSL_WORKER_EXECUTION_MODE`, and `OSL_WORKER_IDLE_UNLOAD_SECONDS`.
 
+### Docker admin token setup
+
+`server/.env.example` is only a template. Docker Compose loads the actual
+`server/.env` file:
+
+```bash
+cd server
+cp .env.example .env
+```
+
+Edit `server/.env` and set one private token assignment:
+
+```env
+OSL_MODEL_ADMIN_TOKEN=<your-private-admin-token>
+```
+
+Do not put a real token in `.env.example`, documentation, or Git. The token
+shared during troubleshooting should be treated as exposed and rotated before
+production use. Recreate the containers after changing it:
+
+```bash
+./scripts/docker_compose.sh down
+./scripts/docker_compose.sh up -d --force-recreate
+```
+
+Verify that the API container received a token without printing its value:
+
+```bash
+docker compose exec api sh -c \
+  'test -n "$OSL_MODEL_ADMIN_TOKEN" && echo "admin token is set" || echo "admin token is missing"'
+```
+
+Use the exact same private value in curl or Python:
+
+```bash
+curl -H "Authorization: Bearer <same-private-token>" \
+  http://127.0.0.1:8000/models
+```
+
+```python
+from opensportslib import RemoteModelRegistry
+
+registry = RemoteModelRegistry(
+    "http://10.64.74.111:8000",
+    admin_token="<same-private-token>",
+)
+```
+
+If authentication returns 401, check that you edited `.env` rather than only
+`.env.example`, removed duplicate `OSL_MODEL_ADMIN_TOKEN` lines, recreated the
+containers, connected to the expected host, included the `Bearer ` prefix, and
+did not add quotes or trailing whitespace to the token.
+
 ## Model registry
 
 Administration endpoints require `Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN`.
@@ -109,6 +162,25 @@ r.wait_for_operation(remove["operation_id"])
 and polling timeouts raise `ConnectionError` and `TimeoutError`.
 
 ## Inference API
+
+The Python task wrappers can be remote-only. When `remote` is configured, the
+client does not need local `config` or `weights`; the registered server model
+owns its configuration and checkpoint. `remote_model_id` is the server registry
+ID and is independent of local `weights`.
+
+```python
+from opensportslib.apis import VQAModel
+
+vqa = VQAModel(
+    remote="http://10.64.74.111:8000",
+    remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora",
+)
+```
+
+The wrappers retain the `session_id` returned by the first real request as
+`last_remote_session_id`. VQA questions reuse it automatically; classification
+and localization calls without new input reuse the latest cached result. Use
+`clear_remote_session()` to reset it or pass an explicit `session_id=`.
 
 All requests use `POST /predict` and return a queued `job_id` and `session_id`.
 Poll and retrieve results with:
@@ -218,8 +290,9 @@ curl -X POST http://127.0.0.1:8000/predict -H 'Content-Type: application/json' \
 ```
 
 Classification and localization may reuse a session with no new input to return
-the latest successful cached result; new input creates a new job in that
-session. VQA follow-ups must not include a file, path, or URL. Sessions expire
+the latest successful cached result. The OpenSportsLib wrappers start a new
+session automatically when a new video is supplied; direct HTTP callers may
+explicitly reuse a session if desired. VQA follow-ups must not include a file, path, or URL. Sessions expire
 after `OSL_SESSION_TTL_SECONDS` and then return 410.
 
 Common errors are 401 invalid admin token, 404 unknown model/job/session, 409

@@ -54,6 +54,27 @@ Redis is a separate service: install it with your system package manager or
 `conda install -c conda-forge redis`, or use Docker Compose below. When Redis is
 already running locally, the scripts reuse it.
 
+For Docker, `.env.example` is a template and `.env` is the file actually loaded
+by Compose. Set one private admin token in `server/.env`:
+
+```env
+OSL_MODEL_ADMIN_TOKEN=<your-private-admin-token>
+```
+
+Never commit the real token to `.env.example` or Git. After changing it,
+recreate the containers:
+
+```bash
+./scripts/docker_compose.sh down
+./scripts/docker_compose.sh up -d --force-recreate
+```
+
+Verify the container received it without printing the secret:
+
+```bash
+docker compose exec api sh -c 'test -n "$OSL_MODEL_ADMIN_TOKEN" && echo "admin token is set" || echo "admin token is missing"'
+```
+
 Then start the server:
 
 ```bash
@@ -93,7 +114,7 @@ API or worker restart is required:
 ```python
 from opensportslib import RemoteModelRegistry
 
-registry = RemoteModelRegistry("http://localhost:8000", admin_token="change-this-secret")
+registry = RemoteModelRegistry("http://localhost:8000", admin_token="<same-private-admin-token>")
 operation = registry.register_model(
     task_type="classification",
     huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
@@ -261,7 +282,8 @@ Every successful `/predict` response now includes:
 VQA supports follow-up questions on the same session. Classification and localization can also reuse the same `session_id`, but their behavior is different:
 
 - no new input: return the latest successful cached result from that session
-- new input: create a new job under the same session
+- new input from the OpenSportsLib wrappers: start a new session; direct HTTP
+  callers can explicitly reuse a session when desired
 
 `POST /predict` accepts both:
 
@@ -406,7 +428,7 @@ Classification also returns a `session_id`.
 If you send the same `session_id` again:
 
 - with no new input, the API returns the latest successful cached result from that session
-- with a new `video_path` or `upload_file`, the API creates a new job under the same session
+- with a new `video_path` or `upload_file`, the wrapper starts a new session
 
 ### 6. Run localization
 
@@ -425,7 +447,7 @@ Localization also returns a `session_id`.
 If you send the same `session_id` again:
 
 - with no new input, the API returns the latest successful cached result from that session
-- with a new `video_path` or `upload_file`, the API creates a new job under the same session
+- with a new `video_path` or `upload_file`, the wrapper starts a new session
 
 ### 7. Check job status
 
@@ -484,7 +506,7 @@ While the server is running, uploaded media is kept for active sessions so VQA f
 - VQA can reuse a session for follow-up questions on the same video.
 - Classification and localization reuse the same session for workflow continuity.
 - Classification and localization with no new input return the latest cached result from that session immediately.
-- Classification and localization with new input create a new job under the same session.
+- Classification and localization with new input start a new session in the OpenSportsLib wrappers.
 - VQA follow-up requests must not send a new `upload_file`, `video_path`, or `media_url`.
 - VQA follow-up requests create a new `job_id` under the same `session_id`.
 

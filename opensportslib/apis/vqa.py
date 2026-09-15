@@ -274,17 +274,21 @@ class VQAModel(BaseTaskModel):
                 return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
             if remote_mode != "full_test_set":
                 raise ValueError("`remote_mode=per_sample` requires `test_set`, not direct VQA input.")
-            if session_id is not None and video_path is None and question:
-                job = self._post_multipart(
-                    "/predict",
-                    fields={
-                        "task_type": "vqa",
-                        "model_id": remote_model_id or self.remote_model_id or "",
-                        "session_id": session_id,
-                        "question": str(question),
-                        "task_options": json.dumps(remote_task_options or {}),
-                    },
-                    files={},
+            # A stored session is for question-only follow-ups. A new video
+            # must start a fresh server session; explicitly supplied session
+            # IDs remain caller-controlled and are forwarded as requested.
+            active_session_id = (
+                session_id
+                if session_id is not None
+                else (self.remote_session_id if video_path is None else None)
+            )
+            if active_session_id is not None and video_path is None and question:
+                job = self.submit_session_inference(
+                    task_type="vqa",
+                    session_id=active_session_id,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                    question=str(question),
                 )
                 return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
             if not video_path or not str(question or "").strip():
@@ -293,7 +297,7 @@ class VQAModel(BaseTaskModel):
                 task_type="vqa",
                 video_path=video_path,
                 question=str(question),
-                session_id=session_id,
+                session_id=active_session_id,
                 model_id=remote_model_id,
                 task_options=remote_task_options,
             )

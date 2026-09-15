@@ -261,6 +261,7 @@ class ClassificationModel(BaseTaskModel):
         use_ddp=False,
         use_wandb=True,
         video_path: str | None = None,
+        session_id: str | None = None,
         **kwargs,
     ):
         """Run model inference and return predictions in OSL JSON format."""
@@ -273,12 +274,27 @@ class ClassificationModel(BaseTaskModel):
             remote_task_options = kwargs.pop("remote_task_options", None)
             if kwargs:
                 raise TypeError(f"Unsupported remote inference options: {', '.join(kwargs)}")
+            active_session_id = (
+                session_id
+                if session_id is not None
+                else (self.remote_session_id if video_path is None else None)
+            )
             if video_path is not None:
                 if remote_mode != "full_test_set":
                     raise ValueError("`remote_mode=per_sample` requires `test_set`, not direct video input.")
                 job = self.submit_video_inference(
                     task_type="classification",
                     video_path=video_path,
+                    session_id=active_session_id,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                self.last_remote_failures = []
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+            if test_set is None and active_session_id is not None:
+                job = self.submit_session_inference(
+                    task_type="classification",
+                    session_id=active_session_id,
                     model_id=remote_model_id,
                     task_options=remote_task_options,
                 )
