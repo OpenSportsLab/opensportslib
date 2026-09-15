@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-if [[ "${OSL_PREDOWNLOAD_ON_START:-true}" == "true" ]]; then
+if [[ "${OSL_PREDOWNLOAD_ON_START:-false}" == "true" ]]; then
   echo "Predownloading configured Hugging Face assets..."
   "${ROOT_DIR}/scripts/download_all_weights.sh"
 fi

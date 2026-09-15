@@ -82,6 +82,28 @@ python -m pip install -r server/requirements.txt
 
 ## Configure models
 
+Models are managed at runtime through the model registry. Configure
+`OSL_MODEL_ADMIN_TOKEN` and register a Hugging Face or server-local model; no
+API or worker restart is required:
+
+```python
+from opensportslib import RemoteModelRegistry
+
+registry = RemoteModelRegistry("http://localhost:8000", admin_token="change-this-secret")
+operation = registry.register_model(
+    task_type="classification",
+    huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
+)
+registry.wait_for_operation(operation["operation_id"])
+```
+
+Local paths must be below `OSL_MODEL_ROOT`. A directory must contain
+`config.yaml`; a weights file requires `config_path`. A local `model_id` may be
+chosen by the user or omitted in favor of the generated ID returned by the API.
+
+The fixed `OSL_*_MODEL_*`, `OSL_*_CONFIG_PATH`, and `OSL_*_WEIGHTS` entries are
+deprecated compatibility bootstrap settings, imported only when Redis is empty.
+
 `./scripts/setup_env.sh` creates `.env` from `.env.example` when it is missing. If you skip that helper, copy `.env.example` to `.env` and fill in the model config and weights you want to serve.
 
 This project now generates flat standalone configs directly under `config/`:

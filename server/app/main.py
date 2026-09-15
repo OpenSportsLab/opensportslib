@@ -6,34 +6,64 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
 from pydantic import ValidationError
 
 from app.schemas import (
     HealthResponse,
     JobStatus,
     JobStatusResponse,
+    ModelDefaultRequest,
+    ModelRegistrationRequest,
     PredictAccepted,
     PredictionResult,
     PredictRequest,
     SessionRecord,
     TaskType,
 )
-from config.model_registry import get_configured_model_ids
+from config.model_registry import (
+    FAILED,
+    READY,
+    REGISTERING,
+    UNREGISTERING,
+    ModelRegistry,
+    generated_local_model_id,
+    public_record,
+    require_admin_token,
+    resolve_local_source,
+    utc_now,
+    validate_local_model_id,
+)
 from config.settings import get_settings
 from storage.files import save_uploaded_file
 from storage.jobs import JobStore
 from storage.runtime_cleanup import RuntimeCleaner
 from storage.sessions import SessionStore
-from worker.queueing import enqueue_inference_job, get_queue, get_redis_connection, get_worker_heartbeat
+from worker.queueing import (
+    enqueue_inference_job,
+    enqueue_model_registration,
+    enqueue_model_unregistration,
+    get_queue,
+    get_redis_connection,
+    get_worker_heartbeat,
+)
 
 
 settings = get_settings()
 job_store = JobStore(settings)
 session_store = SessionStore(settings)
 runtime_cleaner = RuntimeCleaner(settings, session_store, job_store)
+model_registry = ModelRegistry(settings)
 app = FastAPI(title="OSL Inference Server", version="0.1.0")
 logger = logging.getLogger("osl.api")
+
+
+@app.on_event("startup")
+def bootstrap_model_registry() -> None:
+    try:
+        model_registry.bootstrap_legacy_models()
+    except Exception:
+        logger.exception("Could not bootstrap the model registry.")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -44,10 +74,11 @@ def health() -> HealthResponse:
     try:
         redis_reachable = bool(get_redis_connection(settings).ping())
         heartbeat = get_worker_heartbeat(settings)
+        configured_models = [item["model_id"] for item in model_registry.list() if item["status"] == READY]
     except Exception:
         redis_reachable = False
         heartbeat = {"alive": False}
-    configured_models = get_configured_model_ids(settings)
+        configured_models = []
     return HealthResponse(
         status="ok" if redis_reachable else "degraded",
         api_time=datetime.now(timezone.utc),
@@ -61,13 +92,197 @@ def health() -> HealthResponse:
     )
 
 
+def _authorize_model_admin(authorization: str | None) -> None:
+    try:
+        require_admin_token(settings, authorization)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+
+@app.post("/models", status_code=status.HTTP_202_ACCEPTED)
+def register_model(
+    request: ModelRegistrationRequest,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    _authorize_model_admin(authorization)
+    now = utc_now()
+    if request.source.type == "huggingface":
+        try:
+            from huggingface_hub.utils import HFValidationError, validate_repo_id
+
+            validate_repo_id(request.source.model_id)
+        except (HFValidationError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid Hugging Face model ID: {exc}") from exc
+        if request.model_id is not None and request.model_id != request.source.model_id:
+            raise HTTPException(status_code=422, detail="Hugging Face models use their repository ID as model_id.")
+        model_id = request.source.model_id
+        source_type = "huggingface"
+        source = request.source.model_id
+        config_path = None
+    else:
+        try:
+            weights_path, resolved_config = resolve_local_source(
+                settings, request.source.weights_path, request.source.config_path
+            )
+            model_id = validate_local_model_id(
+                request.model_id or generated_local_model_id(weights_path)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        source_type = "local"
+        source = str(weights_path)
+        config_path = str(resolved_config)
+
+    generation = int(model_registry.redis.incr(f"osl:model-registry:generation:{model_id}"))
+    record = {
+        "model_id": model_id,
+        "task_type": request.task_type.value,
+        "source_type": source_type,
+        "source": source,
+        "config_path": config_path,
+        "status": REGISTERING,
+        "generation": generation,
+        "created_at": now,
+        "updated_at": now,
+        "error": None,
+    }
+    try:
+        record, created = model_registry.reserve(record)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not created:
+        return {
+            "operation_id": record.get("operation_id"),
+            "model_id": model_id,
+            "status": record["status"],
+            "message": f"Model already registered. Use model_id `{model_id}` for inference when READY.",
+        }
+
+    operation = model_registry.create_operation("register", model_id)
+    record["operation_id"] = operation["operation_id"]
+    model_registry.put(record)
+    try:
+        enqueue_model_registration(
+            get_queue(settings), operation["operation_id"], model_id,
+            settings.model_operation_timeout_seconds,
+        )
+    except Exception as exc:
+        record["status"] = FAILED
+        record["error"] = "Failed to enqueue registration."
+        model_registry.put(record)
+        operation["status"] = "failed"
+        operation["error"] = "Failed to enqueue registration."
+        model_registry.save_operation(operation)
+        raise HTTPException(status_code=500, detail="Failed to enqueue model registration.") from exc
+    return {
+        "operation_id": operation["operation_id"],
+        "model_id": model_id,
+        "status": REGISTERING,
+        "message": f"Use model_id `{model_id}` for inference after registration reaches READY.",
+    }
+
+
+@app.get("/models")
+def list_models() -> dict[str, list[dict[str, Any]]]:
+    return {"models": [public_record(item) for item in model_registry.list()]}
+
+
+@app.get("/models/status")
+def get_model_status(model_id: str) -> dict[str, Any]:
+    record = model_registry.get(model_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="MODEL_NOT_REGISTERED")
+    return public_record(record)
+
+
+@app.get("/model-operations/{operation_id}")
+def get_model_operation(operation_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
+    _authorize_model_admin(authorization)
+    operation = model_registry.get_operation(operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Model operation not found.")
+    return operation
+
+
+@app.put("/models/defaults/{task_type}")
+def set_default_model(
+    task_type: TaskType,
+    request: ModelDefaultRequest,
+    authorization: str | None = Header(None),
+) -> dict[str, str]:
+    _authorize_model_admin(authorization)
+    try:
+        model_registry.set_default(task_type.value, request.model_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="MODEL_NOT_REGISTERED") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"task_type": task_type.value, "model_id": request.model_id}
+
+
+@app.delete("/models/{model_id:path}", status_code=status.HTTP_202_ACCEPTED)
+def unregister_model(model_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
+    _authorize_model_admin(authorization)
+    record = model_registry.get(model_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="MODEL_NOT_REGISTERED")
+    if record["status"] == UNREGISTERING:
+        return {
+            "operation_id": record.get("unregistration_operation_id"),
+            "model_id": model_id,
+            "status": UNREGISTERING,
+        }
+    record["status"] = UNREGISTERING
+    model_registry.put(record)
+    operation = model_registry.create_operation("unregister", model_id)
+    record["unregistration_operation_id"] = operation["operation_id"]
+    model_registry.put(record)
+    try:
+        enqueue_model_unregistration(
+            get_queue(settings), operation["operation_id"], model_id,
+            record["generation"], settings.model_operation_timeout_seconds,
+        )
+    except Exception as exc:
+        record["status"] = READY
+        model_registry.put(record)
+        operation["status"] = "failed"
+        operation["error"] = "Failed to enqueue unregistration."
+        model_registry.save_operation(operation)
+        raise HTTPException(status_code=500, detail="Failed to enqueue model unregistration.") from exc
+    return {"operation_id": operation["operation_id"], "model_id": model_id, "status": UNREGISTERING}
+
+
+def _resolve_prediction_model(task_type: str, model_id: str | None) -> dict[str, Any]:
+    try:
+        record = model_registry.resolve(task_type, model_id)
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail={"code": "MODEL_TASK_MISMATCH", "message": str(exc)}) from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_REGISTERED", "model_id": model_id})
+    if record["status"] == REGISTERING:
+        raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_READY", "model_id": record["model_id"]})
+    if record["status"] == FAILED:
+        raise HTTPException(status_code=422, detail={"code": "MODEL_REGISTRATION_FAILED", "model_id": record["model_id"], "error": record.get("error")})
+    if record["status"] == UNREGISTERING:
+        raise HTTPException(status_code=409, detail={"code": "MODEL_UNAVAILABLE", "model_id": record["model_id"]})
+    if record["status"] != READY:
+        raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_READY", "model_id": record["model_id"]})
+    return record
+
+
 @app.get("/config-capabilities")
 def config_capabilities(task_type: str, model_id: str | None = None):
     from services.configuration import capabilities, model_config
 
-    entry = settings.resolve_model_id(task_type, model_id or None)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="No configured model for this task")
+    try:
+        record = model_registry.resolve(task_type, model_id or None)
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if record is None or record["status"] != READY:
+        raise HTTPException(status_code=404, detail="No ready registered model for this task")
+    entry = model_registry.model_settings(record)
     try:
         return {"model_id": entry.model_id, **capabilities(model_config(entry))}
     except (ValueError, OSError) as exc:
@@ -168,12 +383,10 @@ async def predict(
         return cached_result
 
     effective_requested_model_id = predict_request.model_id or (current_session.model_id if current_session else None)
-    registry_entry = settings.resolve_model_id(predict_request.task_type.value, effective_requested_model_id)
-    if registry_entry is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No configured model available for task `{predict_request.task_type.value}`.",
-        )
+    registry_record = _resolve_prediction_model(
+        predict_request.task_type.value, effective_requested_model_id
+    )
+    registry_entry = model_registry.model_settings(registry_record)
 
     envelope = predict_request.task_options.get("config_overrides")
     if envelope is not None:
@@ -276,6 +489,7 @@ async def predict(
             job_id=metadata.job_id,
             request_payload=predict_request.model_dump(mode="json"),
             model_id=metadata.model_id,
+            model_generation=registry_record["generation"],
             job_timeout_seconds=settings.job_timeout_seconds,
         )
         metadata.queue_job_id = rq_job.id

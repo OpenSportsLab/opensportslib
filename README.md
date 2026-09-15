@@ -1,5 +1,10 @@
 # OpenSportsLib
 
+OpenSportsLib inference servers support runtime model registration through
+`RemoteModelRegistry`. Its unified `register_model()` method accepts Hugging
+Face or server-local weights; the returned model ID is then used by the existing
+remote task APIs. Unregistered model IDs are rejected.
+
 ## Configuration From Hugging Face
 
 Prepare and inspect configuration before model weights are allocated:

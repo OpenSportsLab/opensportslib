@@ -148,6 +148,24 @@ training and evaluation are unchanged. For a test-set call, OpenSportsLib
 packages the JSON manifest and every local media path it references into one
 ZIP upload, waits for the server job, and returns predictions like local inference.
 
+Models must be registered before inference. One method handles Hugging Face
+and server-local sources:
+
+```python
+from opensportslib import RemoteModelRegistry
+
+registry = RemoteModelRegistry("http://server-ip:8000", admin_token="secret")
+operation = registry.register_model(
+    task_type="classification",
+    huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
+)
+registry.wait_for_operation(operation["operation_id"])
+```
+
+For local registration, pass `weights_path`, optional `config_path`, and an
+optional custom `model_id`. If the ID is omitted, use the generated ID returned
+by `register_model()`.
+
 ```python
 model = ClassificationModel(
     config="/path/to/classification.yaml",

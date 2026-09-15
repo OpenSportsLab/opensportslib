@@ -66,13 +66,15 @@ mkdir -p \
   "${ROOT_DIR}/runtime/results" \
   "${ROOT_DIR}/runtime/sessions" \
   "${ROOT_DIR}/runtime/tmp" \
+  "${ROOT_DIR}/models" \
   "${ROOT_DIR}/logs"
 
 echo
 echo "Setup complete."
 echo "Next steps:"
-echo "1. Review ${ROOT_DIR}/.env; portable config paths and default Hugging Face model IDs are already set"
+echo "1. Review ${ROOT_DIR}/.env and change OSL_MODEL_ADMIN_TOKEN"
 echo "   Active VQA dependency profile: ${VQA_DEP_PROFILE}"
 echo "2. Start services: ${ROOT_DIR}/scripts/start_all.sh"
 echo "   It reuses an existing Redis service or starts the project-managed Redis server"
 echo "   Worker execution mode defaults to 'simple' via OSL_WORKER_EXECUTION_MODE"
+echo "3. Register models through POST /models or RemoteModelRegistry.register_model()"

@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config.model_registry import get_enabled_models
+from config.model_registry import FAILED, READY, UNREGISTERING, ModelRegistry
 from config.settings import get_settings
 from services.base import BaseTaskService
 from storage.files import prepare_uploaded_test_set, prepare_video_source
@@ -16,6 +16,7 @@ from worker.registry import SERVICE_BY_TASK
 
 
 SETTINGS = get_settings()
+MODEL_REGISTRY = ModelRegistry(SETTINGS)
 JOB_STORE = JobStore(SETTINGS)
 SESSION_STORE = SessionStore(SETTINGS)
 ACTIVE_MODEL_ID: str | None = None
@@ -72,7 +73,7 @@ def _clear_gpu_memory() -> None:
         pass
 
 
-def _get_or_load_service(model_id: str) -> BaseTaskService:
+def _get_or_load_service(model_id: str, *, allow_registering: bool = False) -> BaseTaskService:
     global ACTIVE_MODEL_ID, ACTIVE_SERVICE
 
     if ACTIVE_MODEL_ID == model_id and ACTIVE_SERVICE is not None:
@@ -80,10 +81,13 @@ def _get_or_load_service(model_id: str) -> BaseTaskService:
         touch_worker_activity()
         return ACTIVE_SERVICE
 
-    enabled = get_enabled_models(SETTINGS)
-    model_settings = enabled.get(model_id)
-    if model_settings is None:
-        raise ValueError(f"Model `{model_id}` is not enabled.")
+    record = MODEL_REGISTRY.get(model_id)
+    allowed_statuses = {READY, UNREGISTERING}
+    if allow_registering:
+        allowed_statuses.add("registering")
+    if record is None or record["status"] not in allowed_statuses:
+        raise ValueError(f"Model `{model_id}` is not ready.")
+    model_settings = MODEL_REGISTRY.model_settings(record)
 
     if ACTIVE_SERVICE is not None:
         logger.info("Unloading active model | model_id=%s", ACTIVE_MODEL_ID)
@@ -108,10 +112,20 @@ def _get_or_load_service(model_id: str) -> BaseTaskService:
     return service
 
 
-def run_inference_job(job_id: str, request_payload: dict, model_id: str) -> dict:
+def run_inference_job(
+    job_id: str,
+    request_payload: dict,
+    model_id: str,
+    model_generation: int | None = None,
+) -> dict:
     metadata = JOB_STORE.mark_running(job_id)
     session = SESSION_STORE.load_session(metadata.session_id) if metadata.session_id else None
     try:
+        record = MODEL_REGISTRY.get(model_id)
+        if record is None or record["status"] not in {READY, UNREGISTERING}:
+            raise ValueError(f"Model `{model_id}` is no longer available.")
+        if model_generation is not None and record["generation"] != model_generation:
+            raise ValueError(f"Model `{model_id}` registration changed after this job was accepted.")
         touch_worker_activity()
         logger.info(
             "Inference starting | job_id=%s session_id=%s task_type=%s model_id=%s input_source=%s",
@@ -234,3 +248,70 @@ def run_inference_job(job_id: str, request_payload: dict, model_id: str) -> dict
         )
         touch_worker_activity()
         raise
+
+
+def register_model_job(operation_id: str, model_id: str) -> dict:
+    operation = MODEL_REGISTRY.get_operation(operation_id)
+    record = MODEL_REGISTRY.get(model_id)
+    if operation is None or record is None:
+        raise ValueError("Registration operation or model record no longer exists.")
+    operation["status"] = "running"
+    MODEL_REGISTRY.save_operation(operation)
+    try:
+        if record["source_type"] == "huggingface" and not record.get("config_path"):
+            from opensportslib.core.utils.config import resolve_config_path
+
+            record["config_path"] = str(resolve_config_path(record["source"]))
+            MODEL_REGISTRY.put(record)
+        _get_or_load_service(model_id, allow_registering=True)
+        record["status"] = READY
+        MODEL_REGISTRY.put(record)
+        operation["status"] = "succeeded"
+        MODEL_REGISTRY.save_operation(operation)
+        return {"model_id": model_id, "status": READY}
+    except Exception as exc:
+        record["status"] = FAILED
+        record["error"] = str(exc)
+        MODEL_REGISTRY.put(record)
+        operation["status"] = "failed"
+        operation["error"] = str(exc)
+        MODEL_REGISTRY.save_operation(operation)
+        _unload_active_model(model_id)
+        logger.exception("Model registration failed | model_id=%s", model_id)
+        raise
+
+
+def unregister_model_job(operation_id: str, model_id: str, generation: int) -> dict:
+    operation = MODEL_REGISTRY.get_operation(operation_id)
+    record = MODEL_REGISTRY.get(model_id)
+    if operation is None:
+        raise ValueError("Unregistration operation no longer exists.")
+    operation["status"] = "running"
+    MODEL_REGISTRY.save_operation(operation)
+    try:
+        if record is not None and record["generation"] == generation:
+            _unload_active_model(model_id)
+            MODEL_REGISTRY.delete(model_id)
+        operation["status"] = "succeeded"
+        MODEL_REGISTRY.save_operation(operation)
+        return {"model_id": model_id, "status": "unregistered"}
+    except Exception as exc:
+        operation["status"] = "failed"
+        operation["error"] = str(exc)
+        MODEL_REGISTRY.save_operation(operation)
+        if record is not None and record["generation"] == generation:
+            record["status"] = READY
+            MODEL_REGISTRY.put(record)
+        logger.exception("Model unregistration failed | model_id=%s", model_id)
+        raise
+
+
+def _unload_active_model(model_id: str) -> None:
+    global ACTIVE_MODEL_ID, ACTIVE_SERVICE
+    if ACTIVE_MODEL_ID != model_id or ACTIVE_SERVICE is None:
+        return
+    ACTIVE_SERVICE.unload()
+    ACTIVE_SERVICE = None
+    ACTIVE_MODEL_ID = None
+    _clear_gpu_memory()
+    touch_worker_activity()

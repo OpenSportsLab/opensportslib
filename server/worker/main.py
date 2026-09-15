@@ -11,6 +11,7 @@ from storage.runtime_cleanup import RuntimeCleaner
 from storage.sessions import SessionStore
 from worker.queueing import get_queue, write_worker_heartbeat
 from worker.tasks import get_active_model_ids, maybe_unload_idle_model, preload_enabled_models, touch_worker_activity
+from config.model_registry import ModelRegistry
 
 
 def _heartbeat_loop(stop_event: threading.Event) -> None:
@@ -41,6 +42,7 @@ def _idle_unload_loop(stop_event: threading.Event) -> None:
 
 def main() -> None:
     settings = get_settings()
+    ModelRegistry(settings).bootstrap_legacy_models()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s | %(levelname)s | %(message)s",

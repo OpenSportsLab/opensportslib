@@ -17,6 +17,7 @@ x-osl-common: &osl-common
     - ./runtime:/app/runtime
     - ./logs:/app/logs
     - ./config:/app/config
+    - ./models:/app/models
     - ${HOST_HF_CACHE:-./runtime/huggingface-cache}:/root/.cache/huggingface
   depends_on:
     - redis

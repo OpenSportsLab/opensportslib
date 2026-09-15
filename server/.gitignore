@@ -14,6 +14,9 @@ logs/*
 runtime/*
 !runtime/.gitkeep
 
+models/*
+!models/.gitkeep
+
 checkpoints/
 checkpoints_video/
 checkpoints_vqa_qwen2_5_vl_native/

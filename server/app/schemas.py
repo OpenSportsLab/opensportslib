@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -139,3 +139,24 @@ class HealthResponse(BaseModel):
     worker_loaded_models: list[str] = Field(default_factory=list)
     worker_last_seen: datetime | None = None
     configured_models: list[str] = Field(default_factory=list)
+
+
+class HuggingFaceModelSource(BaseModel):
+    type: Literal["huggingface"]
+    model_id: str
+
+
+class LocalModelSource(BaseModel):
+    type: Literal["local"]
+    weights_path: str
+    config_path: str | None = None
+
+
+class ModelRegistrationRequest(BaseModel):
+    task_type: TaskType
+    model_id: str | None = None
+    source: HuggingFaceModelSource | LocalModelSource = Field(discriminator="type")
+
+
+class ModelDefaultRequest(BaseModel):
+    model_id: str

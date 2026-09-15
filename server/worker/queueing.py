@@ -23,6 +23,7 @@ def enqueue_inference_job(
     job_id: str,
     request_payload: dict,
     model_id: str,
+    model_generation: int,
     job_timeout_seconds: int,
 ):
     """Enqueue inference with the server-configured RQ execution limit."""
@@ -31,8 +32,23 @@ def enqueue_inference_job(
         job_id,
         request_payload,
         model_id,
+        model_generation,
         job_id=job_id,
         job_timeout=job_timeout_seconds,
+    )
+
+
+def enqueue_model_registration(queue: Queue, operation_id: str, model_id: str, timeout: int):
+    return queue.enqueue(
+        "worker.tasks.register_model_job", operation_id, model_id,
+        job_timeout=timeout,
+    )
+
+
+def enqueue_model_unregistration(queue: Queue, operation_id: str, model_id: str, generation: int, timeout: int):
+    return queue.enqueue(
+        "worker.tasks.unregister_model_job", operation_id, model_id, generation,
+        job_timeout=timeout,
     )
 
 

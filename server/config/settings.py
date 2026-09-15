@@ -57,6 +57,9 @@ class Settings:
     max_upload_extracted_bytes: int
     max_upload_file_count: int
     allowed_upload_extensions: tuple[str, ...]
+    model_root: Path
+    model_admin_token: str
+    model_operation_timeout_seconds: int
     models: tuple[ModelSettings, ...]
 
     def ensure_runtime_dirs(self) -> None:
@@ -65,19 +68,6 @@ class Settings:
 
     def model_settings(self) -> list[ModelSettings]:
         return list(self.models)
-
-    def resolve_model_id(self, task_type: str, model_id: str | None) -> ModelSettings | None:
-        matches = [
-            item
-            for item in self.model_settings()
-            if item.task_type == task_type and item.enabled and item.config_path
-        ]
-        if model_id is None:
-            return matches[0] if matches else None
-        for item in matches:
-            if item.model_id == model_id:
-                return item
-        return None
 
 
 def _model_settings(prefix: str, task_type: str, default_model_id: str) -> ModelSettings:
@@ -134,6 +124,9 @@ def get_settings() -> Settings:
             ).split(",")
             if item.strip()
         ),
+        model_root=_resolve_repo_path(os.getenv("OSL_MODEL_ROOT", "./models")),
+        model_admin_token=os.getenv("OSL_MODEL_ADMIN_TOKEN", ""),
+        model_operation_timeout_seconds=int(os.getenv("OSL_MODEL_OPERATION_TIMEOUT_SECONDS", "7200")),
         models=models,
     )
     settings.ensure_runtime_dirs()

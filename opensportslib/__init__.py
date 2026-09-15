@@ -1,5 +1,7 @@
 import importlib
 
+from opensportslib.remote_registry import RemoteModelRegistry, RemoteRegistryError
+
 
 def __getattr__(name):
     if name == "model":
@@ -15,4 +17,7 @@ def __getattr__(name):
     raise AttributeError(f"module 'opensportslib' has no attribute '{name}'")
 
 
-__all__ = ["model", "metrics", "datasets", "core", "tools"]
+__all__ = [
+    "model", "metrics", "datasets", "core", "tools",
+    "RemoteModelRegistry", "RemoteRegistryError",
+]
