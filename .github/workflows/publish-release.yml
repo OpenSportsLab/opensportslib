@@ -1,24 +1,25 @@
 name: Publish Stable Release to PyPI
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
+
+concurrency:
+  group: publish-stable
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: get_version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -28,34 +29,12 @@ jobs:
       - name: Install tools
         run: |
           python -m pip install --upgrade pip
-          pip install build twine toml
-
-      - name: Update version in pyproject.toml
-        run: |
-          python - << EOF
-          import toml
-          import os
-
-          version = os.environ["VERSION"]
-
-          data = toml.load("pyproject.toml")
-          data["project"]["version"] = version
-
-          with open("pyproject.toml", "w") as f:
-              toml.dump(data, f)
-
-          print("Set stable version to:", version)
-          EOF
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
           pip install build twine
+
+      - name: Synchronize stable version for build
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/release_versions.py set-stable "$RELEASE_TAG"
 
       - name: Build package
         run: python -m build
@@ -65,3 +44,24 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Checkout latest main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Commit released version to main
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python scripts/release_versions.py set-stable "$RELEASE_TAG"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add pyproject.toml server/pyproject.toml
+          if git diff --cached --quiet; then
+            echo "main already contains release version"
+          else
+            git commit -m "fix: synchronize stable release version"
+            git push origin main
+          fi
