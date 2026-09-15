@@ -143,6 +143,10 @@ metrics = m.evaluate(
 
 ## Remote Inference
 
+The complete HTTP reference, including equivalent curl commands, model
+registration/unregistration, job polling, sessions, and single-video,
+full-test-set, and per-sample modes is in the [Inference Server guide](../../docs/server/inference-server.md).
+
 Pass `remote` to send inference to an `opensportslib-server` worker. Local
 training and evaluation are unchanged. For a test-set call, OpenSportsLib
 packages the JSON manifest and every local media path it references into one
@@ -193,6 +197,11 @@ failures = model.last_remote_failures
 `remote_mode="full_test_set"` is the default. Per-sample submission continues
 after individual upload failures; successful predictions are returned and failed
 samples are available through `model.last_remote_failures`.
+
+The registry client also provides `list_models()`, `get_model()`,
+`get_operation()`, `wait_for_operation()`, `set_default()`, and
+`unregister_model()`. Administrative failures raise `RemoteRegistryError` with
+the HTTP status and structured server detail.
 
 ## Localization Usage
 

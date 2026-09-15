@@ -5,6 +5,10 @@ OpenSportsLib inference servers support runtime model registration through
 Face or server-local weights; the returned model ID is then used by the existing
 remote task APIs. Unregistered model IDs are rejected.
 
+See the [complete inference server guide](docs/server/inference-server.md) for
+installation, registry administration, curl requests, single-video inference,
+full-test-set and per-sample remote inference, job polling, and sessions.
+
 ## Configuration From Hugging Face
 
 Prepare and inspect configuration before model weights are allocated:

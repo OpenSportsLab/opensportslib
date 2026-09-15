@@ -36,6 +36,7 @@ From action recognition, temporal event spotting, and visual question answering 
 - [Project Structure](getting-started/project_structure.md)
 - [SLURM Guide (salloc, srun)](getting-started/slurm.md)
 - [Training & Inference](tni/tni.md)
+- [Inference Server](server/inference-server.md)
 - [API Reference](api/api.md)
 
 ## X-VARS Integration
