@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.schemas import JobMetadata, JobStatus, PredictRequest, TaskType
 from config.settings import Settings
+
+
+logger = logging.getLogger("osl.storage.jobs")
 
 
 class JobStore:
@@ -59,16 +67,37 @@ class JobStore:
 
     def save_metadata(self, metadata: JobMetadata) -> None:
         metadata.updated_at = datetime.now(timezone.utc)
-        self.metadata_path(metadata.job_id).write_text(
-            metadata.model_dump_json(indent=2),
-            encoding="utf-8",
+        target = self.metadata_path(metadata.job_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = metadata.model_dump_json(indent=2)
+        # The worker can consume a job immediately after enqueueing. Write to a
+        # sibling file and replace the target so readers never observe a
+        # partially-written JSON document (including on Docker bind mounts).
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{metadata.job_id}.", suffix=".tmp", dir=target.parent
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as temporary:
+                temporary.write(payload)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_name, target)
+        except Exception:
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+            raise
 
     def load_metadata(self, job_id: str) -> JobMetadata | None:
         path = self.metadata_path(job_id)
         if not path.is_file():
             return None
-        return JobMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+        try:
+            return JobMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, ValidationError) as exc:
+            logger.warning("Invalid job metadata | job_id=%s path=%s error=%s", job_id, path, exc)
+            return None
 
     def mark_running(self, job_id: str) -> JobMetadata:
         metadata = self._require_metadata(job_id)
