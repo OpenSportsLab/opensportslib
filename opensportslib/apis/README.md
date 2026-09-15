@@ -209,8 +209,10 @@ predictions = model.infer(test_set="/path/to/test.json")
 Use `submit_inference(...)`, `get_remote_job(job_id)`, and
 `get_remote_result(job_id)` only when your application needs manual asynchronous
 job control. `remote_task_options={...}` passes task-specific options through
-to the server. Direct VQA calls upload one video, and a VQA follow-up can pass
-`session_id` with a new question.
+to the server. Direct VQA calls upload one video; the wrapper stores the
+returned `session_id` as `last_remote_session_id` and automatically reuses it
+for a follow-up question. Pass `session_id=` explicitly when restoring a known
+session.
 
 For long test sets, process each sample as a separate remote job while
 preserving all media referenced by that sample:

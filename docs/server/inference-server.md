@@ -229,17 +229,21 @@ m = ClassificationModel(config="classification.yaml",
 predictions = m.infer(video_path="clip.mp4")
 ```
 
-For direct remote VQA, provide both the video and question; a follow-up uses
-only the returned session ID:
+For direct remote VQA, provide both the video and question. The wrapper stores
+the returned session ID and automatically uses it for the follow-up:
 
 ```python
 from opensportslib.apis import VQAModel
 
-vqa = VQAModel(config="vqa.yaml", remote="http://127.0.0.1:8000",
+vqa = VQAModel(remote="http://127.0.0.1:8000",
                remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora")
 answer = vqa.infer(video_path="clip.mp4", question="Was this a foul?")
-follow_up = vqa.infer(question="What card should be given?", session_id="<session_id>")
+print(vqa.last_remote_session_id)
+follow_up = vqa.infer(question="What card should be given?")
 ```
+
+To restore a session explicitly, pass `session_id="<session_id>"` to the
+follow-up. A new `video_path` starts a new session automatically.
 
 ### Entire test set
 

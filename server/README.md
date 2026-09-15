@@ -388,6 +388,22 @@ curl -X POST http://127.0.0.1:8000/predict \
 
 Use the `session_id` returned by the first VQA request. Do not send a new file or video path on the follow-up.
 
+With the OpenSportsLib client, the session is retained automatically:
+
+```python
+from opensportslib.apis import VQAModel
+
+vqa = VQAModel(
+    remote="http://127.0.0.1:8000",
+    remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora",
+)
+vqa.infer(video_path="clip.mp4", question="Was this a foul?")
+print(vqa.last_remote_session_id)
+follow_up = vqa.infer(question="What card should be given?")
+```
+
+Use an explicit `session_id=` only when restoring a known session.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/predict \
   -H "Content-Type: application/json" \
