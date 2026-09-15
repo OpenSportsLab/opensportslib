@@ -663,8 +663,8 @@ Use the same Hugging Face repo IDs as `model_id`:
 From the repository root with the environment activated:
 
 ```bash
-uv pip install pytest pytest-cov build
-python -m pytest tests/test_*.py
+uv pip install -e ".[test]" build
+bash scripts/run_tests.sh
 python -m build
 ```
 

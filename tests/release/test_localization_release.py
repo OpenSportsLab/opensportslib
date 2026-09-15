@@ -30,20 +30,11 @@ take the fallback path; re-run after either lands to switch automatically.
   LearnablePooling (NetVLAD++) families, matching
   opensportslib/configs/localization/calf_resnetpca512.yaml and
   netvladpp_resnetpca512.yaml's own 17-class SoccerNet Action Spotting label
-  set. Not verified end-to-end this session (the E2E/tennis path was); if a
-  schema (either OSL-SoccerNet's shards, or the fallback's annotations.json)
+  set. If a schema (either OSL-SoccerNet's shards, or the fallback's annotations.json)
   has moved on, that's the first place to check.
 
-Run:
-    RUN_OSL_RELEASE_TESTS=1 pytest tests/release/test_localization_release.py -v -s
-
-    # bigger (but still capped) fallback subsets:
-    RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_MAX_CLIPS=200 OSL_RELEASE_MAX_GAMES=50 \\
-        pytest tests/release/test_localization_release.py -v -s
-
-    # full-scale fallback feature dataset (~111GB, 2210 individual files):
-    RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_MAX_GAMES=all \\
-        pytest tests/release/test_localization_release.py -k feature -v -s
+Run through the repository's single command: bash scripts/run_tests.sh.
+Environment variables control dataset caps without changing the command.
 """
 
 from __future__ import annotations
@@ -264,12 +255,11 @@ def test_localization_e2e_opencv(e2e_localization_dataset, backbone, head):
 
 
 @pytest.mark.release
-@pytest.mark.skipif(
-    not optional_module_available("nvidia.dali"),
-    reason="DALI backend not installed; run `opensportslib setup --dali` first.",
-)
 def test_localization_e2e_dali(e2e_localization_dataset):
     require_release_enabled()
+    assert optional_module_available("nvidia.dali"), (
+        "DALI is required release coverage; run `opensportslib setup --dali` first."
+    )
     run_name = "rny008_gsm_gru_dali"
     overrides = _e2e_overrides(run_name, e2e_localization_dataset, "rny008_gsm", "gru", loader_backend="dali")
     config_path = materialize_config("localization", "video_dali", overrides, out_name=f"loc_{run_name}.yaml")

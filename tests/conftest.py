@@ -1,15 +1,96 @@
-pytest_plugins = ["suite_support.plugin"]
-
 from pathlib import Path
 import json
+import os
 import pickle
 import random
+import socket
 
 import pytest
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - test env compatibility
     import yaml_compat as yaml
+
+
+MARKERS = {
+    "unit": "Fast, isolated unit test.",
+    "integration": "Integration test spanning multiple OpenSportsLib components.",
+    "smoke": "Minimal package or workflow health check.",
+    "e2e": "End-to-end workflow test.",
+    "gpu": "Requires a CUDA-capable GPU.",
+    "slow": "Intentionally unsuitable for the fast development suite.",
+    "release": "Heavy release-verification test.",
+    "network": "Requires access to an external network service.",
+    "pretrained": "Requires downloading or loading pretrained artifacts.",
+    "classification": "Classification task coverage.",
+    "localization": "Localization task coverage.",
+    "vqa": "Visual-question-answering task coverage.",
+}
+
+
+def pytest_configure(config):
+    """Register the suite vocabulary in one discoverable location."""
+
+    for name, description in MARKERS.items():
+        config.addinivalue_line("markers", f"{name}: {description}")
+
+
+def pytest_collection_modifyitems(items):
+    """Derive stable tier/task markers from the directory contract."""
+
+    for item in items:
+        normalized = str(item.fspath).replace("\\", "/")
+        for tier in ("unit", "smoke", "integration", "release"):
+            if f"/tests/{tier}/" in normalized:
+                item.add_marker(getattr(pytest.mark, tier))
+                break
+        for task in ("classification", "localization", "vqa"):
+            if task in normalized.lower() or task in item.nodeid.lower():
+                item.add_marker(getattr(pytest.mark, task))
+
+
+@pytest.fixture(autouse=True)
+def deterministic_random_state():
+    """Give fast tests repeatable Python/NumPy/Torch random streams."""
+
+    random.seed(42)
+    try:
+        import numpy as np
+
+        np.random.seed(42)
+    except ImportError:
+        pass
+    try:
+        import torch
+
+        torch.manual_seed(42)
+    except ImportError:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def block_external_network(request, monkeypatch):
+    """Make accidental network use in the fast suite fail at its source."""
+
+    if (
+        request.node.get_closest_marker("network")
+        or request.node.get_closest_marker("release")
+        or os.environ.get("OSL_ALLOW_TEST_NETWORK") == "1"
+    ):
+        return
+
+    original_connect = socket.socket.connect
+
+    def guarded_connect(sock, address):
+        host = address[0] if isinstance(address, tuple) and address else address
+        if host in {"127.0.0.1", "::1", "localhost"}:
+            return original_connect(sock, address)
+        raise RuntimeError(
+            f"Fast tests may not access the network (attempted {address!r}). "
+            "Mock the external boundary or mark a release/network test explicitly."
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
 
 
 def _write_config(path: Path, payload: dict) -> str:

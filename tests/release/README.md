@@ -1,12 +1,11 @@
 # Release verification tests
 
 Extensive, real-data, real-training tests for confirming that training still
-works end-to-end for (most of) the model families OpenSportsLib ships, after
-a big release. **These are not part of the regular test contract** — they are
-not run by `pytest tests/test_*.py` (AGENTS.md's mandatory pre-PR command,
-which only globs flat files directly under `tests/`) and every test here
-additionally skips itself unless `RUN_OSL_RELEASE_TESTS=1` is set, so they
-never run by accident even under a broad `pytest tests/`.
+works end-to-end for the model families OpenSportsLib ships before publishing
+a release. **These are not part of the normal fast phase** and every test here
+additionally skips itself unless `RUN_OSL_RELEASE_TESTS=1` is set, so it
+never runs by accident even under a broad `pytest tests/`. Once enabled,
+missing required infrastructure or coverage is a failure, not a skip.
 
 Do not add these to CI. Run them manually, on a machine with a real GPU, real
 disk space, and time to spare.
@@ -25,7 +24,7 @@ datasets" below.
 | `test_classification_release.py` | classification | `OpenSportsLab/OSL-XFoul`¹ | `OpenSportsLab/OSL-cls-UEFA-fouls` (gated) | MVNetwork (r3d_18, mc3_18, r2plus1d_18, s3d, mvit_v2_s), HF VideoMAE full-model |
 | `test_localization_release.py` | localization (E2E) | `OpenSportsLab/OSL-SNBAS` | `OpenSportsLab/soccernetpro-localization-tennis` (public) | E2E (rn18/rn50/rny002/rny008_gsm/convnextt x gru/deeper_gru/mstcn/asformer), E2E+DALI |
 | `test_localization_release.py` | localization (features) | `OpenSportsLab/OSL-SoccerNet` | `OpenSportsLab/SoccerNet-ActionSpotting-Features` (public, ~111GB full) | ContextAware (CALF), LearnablePooling (NetVLAD++) |
-| `test_vqa_release.py` | VQA | `OpenSportsLab/OSL-XFoul`¹ | none — skips if unpublished | X-VARS/VideoChatGPT LoRA, CLIP+Qwen LoRA, native QwenVL LoRA |
+| `test_vqa_release.py` | VQA | `OpenSportsLab/OSL-XFoul`¹ | none — fails if unpublished | X-VARS/VideoChatGPT LoRA, CLIP+Qwen LoRA, native QwenVL LoRA |
 
 ¹ OSL-XFoul is dual-purpose: the same RefPal/MVFouls-style clips carry both
 classification labels and VQA question/answers, so it's the preferred
@@ -36,7 +35,8 @@ As of the last check, all three OSL-ready datasets (`OSL-XFoul`, `OSL-SNBAS`,
 currently takes its fallback path. Re-run after any of them lands to switch
 automatically — no code change needed.
 
-Known gaps, marked `skip` with a reason rather than a fake pass:
+Known gaps intentionally fail an enabled release run so they cannot be mistaken
+for verified coverage:
 
 - The `frames_npy` VideoModel classification family (dinov3, clip, videomae,
   videomae2 as pure feature extractors) needs a raw-video → frame-`.npy`
@@ -53,13 +53,13 @@ Known gaps, marked `skip` with a reason rather than a fake pass:
 
 - A working `opensportslib` install with GPU support (`opensportslib setup`).
 - For the VQA backends: `opensportslib setup --vqa_xvars` and/or
-  `opensportslib setup --vqa_qwen`. Tests skip cleanly (not fail) if the
-  relevant optional dependency isn't installed.
-- For DALI E2E localization: `opensportslib setup --dali`. Skips cleanly if
-  absent.
+  `opensportslib setup --vqa_qwen`. Enabled release verification fails if a
+  required dependency is missing.
+- For DALI E2E localization: `opensportslib setup --dali`. Enabled release
+  verification fails if DALI is absent.
 - `HF_TOKEN` (or `HUGGINGFACE_TOKEN`) exported for any gated dataset —
   currently `OSL-cls-UEFA-fouls`. Request access on the dataset's HF page
-  first; tests skip with instructions if access isn't granted.
+  first; enabled release verification fails with instructions if access isn't granted.
 - Disk space: the tennis and UEFA-fouls datasets are small (~250MB–1.4GB),
   but the full `SoccerNet-ActionSpotting-Features` dataset is ~111GB and the
   QwenVL-native VQA backend downloads an 8B-parameter model. Set
@@ -69,37 +69,9 @@ Known gaps, marked `skip` with a reason rather than a fake pass:
 
 ## Running
 
-```bash
-# Everything (expensive -- real training runs across every backbone/head
-# combination). Dataset downloads are capped by default (see "Why file
-# counts are capped" below), so this is real but bounded, not 100GB+:
-RUN_OSL_RELEASE_TESTS=1 pytest tests/release -v -s
-RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_DATA_DIR=~/OSLdata \
-    pytest tests/release -v -s
-
-# Just one task:
-RUN_OSL_RELEASE_TESTS=1 pytest tests/release/test_localization_release.py -v -s
-RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_DATA_DIR=~/OSLdata \
-    pytest tests/release/test_localization_release.py -v -s
-
-# Just one backbone/config:
-RUN_OSL_RELEASE_TESTS=1 pytest tests/release -v -s -k "rn18-gru"
-
-# Skip the heaviest tests:
-RUN_OSL_RELEASE_TESTS=1 pytest tests/release -v -s -m "not slow"
-
-# True full-scale run on the fallback datasets (every file, e.g. the full
-# ~111GB feature dataset) -- irrelevant once the OSL-ready primaries land,
-# since those download a handful of shard files regardless of this setting:
-RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_MAX_CLIPS=all OSL_RELEASE_MAX_GAMES=all \\
-    pytest tests/release -v -s
-```
-
-Or use the convenience wrapper (same env-var gate, same defaults):
-
-```bash
-RUN_OSL_RELEASE_TESTS=1 scripts/run_release_tests.sh
-```
+Set `RUN_OSL_RELEASE_TESTS=1` on the prepared release machine, then use the
+repository's single command: `bash scripts/run_tests.sh`. Dataset/cache tuning
+uses the environment variables below; the command itself never changes.
 
 ## Tuning a run
 

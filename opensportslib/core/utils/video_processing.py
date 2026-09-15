@@ -145,9 +145,8 @@ def distribute_elements(batch_size, len_devices):
     """
     quotient, remainder = divmod(batch_size, len_devices)
     distribution = [quotient] * len_devices
-    if remainder > 0:
-        for i in range(len(distribution)):
-            distribution[i] += 1
+    for i in range(remainder):
+        distribution[i] += 1
 
     return distribution
 

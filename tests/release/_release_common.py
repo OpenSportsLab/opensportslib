@@ -1,10 +1,10 @@
 """Shared helpers for the release-verification test suite (tests/release/).
 
-These tests are NOT part of the regular `pytest tests/test_*.py` contract.
+These tests are not part of the normal fast phase of `scripts/run_tests.sh`.
 They download real datasets from the OpenSportsLab Hugging Face org
 (some of them large) and run real training/inference/evaluation on GPU.
-They exist to be run manually after a big release to confirm that training
-still works end-to-end for every model family the library ships.
+They exist to confirm before publishing that training still works end-to-end
+for every model family the library ships.
 
 See tests/release/README.md for the full contract, prerequisites, and
 invocation examples.
@@ -61,12 +61,9 @@ def release_tests_enabled() -> bool:
 def require_release_enabled() -> None:
     """Call at the top of every release test / fixture.
 
-    Keeps these tests from ever running by accident (plain `pytest tests/`,
-    an IDE "run all tests" button, a CI job someone forgot to scope) even
-    though pytest can discover them. The flat `pytest tests/test_*.py`
-    command from AGENTS.md never reaches this directory in the first place
-    since it's a shell glob, not a recursive pattern — this is the second,
-    explicit line of defense for anyone running `pytest tests/` directly.
+    Keeps these tests from ever running by accident through an IDE or broad
+    pytest collection. The supported runner reaches this directory only in
+    explicit release mode.
     """
     if not release_tests_enabled():
         pytest.skip(
@@ -149,11 +146,12 @@ def repo_accessible(repo_id: str, repo_type: str = "dataset") -> bool:
 
 def require_repo_access(repo_id: str, repo_type: str = "dataset") -> None:
     if not repo_accessible(repo_id, repo_type=repo_type):
-        pytest.skip(
+        pytest.fail(
             f"No access to {repo_id!r} on Hugging Face. It may be gated — "
             f"request access at https://huggingface.co/datasets/{repo_id} and "
             f"export HF_TOKEN (or HUGGINGFACE_TOKEN) for an account that has "
-            f"been granted access, then re-run."
+            f"been granted access, then re-run.",
+            pytrace=False,
         )
 
 
@@ -180,10 +178,11 @@ def repo_is_populated(repo_id: str, repo_type: str = "dataset", min_files: int =
 
 def require_repo_populated(repo_id: str, repo_type: str = "dataset", min_files: int = 2, revision: str = "main") -> None:
     if not repo_is_populated(repo_id, repo_type=repo_type, min_files=min_files, revision=revision):
-        pytest.skip(
+        pytest.fail(
             f"{repo_id!r}@{revision} does not have data uploaded yet. This "
-            f"test is ready to run as soon as the dataset/branch is "
-            f"published — re-run once it is."
+            f"is required release coverage; publish the dataset/branch and "
+            f"re-run.",
+            pytrace=False,
         )
 
 
@@ -246,7 +245,7 @@ def prefer_osl_ready_dataset(
     if repo_is_populated(primary, revision=primary_revision):
         return primary, primary_revision, True
     if fallback is None:
-        require_repo_populated(primary, revision=primary_revision)  # raises pytest.skip
+        require_repo_populated(primary, revision=primary_revision)  # fails required coverage
     report_step(
         f"{primary!r}@{primary_revision} (OSL-ready/sharded) is not populated "
         f"yet -- falling back to {fallback!r}. Re-run once {primary!r}@"

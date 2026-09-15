@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 
-SERVER_ROOT = Path(__file__).parents[1] / "server"
+SERVER_ROOT = Path(__file__).parents[3] / "server"
 sys.path.insert(0, str(SERVER_ROOT))
 
 from config.model_registry import (  # noqa: E402

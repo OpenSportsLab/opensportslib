@@ -973,7 +973,7 @@ class ActionSpotDataset(Dataset):
         return self._dataset_len
 
     def print_info(self):
-        from core.utils.config import _print_info_helper
+        from opensportslib.core.utils.config import _print_info_helper
         _print_info_helper(self._src_file, self._labels)
 
 
@@ -1960,7 +1960,7 @@ if DALI_AVAILABLE:
             return labels
 
         def print_info(self):
-            from core.utils.config import _print_info_helper
+            from opensportslib.core.utils.config import _print_info_helper
             _print_info_helper(self._src_file, self._labels)
 
 

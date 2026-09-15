@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "release_versions.py"
+SCRIPT = Path(__file__).parents[3] / "scripts" / "release_versions.py"
 SPEC = importlib.util.spec_from_file_location("release_versions", SCRIPT)
 release_versions = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

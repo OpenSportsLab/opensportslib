@@ -7,7 +7,7 @@ from opensportslib.apis import Config
 from opensportslib.apis.base_task_model import BaseTaskModel
 
 
-CONFIGS = Path(__file__).parents[1] / "opensportslib" / "configs"
+CONFIGS = Path(__file__).parents[3] / "opensportslib" / "configs"
 
 
 def test_hierarchy_updates_references_and_reports_sources():
