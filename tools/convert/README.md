@@ -18,6 +18,7 @@ Build (raw source -> OSL JSON):
 - `verify_sngar_spotting.py`: verifies a built SN-GAR spotting release against its published contract.
 - `build_soccernet_gar_vqa.py`: SoccerNet-GAR frames dataset -> VQA-style test manifest.
 - `build_sn_vqa_2026_vqa.py`: SN-VQA-2026 raw test rows -> VQA-ready OSL manifest and evaluation report.
+- `qa_json_to_streaming_vqa.py`: multiple-choice QA rows -> timeline-aware OSL streaming-VQA manifest.
 
 Convert (OSL JSON <-> Parquet + WebDataset):
 
@@ -30,6 +31,40 @@ Stage 1 and stage 2 are SoccerNet-GAR-specific (they know about PFF schemas,
 event labels, and clip windowing). The conversion scripts are generic OSL
 tooling: they accept any OSL JSON manifest and do not assume a particular sport
 or task.
+
+## Multiple-choice QA to streaming VQA
+
+Convert one source JSON list per invocation. Rows are grouped by match and half,
+then pointed at the original half-length videos under the match directory:
+
+```bash
+python tools/convert/qa_json_to_streaming_vqa.py \
+    /path/to/dim1.json \
+    /path/to/dim1_streaming_vqa.json \
+    --dataset-name soccer-dimension-1 \
+    --video-root /path/to/StreamingVQA
+```
+
+A timestamp such as `2 - 10:05` becomes `605000` milliseconds relative to
+`<match_name>/2_720p.mkv`; second-half timestamps are not offset by 45 minutes.
+Rows without timestamps retain `position_ms: null`, use the half prefix from
+their scene filename, and produce an aggregated warning. Source annotations,
+including free-form answers, rationales, scene filenames, event fields, and
+referenced players, are retained in each question's `metadata`.
+
+`--video-root` must contain `<match_name>/1_720p.mkv` and/or
+`<match_name>/2_720p.mkv`. The converter verifies every referenced video and
+writes its path relative to the output JSON so VideoAnnotationTool can resolve
+it from the project directory. If omitted, the output JSON directory is used
+as the video root. For the local test dataset, use:
+
+```bash
+--video-root /Users/giancos/git/VideoAnnotationTool/test_data/StreamingVQA
+```
+
+The marked `closeA` option is authoritative. If it is absent, the source
+`answer` must match exactly one option after case/whitespace and boolean
+normalization. Invalid rows are reported together and no output is written.
 
 ## Build scripts
 
