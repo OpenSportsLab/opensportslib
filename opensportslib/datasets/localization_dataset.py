@@ -161,6 +161,7 @@ class LocalizationDataset(Dataset):
             imagenet_std=normalization.get("std"),
             target_height=resize.get("height"),
             target_width=resize.get("width"),
+            preserve_aspect_ratio=resize.get("preserve_aspect_ratio", False),
         )
         annotation_path = annotations_path or getattr(
             split_cfg, "annotation_path", getattr(split_cfg, "path", None)
@@ -346,6 +347,7 @@ class LocalizationDataset(Dataset):
                 IMAGENET_STD=self.data_cfg.imagenet_std,
                 TARGET_HEIGHT=self.data_cfg.target_height,
                 TARGET_WIDTH=self.data_cfg.target_width,
+                preserve_aspect_ratio=self.data_cfg.preserve_aspect_ratio,
             )
         elif dataset_type == "VideoGameWithOpencvVideo":
             dataset = ActionSpotVideoDataset(
@@ -362,6 +364,7 @@ class LocalizationDataset(Dataset):
                 IMAGENET_STD=self.data_cfg.imagenet_std,
                 TARGET_HEIGHT=self.data_cfg.target_height,
                 TARGET_WIDTH=self.data_cfg.target_width,
+                preserve_aspect_ratio=self.data_cfg.preserve_aspect_ratio,
             )
         elif dataset_type == "VideoGameWithDali":
             if not DALI_AVAILABLE:
@@ -543,6 +546,7 @@ class FrameReader:
         sample_fps=2,
         TARGET_HEIGHT=224,
         TARGET_WIDTH=398,
+        preserve_aspect_ratio=False,
     ):
         self._is_flow = modality == "flow"
         self._crop_transform = crop_transform
@@ -551,6 +555,37 @@ class FrameReader:
         self._sample_fps = sample_fps
         self.TARGET_HEIGHT = TARGET_HEIGHT
         self.TARGET_WIDTH = TARGET_WIDTH
+        self.preserve_aspect_ratio = preserve_aspect_ratio
+
+    def _resize_frame_ocv(self, frame):
+        """Resize an OpenCV frame using the configured spatial policy.
+
+        With aspect preservation enabled, ``TARGET_HEIGHT`` fixes the output
+        height and the width is derived from the source aspect ratio. If no
+        target height is configured, ``TARGET_WIDTH`` fixes the output width.
+        """
+        import cv2
+
+        height, width = frame.shape[:2]
+        if self.preserve_aspect_ratio:
+            if self.TARGET_HEIGHT is not None and self.TARGET_HEIGHT > 0:
+                scale = self.TARGET_HEIGHT / height
+            elif self.TARGET_WIDTH is not None and self.TARGET_WIDTH > 0:
+                scale = self.TARGET_WIDTH / width
+            else:
+                return frame
+
+            output_height = max(1, round(height * scale))
+            output_width = max(1, round(width * scale))
+        else:
+            output_height = self.TARGET_HEIGHT
+            output_width = self.TARGET_WIDTH
+
+        if output_height is None or output_width is None:
+            return frame
+        if (height, width) == (output_height, output_width):
+            return frame
+        return cv2.resize(frame, (output_width, output_height))
 
     def adapt_frame_ocv(self, frame):
         """Apply some modifications to the frame to have the expected shape and format.
@@ -675,8 +710,7 @@ class FrameReader:
             ret, frame = vc.read()
             if ret:
                 if i % stride_extract == 0:
-                    if frame.shape[0] != oh or frame.shape[1] != ow:
-                        frame = cv2.resize(frame, (ow, oh))
+                    frame = self._resize_frame_ocv(frame)
                     img = self.adapt_frame_ocv(frame)
                     if self._crop_transform:
                         if self._same_transform:
@@ -781,6 +815,7 @@ class ActionSpotDataset(Dataset):
         IMAGENET_STD=[0.229, 0.224, 0.225],
         TARGET_HEIGHT=224,
         TARGET_WIDTH=398,
+        preserve_aspect_ratio=False,
     ):
         import random
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat
@@ -850,7 +885,8 @@ class ActionSpotDataset(Dataset):
             same_transform,
             extract_fps,
             self.TARGET_HEIGHT,
-            self.TARGET_WIDTH
+            self.TARGET_WIDTH,
+            preserve_aspect_ratio,
         )
 
     def load_frame_gpu(self, batch, device):
@@ -1097,6 +1133,7 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
         IMAGENET_STD=[0.229, 0.224, 0.225],
         TARGET_HEIGHT=224,
         TARGET_WIDTH=398,
+        preserve_aspect_ratio=False,
     ):
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat, construct_labels
         from opensportslib.core.utils.video_processing import _get_img_transforms
@@ -1138,7 +1175,8 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
             False,
             extract_fps,
             self.TARGET_HEIGHT,
-            self.TARGET_WIDTH
+            self.TARGET_WIDTH,
+            preserve_aspect_ratio,
         )
 
         self._flip = flip
