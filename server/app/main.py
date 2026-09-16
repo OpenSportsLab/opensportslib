@@ -18,6 +18,7 @@ from app.schemas import (
     PredictAccepted,
     PredictionResult,
     PredictRequest,
+    RuntimeReconcileRequest,
     SessionRecord,
     TaskType,
 )
@@ -99,6 +100,18 @@ def _authorize_model_admin(authorization: str | None) -> None:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=401, detail=str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+
+@app.post("/admin/runtime/reconcile")
+def reconcile_runtime(
+    request: RuntimeReconcileRequest,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    _authorize_model_admin(authorization)
+    summary = runtime_cleaner.reconcile_jobs(dry_run=request.dry_run)
+    if request.include_active:
+        summary["include_active"] = True
+    return summary
 
 
 @app.post("/models", status_code=status.HTTP_202_ACCEPTED)

@@ -97,6 +97,20 @@ class RemoteModelRegistry:
         encoded = parse.quote(model_id, safe="")
         return self._request("DELETE", f"/models/{encoded}", authenticated=True)
 
+    def reconcile_runtime(
+        self,
+        *,
+        dry_run: bool = True,
+        include_active: bool = False,
+    ) -> dict[str, Any]:
+        """Inspect or recover stale server jobs; dry-run is the safe default."""
+        return self._request(
+            "POST",
+            "/admin/runtime/reconcile",
+            {"dry_run": bool(dry_run), "include_active": bool(include_active)},
+            authenticated=True,
+        )
+
     def _request(
         self,
         method: str,

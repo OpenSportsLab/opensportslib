@@ -54,6 +54,7 @@ class Settings:
     worker_heartbeat_interval_seconds: int
     worker_name: str
     job_timeout_seconds: int
+    job_stale_grace_seconds: int
     max_upload_archive_bytes: int
     max_upload_extracted_bytes: int
     max_upload_file_count: int
@@ -114,6 +115,7 @@ def get_settings() -> Settings:
         worker_heartbeat_interval_seconds=int(os.getenv("OSL_WORKER_HEARTBEAT_INTERVAL_SECONDS", "10")),
         worker_name=os.getenv("OSL_WORKER_NAME", "osl-worker-1"),
         job_timeout_seconds=int(os.getenv("OSL_JOB_TIMEOUT_SECONDS", "7200")),
+        job_stale_grace_seconds=int(os.getenv("OSL_JOB_STALE_GRACE_SECONDS", "60")),
         max_upload_archive_bytes=int(os.getenv("OSL_MAX_UPLOAD_ARCHIVE_BYTES", str(10 * 1024 * 1024 * 1024))),
         max_upload_extracted_bytes=int(os.getenv("OSL_MAX_UPLOAD_EXTRACTED_BYTES", str(50 * 1024 * 1024 * 1024))),
         max_upload_file_count=int(os.getenv("OSL_MAX_UPLOAD_FILE_COUNT", "10000")),

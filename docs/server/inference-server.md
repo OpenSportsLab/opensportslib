@@ -32,6 +32,55 @@ Important settings include `OSL_REDIS_URL`, `OSL_RUNTIME_DIR`,
 `OSL_MODEL_ROOT`, `OSL_MODEL_ADMIN_TOKEN`, `OSL_JOB_TIMEOUT_SECONDS`,
 `OSL_MODEL_OPERATION_TIMEOUT_SECONDS`, `OSL_SESSION_TTL_SECONDS`,
 `OSL_WORKER_EXECUTION_MODE`, and `OSL_WORKER_IDLE_UNLOAD_SECONDS`.
+`OSL_JOB_STALE_GRACE_SECONDS` adds a grace period before abandoned RQ jobs are
+reconciled (default: 60 seconds).
+
+### Stale jobs and cleanup
+
+The worker reconciles session metadata with RQ before cleaning expired sessions.
+Jobs that are missing from RQ, terminal in RQ, or older than
+`OSL_JOB_TIMEOUT_SECONDS + OSL_JOB_STALE_GRACE_SECONDS` are marked failed and
+their sessions become cleanup-eligible. Confirmed queued/started jobs are not
+deleted automatically.
+
+Inspect without changing state:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":true}'
+```
+
+Apply recovery and cleanup:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":false}'
+```
+
+Do not manually delete Redis keys or runtime files while jobs may be running;
+use the dry-run response and worker/API logs first.
+
+The same operation is available through the Python client or helper script:
+
+```python
+from opensportslib import RemoteModelRegistry
+
+registry = RemoteModelRegistry(
+    "http://127.0.0.1:8000",
+    admin_token="<same-private-token>",
+)
+print(registry.reconcile_runtime(dry_run=True))
+print(registry.reconcile_runtime(dry_run=False))
+```
+
+The script is dry-run by default; `--apply` is required to modify state:
+
+```bash
+python server/scripts/reconcile_runtime.py --server http://127.0.0.1:8000
+python server/scripts/reconcile_runtime.py --server http://127.0.0.1:8000 --apply
+```
 
 ### Docker admin token setup
 

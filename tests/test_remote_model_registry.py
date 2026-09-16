@@ -92,3 +92,25 @@ def test_http_errors_preserve_structured_detail():
             client.get_model("model")
     assert raised.value.status_code == 409
     assert raised.value.detail == {"code": "MODEL_NOT_READY"}
+
+
+def test_reconcile_runtime_defaults_to_dry_run_and_authenticates():
+    client = RemoteModelRegistry("http://server", "secret")
+    with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
+        urlopen.return_value = FakeResponse({"inspected": 2, "active": 1})
+        result = client.reconcile_runtime()
+
+    outgoing = urlopen.call_args.args[0]
+    assert json.loads(outgoing.data) == {"dry_run": True, "include_active": False}
+    assert outgoing.headers["Authorization"] == "Bearer secret"
+    assert result["active"] == 1
+
+
+def test_reconcile_runtime_can_apply_and_include_active():
+    client = RemoteModelRegistry("http://server", "secret")
+    with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
+        urlopen.return_value = FakeResponse({"recovered": 1})
+        client.reconcile_runtime(dry_run=False, include_active=True)
+
+    outgoing = urlopen.call_args.args[0]
+    assert json.loads(outgoing.data) == {"dry_run": False, "include_active": True}

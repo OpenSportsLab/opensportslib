@@ -160,3 +160,8 @@ class ModelRegistrationRequest(BaseModel):
 
 class ModelDefaultRequest(BaseModel):
     model_id: str
+
+
+class RuntimeReconcileRequest(BaseModel):
+    dry_run: bool = True
+    include_active: bool = False

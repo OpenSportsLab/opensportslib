@@ -531,6 +531,36 @@ While the server is running, uploaded media is kept for active sessions so VQA f
 - VQA follow-up requests must not send a new `upload_file`, `video_path`, or `media_url`.
 - VQA follow-up requests create a new `job_id` under the same `session_id`.
 
+## Stale job recovery
+
+The worker reconciles queued/running session entries against Redis/RQ before
+expired-session cleanup. Missing, terminal, or over-timeout jobs are marked
+failed automatically; confirmed active jobs are preserved. The stale grace
+period is controlled by `OSL_JOB_STALE_GRACE_SECONDS` (default `60`).
+
+Inspect stale state without changing it:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":true}'
+```
+
+Apply recovery and cleanup:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":false}'
+```
+
+You can use the safe-by-default helper instead of curl:
+
+```bash
+python scripts/reconcile_runtime.py --server http://127.0.0.1:8000
+python scripts/reconcile_runtime.py --server http://127.0.0.1:8000 --apply
+```
+
 ## Docker
 
 This project also includes a Docker deployment path with Conda already installed in the image.

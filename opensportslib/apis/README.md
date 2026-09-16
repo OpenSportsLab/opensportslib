@@ -232,7 +232,7 @@ samples are available through `model.last_remote_failures`.
 
 The registry client also provides `list_models()`, `get_model()`,
 `get_operation()`, `wait_for_operation()`, `set_default()`, and
-`unregister_model()`. Administrative failures raise `RemoteRegistryError` with
+`unregister_model()`, and `reconcile_runtime(dry_run=True)`. Administrative failures raise `RemoteRegistryError` with
 the HTTP status and structured server detail.
 
 ## Localization Usage
