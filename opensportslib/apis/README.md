@@ -181,6 +181,10 @@ Call `clear_remote_session()` to start a new conversation/workflow. Explicit
 Models must be registered before inference. One method handles Hugging Face
 and server-local sources:
 
+Hugging Face repositories can provide learned checkpoints or a supported
+configuration-only runner. The server resolves this source mode automatically;
+the registration call is the same for both types.
+
 ```python
 from opensportslib import RemoteModelRegistry
 

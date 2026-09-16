@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config.model_registry import FAILED, READY, UNREGISTERING, ModelRegistry
+from config.model_registry import FAILED, READY, UNREGISTERING, ModelRegistry, resolve_huggingface_source
 from config.settings import get_settings
 from services.base import BaseTaskService
 from storage.files import prepare_uploaded_test_set, prepare_video_source
@@ -259,9 +259,9 @@ def register_model_job(operation_id: str, model_id: str) -> dict:
     MODEL_REGISTRY.save_operation(operation)
     try:
         if record["source_type"] == "huggingface" and not record.get("config_path"):
-            from opensportslib.core.utils.config import resolve_config_path
-
-            record["config_path"] = str(resolve_config_path(record["source"]))
+            config_path, source_mode, _resolved_weights = resolve_huggingface_source(record["source"])
+            record["config_path"] = config_path
+            record["source_mode"] = source_mode
             MODEL_REGISTRY.put(record)
         _get_or_load_service(model_id, allow_registering=True)
         record["status"] = READY

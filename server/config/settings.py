@@ -32,6 +32,7 @@ class ModelSettings:
     enabled: bool
     config_path: str | None
     weights: str | None
+    source_mode: str = "checkpoint"
 
 
 @dataclass(frozen=True)

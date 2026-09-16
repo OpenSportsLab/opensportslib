@@ -13,6 +13,7 @@ from config.model_registry import (  # noqa: E402
     generated_local_model_id,
     public_record,
     resolve_local_source,
+    infer_source_mode,
     validate_local_model_id,
 )
 
@@ -98,3 +99,15 @@ def test_custom_id_and_public_local_record_validation():
     assert "source" not in visible
     assert "config_path" not in visible
     assert "/secret" not in visible["error"]
+
+
+def test_config_driven_runner_is_weightless(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text("TRAIN:\n  runner:\n    type: runner_h5_header_rule\n")
+    assert infer_source_mode(str(config), "org/config-only") == "config_only"
+
+
+def test ordinary_config_requires_checkpoint(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text("TRAIN:\n  runner:\n    type: default\n")
+    assert infer_source_mode(str(config), "org/model") == "checkpoint"

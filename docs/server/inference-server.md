@@ -117,6 +117,13 @@ A model directory discovers `config.yaml`; a weights file requires
 contain letters, numbers, `.`, `_`, `-`, and `:`. Repeating the same
 registration is idempotent; a different source for an existing ID returns 409.
 
+Hugging Face repositories may be checkpoint-backed or configuration-only. The
+server inspects the repository and `config.yaml` automatically: supported
+checkpoint files use normal weight loading, while supported config-driven
+runners load with `weights=None`. A config-only repository that declares no
+supported weightless runner fails registration with an actionable operation
+error. This behavior is task-agnostic and does not depend on a model ID.
+
 Registration is asynchronous and returns an `operation_id`:
 
 ```bash

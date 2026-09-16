@@ -122,6 +122,11 @@ operation = registry.register_model(
 registry.wait_for_operation(operation["operation_id"])
 ```
 
+Hugging Face repositories may contain checkpoints or only `config.yaml` plus a
+supported configuration-driven runner. Registration inspects the repository
+and selects the appropriate loading mode for every task; no model-ID-specific
+exception is required.
+
 Local paths must be below `OSL_MODEL_ROOT`. A directory must contain
 `config.yaml`; a weights file requires `config_path`. A local `model_id` may be
 chosen by the user or omitted in favor of the generated ID returned by the API.
