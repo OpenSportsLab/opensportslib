@@ -22,7 +22,6 @@ PYG_TORCH_VERSION = "2.12.1"
 PYG_TORCH_PACKAGES = (
     f"torch=={PYG_TORCH_VERSION}",
     "torchvision==0.27.1",
-    f"torchaudio=={PYG_TORCH_VERSION}",
 )
 PYG_EXTENSION_PACKAGES = (
     "pyg-lib",
