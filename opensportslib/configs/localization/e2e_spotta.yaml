@@ -39,6 +39,7 @@ DATA:
         resize:
           height: 224
           width: 398
+          preserve_aspect_ratio: true
       params:
         crop_dim: 224
         dilate_len: 0
@@ -69,13 +70,10 @@ MODEL:
       robust_bn:
         alpha: 0.05
         tether:
-          mode: bayesian
           cap: 0.5
       confidence_gate:
         action_class_index: 1
         min_action_frames: 1
-        uncertainty: one_minus_max_probability
-        aggregation: min_over_predicted_action_frames
         threshold: 0.3
       memory:
         capacity: 8
@@ -83,21 +81,14 @@ MODEL:
         lambda_t: 1.0
         lambda_u: 1.0
       optimizer:
-        type: Adam
         learning_rate: 0.001
         beta: 0.9
-        trainable_parameters: batch_norm_affine_only
       teacher:
-        type: ema
         base_nu: 0.001
-        adaptive_from_bn_drift: true
         max_nu: 0.02
         drift_scale: 10.0
         drift_threshold: 1.0
         drift_gamma: 0.2
-      augmentation:
-        enabled: true
-        mode: framewise_rotta_strong
 
 TRAIN:
   execution:

@@ -164,10 +164,16 @@ transform:
   resize:
     height: 224
     width: 224
+    preserve_aspect_ratio: false
   normalization:
     mean: [0.485, 0.456, 0.406]
     std: [0.229, 0.224, 0.225]
 ```
+
+For OpenCV localization datasets, set `preserve_aspect_ratio: true` to fix
+the decoded frame height to `height` and derive its width from the source
+aspect ratio before cropping. If `height` is omitted, `width` fixes the output
+width instead. The default `false` preserves the historical fixed-size resize.
 
 ### 4.6 Common dataloader keys (split-level)
 
@@ -262,12 +268,10 @@ MODEL:
       prediction_timing: adapt_then_predict
       robust_bn:
         alpha: 0.05
-        tether: {mode: bayesian, cap: 0.5}
+        tether: {cap: 0.5}
       confidence_gate:
         action_class_index: 1
         min_action_frames: 1
-        uncertainty: one_minus_max_probability
-        aggregation: min_over_predicted_action_frames
         threshold: 0.3
       memory:
         capacity: 8
@@ -275,20 +279,20 @@ MODEL:
         lambda_t: 1.0
         lambda_u: 1.0
       optimizer:
-        type: Adam
         learning_rate: 0.001
         beta: 0.9
-        trainable_parameters: batch_norm_affine_only
       teacher:
-        type: ema
         base_nu: 0.001
-        adaptive_from_bn_drift: true
         max_nu: 0.02
         drift_scale: 10.0
         drift_threshold: 1.0
         drift_gamma: 0.2
-      augmentation: {enabled: true, mode: framewise_rotta_strong}
 ```
+
+The Bayesian tether, confidence calculation and aggregation, Adam optimizer,
+batch-norm-only updates, drift-aware EMA teacher, and strong augmentation are
+built into SpoTTA. Their numeric parameters remain configurable. Strong
+augmentation runs on every update.
 
 The current integration requires the E2E family and a
 `VideoGameWithOpencvVideo` test split. `action_class_index` must identify a

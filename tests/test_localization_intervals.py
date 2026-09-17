@@ -209,6 +209,26 @@ def test_frame_reader_seeks_and_stops_inside_interval(monkeypatch):
     assert max(capture.read_positions) < 50
 
 
+def test_frame_reader_can_preserve_aspect_ratio_before_crop():
+    reader = FrameReader(
+        "rgb",
+        crop_transform=None,
+        img_transform=lambda image: image,
+        same_transform=False,
+        TARGET_HEIGHT=224,
+        TARGET_WIDTH=398,
+        preserve_aspect_ratio=True,
+    )
+
+    four_by_three = np.zeros((224, 298, 3), dtype=np.uint8)
+    sixteen_by_nine = np.zeros((224, 398, 3), dtype=np.uint8)
+    scaled_four_by_three = np.zeros((448, 596, 3), dtype=np.uint8)
+
+    assert reader._resize_frame_ocv(four_by_three).shape == (224, 298, 3)
+    assert reader._resize_frame_ocv(sixteen_by_nine).shape == (224, 398, 3)
+    assert reader._resize_frame_ocv(scaled_four_by_three).shape == (224, 298, 3)
+
+
 def test_v2_evaluator_scores_only_verified_logical_intervals(tmp_path):
     verified = _record()
     unlabeled = _record(status="unlabeled")
