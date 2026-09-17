@@ -63,6 +63,14 @@ def test_validate_pyg_wheels_checks_all_binary_wheels_before_torch_reinstall(mon
     assert calls[0][-2:] == ["-f", "https://data.pyg.org/whl/torch-2.12.1+cu130.html"]
 
 
+def test_pyg_extension_packages_match_the_supported_optional_libraries():
+    assert setup_lib.PYG_EXTENSION_PACKAGES == (
+        "pyg-lib",
+        "torch-scatter",
+        "torch-sparse",
+    )
+
+
 def test_setup_selects_pyg_torch_profile_before_installing_pyg(monkeypatch):
     calls: list[object] = []
 

@@ -25,12 +25,9 @@ PYG_TORCH_PACKAGES = (
     f"torchaudio=={PYG_TORCH_VERSION}",
 )
 PYG_EXTENSION_PACKAGES = (
-    "torch-geometric",
     "pyg-lib",
     "torch-scatter",
     "torch-sparse",
-    "torch-cluster",
-    "torch-spline-conv",
 )
 
 XVARS_DEPENDENCY_PINS = {
@@ -264,6 +261,9 @@ def install_pyg():
     print("\nInstalling Py-Geometric ecosystem...\n")
     url = pyg_wheel_url(torch_version)
 
+    subprocess.check_call([
+        python, "-m", "pip", "install", "torch-geometric",
+    ])
     subprocess.check_call([
         python, "-m", "pip", "install",
         *PYG_EXTENSION_PACKAGES, "--only-binary=:all:", "-f", url
