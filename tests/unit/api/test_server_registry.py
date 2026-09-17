@@ -107,7 +107,7 @@ def test_config_driven_runner_is_weightless(tmp_path):
     assert infer_source_mode(str(config), "org/config-only") == "config_only"
 
 
-def test ordinary_config_requires_checkpoint(tmp_path):
+def test_ordinary_config_requires_checkpoint(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text("TRAIN:\n  runner:\n    type: default\n")
     assert infer_source_mode(str(config), "org/model") == "checkpoint"

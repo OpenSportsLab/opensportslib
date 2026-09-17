@@ -145,8 +145,18 @@ if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,
   exit 2
 fi
 
-if ! "$PYTHON_BIN" -c 'import pytest, pytest_cov, pytest_jsonreport, pytest_timeout' >/dev/null 2>&1; then
-  bootstrap_failure "dependency" "Required pytest plugins are not installed." "Install the project test extra in the active environment."
+MISSING_TEST_MODULES="$("$PYTHON_BIN" - <<'PY'
+import importlib.util
+
+modules = ("pytest", "pytest_cov", "pytest_jsonreport", "pytest_timeout")
+print(", ".join(module for module in modules if importlib.util.find_spec(module) is None))
+PY
+)"
+if [[ -n "$MISSING_TEST_MODULES" ]]; then
+  bootstrap_failure \
+    "dependency" \
+    "Required pytest modules are missing from $PYTHON_BIN: $MISSING_TEST_MODULES." \
+    "Install the project test extra with: $PYTHON_BIN -m pip install -e '.[test]'"
   finish 2
   exit 2
 fi
@@ -156,9 +166,18 @@ FAST_LOG="$REPORT_ROOT/fast.log"
 FAST_JSON="$REPORT_ROOT/fast-report.json"
 FAST_JUNIT="$REPORT_ROOT/fast-junit.xml"
 
+# Unit and integration tests are organized under subsystem directories. Build
+# the collection list from those directories rather than collecting a stale
+# loose test left behind by an older checkout. Smoke tests intentionally live
+# directly in their tier.
+FAST_TEST_PATHS=(tests/smoke)
+while IFS= read -r test_dir; do
+  FAST_TEST_PATHS+=("$test_dir")
+done < <(find tests/unit tests/integration -mindepth 1 -maxdepth 1 -type d | sort)
+
 FAST_ARGS=(
-  tests/unit tests/smoke tests/integration
-  -vv -ra --tb=long --showlocals --durations=25
+  "${FAST_TEST_PATHS[@]}"
+  -vv -ra --tb=long --showlocals --durations=25 --import-mode=importlib
   --log-cli-level=INFO
   --json-report --json-report-file="$FAST_JSON"
   --junitxml="$FAST_JUNIT"
@@ -201,7 +220,7 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
   export OSL_RELEASE_REPORT_DIR="$RELEASE_REPORT"
   echo "Running GPU release verification; full log: $RELEASE_LOG"
   set +e
-  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --maxfail=1 \
+  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --import-mode=importlib --maxfail=1 \
     --timeout="${OSL_RELEASE_TEST_TIMEOUT:-7200}" --durations=0 \
     --log-cli-level=INFO --json-report --json-report-file="$RELEASE_JSON" \
     --junitxml="$RELEASE_JUNIT" 2>&1 \

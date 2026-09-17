@@ -20,6 +20,12 @@ def test_no_collected_tests_are_loose_at_tests_root():
     assert not loose, f"Place tests in a tier/subsystem directory, not tests/: {loose}"
 
 
+def test_unit_and_integration_tests_have_subsystem_owners():
+    for tier in ("unit", "integration"):
+        loose = sorted(path.name for path in (REPOSITORY_ROOT / "tests" / tier).glob("test_*.py"))
+        assert not loose, f"Place {tier} tests in a subsystem directory: {loose}"
+
+
 def test_agent_and_ci_contracts_use_single_runner():
     expected = "bash scripts/run_tests.sh"
     sources = [
