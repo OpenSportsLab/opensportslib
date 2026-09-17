@@ -10,7 +10,11 @@ from opensportslib.apis.base_task_model import BaseTaskModel  # noqa: E402
 
 
 def test_remote_session_state_is_captured_and_clearable():
-    model = type("RemoteState", (), {})()
+    model = type(
+        "RemoteState",
+        (),
+        {"_remember_remote_session": BaseTaskModel._remember_remote_session},
+    )()
     model.remote = "http://server"
     model.remote_model_id = "model"
     model.remote_session_id = None
@@ -23,7 +27,11 @@ def test_remote_session_state_is_captured_and_clearable():
 
 
 def test_submit_session_inference_sends_session_without_media(monkeypatch):
-    model = type("RemoteState", (), {})()
+    model = type(
+        "RemoteState",
+        (),
+        {"_remember_remote_session": BaseTaskModel._remember_remote_session},
+    )()
     model.remote = "http://server"
     model.remote_model_id = "model"
     model.remote_session_id = None

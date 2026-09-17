@@ -6,6 +6,21 @@ from opensportslib.apis.configuration import ConfigurationMixin, config_operatio
 from opensportslib.core.config.runtime_adapter import dict_to_namespace, namespace_to_plain_dict
 
 
+def _merge_config(target, updates):
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_config(target[key], value)
+        else:
+            target[key] = value
+
+
+def _with_test_overrides(api, overrides):
+    """Keep test doubles canonical while applying only their needed overrides."""
+    config = namespace_to_plain_dict(api.config)
+    _merge_config(config, namespace_to_plain_dict(overrides))
+    return dict_to_namespace(config)
+
+
 def test_method_signatures_expose_weights_and_no_pretrained_in_signature(
     classification_config_path,
     localization_config_path,
@@ -269,15 +284,15 @@ def test_localization_evaluate_uses_provided_predictions(
     )
 
     api = LocalizationModel(config=localization_config_path)
-    api.config = SimpleNamespace(
+    api.config = _with_test_overrides(api, SimpleNamespace(
         DATA=SimpleNamespace(
             test=SimpleNamespace(
                 path=str(test_set),
                 results="default_predictions.json",
             )
         ),
-        MODEL=SimpleNamespace(multi_gpu=True),
-    )
+        MODEL=SimpleNamespace(),
+    ))
 
     metrics = api.evaluate(
         test_set=str(test_set),
@@ -425,7 +440,7 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     )
 
     infer_api = LocalizationModel(config=localization_config_path, weights="default")
-    infer_api.config = make_config()
+    infer_api.config = _with_test_overrides(infer_api, make_config())
     assert infer_api.infer(use_wandb=False) == {"task": "localization"}
     assert load_calls == ["default"]
 
@@ -433,12 +448,12 @@ def test_localization_constructor_weights_are_default_for_train_and_infer(
     assert load_calls[-1] == "override"
 
     train_api = LocalizationModel(config=localization_config_path, weights="default")
-    train_api.config = make_config()
+    train_api.config = _with_test_overrides(train_api, make_config())
     train_api.train(use_wandb=False)
     assert trainer_resume_from[-1]["source_weights"] == "default"
 
     train_api = LocalizationModel(config=localization_config_path, weights="default")
-    train_api.config = make_config()
+    train_api.config = _with_test_overrides(train_api, make_config())
     train_api.train(weights="override", use_wandb=False)
     assert trainer_resume_from[-1]["source_weights"] == "override"
 
@@ -522,9 +537,9 @@ def test_vqa_api_uses_wandb_for_train_infer_and_evaluate(vqa_config_path, tmp_pa
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = config
+    api.config = _with_test_overrides(api, config)
 
-    assert api.train(use_wandb=True) == "trained.ckpt"
+    assert api.train(use_wandb=True, use_ddp=False) == "trained.ckpt"
     predictions = api.infer(use_wandb=True)
     assert predictions["task"] == "vqa"
     metrics = api.evaluate(predictions=predictions, use_wandb=True)
@@ -795,7 +810,7 @@ def test_vqa_direct_xvars_infer_uses_native_model_path(vqa_config_path, tmp_path
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = config
+    api.config = _with_test_overrides(api, config)
     out = api.infer(video_path=str(video_path), question="What happened?", use_wandb=False)
 
     infer_model, infer_dataset, infer_use_wandb = captured["infer"]
@@ -883,7 +898,7 @@ def test_vqa_xvars_test_set_infer_uses_native_model_and_not_upstream_repo(vqa_co
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = config
+    api.config = _with_test_overrides(api, config)
     out = api.infer(test_set=str(test_path), use_wandb=False)
 
     infer_model, infer_dataset, infer_use_wandb = captured["infer"]
@@ -950,7 +965,7 @@ def test_vqa_direct_qwen_infer_uses_standard_model_path(vqa_config_path, tmp_pat
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = config
+    api.config = _with_test_overrides(api, config)
     out = api.infer(video_path=str(video_path), question="Was it a foul?", use_wandb=False)
 
     infer_model, infer_dataset, infer_use_wandb = captured["infer"]
@@ -1018,7 +1033,7 @@ def test_vqa_qwen_test_set_infer_preserves_prediction_shape(vqa_config_path, tmp
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = config
+    api.config = _with_test_overrides(api, config)
     out = api.infer(test_set=str(test_path), use_wandb=False)
 
     assert out["task"] == "vqa"

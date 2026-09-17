@@ -8,6 +8,22 @@ import types
 import pytest
 
 from opensportslib.apis import VQAModel
+from opensportslib.core.config.runtime_adapter import dict_to_namespace, namespace_to_plain_dict
+
+
+def _merge_config(target, updates):
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_config(target[key], value)
+        else:
+            target[key] = value
+
+
+def _configure_vqa(api, updates):
+    """Apply narrow test overrides without discarding the canonical fixture."""
+    config = namespace_to_plain_dict(api.config)
+    _merge_config(config, updates)
+    api.config = dict_to_namespace(config)
 
 
 class _FakeRuntime:
@@ -54,12 +70,7 @@ def test_vqa_constructor_weights_are_default_for_infer(vqa_config_path, monkeypa
     captured = {}
     fake_model = object()
     api = VQAModel(config=vqa_config_path, weights="default-adapter")
-    api.config = SimpleNamespace(
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}, "xvars": {"feature_source": "raw_video"}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "MODEL": {"components": {"video_encoder": {"params": {"feature_source": "raw_video"}}}}})
 
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
@@ -117,24 +128,7 @@ def test_vqa_single_video_multi_question_infer(vqa_config_path, monkeypatch):
     api = VQAModel(config=vqa_config_path)
     video_path = Path("/tmp/clip_0.mp4")
     video_path.write_bytes(b"video")
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                splits=SimpleNamespace(
-                    test=SimpleNamespace(annotation_path="/tmp/test.json"),
-                )
-            )
-        ),
-        MODEL=SimpleNamespace(
-            load=SimpleNamespace(checkpoint_path=None),
-            components=SimpleNamespace(
-                video_encoder=SimpleNamespace(params=SimpleNamespace(feature_source="raw_video")),
-            ),
-        ),
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}, "xvars": {"feature_source": "raw_video"}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "DATA": {"common": {"splits": {"test": {"annotation_path": "/tmp/test.json"}}}}, "MODEL": {"components": {"video_encoder": {"params": {"feature_source": "raw_video"}}}}})
     fake_model = object()
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
@@ -219,24 +213,7 @@ def test_vqa_dataset_infer_expands_all_questions(vqa_config_path, tmp_path, monk
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                splits=SimpleNamespace(
-                    test=SimpleNamespace(annotation_path=str(dataset_path)),
-                )
-            )
-        ),
-        MODEL=SimpleNamespace(
-            load=SimpleNamespace(checkpoint_path=None),
-            components=SimpleNamespace(
-                video_encoder=SimpleNamespace(params=SimpleNamespace(feature_source="raw_video")),
-            ),
-        ),
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}, "xvars": {"feature_source": "raw_video"}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "DATA": {"common": {"splits": {"test": {"annotation_path": str(dataset_path)}}}}, "MODEL": {"components": {"video_encoder": {"params": {"feature_source": "raw_video"}}}}})
     fake_model = object()
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
@@ -276,7 +253,7 @@ def test_vqa_dataset_infer_expands_all_questions(vqa_config_path, tmp_path, monk
         "action_1",
     ]
     assert predictions["data"][2]["video_path"] == str(
-        (dataset_path.parent / "relative/action_1.mp4").resolve()
+        (tmp_path / "vqa_data" / "relative/action_1.mp4").resolve()
     )
 
 
@@ -300,39 +277,7 @@ def test_vqa_infer_indexed_or_raw_clip_ignores_stale_feature_index_path(vqa_conf
     )
 
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                feature_index="/home/vorajv/dataset/OSL-XFoul/feature_index.json",
-                prediction_index="",
-                splits=SimpleNamespace(
-                    test=SimpleNamespace(
-                        annotation_path=str(dataset_path),
-                        source_path=str(tmp_path),
-                        dataloader=SimpleNamespace(batch_size=1, shuffle=False),
-                    ),
-                ),
-            )
-        ),
-        MODEL=SimpleNamespace(
-            load=SimpleNamespace(checkpoint_path=None),
-            components=SimpleNamespace(
-                video_encoder=SimpleNamespace(
-                    params=SimpleNamespace(feature_source="indexed_or_raw_clip")
-                ),
-            ),
-        ),
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        TRAIN=SimpleNamespace(
-            execution={
-                "training_backend": "xvars_videochatgpt_lora",
-                "prompt": {},
-                "generation": {},
-                "xvars": {"feature_source": "indexed_or_raw_clip"},
-            }
-        ),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "DATA": {"common": {"feature_index": "/home/vorajv/dataset/OSL-XFoul/feature_index.json", "prediction_index": "", "splits": {"test": {"annotation_path": str(dataset_path), "source_path": str(tmp_path), "dataloader": {"batch_size": 1, "shuffle": False}}}}}, "MODEL": {"components": {"video_encoder": {"params": {"feature_source": "indexed_or_raw_clip"}}}}, "TRAIN": {"execution": {"xvars": {"feature_source": "indexed_or_raw_clip"}}}})
     fake_model = object()
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
@@ -419,12 +364,7 @@ def test_build_xvars_prompt_injects_classifier_priors():
 
 def test_vqa_save_predictions_round_trip(vqa_config_path, tmp_path, monkeypatch):
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora", "prompt": {}, "generation": {}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}})
     fake_model = object()
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "xvars_videochatgpt")
@@ -487,19 +427,7 @@ def test_vqa_runtime_dependency_error_names_missing_package(monkeypatch):
 
 def test_vqa_qwen_train_requires_qwen_training_backend(vqa_config_path, monkeypatch):
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                splits=SimpleNamespace(
-                    train=SimpleNamespace(annotation_path="/tmp/train.json"),
-                    valid=SimpleNamespace(annotation_path="/tmp/valid.json"),
-                )
-            )
-        ),
-        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(count=0)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "xvars_videochatgpt_lora"}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"gpu": {"count": 0}}, "DATA": {"common": {"splits": {"train": {"annotation_path": "/tmp/train.json"}, "valid": {"annotation_path": "/tmp/valid.json"}}}}})
 
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")
@@ -515,12 +443,7 @@ def test_vqa_qwen_infer_accepts_adapter_weights(vqa_config_path, tmp_path, monke
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
     (adapter_dir / "training_metadata.json").write_text(json.dumps({"backend": "qwen_xvars_lora"}), encoding="utf-8")
-    api.config = SimpleNamespace(
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_xvars_lora", "prompt": {}, "generation": {}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "TRAIN": {"execution": {"training_backend": "qwen_xvars_lora"}}})
     captured = {}
     fake_model = object()
 
@@ -555,19 +478,7 @@ def test_vqa_qwen_infer_accepts_adapter_weights(vqa_config_path, tmp_path, monke
 
 def test_vqa_qwen_vl_native_train_requires_native_training_backend(vqa_config_path, monkeypatch):
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                splits=SimpleNamespace(
-                    train=SimpleNamespace(annotation_path="/tmp/train.json"),
-                    valid=SimpleNamespace(annotation_path="/tmp/valid.json"),
-                )
-            )
-        ),
-        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(count=0)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_xvars_lora"}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"gpu": {"count": 0}}, "DATA": {"common": {"splits": {"train": {"annotation_path": "/tmp/train.json"}, "valid": {"annotation_path": "/tmp/valid.json"}}}}, "TRAIN": {"execution": {"training_backend": "qwen_xvars_lora"}}})
 
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_vl_native_infer")
@@ -586,12 +497,7 @@ def test_vqa_qwen_vl_native_infer_accepts_adapter_weights(vqa_config_path, tmp_p
         json.dumps({"backend": "qwen_vl_native_lora"}),
         encoding="utf-8",
     )
-    api.config = SimpleNamespace(
-        SYSTEM=SimpleNamespace(device="cpu", gpu=SimpleNamespace(count=0, id=0)),
-        MODEL=SimpleNamespace(load=SimpleNamespace(checkpoint_path=None)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_vl_native_lora", "prompt": {}, "generation": {}}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"device": "cpu", "gpu": {"count": 0, "id": 0}}, "TRAIN": {"execution": {"training_backend": "qwen_vl_native_lora"}}})
     captured = {}
     fake_model = object()
 
@@ -626,19 +532,7 @@ def test_vqa_qwen_vl_native_infer_accepts_adapter_weights(vqa_config_path, tmp_p
 
 def test_vqa_train_ddp_uses_requested_gpu_count(vqa_config_path, monkeypatch):
     api = VQAModel(config=vqa_config_path)
-    api.config = SimpleNamespace(
-        DATA=SimpleNamespace(
-            common=SimpleNamespace(
-                splits=SimpleNamespace(
-                    train=SimpleNamespace(annotation_path="/tmp/train.json"),
-                    valid=SimpleNamespace(annotation_path="/tmp/valid.json"),
-                )
-            )
-        ),
-        SYSTEM=SimpleNamespace(gpu=SimpleNamespace(count=2)),
-        TRAIN=SimpleNamespace(execution={"training_backend": "qwen_xvars_lora"}),
-        TASK="VQA",
-    )
+    _configure_vqa(api, {"SYSTEM": {"gpu": {"count": 2}}, "DATA": {"common": {"splits": {"train": {"annotation_path": "/tmp/train.json"}, "valid": {"annotation_path": "/tmp/valid.json"}}}}, "TRAIN": {"execution": {"training_backend": "qwen_xvars_lora"}}})
 
     monkeypatch.setattr("opensportslib.apis.vqa.resolve_config_omega", lambda cfg, weights=None: cfg)
     monkeypatch.setattr("opensportslib.apis.vqa.get_vqa_backend", lambda cfg: "qwen_xvars_infer")

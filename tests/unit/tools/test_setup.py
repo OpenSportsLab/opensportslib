@@ -40,7 +40,7 @@ def test_install_torch_uses_the_pinned_pyg_compatibility_profile(monkeypatch):
         "check_call",
         [
             "/usr/bin/python3", "-m", "pip", "install",
-            "torch==2.12.1", "torchvision==0.27.1", "torchaudio==2.12.1",
+            "torch==2.12.1", "torchvision==0.27.1",
             "--index-url", "https://download.pytorch.org/whl/cu130",
         ],
     )
@@ -55,11 +55,11 @@ def test_validate_pyg_wheels_checks_all_binary_wheels_before_torch_reinstall(mon
 
     setup_lib.validate_pyg_wheels()
 
-    assert calls[0][:9] == [
+    assert calls[0][:8] == [
         "/usr/bin/python3", "-m", "pip", "download", "--no-deps", "--only-binary=:all:",
-        "--dest", calls[0][7], "torch-geometric",
+        "--dest", calls[0][7],
     ]
-    assert calls[0][8:14] == list(setup_lib.PYG_EXTENSION_PACKAGES)
+    assert calls[0][8:11] == list(setup_lib.PYG_EXTENSION_PACKAGES)
     assert calls[0][-2:] == ["-f", "https://data.pyg.org/whl/torch-2.12.1+cu130.html"]
 
 
