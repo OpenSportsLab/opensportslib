@@ -10,8 +10,26 @@ REPORT_ROOT="$REPO_ROOT/.test-reports/$RUN_ID"
 mkdir -p "$REPORT_ROOT"
 ln -sfn "$RUN_ID" "$REPO_ROOT/.test-reports/latest"
 
+write_release_artifact_index() {
+  local release_report="$1"
+  local release_cache="${OSL_RELEASE_CACHE_DIR:-$REPO_ROOT/.release_test_cache}"
+  [[ -n "$release_report" ]] || return 0
+  mkdir -p "$release_report"
+  {
+    echo "# Release artifacts"
+    find "$release_cache/configs" "$release_cache/outputs" -type f 2>/dev/null | sort
+    if [[ -f "$release_report/release-metadata.jsonl" ]]; then
+      echo "# Structured provenance: $release_report/release-metadata.jsonl"
+    fi
+  } >"$release_report/artifacts-index.txt"
+}
+
 interrupted() {
   local signal="$1"
+  local release_report="${RELEASE_REPORT:-}"
+  if [[ -n "$release_report" ]]; then
+    write_release_artifact_index "$release_report"
+  fi
   {
     echo "# Test run interrupted"
     echo
@@ -39,6 +57,9 @@ ENV_REPORT="$REPORT_ROOT/environment.txt"
   echo "command=bash scripts/run_tests.sh"
   echo "utc_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "release_mode=${RUN_OSL_RELEASE_TESTS:-0}"
+  echo "deterministic_seed=42"
+  echo "fast_markers=unit,smoke,integration"
+  echo "release_markers=release,gpu,slow,network,pretrained,classification,localization,vqa"
   echo "python_command=$PYTHON_BIN"
   for name in OSL_RELEASE_CACHE_DIR OSL_RELEASE_DATA_DIR OSL_RELEASE_EPOCHS \
     OSL_RELEASE_MAX_CLIPS OSL_RELEASE_MAX_GAMES OSL_RELEASE_CLS_NUM_FRAMES \
@@ -137,7 +158,7 @@ FAST_JUNIT="$REPORT_ROOT/fast-junit.xml"
 
 FAST_ARGS=(
   tests/unit tests/smoke tests/integration
-  -vv -ra --tb=long --durations=25
+  -vv -ra --tb=long --showlocals --durations=25
   --log-cli-level=INFO
   --json-report --json-report-file="$FAST_JSON"
   --junitxml="$FAST_JUNIT"
@@ -148,8 +169,14 @@ FAST_ARGS=(
 
 echo "Running fast OpenSportsLib tests; full log: $FAST_LOG"
 set +e
-"$PYTHON_BIN" -m pytest "${FAST_ARGS[@]}" 2>&1 | tee "$FAST_LOG"
+"$PYTHON_BIN" -m pytest "${FAST_ARGS[@]}" 2>&1 \
+  | "$PYTHON_BIN" scripts/redact_test_stream.py | tee "$FAST_LOG"
 FAST_STATUS=${PIPESTATUS[0]}
+REDACTION_STATUS=0
+"$PYTHON_BIN" scripts/redact_test_stream.py --file "$FAST_JSON" "$FAST_JUNIT" || REDACTION_STATUS=$?
+if [[ "$REDACTION_STATUS" -ne 0 && "$FAST_STATUS" -eq 0 ]]; then
+  FAST_STATUS="$REDACTION_STATUS"
+fi
 
 "$PYTHON_BIN" scripts/summarize_test_report.py \
   --json "$FAST_JSON" --summary "$REPORT_ROOT/summary.md" \
@@ -171,13 +198,20 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
   RELEASE_LOG="$RELEASE_REPORT/release.log"
   RELEASE_JSON="$RELEASE_REPORT/release-report.json"
   RELEASE_JUNIT="$RELEASE_REPORT/release-junit.xml"
+  export OSL_RELEASE_REPORT_DIR="$RELEASE_REPORT"
   echo "Running GPU release verification; full log: $RELEASE_LOG"
   set +e
-  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --maxfail=1 \
+  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --maxfail=1 \
     --timeout="${OSL_RELEASE_TEST_TIMEOUT:-7200}" --durations=0 \
     --log-cli-level=INFO --json-report --json-report-file="$RELEASE_JSON" \
-    --junitxml="$RELEASE_JUNIT" 2>&1 | tee "$RELEASE_LOG"
+    --junitxml="$RELEASE_JUNIT" 2>&1 \
+    | "$PYTHON_BIN" scripts/redact_test_stream.py | tee "$RELEASE_LOG"
   RELEASE_STATUS=${PIPESTATUS[0]}
+  REDACTION_STATUS=0
+  "$PYTHON_BIN" scripts/redact_test_stream.py --file "$RELEASE_JSON" "$RELEASE_JUNIT" || REDACTION_STATUS=$?
+  if [[ "$REDACTION_STATUS" -ne 0 && "$RELEASE_STATUS" -eq 0 ]]; then
+    RELEASE_STATUS="$REDACTION_STATUS"
+  fi
   "$PYTHON_BIN" scripts/summarize_test_report.py \
     --json "$RELEASE_JSON" --summary "$RELEASE_REPORT/summary.md" \
     --failed "$RELEASE_REPORT/failed-tests.txt" --tier release \
@@ -186,9 +220,7 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
   if [[ "$SUMMARY_STATUS" -ne 0 && "$RELEASE_STATUS" -eq 0 ]]; then
     RELEASE_STATUS="$SUMMARY_STATUS"
   fi
-  RELEASE_CACHE="${OSL_RELEASE_CACHE_DIR:-$REPO_ROOT/.release_test_cache}"
-  find "$RELEASE_CACHE/configs" "$RELEASE_CACHE/outputs" -type f 2>/dev/null \
-    | sort >"$RELEASE_REPORT/artifacts-index.txt" || true
+  write_release_artifact_index "$RELEASE_REPORT"
   printf '\n\n' >>"$REPORT_ROOT/summary.md"
   cat "$RELEASE_REPORT/summary.md" >>"$REPORT_ROOT/summary.md"
   if [[ "$RELEASE_STATUS" -ne 0 ]]; then

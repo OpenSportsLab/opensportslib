@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -61,6 +62,7 @@ from ._release_common import (
     optional_module_available,
     prefer_osl_ready_dataset,
     report_step,
+    record_release_metadata,
     require_release_enabled,
     require_repo_access,
     snapshot_dataset,
@@ -206,6 +208,7 @@ def _e2e_overrides(run_name: str, dataset: dict, backbone: str, head: str, *, lo
 
 
 def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
+    started = time.perf_counter()
     split_paths = dataset["split_paths"]
 
     report_step(f"[{run_name}] instantiate LocalizationModel")
@@ -218,6 +221,10 @@ def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -
         use_wandb=False,
     )
     assert checkpoint and Path(checkpoint).exists(), f"[{run_name}] checkpoint was not written"
+    record_release_metadata(
+        "pipeline", task="localization", model_family=run_name,
+        config_path=config_path, checkpoint_path=str(checkpoint),
+    )
 
     report_step(f"[{run_name}] infer()")
     predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
@@ -227,9 +234,14 @@ def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -
     pred_path = CACHE_ROOT / "outputs" / f"localization_{run_name}_predictions.json"
     model.save_predictions(output_path=str(pred_path), predictions=predictions)
     assert pred_path.exists()
+    record_release_metadata("prediction", task="localization", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
     metrics = model.evaluate(test_set=str(split_paths["test"]), use_wandb=False)
+    record_release_metadata(
+        "result", task="localization", model_family=run_name,
+        runtime_seconds=round(time.perf_counter() - started, 3),
+    )
     print(f"[{run_name}] metrics: {metrics}")
 
 

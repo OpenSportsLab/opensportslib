@@ -10,17 +10,21 @@ import re
 
 
 SECRET_PATTERN = re.compile(
-    r"(?i)(token|password|secret|authorization|api[_-]?key)(\s*[=:]\s*)(\S+)"
+    r"(?i)(token|password|secret|authorization|api[_-]?key|cookie)(\s*[=:]\s*)(\S+)"
 )
+URL_CREDENTIALS = re.compile(r"(https?://)([^\s/@:]+):([^\s/@]+)@")
+BEARER = re.compile(r"(?i)(bearer\s+)([^\s,'\"]+)")
 
 CATEGORIES = (
     ("timeout", ("timeout", "timed out")),
+    ("subprocess", ("subprocess", "calledprocesserror", "returncode")),
     ("network", ("network", "connection", "urlopen", "huggingface", "socket")),
     ("dependency", ("modulenotfounderror", "importerror", "optional dependency")),
     ("configuration", ("config", "yaml", "omegaconf", "schema")),
     ("data/annotation", ("annotation", "manifest", "json", "parquet", "h5")),
     ("dataset loading", ("dataset", "dataloader", "collate")),
     ("checkpoint", ("checkpoint", "state_dict", "weights", "resume")),
+    ("forward pass", ("forward", "logits", "tensor shape")),
     ("loss/backward", ("loss", "backward", "gradient")),
     ("optimizer/scheduler", ("optimizer", "scheduler", "learning rate")),
     ("prediction format", ("prediction", "save_predictions", "serialization")),
@@ -32,6 +36,8 @@ CATEGORIES = (
 
 
 def redact(value: str) -> str:
+    value = URL_CREDENTIALS.sub(r"\1<redacted>:<redacted>@", value)
+    value = BEARER.sub(r"\1<redacted>", value)
     return SECRET_PATTERN.sub(lambda match: f"{match.group(1)}{match.group(2)}<redacted>", value)
 
 

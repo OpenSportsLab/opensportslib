@@ -9,6 +9,13 @@ from opensportslib.core.utils.video_processing import (
     get_stride,
     resample_video_idx,
 )
+from opensportslib.core.utils.direct_video import (
+    build_direct_video_manifest,
+    direct_video_manifest,
+    validate_direct_video_config,
+)
+from opensportslib.core.config.runtime_adapter import dict_to_namespace
+import pytest
 
 
 def test_video_rate_helpers_return_expected_sampling_values():
@@ -25,3 +32,35 @@ def test_batch_distribution_and_remainder_cover_boundaries():
 
 def test_non_positive_requested_rate_keeps_every_frame():
     assert get_stride(25, 0) == 1
+
+
+def test_direct_video_manifest_supports_classification_and_localization(tmp_path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"not-decoded-in-this-unit-test")
+    config = dict_to_namespace({
+        "DATA": {
+            "common": {"classes": ["PASS", "SHOT"]},
+            "inputs": {"video": {"modality": "video"}},
+        }
+    })
+
+    classification = build_direct_video_manifest(config, video, "classification")
+    localization = build_direct_video_manifest(config, video, "localization")
+    assert classification["task"] == "action_classification"
+    assert classification["data"][0]["inputs"][0]["path"] == str(video.resolve())
+    assert localization["task"] == "action_spotting"
+    assert localization["data"][0]["events"] == []
+
+    with direct_video_manifest(config, video, "classification") as manifest_path:
+        assert open(manifest_path, encoding="utf-8").read().startswith("{")
+    with pytest.raises(FileNotFoundError, match="Video file not found"):
+        with direct_video_manifest(config, tmp_path / "missing.mp4", "classification"):
+            pass
+
+
+def test_direct_video_manifest_rejects_non_video_configs():
+    config = dict_to_namespace(
+        {"DATA": {"common": {"classes": []}, "inputs": {"tracking": {"modality": "tracking"}}}}
+    )
+    with pytest.raises(ValueError, match="video-based config"):
+        validate_direct_video_config(config)

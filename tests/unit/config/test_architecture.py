@@ -10,6 +10,10 @@ from opensportslib.core.config.accessors import (
     get_xvars_train_video_token_len,
 )
 from opensportslib.core.config.conflicts import assert_no_legacy_aliases
+from opensportslib.core.config.runtime_adapter import adapt_config_to_runtime, namespace_to_plain_dict
+from opensportslib.core.config.schemas.schema_canonical import is_canonical_schema
+from opensportslib.core.config.schemas.schema_legacy import is_legacy_schema
+from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 from opensportslib.models.builder import build_model_from_config
 
 
@@ -19,6 +23,28 @@ def test_public_config_api_is_canonical_first():
     assert hasattr(config_module, "load_config")
     assert hasattr(config_module, "validate_config")
     assert hasattr(config_module, "migrate_config")
+
+
+def test_runtime_adapter_and_schema_detectors_preserve_canonical_payloads():
+    canonical = {
+        "MODEL": {"components": {"video_encoder": {}}, "topology": []},
+        "DATA": {"common": {"classes": ["PASS"]}},
+    }
+    assert is_canonical_schema(canonical)
+    assert not is_legacy_schema(canonical)
+    with pytest.warns(DeprecationWarning):
+        adapted = adapt_config_to_runtime(canonical, as_namespace=True)
+    assert namespace_to_plain_dict(adapted) == canonical
+    assert is_legacy_schema({"MODEL": {"backbone": {"type": "rn18"}}})
+    assert not is_canonical_schema({"MODEL": {"backbone": {"type": "rn18"}}})
+
+
+def test_builder_normalization_requires_type_and_preserves_mapping_values():
+    normalized = normalize_builder_cfg({"type": "SGD", "lr": 0.01}, kind="optimizer")
+    assert normalized.type == "SGD"
+    assert normalized.lr == 0.01
+    with pytest.raises(ValueError, match="component 'optimizer'"):
+        normalize_builder_cfg({"lr": 0.01}, kind="optimizer")
 
 
 def test_legacy_inputs_route_through_migration(tmp_path):

@@ -2,6 +2,8 @@ import inspect
 from types import SimpleNamespace
 
 from opensportslib.apis import ClassificationModel, LocalizationModel, VQAModel
+from opensportslib.apis.configuration import ConfigurationMixin, config_operation
+from opensportslib.core.config.runtime_adapter import dict_to_namespace, namespace_to_plain_dict
 
 
 def test_method_signatures_expose_weights_and_no_pretrained_in_signature(
@@ -46,6 +48,27 @@ def test_method_signatures_expose_weights_and_no_pretrained_in_signature(
     assert "output_path" in save_sig.parameters
     assert "predictions" in save_sig.parameters
     assert save_sig.parameters["predictions"].default is inspect._empty
+
+
+def test_configuration_operation_applies_call_input_then_restores_config():
+    class Probe(ConfigurationMixin):
+        is_remote = False
+        config_path = "probe.yaml"
+
+        def __init__(self):
+            self.config = dict_to_namespace(
+                {"DATA": {"common": {"splits": {"test": {"annotation_path": "original.json", "source_path": "media"}}}}}
+            )
+
+        @config_operation
+        def infer(self, test_set=None):
+            effective = namespace_to_plain_dict(self._effective_config(self.config))
+            return effective["DATA"]["common"]["splits"]["test"]["annotation_path"]
+
+    probe = Probe()
+    assert probe.infer(test_set="relative-request.json").endswith("relative-request.json")
+    restored = namespace_to_plain_dict(probe.config)
+    assert restored["DATA"]["common"]["splits"]["test"]["annotation_path"] == "original.json"
 
 
 def test_save_predictions_writes_dict_payload(classification_config_path, tmp_path):

@@ -13,6 +13,7 @@ invocation examples.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -32,6 +33,30 @@ CACHE_ROOT = Path(
 ).expanduser()
 CONFIG_DIR = CACHE_ROOT / "configs"
 OUTPUT_DIR = CACHE_ROOT / "outputs"
+
+
+def _release_metadata_path() -> Path | None:
+    """Return the runner-owned metadata file when release mode is active."""
+
+    raw = os.environ.get("OSL_RELEASE_REPORT_DIR")
+    return Path(raw) / "release-metadata.jsonl" if raw else None
+
+
+def record_release_metadata(kind: str, **details: Any) -> None:
+    """Append structured, non-secret release provenance for debugging.
+
+    The runner supplies ``OSL_RELEASE_REPORT_DIR`` only for its opted-in
+    release phase. Direct local collection still works without producing
+    report artifacts.
+    """
+
+    path = _release_metadata_path()
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"kind": kind, **details}
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True, default=str) + "\n")
 
 # Where datasets are downloaded to / read from. Deliberately independent of
 # CACHE_ROOT: point OSL_RELEASE_DATA_DIR at a folder that already hosts these
@@ -243,6 +268,9 @@ def prefer_osl_ready_dataset(
     use this when there's no non-sharded alternative worth falling back to.
     """
     if repo_is_populated(primary, revision=primary_revision):
+        record_release_metadata(
+            "dataset", repo_id=primary, revision=primary_revision, layout="osl_ready_sharded"
+        )
         return primary, primary_revision, True
     if fallback is None:
         require_repo_populated(primary, revision=primary_revision)  # fails required coverage
@@ -252,6 +280,7 @@ def prefer_osl_ready_dataset(
         f"{primary_revision} is published to automatically switch to the "
         f"sharded version."
     )
+    record_release_metadata("dataset", repo_id=fallback, revision="main", layout="fallback")
     return fallback, "main", False
 
 
@@ -333,6 +362,9 @@ def materialize_config(task: str, name: str, overrides: dict, *, out_name: str |
 
     out_path = CONFIG_DIR / (out_name or f"{task}_{name}.yaml")
     save_config(merged, out_path)
+    record_release_metadata(
+        "config", task=task, preset=name, canonical_path=str(canonical_path), materialized_path=str(out_path)
+    )
     return str(out_path)
 
 

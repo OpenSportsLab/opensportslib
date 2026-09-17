@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -70,6 +71,7 @@ from ._release_common import (
     max_items_for,
     prefer_osl_ready_dataset,
     report_step,
+    record_release_metadata,
     require_release_enabled,
     require_repo_access,
     require_repo_populated,
@@ -301,6 +303,7 @@ FRAME_BACKBONES = {
 
 
 def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
+    started = time.perf_counter()
     split_paths = dataset["split_paths"]
 
     report_step(f"[{run_name}] instantiate ClassificationModel")
@@ -313,6 +316,10 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
         use_wandb=False,
     )
     assert checkpoint and Path(checkpoint).exists(), f"[{run_name}] checkpoint was not written"
+    record_release_metadata(
+        "pipeline", task="classification", model_family=run_name,
+        config_path=config_path, checkpoint_path=str(checkpoint),
+    )
 
     report_step(f"[{run_name}] infer()")
     predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
@@ -322,10 +329,15 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
     pred_path = CACHE_ROOT / "outputs" / f"classification_{run_name}_predictions.json"
     model.save_predictions(output_path=str(pred_path), predictions=predictions)
     assert pred_path.exists()
+    record_release_metadata("prediction", task="classification", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
     metrics = model.evaluate(test_set=str(split_paths["test"]), use_wandb=False)
     assert isinstance(metrics, dict), f"[{run_name}] evaluate() did not return metrics"
+    record_release_metadata(
+        "result", task="classification", model_family=run_name,
+        runtime_seconds=round(time.perf_counter() - started, 3),
+    )
     print(f"[{run_name}] metrics: {metrics}")
 
 

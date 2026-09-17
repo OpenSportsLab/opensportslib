@@ -33,6 +33,9 @@ Every run writes a timestamped directory under `.test-reports/`, with
 `.test-reports/latest` pointing to the newest run. It contains complete logs and
 tracebacks, a Markdown diagnostic summary, failed-test IDs, JSON and JUnit reports,
 coverage XML, environment details, and a release artifact index when applicable.
+Release reports additionally include `release/release-metadata.jsonl`, recording
+the selected dataset/revision, materialized config, model family, checkpoint, and
+prediction locations without recording credentials.
 
 The fast run enforces `scripts/coverage-baseline.txt`. Raise that number when
 sustained coverage improves; never lower it merely to make a change pass.

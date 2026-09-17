@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 
 from opensportslib.core.loss.builder import build_criterion
+from opensportslib.core.loss.combine import Combined2x
+from opensportslib.core.loss.nll import NLLLoss
 from opensportslib.core.optimizer.builder import build_optimizer
 from opensportslib.core.scheduler.builder import build_scheduler
 from opensportslib.core.utils.checkpoint import load_checkpoint, save_checkpoint
@@ -48,3 +50,14 @@ def test_checkpoint_roundtrip_restores_model_optimizer_and_epoch(tmp_path):
     assert torch.equal(restored(torch.tensor([[1.0, 2.0]])).detach(), expected)
     assert restored_optimizer.param_groups[0]["lr"] == 0.25
 
+
+def test_legacy_loss_helpers_produce_weighted_finite_values():
+    labels = (torch.tensor([1.0]), torch.tensor([0.0]))
+    outputs = (torch.tensor([0.8]), torch.tensor([0.2]))
+    combined = Combined2x(torch.nn.L1Loss(), torch.nn.L1Loss(), 2.0, 3.0)
+    assert torch.isclose(combined(labels, outputs), torch.tensor(1.0))
+
+    nll = NLLLoss()
+    loss = nll(torch.tensor([1.0, 0.0]), torch.tensor([0.8, 0.2]))
+    assert torch.isfinite(loss)
+    assert loss > 0
