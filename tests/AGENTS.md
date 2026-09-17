@@ -22,7 +22,7 @@ ever conflict.
 
 | Test kind | Location | Requirements |
 | --- | --- | --- |
-| Fast unit/API/contract | `tests/unit/<subsystem>/` | Offline, deterministic, CPU-compatible |
+| Fast unit/API/contract | `tests/unit/<subsystem>/` | Deterministic; no network during test execution |
 | Package/API smoke | `tests/smoke/` | Minimal health and initialization checks |
 | Bounded workflow integration | `tests/integration/<task>/` | Offline, CPU-compatible, under fast budget |
 | Shared pytest fixture | `tests/conftest.py` | Useful across multiple test modules |
@@ -43,7 +43,9 @@ do not document or add another pytest entry point.
 - Generated videos, checkpoints, predictions, caches, and logs belong in `tmp_path`
   (or the configured release cache), never in committed fixtures.
 - Fast tests must not contact Hugging Face, WandB, registries, or other network
-  services. Mark genuine external tests `network` and place heavy ones in release.
+  services. The runner may provision its explicit dependency profile before
+  pytest starts; that setup output is retained in `setup.log`. Mark genuine
+  runtime external tests `network` and place heavy ones in release.
 - `infer()` must be checked for in-memory results; persistence is tested separately
   through `save_predictions(...)`.
 - When code changes an API, config schema, OSL data format, dependency, packaged

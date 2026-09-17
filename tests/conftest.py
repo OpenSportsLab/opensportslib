@@ -26,6 +26,8 @@ MARKERS = {
     "classification": "Classification task coverage.",
     "localization": "Localization task coverage.",
     "vqa": "Visual-question-answering task coverage.",
+    "vqa_qwen": "Requires the Qwen VQA dependency profile.",
+    "vqa_xvars": "Requires the X-VARS VQA dependency profile.",
 }
 
 

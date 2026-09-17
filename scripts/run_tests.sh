@@ -57,6 +57,8 @@ ENV_REPORT="$REPORT_ROOT/environment.txt"
   echo "command=bash scripts/run_tests.sh"
   echo "utc_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "release_mode=${RUN_OSL_RELEASE_TESTS:-0}"
+  echo "test_vqa_profile=${OSL_TEST_VQA_PROFILE:-qwen}"
+  echo "auto_setup=${OSL_TEST_AUTO_SETUP:-1}"
   echo "deterministic_seed=42"
   echo "fast_markers=unit,smoke,integration"
   echo "release_markers=release,gpu,slow,network,pretrained,classification,localization,vqa"
@@ -110,6 +112,7 @@ finish() {
   echo "DEBUG REPORTS: $REPORT_ROOT"
   echo "SUMMARY      : $REPORT_ROOT/summary.md"
   echo "ENVIRONMENT  : $ENV_REPORT"
+  echo "SETUP LOG    : ${SETUP_LOG:-not-run}"
   echo "============================================================"
 }
 
@@ -161,6 +164,42 @@ if [[ -n "$MISSING_TEST_MODULES" ]]; then
   exit 2
 fi
 
+# Optional test coverage is provisioned in the same interpreter that runs
+# pytest. Qwen is the default VQA profile. X-VARS uses incompatible pinned
+# Transformers dependencies and must be selected in a separate environment.
+TEST_VQA_PROFILE="${OSL_TEST_VQA_PROFILE:-qwen}"
+if [[ "$TEST_VQA_PROFILE" != "qwen" && "$TEST_VQA_PROFILE" != "xvars" && "$TEST_VQA_PROFILE" != "none" ]]; then
+  bootstrap_failure "configuration" "Unsupported OSL_TEST_VQA_PROFILE=$TEST_VQA_PROFILE." "Use qwen (default), xvars, or none."
+  finish 2
+  exit 2
+fi
+
+SETUP_LOG="$REPORT_ROOT/setup.log"
+if [[ "${OSL_TEST_AUTO_SETUP:-1}" == "1" ]]; then
+  SETUP_ARGS=(setup --pyg --dali)
+  if [[ "$TEST_VQA_PROFILE" == "qwen" ]]; then
+    SETUP_ARGS+=(--vqa_qwen)
+  elif [[ "$TEST_VQA_PROFILE" == "xvars" ]]; then
+    SETUP_ARGS+=(--vqa_xvars)
+  fi
+  echo "Provisioning OpenSportsLib test profile ($TEST_VQA_PROFILE); full log: $SETUP_LOG"
+  set +e
+  "$PYTHON_BIN" -m opensportslib.cli "${SETUP_ARGS[@]}" 2>&1 \
+    | "$PYTHON_BIN" scripts/redact_test_stream.py | tee "$SETUP_LOG"
+  SETUP_STATUS=${PIPESTATUS[0]}
+  if [[ "$SETUP_STATUS" -ne 0 ]]; then
+    bootstrap_failure \
+      "dependency" \
+      "OpenSportsLib optional test-profile setup failed (profile=$TEST_VQA_PROFILE)." \
+      "Inspect $SETUP_LOG, resolve the reported package/CUDA issue, then re-run bash scripts/run_tests.sh."
+    cat "$SETUP_LOG" >>"$REPORT_ROOT/fast.log"
+    finish "$SETUP_STATUS"
+    exit "$SETUP_STATUS"
+  fi
+else
+  printf '%s\n' "Automatic optional-profile setup disabled (OSL_TEST_AUTO_SETUP=0)." >"$SETUP_LOG"
+fi
+
 COVERAGE_BASELINE="$(tr -d '[:space:]' < "$REPO_ROOT/scripts/coverage-baseline.txt")"
 FAST_LOG="$REPORT_ROOT/fast.log"
 FAST_JSON="$REPORT_ROOT/fast-report.json"
@@ -185,6 +224,12 @@ FAST_ARGS=(
   --cov-report="xml:$REPORT_ROOT/coverage.xml"
   --cov-fail-under="$COVERAGE_BASELINE"
 )
+
+if [[ "$TEST_VQA_PROFILE" == "qwen" ]]; then
+  FAST_ARGS+=(-m "not vqa_xvars")
+elif [[ "$TEST_VQA_PROFILE" == "xvars" ]]; then
+  FAST_ARGS+=(-m "not vqa_qwen")
+fi
 
 echo "Running fast OpenSportsLib tests; full log: $FAST_LOG"
 set +e
@@ -220,7 +265,11 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
   export OSL_RELEASE_REPORT_DIR="$RELEASE_REPORT"
   echo "Running GPU release verification; full log: $RELEASE_LOG"
   set +e
-  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --strict-markers --import-mode=importlib --maxfail=1 \
+  RELEASE_MARKER="not vqa_xvars"
+  if [[ "$TEST_VQA_PROFILE" == "xvars" ]]; then
+    RELEASE_MARKER="not vqa_qwen"
+  fi
+  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --strict-markers --import-mode=importlib -m "$RELEASE_MARKER" --maxfail=1 \
     --timeout="${OSL_RELEASE_TEST_TIMEOUT:-7200}" --durations=0 \
     --log-cli-level=INFO --json-report --json-report-file="$RELEASE_JSON" \
     --junitxml="$RELEASE_JUNIT" 2>&1 \

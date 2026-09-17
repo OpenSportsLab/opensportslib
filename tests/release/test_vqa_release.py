@@ -149,6 +149,7 @@ def _dataset_overrides(run_name: str, dataset: dict) -> dict:
 
 
 @pytest.mark.release
+@pytest.mark.vqa_xvars
 def test_vqa_xvars_videochatgpt_lora(xfoul_dataset):
     require_release_enabled()
     try:
@@ -162,6 +163,7 @@ def test_vqa_xvars_videochatgpt_lora(xfoul_dataset):
 
 
 @pytest.mark.release
+@pytest.mark.vqa_qwen
 def test_vqa_clip_qwen_lora(xfoul_dataset):
     require_release_enabled()
     try:
@@ -176,6 +178,7 @@ def test_vqa_clip_qwen_lora(xfoul_dataset):
 
 @pytest.mark.release
 @pytest.mark.slow
+@pytest.mark.vqa_qwen
 def test_vqa_qwen3_vl_native_lora(xfoul_dataset):
     """Heaviest backend: downloads an 8B-parameter end-to-end VLM."""
     require_release_enabled()

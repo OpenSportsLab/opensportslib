@@ -52,9 +52,11 @@ for verified coverage:
 ## Prerequisites
 
 - A working `opensportslib` install with GPU support (`opensportslib setup`).
-- For the VQA backends: `opensportslib setup --vqa_xvars` and/or
-  `opensportslib setup --vqa_qwen`. Enabled release verification fails if a
-  required dependency is missing.
+- The runner provisions the default Qwen VQA profile (`opensportslib setup
+  --vqa_qwen`) as part of its setup stage. X-VARS requires a separate
+  environment/profile because its pinned Transformers stack conflicts with
+  Qwen; select it with `OSL_TEST_VQA_PROFILE=xvars` before using the same
+  runner. Enabled release verification fails if provisioning fails.
 - For DALI E2E localization: `opensportslib setup --dali`. Enabled release
   verification fails if DALI is absent.
 - `HF_TOKEN` (or `HUGGINGFACE_TOKEN`) exported for any gated dataset —

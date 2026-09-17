@@ -8,10 +8,15 @@ bash scripts/run_tests.sh
 
 ## Fast development suite
 
-The command runs `unit/`, `smoke/`, and `integration/`. These tests must be
-deterministic, CPU-compatible, offline, and finish within five minutes on a warm
-development runner. They cover unit behavior, public APIs, configuration and data
-contracts, package architecture, and bounded synthetic integration workflows.
+The command provisions the default Qwen optional profile (`--pyg --dali
+--vqa_qwen`) in its selected Python interpreter, then runs `unit/`, `smoke/`, and
+`integration/`. Profile setup is recorded in `setup.log`. These tests cover unit
+behavior, public APIs, configuration and data contracts, package architecture,
+optional integrations, and bounded synthetic integration workflows. Set
+`OSL_TEST_AUTO_SETUP=0` only for a pre-provisioned environment.
+
+Qwen is the default VQA profile. X-VARS has incompatible Transformers pins and
+therefore requires a separate environment selected with `OSL_TEST_VQA_PROFILE=xvars`.
 
 Reusable pytest fixtures live in `conftest.py`. Reusable non-fixture builders and
 assertions live in `helpers/` only when multiple test modules need them. Stable
