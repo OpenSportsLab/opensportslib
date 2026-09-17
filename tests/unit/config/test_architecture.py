@@ -149,7 +149,7 @@ def test_vqa_xvars_experiment_composes_all_layers():
     assert cfg["SYSTEM"]["paths"]["work_dir"] == "./checkpoints_vqa_xvars_lora"
     assert cfg["DATA"]["common"]["runtime"]["loader_backend"] == "opencv"
     assert cfg["MODEL"]["metadata"]["backend"] == "xvars_videochatgpt"
-    assert cfg["TRAIN"]["execution"]["hf"]["tokenizer_id"] == "/home/vorajv/X-VARS/weights/base_model_videoChatGPT"
+    assert cfg["TRAIN"]["execution"]["hf"]["tokenizer_id"] == cfg["MODEL"]["components"]["llm_decoder"]["params"]["repo_id"]
 
 
 def test_vqa_qwen_experiment_composes_all_layers():

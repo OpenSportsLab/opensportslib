@@ -33,7 +33,7 @@ def test_submit_session_inference_sends_session_without_media(monkeypatch):
         captured.update(path=path, fields=fields, files=files)
         return {"job_id": "job-1", "session_id": "session-1", "status": "queued"}
 
-    monkeypatch.setattr(model, "_post_multipart", post)
+    monkeypatch.setattr(model, "_post_multipart", post, raising=False)
     response = BaseTaskModel.submit_session_inference(
         model,
         task_type="vqa",

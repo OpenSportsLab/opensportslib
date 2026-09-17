@@ -18,6 +18,7 @@ MARKERS = {
     "smoke": "Minimal package or workflow health check.",
     "e2e": "End-to-end workflow test.",
     "gpu": "Requires a CUDA-capable GPU.",
+    "dali": "Requires the optional NVIDIA DALI integration.",
     "slow": "Intentionally unsuitable for the fast development suite.",
     "release": "Heavy release-verification test.",
     "network": "Requires access to an external network service.",
@@ -47,6 +48,27 @@ def pytest_collection_modifyitems(items):
         for task in ("classification", "localization", "vqa"):
             if task in normalized.lower() or task in item.nodeid.lower():
                 item.add_marker(getattr(pytest.mark, task))
+
+        # Fast runs deliberately remain offline and artifact-free. Explicitly
+        # marked external/pretrained checks belong to release verification and
+        # stay visible as skips rather than failing because a developer has no
+        # private model cache or network access.
+        if (
+            not item.get_closest_marker("release")
+            and item.get_closest_marker("pretrained")
+            and os.environ.get("OSL_ALLOW_PRETRAINED_TESTS") != "1"
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Pretrained-artifact test is reserved for release verification.")
+            )
+        if (
+            not item.get_closest_marker("release")
+            and item.get_closest_marker("network")
+            and os.environ.get("OSL_ALLOW_TEST_NETWORK") != "1"
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Network test is reserved for release verification.")
+            )
 
 
 @pytest.fixture(autouse=True)
@@ -323,7 +345,9 @@ def _localization_payload(
                         "results": result_name,
                         "metric": "tight",
                         "nms_window": 2,
-                        "overlap_len": 50,
+                        # The synthetic clip is 16 frames; overlap must stay
+                        # strictly smaller or canonical validation rejects it.
+                        "overlap_len": 0,
                         "dataloader": {
                             "batch_size": 1,
                             "shuffle": False,

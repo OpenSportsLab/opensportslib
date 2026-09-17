@@ -177,7 +177,7 @@ done < <(find tests/unit tests/integration -mindepth 1 -maxdepth 1 -type d | sor
 
 FAST_ARGS=(
   "${FAST_TEST_PATHS[@]}"
-  -vv -ra --tb=long --showlocals --durations=25 --import-mode=importlib
+  -vv -ra --tb=long --showlocals --durations=25 --strict-markers --import-mode=importlib
   --log-cli-level=INFO
   --json-report --json-report-file="$FAST_JSON"
   --junitxml="$FAST_JUNIT"
@@ -220,7 +220,7 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
   export OSL_RELEASE_REPORT_DIR="$RELEASE_REPORT"
   echo "Running GPU release verification; full log: $RELEASE_LOG"
   set +e
-  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --import-mode=importlib --maxfail=1 \
+  "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --strict-markers --import-mode=importlib --maxfail=1 \
     --timeout="${OSL_RELEASE_TEST_TIMEOUT:-7200}" --durations=0 \
     --log-cli-level=INFO --json-report --json-report-file="$RELEASE_JSON" \
     --junitxml="$RELEASE_JUNIT" 2>&1 \
