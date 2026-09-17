@@ -205,7 +205,7 @@ def install_pyg():
     from packaging import version
 
     python = sys.executable
-    torch_version = "2.10.0" if version.parse(torch.__version__.split("+")[0]) > version.parse("2.10.0") else torch.__version__.split("+")[0]
+    torch_version = torch_version = torch.__version__.split("+")[0]
     cuda_tag = CUDA_TAG
     print("\nInstalling Py-Geometric ecosystem...\n")
     if cuda_tag == "cpu":
