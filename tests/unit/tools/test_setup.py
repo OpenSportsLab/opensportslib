@@ -22,6 +22,68 @@ def test_select_torch_packages_returns_unpinned_package_names():
     )
 
 
+def test_install_torch_uses_the_pinned_pyg_compatibility_profile(monkeypatch):
+    calls: list[tuple[str, list[str]]] = []
+
+    monkeypatch.setattr(setup_lib.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(setup_lib, "CUDA_TAG", "cu130")
+    monkeypatch.setattr(setup_lib.subprocess, "call", lambda cmd: calls.append(("call", cmd)) or 0)
+    monkeypatch.setattr(
+        setup_lib.subprocess,
+        "check_call",
+        lambda cmd: calls.append(("check_call", cmd)) or 0,
+    )
+
+    setup_lib.install_torch(pyg_compatible=True)
+
+    assert calls[1] == (
+        "check_call",
+        [
+            "/usr/bin/python3", "-m", "pip", "install",
+            "torch==2.12.1", "torchvision==0.27.1", "torchaudio==2.12.1",
+            "--index-url", "https://download.pytorch.org/whl/cu130",
+        ],
+    )
+
+
+def test_validate_pyg_wheels_checks_all_binary_wheels_before_torch_reinstall(monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(setup_lib.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(setup_lib, "CUDA_TAG", "cu130")
+    monkeypatch.setattr(setup_lib.subprocess, "check_call", lambda cmd: calls.append(cmd) or 0)
+
+    setup_lib.validate_pyg_wheels()
+
+    assert calls[0][:9] == [
+        "/usr/bin/python3", "-m", "pip", "download", "--no-deps", "--only-binary=:all:",
+        "--dest", calls[0][7], "torch-geometric",
+    ]
+    assert calls[0][8:14] == list(setup_lib.PYG_EXTENSION_PACKAGES)
+    assert calls[0][-2:] == ["-f", "https://data.pyg.org/whl/torch-2.12.1+cu130.html"]
+
+
+def test_setup_selects_pyg_torch_profile_before_installing_pyg(monkeypatch):
+    calls: list[object] = []
+
+    monkeypatch.setattr(
+        setup_lib,
+        "install_torch",
+        lambda *, pyg_compatible=False: calls.append(("torch", pyg_compatible)),
+    )
+    monkeypatch.setattr(setup_lib, "validate_pyg_wheels", lambda: calls.append("validate"))
+    monkeypatch.setattr(
+        setup_lib,
+        "install_extras",
+        lambda dali=False, pyg=False: calls.append(("extras", dali, pyg)),
+    )
+    monkeypatch.setattr(setup_lib, "verify", lambda: calls.append("verify"))
+
+    setup_lib.setup(pyg=True)
+
+    assert calls == ["validate", ("torch", True), ("extras", False, True), "verify"]
+
+
 def test_select_cuda_wheel_uses_cu130_for_dgx_spark():
     assert setup_lib.select_cuda_wheel("13.0", [(12, 1)]) == "cu130"
 
@@ -125,8 +187,12 @@ def test_setup_skips_vqa_dependency_install_when_flags_are_false(monkeypatch):
     monkeypatch.setattr(setup_lib, "install_extras", lambda dali=False, pyg=False: calls.append(f"extras:{dali}:{pyg}"))
     monkeypatch.setattr(setup_lib, "install_xvars_dependencies", lambda pins: calls.append(f"deps:{sorted(pins)}"))
     monkeypatch.setattr(setup_lib, "verify", lambda: calls.append("verify"))
-    monkeypatch.setattr(setup_lib, "install_torch", lambda: calls.append("torch"))
+    monkeypatch.setattr(
+        setup_lib,
+        "install_torch",
+        lambda *, pyg_compatible=False: calls.append(f"torch:{pyg_compatible}"),
+    )
 
     setup_lib.setup(dali=True, pyg=False, vqa_xvars=False, vqa_qwen=False)
 
-    assert calls == ["torch", "extras:True:False", "verify"]
+    assert calls == ["torch:False", "extras:True:False", "verify"]

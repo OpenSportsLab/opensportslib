@@ -102,7 +102,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 > Requires **Python 3.12+**.  
 > Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
-> PyTorch Geometric is supported up to PyTorch 2.10.*.
+> PyTorch Geometric uses a dedicated PyTorch 2.12.1 compatibility profile.
 
 ### Create conda env
 
@@ -134,7 +134,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
@@ -518,7 +519,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
