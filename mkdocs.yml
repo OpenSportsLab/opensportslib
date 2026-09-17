@@ -34,6 +34,9 @@ nav:
       - Project Structure: getting-started/project_structure.md
       - SLURM Guide (salloc, srun): getting-started/slurm.md
 
+  - Server & Deployment:
+      - Inference Server: server/inference-server.md
+
   - Training & Inference:
       - Training & Inference: tni/tni.md
 

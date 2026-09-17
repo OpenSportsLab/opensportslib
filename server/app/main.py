@@ -18,6 +18,7 @@ from app.schemas import (
     PredictAccepted,
     PredictionResult,
     PredictRequest,
+    RuntimeReconcileRequest,
     SessionRecord,
     TaskType,
 )
@@ -101,6 +102,18 @@ def _authorize_model_admin(authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail=str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
 
 
+@app.post("/admin/runtime/reconcile")
+def reconcile_runtime(
+    request: RuntimeReconcileRequest,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    _authorize_model_admin(authorization)
+    summary = runtime_cleaner.reconcile_jobs(dry_run=request.dry_run)
+    if request.include_active:
+        summary["include_active"] = True
+    return summary
+
+
 @app.post("/models", status_code=status.HTTP_202_ACCEPTED)
 def register_model(
     request: ModelRegistrationRequest,
@@ -121,6 +134,7 @@ def register_model(
         source_type = "huggingface"
         source = request.source.model_id
         config_path = None
+        source_mode = "pending"
     else:
         try:
             weights_path, resolved_config = resolve_local_source(
@@ -134,6 +148,7 @@ def register_model(
         source_type = "local"
         source = str(weights_path)
         config_path = str(resolved_config)
+        source_mode = "checkpoint"
 
     generation = int(model_registry.redis.incr(f"osl:model-registry:generation:{model_id}"))
     record = {
@@ -142,6 +157,7 @@ def register_model(
         "source_type": source_type,
         "source": source,
         "config_path": config_path,
+        "source_mode": source_mode,
         "status": REGISTERING,
         "generation": generation,
         "created_at": now,

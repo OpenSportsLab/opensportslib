@@ -19,6 +19,8 @@ DEFAULT_KEY = "osl:model-registry:defaults"
 OPERATION_KEY = "osl:model-registry:operations"
 LOCAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 READY, REGISTERING, FAILED, UNREGISTERING = "ready", "registering", "failed", "unregistering"
+CHECKPOINT, CONFIG_ONLY = "checkpoint", "config_only"
+CHECKPOINT_SUFFIXES = (".pt", ".pth", ".bin", ".safetensors", ".ckpt", ".pkl", ".pickle")
 
 
 def utc_now() -> str:
@@ -50,6 +52,8 @@ class ModelRegistry:
             return record, True
         existing = self.get(record["model_id"])
         assert existing is not None
+        # source_mode is resolved asynchronously for Hugging Face sources;
+        # it must not turn an idempotent re-registration into a conflict.
         fields = ("model_id", "task_type", "source_type", "source", "config_path")
         if all(existing.get(k) == record.get(k) for k in fields):
             return existing, False
@@ -96,9 +100,12 @@ class ModelRegistry:
     def model_settings(self, record: dict[str, Any]) -> ModelSettings:
         from config.settings import ModelSettings
 
+        source_mode = record.get("source_mode") or infer_source_mode(record.get("config_path"), record.get("source"))
         return ModelSettings(task_type=record["task_type"], model_id=record["model_id"],
                              enabled=record["status"] in {READY, UNREGISTERING},
-                             config_path=record.get("config_path"), weights=record["source"])
+                             config_path=record.get("config_path"),
+                             weights=None if source_mode == CONFIG_ONLY else record["source"],
+                             source_mode=source_mode)
 
     def bootstrap_legacy_models(self) -> None:
         if self.redis.hlen(MODEL_KEY):
@@ -110,7 +117,8 @@ class ModelRegistry:
                           FutureWarning, stacklevel=2)
             now = utc_now()
             self.put({"model_id": item.model_id, "task_type": item.task_type, "source_type": "legacy",
-                      "source": item.weights, "config_path": item.config_path, "status": READY,
+                      "source": item.weights, "config_path": item.config_path,
+                      "source_mode": infer_source_mode(item.config_path, item.weights), "status": READY,
                       "generation": 1, "created_at": now, "updated_at": now, "error": None})
             if not self.redis.hexists(DEFAULT_KEY, item.task_type):
                 self.redis.hset(DEFAULT_KEY, item.task_type, item.model_id)
@@ -144,6 +152,44 @@ def resolve_local_source(settings: Settings, weights: str, config: str | None) -
     if not config_path.is_file():
         raise ValueError(f"Model config does not exist: {config_path}")
     return weights_path, config_path
+
+
+def infer_source_mode(config_path: str | None, source: str | None) -> str:
+    """Return config_only for generic rule/config-driven runners."""
+    if not config_path:
+        return CHECKPOINT
+    try:
+        import yaml
+
+        document = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+        runner = (((document.get("TRAIN") or {}).get("runner") or {}).get("type") or "")
+        if isinstance(runner, str) and "rule" in runner.lower():
+            return CONFIG_ONLY
+    except (OSError, TypeError, ValueError):
+        pass
+    return CHECKPOINT
+
+
+def resolve_huggingface_source(model_id: str) -> tuple[str, str, str | None]:
+    """Resolve config and normalize checkpoint versus config-only HF sources."""
+    from opensportslib.core.utils.config import resolve_config_path
+
+    config_path = str(resolve_config_path(model_id))
+    try:
+        from huggingface_hub import list_repo_files
+
+        files = list_repo_files(model_id)
+    except Exception as exc:
+        raise ValueError(f"Could not inspect Hugging Face repository `{model_id}`: {exc}") from exc
+    has_checkpoint = any(str(path).lower().endswith(CHECKPOINT_SUFFIXES) for path in files)
+    if has_checkpoint:
+        return config_path, CHECKPOINT, model_id
+    if infer_source_mode(config_path, model_id) == CONFIG_ONLY:
+        return config_path, CONFIG_ONLY, None
+    raise ValueError(
+        f"Hugging Face repository `{model_id}` has config.yaml but no supported checkpoint "
+        "and its configuration does not declare a supported config-only runner."
+    )
 
 
 def require_admin_token(settings: Settings, authorization: str | None) -> None:

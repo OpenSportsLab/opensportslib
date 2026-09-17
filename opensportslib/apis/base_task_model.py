@@ -76,6 +76,7 @@ class BaseTaskModel(ConfigurationMixin, ABC):
         self.remote_poll_interval = float(remote_poll_interval)
         self.remote_result_timeout = float(remote_result_timeout)
         self.remote_model_id = remote_model_id
+        self.remote_session_id: str | None = None
         if self.remote_timeout <= 0 or self.remote_poll_interval <= 0 or self.remote_result_timeout <= 0:
             raise ValueError("Remote timeout values must be positive.")
 
@@ -86,7 +87,14 @@ class BaseTaskModel(ConfigurationMixin, ABC):
             if self.is_remote:
                 self._config_editor.remote_overrides()
 
-        if config is None and self._config_editor is None:
+        remote_only = config is None and self._config_editor is None and self.is_remote and weights is None
+        if remote_only:
+            # Remote workers own model configuration and weights. Keep a
+            # minimal namespace so shared decorators and remote-only methods
+            # can operate without downloading or constructing a local model.
+            self.config_path = None
+            self.config = dict_to_namespace({})
+        elif config is None and self._config_editor is None:
             from huggingface_hub.utils import HFValidationError, validate_repo_id
 
             if (not isinstance(weights, str) or os.path.exists(expand(weights))
@@ -107,7 +115,7 @@ class BaseTaskModel(ConfigurationMixin, ABC):
         if self._config_editor is not None:
             self.config_path = self._config_editor.source
             self.config = dict_to_namespace(self._config_editor.get_config())
-        else:
+        elif self._config_editor is None and not remote_only:
             self.config_path = resolve_config_path(config)
             self._config_editor = Config.from_file(self.config_path)
             self.config = dict_to_namespace(self._config_editor.get_config())
@@ -203,7 +211,7 @@ class BaseTaskModel(ConfigurationMixin, ABC):
                 archive_path,
                 archive_path.stat().st_size,
             )
-            return self._post_multipart(
+            response = self._post_multipart(
                 "/predict",
                 fields={
                     "task_type": task_type,
@@ -215,6 +223,7 @@ class BaseTaskModel(ConfigurationMixin, ABC):
                     "media_archive": archive_path,
                 },
             )
+            return response
 
     def submit_per_sample_inference(
         self,
@@ -304,7 +313,44 @@ class BaseTaskModel(ConfigurationMixin, ABC):
             fields["question"] = question
         if session_id is not None:
             fields["session_id"] = session_id
-        return self._post_multipart("/predict", fields=fields, files={"upload_file": source})
+        response = self._post_multipart("/predict", fields=fields, files={"upload_file": source})
+        self._remember_remote_session(response)
+        return response
+
+    def submit_session_inference(
+        self,
+        *,
+        task_type: str,
+        session_id: str,
+        model_id: str | None = None,
+        task_options: dict[str, Any] | None = None,
+        question: str | None = None,
+    ) -> dict[str, Any]:
+        if not self.remote:
+            raise RuntimeError("Remote inference is not configured. Pass `remote=` to the model constructor.")
+        fields = {
+            "task_type": task_type,
+            "model_id": model_id or self.remote_model_id or "",
+            "session_id": session_id,
+            "task_options": json.dumps(task_options or {}),
+        }
+        if question is not None:
+            fields["question"] = question
+        response = self._post_multipart("/predict", fields=fields, files={})
+        self._remember_remote_session(response)
+        return response
+
+    def _remember_remote_session(self, response: dict[str, Any]) -> None:
+        session_id = response.get("session_id")
+        if session_id:
+            self.remote_session_id = str(session_id)
+
+    @property
+    def last_remote_session_id(self) -> str | None:
+        return self.remote_session_id
+
+    def clear_remote_session(self) -> None:
+        self.remote_session_id = None
 
     def get_remote_job(self, job_id: str) -> dict[str, Any]:
         return self._request_json(f"/jobs/{job_id}")

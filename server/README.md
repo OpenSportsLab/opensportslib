@@ -1,5 +1,9 @@
 # OpenSportsLib Server
 
+For the complete API reference, including curl and OpenSportsLib examples for
+registration, unregistration, single-video, full-test-set, and per-sample
+inference, see the [Inference Server guide](../docs/server/inference-server.md).
+
 Async FastAPI + RQ backend for serving `opensportslib` inference from the `server/` project inside the OpenSportsLib repository.
 
 ## What this project does
@@ -50,6 +54,27 @@ Redis is a separate service: install it with your system package manager or
 `conda install -c conda-forge redis`, or use Docker Compose below. When Redis is
 already running locally, the scripts reuse it.
 
+For Docker, `.env.example` is a template and `.env` is the file actually loaded
+by Compose. Set one private admin token in `server/.env`:
+
+```env
+OSL_MODEL_ADMIN_TOKEN=<your-private-admin-token>
+```
+
+Never commit the real token to `.env.example` or Git. After changing it,
+recreate the containers:
+
+```bash
+./scripts/docker_compose.sh down
+./scripts/docker_compose.sh up -d --force-recreate
+```
+
+Verify the container received it without printing the secret:
+
+```bash
+docker compose exec api sh -c 'test -n "$OSL_MODEL_ADMIN_TOKEN" && echo "admin token is set" || echo "admin token is missing"'
+```
+
 Then start the server:
 
 ```bash
@@ -89,13 +114,18 @@ API or worker restart is required:
 ```python
 from opensportslib import RemoteModelRegistry
 
-registry = RemoteModelRegistry("http://localhost:8000", admin_token="change-this-secret")
+registry = RemoteModelRegistry("http://localhost:8000", admin_token="<same-private-admin-token>")
 operation = registry.register_model(
     task_type="classification",
     huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
 )
 registry.wait_for_operation(operation["operation_id"])
 ```
+
+Hugging Face repositories may contain checkpoints or only `config.yaml` plus a
+supported configuration-driven runner. Registration inspects the repository
+and selects the appropriate loading mode for every task; no model-ID-specific
+exception is required.
 
 Local paths must be below `OSL_MODEL_ROOT`. A directory must contain
 `config.yaml`; a weights file requires `config_path`. A local `model_id` may be
@@ -257,7 +287,8 @@ Every successful `/predict` response now includes:
 VQA supports follow-up questions on the same session. Classification and localization can also reuse the same `session_id`, but their behavior is different:
 
 - no new input: return the latest successful cached result from that session
-- new input: create a new job under the same session
+- new input from the OpenSportsLib wrappers: start a new session; direct HTTP
+  callers can explicitly reuse a session when desired
 
 `POST /predict` accepts both:
 
@@ -362,6 +393,22 @@ curl -X POST http://127.0.0.1:8000/predict \
 
 Use the `session_id` returned by the first VQA request. Do not send a new file or video path on the follow-up.
 
+With the OpenSportsLib client, the session is retained automatically:
+
+```python
+from opensportslib.apis import VQAModel
+
+vqa = VQAModel(
+    remote="http://127.0.0.1:8000",
+    remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora",
+)
+vqa.infer(video_path="clip.mp4", question="Was this a foul?")
+print(vqa.last_remote_session_id)
+follow_up = vqa.infer(question="What card should be given?")
+```
+
+Use an explicit `session_id=` only when restoring a known session.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/predict \
   -H "Content-Type: application/json" \
@@ -402,7 +449,7 @@ Classification also returns a `session_id`.
 If you send the same `session_id` again:
 
 - with no new input, the API returns the latest successful cached result from that session
-- with a new `video_path` or `upload_file`, the API creates a new job under the same session
+- with a new `video_path` or `upload_file`, the wrapper starts a new session
 
 ### 6. Run localization
 
@@ -421,7 +468,7 @@ Localization also returns a `session_id`.
 If you send the same `session_id` again:
 
 - with no new input, the API returns the latest successful cached result from that session
-- with a new `video_path` or `upload_file`, the API creates a new job under the same session
+- with a new `video_path` or `upload_file`, the wrapper starts a new session
 
 ### 7. Check job status
 
@@ -480,9 +527,39 @@ While the server is running, uploaded media is kept for active sessions so VQA f
 - VQA can reuse a session for follow-up questions on the same video.
 - Classification and localization reuse the same session for workflow continuity.
 - Classification and localization with no new input return the latest cached result from that session immediately.
-- Classification and localization with new input create a new job under the same session.
+- Classification and localization with new input start a new session in the OpenSportsLib wrappers.
 - VQA follow-up requests must not send a new `upload_file`, `video_path`, or `media_url`.
 - VQA follow-up requests create a new `job_id` under the same `session_id`.
+
+## Stale job recovery
+
+The worker reconciles queued/running session entries against Redis/RQ before
+expired-session cleanup. Missing, terminal, or over-timeout jobs are marked
+failed automatically; confirmed active jobs are preserved. The stale grace
+period is controlled by `OSL_JOB_STALE_GRACE_SECONDS` (default `60`).
+
+Inspect stale state without changing it:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":true}'
+```
+
+Apply recovery and cleanup:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
+  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"dry_run":false}'
+```
+
+You can use the safe-by-default helper instead of curl:
+
+```bash
+python scripts/reconcile_runtime.py --server http://127.0.0.1:8000
+python scripts/reconcile_runtime.py --server http://127.0.0.1:8000 --apply
+```
 
 ## Docker
 

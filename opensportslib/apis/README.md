@@ -143,18 +143,52 @@ metrics = m.evaluate(
 
 ## Remote Inference
 
+The complete HTTP reference, including equivalent curl commands, model
+registration/unregistration, job polling, sessions, and single-video,
+full-test-set, and per-sample modes is in the [Inference Server guide](../../docs/server/inference-server.md).
+
+For Docker deployments, put the private `OSL_MODEL_ADMIN_TOKEN` in
+`server/.env`, not only in `.env.example`, recreate the containers after
+changing it, and pass the exact same value as `admin_token`. Keep the real
+token out of documentation and source control. A 401 usually means the
+container is using an older/different `.env`, the client is connecting to a
+different host, or the request is missing the `Bearer ` prefix.
+
 Pass `remote` to send inference to an `opensportslib-server` worker. Local
 training and evaluation are unchanged. For a test-set call, OpenSportsLib
 packages the JSON manifest and every local media path it references into one
 ZIP upload, waits for the server job, and returns predictions like local inference.
 
+Remote wrappers do not require local `config` or `weights`; the registered
+server model owns its configuration and checkpoint:
+
+```python
+from opensportslib.apis import VQAModel
+
+vqa = VQAModel(
+    remote="http://server-ip:8000",
+    remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora",
+)
+```
+
+Each direct remote request stores the returned session ID on the wrapper as
+`last_remote_session_id`. VQA follow-ups reuse it automatically; classification
+and localization calls without new input reuse the latest cached session result;
+providing a new video starts a new session automatically.
+Call `clear_remote_session()` to start a new conversation/workflow. Explicit
+`session_id=` arguments remain supported.
+
 Models must be registered before inference. One method handles Hugging Face
 and server-local sources:
+
+Hugging Face repositories can provide learned checkpoints or a supported
+configuration-only runner. The server resolves this source mode automatically;
+the registration call is the same for both types.
 
 ```python
 from opensportslib import RemoteModelRegistry
 
-registry = RemoteModelRegistry("http://server-ip:8000", admin_token="secret")
+registry = RemoteModelRegistry("http://server-ip:8000", admin_token="<same-private-admin-token>")
 operation = registry.register_model(
     task_type="classification",
     huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
@@ -179,8 +213,10 @@ predictions = model.infer(test_set="/path/to/test.json")
 Use `submit_inference(...)`, `get_remote_job(job_id)`, and
 `get_remote_result(job_id)` only when your application needs manual asynchronous
 job control. `remote_task_options={...}` passes task-specific options through
-to the server. Direct VQA calls upload one video, and a VQA follow-up can pass
-`session_id` with a new question.
+to the server. Direct VQA calls upload one video; the wrapper stores the
+returned `session_id` as `last_remote_session_id` and automatically reuses it
+for a follow-up question. Pass `session_id=` explicitly when restoring a known
+session.
 
 For long test sets, process each sample as a separate remote job while
 preserving all media referenced by that sample:
@@ -193,6 +229,11 @@ failures = model.last_remote_failures
 `remote_mode="full_test_set"` is the default. Per-sample submission continues
 after individual upload failures; successful predictions are returned and failed
 samples are available through `model.last_remote_failures`.
+
+The registry client also provides `list_models()`, `get_model()`,
+`get_operation()`, `wait_for_operation()`, `set_default()`, and
+`unregister_model()`, and `reconcile_runtime(dry_run=True)`. Administrative failures raise `RemoteRegistryError` with
+the HTTP status and structured server detail.
 
 ## Localization Usage
 
