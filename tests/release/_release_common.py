@@ -1,10 +1,10 @@
 """Shared helpers for the release-verification test suite (tests/release/).
 
-These tests are NOT part of the regular `pytest tests/test_*.py` contract.
+These tests are not part of the normal fast phase of `scripts/run_tests.sh`.
 They download real datasets from the OpenSportsLab Hugging Face org
 (some of them large) and run real training/inference/evaluation on GPU.
-They exist to be run manually after a big release to confirm that training
-still works end-to-end for every model family the library ships.
+They exist to confirm before publishing that training still works end-to-end
+for every model family the library ships.
 
 See tests/release/README.md for the full contract, prerequisites, and
 invocation examples.
@@ -13,6 +13,7 @@ invocation examples.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -32,6 +33,30 @@ CACHE_ROOT = Path(
 ).expanduser()
 CONFIG_DIR = CACHE_ROOT / "configs"
 OUTPUT_DIR = CACHE_ROOT / "outputs"
+
+
+def _release_metadata_path() -> Path | None:
+    """Return the runner-owned metadata file when release mode is active."""
+
+    raw = os.environ.get("OSL_RELEASE_REPORT_DIR")
+    return Path(raw) / "release-metadata.jsonl" if raw else None
+
+
+def record_release_metadata(kind: str, **details: Any) -> None:
+    """Append structured, non-secret release provenance for debugging.
+
+    The runner supplies ``OSL_RELEASE_REPORT_DIR`` only for its opted-in
+    release phase. Direct local collection still works without producing
+    report artifacts.
+    """
+
+    path = _release_metadata_path()
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"kind": kind, **details}
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True, default=str) + "\n")
 
 # Where datasets are downloaded to / read from. Deliberately independent of
 # CACHE_ROOT: point OSL_RELEASE_DATA_DIR at a folder that already hosts these
@@ -61,12 +86,9 @@ def release_tests_enabled() -> bool:
 def require_release_enabled() -> None:
     """Call at the top of every release test / fixture.
 
-    Keeps these tests from ever running by accident (plain `pytest tests/`,
-    an IDE "run all tests" button, a CI job someone forgot to scope) even
-    though pytest can discover them. The flat `pytest tests/test_*.py`
-    command from AGENTS.md never reaches this directory in the first place
-    since it's a shell glob, not a recursive pattern — this is the second,
-    explicit line of defense for anyone running `pytest tests/` directly.
+    Keeps these tests from ever running by accident through an IDE or broad
+    pytest collection. The supported runner reaches this directory only in
+    explicit release mode.
     """
     if not release_tests_enabled():
         pytest.skip(
@@ -149,11 +171,12 @@ def repo_accessible(repo_id: str, repo_type: str = "dataset") -> bool:
 
 def require_repo_access(repo_id: str, repo_type: str = "dataset") -> None:
     if not repo_accessible(repo_id, repo_type=repo_type):
-        pytest.skip(
+        pytest.fail(
             f"No access to {repo_id!r} on Hugging Face. It may be gated — "
             f"request access at https://huggingface.co/datasets/{repo_id} and "
             f"export HF_TOKEN (or HUGGINGFACE_TOKEN) for an account that has "
-            f"been granted access, then re-run."
+            f"been granted access, then re-run.",
+            pytrace=False,
         )
 
 
@@ -180,10 +203,11 @@ def repo_is_populated(repo_id: str, repo_type: str = "dataset", min_files: int =
 
 def require_repo_populated(repo_id: str, repo_type: str = "dataset", min_files: int = 2, revision: str = "main") -> None:
     if not repo_is_populated(repo_id, repo_type=repo_type, min_files=min_files, revision=revision):
-        pytest.skip(
+        pytest.fail(
             f"{repo_id!r}@{revision} does not have data uploaded yet. This "
-            f"test is ready to run as soon as the dataset/branch is "
-            f"published — re-run once it is."
+            f"is required release coverage; publish the dataset/branch and "
+            f"re-run.",
+            pytrace=False,
         )
 
 
@@ -244,15 +268,19 @@ def prefer_osl_ready_dataset(
     use this when there's no non-sharded alternative worth falling back to.
     """
     if repo_is_populated(primary, revision=primary_revision):
+        record_release_metadata(
+            "dataset", repo_id=primary, revision=primary_revision, layout="osl_ready_sharded"
+        )
         return primary, primary_revision, True
     if fallback is None:
-        require_repo_populated(primary, revision=primary_revision)  # raises pytest.skip
+        require_repo_populated(primary, revision=primary_revision)  # fails required coverage
     report_step(
         f"{primary!r}@{primary_revision} (OSL-ready/sharded) is not populated "
         f"yet -- falling back to {fallback!r}. Re-run once {primary!r}@"
         f"{primary_revision} is published to automatically switch to the "
         f"sharded version."
     )
+    record_release_metadata("dataset", repo_id=fallback, revision="main", layout="fallback")
     return fallback, "main", False
 
 
@@ -334,6 +362,9 @@ def materialize_config(task: str, name: str, overrides: dict, *, out_name: str |
 
     out_path = CONFIG_DIR / (out_name or f"{task}_{name}.yaml")
     save_config(merged, out_path)
+    record_release_metadata(
+        "config", task=task, preset=name, canonical_path=str(canonical_path), materialized_path=str(out_path)
+    )
     return str(out_path)
 
 

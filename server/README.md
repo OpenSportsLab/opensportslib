@@ -44,7 +44,7 @@ Run the helper to configure the selected model dependencies, generate standalone
 configs, and create `.env`:
 
 ```bash
-bash server/scripts/setup_env.sh
+bash server/scripts/serverctl setup
 ```
 
 The helper supports uv virtual environments and Conda. It defaults to the Qwen
@@ -58,21 +58,22 @@ For Docker, `.env.example` is a template and `.env` is the file actually loaded
 by Compose. Set one private admin token in `server/.env`:
 
 ```env
-OSL_MODEL_ADMIN_TOKEN=<your-private-admin-token>
+OSL_API_KEY=<optional-key-for-local-models-and-admin-operations>
+HF_TOKEN=<optional-machine-hugging-face-token>
 ```
 
 Never commit the real token to `.env.example` or Git. After changing it,
 recreate the containers:
 
 ```bash
-./scripts/docker_compose.sh down
-./scripts/docker_compose.sh up -d --force-recreate
+./scripts/serverctl docker stop
+./scripts/serverctl docker start --force-recreate
 ```
 
 Verify the container received it without printing the secret:
 
 ```bash
-docker compose exec api sh -c 'test -n "$OSL_MODEL_ADMIN_TOKEN" && echo "admin token is set" || echo "admin token is missing"'
+docker compose exec worker sh -c 'test -n "$HF_TOKEN" && echo "HF token is set" || echo "anonymous HF access"'
 ```
 
 Then start the server:
@@ -80,7 +81,7 @@ Then start the server:
 ```bash
 cd server
 # Review .env: enable only the models you intend to serve.
-./scripts/start_all.sh
+./scripts/serverctl start
 ```
 
 All commands below run from `server/` unless stated otherwise. API and worker
@@ -108,16 +109,17 @@ python -m pip install -r server/requirements.txt
 ## Configure models
 
 Models are managed at runtime through the model registry. Configure
-`OSL_MODEL_ADMIN_TOKEN` and register a Hugging Face or server-local model; no
+Register a Hugging Face or server-local model at runtime; no
 API or worker restart is required:
 
 ```python
 from opensportslib import RemoteModelRegistry
 
-registry = RemoteModelRegistry("http://localhost:8000", admin_token="<same-private-admin-token>")
+registry = RemoteModelRegistry("http://localhost:8000")
 operation = registry.register_model(
     task_type="classification",
     huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
+    hf_token="<optional-token-overriding-the-worker-environment>",
 )
 registry.wait_for_operation(operation["operation_id"])
 ```
@@ -131,10 +133,11 @@ Local paths must be below `OSL_MODEL_ROOT`. A directory must contain
 `config.yaml`; a weights file requires `config_path`. A local `model_id` may be
 chosen by the user or omitted in favor of the generated ID returned by the API.
 
-The fixed `OSL_*_MODEL_*`, `OSL_*_CONFIG_PATH`, and `OSL_*_WEIGHTS` entries are
-deprecated compatibility bootstrap settings, imported only when Redis is empty.
+The server starts with an empty model registry and never downloads a model at
+startup. Registrations are shared through Redis and survive restarts when the
+Redis data and Hugging Face cache volumes are retained.
 
-`./scripts/setup_env.sh` creates `.env` from `.env.example` when it is missing. If you skip that helper, copy `.env.example` to `.env` and fill in the model config and weights you want to serve.
+`./scripts/serverctl setup` creates `.env` from `.env.example` when it is missing.
 
 This project now generates flat standalone configs directly under `config/`:
 
@@ -149,28 +152,12 @@ original OpenSportsLib `configs/...` folder structure.
 
 Key environment entries are:
 
-- `OSL_CLASSIFICATION_*` for classification
-- `OSL_LOCALIZATION_*` for localization
+- `HF_TOKEN` is the optional machine Hugging Face credential. A request token
+  overrides it; `HUGGINGFACE_HUB_TOKEN` and `HUGGINGFACE_TOKEN` are fallback aliases.
+- `OSL_API_KEY` is optional and protects local-model registration/removal,
+  default selection, and runtime reconciliation.
 - `OSL_JOB_TIMEOUT_SECONDS=7200` sets the maximum execution time for each queued RQ inference job. This is server-side and independent of the OpenSportsLib client's `remote_timeout`, which only controls how long the client waits for a response.
-- `OSL_VQA_QWEN3_*` for the Qwen3 VL VQA model
-- `OSL_VQA_QWEN25_*` for the Qwen2.5 VL VQA model
-- `OSL_VQA_XVARS_*` for the X-VARS VQA model
-
-Each model entry has:
-
-- `..._MODEL_ENABLED`
-- `..._MODEL_ID`
-- `..._CONFIG_PATH`
-- `..._WEIGHTS`
-
-The checked-in defaults are portable and repo-relative:
-
-- `OSL_RUNTIME_DIR=./runtime`
-- `OSL_CLASSIFICATION_CONFIG_PATH=./config/classification_video.standalone.yaml`
-- `OSL_LOCALIZATION_CONFIG_PATH=./config/localization_video_dali.standalone.yaml`
-- `OSL_VQA_QWEN3_CONFIG_PATH=./config/vqa_qwen3_vl_native.standalone.yaml`
-- `OSL_VQA_QWEN25_CONFIG_PATH=./config/vqa_qwen2_5_vl_native.standalone.yaml`
-- `OSL_VQA_XVARS_CONFIG_PATH=./config/vqa_xvars.standalone.yaml`
+- `OSL_RUNTIME_DIR=./runtime` stores generated runtime state.
 
 The default `model_id` values are the Hugging Face repo IDs themselves:
 
@@ -191,11 +178,9 @@ With the current setup:
 - Redis runs locally
 - Configs are generated as flat standalone YAML files under `config/`
 - `model_id` in API requests should be the Hugging Face repo ID
-- `weights` in `.env` are also the Hugging Face repo IDs
-- `start_all.sh` can predownload all listed Hugging Face model repos into cache
+- models download only when registered
 - worker execution mode defaults to `simple` so the same loaded model can stay resident in RAM/GPU memory across same-model jobs
 - worker idle unload defaults to 10 minutes so unused GPU memory is eventually released
-- Docker can optionally predownload all listed Hugging Face model repos into the mounted cache before worker startup
 
 ## Worker execution mode
 
@@ -219,16 +204,16 @@ OpenSportsLib uses different dependency override profiles for:
 - Qwen VQA
 - X-VARS VQA
 
-Use `setup_env.sh` with:
+Use `serverctl setup` with:
 
 ```bash
-OSL_VQA_DEP_PROFILE=qwen ./scripts/setup_env.sh
+OSL_VQA_DEP_PROFILE=qwen ./scripts/serverctl setup
 ```
 
 or:
 
 ```bash
-OSL_VQA_DEP_PROFILE=xvars ./scripts/setup_env.sh
+OSL_VQA_DEP_PROFILE=xvars ./scripts/serverctl setup
 ```
 
 Only one profile should be active in the environment at a time.
@@ -236,18 +221,18 @@ Only one profile should be active in the environment at a time.
 ## Start the API
 
 ```bash
-./scripts/start_api.sh
+./scripts/serverctl start
 ```
 
 ## Start the worker
 
 ```bash
-./scripts/start_worker.sh
+./scripts/serverctl start
 ```
 
 ## Start Redis
 
-`./scripts/start_all.sh` supports both Redis management modes. It reuses a healthy Redis server already listening on the configured host and port; otherwise it starts the project-managed Redis binary.
+`./scripts/serverctl start` reuses a healthy Redis server on the configured port or starts the project-managed Redis binary on the next free port.
 
 If Redis is installed as a system service with `sudo apt install redis-server`, it is already running after:
 
@@ -255,21 +240,21 @@ If Redis is installed as a system service with `sudo apt install redis-server`, 
 sudo systemctl enable --now redis-server
 ```
 
-You can then run `./scripts/start_all.sh`; it will reuse the system Redis service instead of starting a second instance.
+You can then run `./scripts/serverctl start`; it will reuse the system Redis service.
 
 If Redis is installed in your Conda environment, start the project-managed server with:
 
 ```bash
-./scripts/start_redis.sh
+./scripts/serverctl start
 ```
 
 The project-managed Redis script accepts an explicit port. The API and worker must use the same port in `OSL_REDIS_URL`:
 
 ```bash
-REDIS_PORT=6380 OSL_REDIS_URL=redis://127.0.0.1:6380/0 ./scripts/start_all.sh
+REDIS_PORT=6380 ./scripts/serverctl start
 ```
 
-Use this when you want the project-managed Redis server to use a different port. If a healthy Redis service already occupies `6379`, `start_all.sh` reuses it automatically.
+Use this when you prefer a different Redis port. A healthy configured Redis service is reused automatically.
 
 ## API endpoints
 
@@ -327,21 +312,18 @@ worker, output-path, dotted-path, and training overrides are not accepted.
 ```bash
 conda activate osl
 cd /path/to/opensportslib-server
-./scripts/setup_env.sh
+./scripts/serverctl setup
 ```
 
 ### 2. Start services
 
 ```bash
-./scripts/start_all.sh
+./scripts/serverctl start
 ```
 
-By default this also predownloads all configured Hugging Face repos into cache
-before starting Redis, API, and worker. To skip that step:
-
-```bash
-OSL_PREDOWNLOAD_ON_START=false ./scripts/start_all.sh
-```
+No models are downloaded at startup. The command selects the next free API and
+Redis ports, waits for readiness, prints the effective endpoints, and writes
+them to `runtime/service-endpoints.env`.
 
 This same command works with the system Redis service installed with `sudo`; the existing Redis process is reused.
 
@@ -501,16 +483,28 @@ runtime/results/<job_id>.json
 ### 9. Stop services
 
 ```bash
-./scripts/stop_all.sh
+./scripts/serverctl stop
 ```
 
-`stop_all.sh` also clears server-generated runtime state so storage does not accumulate unnecessarily:
+Stopping preserves runtime state. Clear transient jobs, results, sessions, and temporary files explicitly with `./scripts/serverctl clean`.
 
 - uploaded temp files
 - job metadata
 - job result files
 - session state files
-- Redis runtime files under `runtime/redis`
+
+Cleanup preserves Redis registrations, local models, and the Hugging Face cache.
+
+For a destructive factory reset, stop services and run:
+
+```bash
+./scripts/serverctl reset
+```
+
+The command asks for confirmation before deleting runtime data, Redis
+registrations, downloaded Hugging Face cache, local models, and logs. Use
+`reset --yes` only for unattended automation. Source code, configuration, and
+`.env` are preserved.
 
 While the server is running, uploaded media is kept for active sessions so VQA follow-up requests can reuse the same video. Expired sessions are cleaned automatically along with their associated runtime artifacts.
 
@@ -542,7 +536,7 @@ Inspect stale state without changing it:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' -d '{"dry_run":true}'
 ```
 
@@ -550,15 +544,15 @@ Apply recovery and cleanup:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' -d '{"dry_run":false}'
 ```
 
 You can use the safe-by-default helper instead of curl:
 
 ```bash
-python scripts/reconcile_runtime.py --server http://127.0.0.1:8000
-python scripts/reconcile_runtime.py --server http://127.0.0.1:8000 --apply
+./scripts/serverctl reconcile --server http://127.0.0.1:8000
+./scripts/serverctl reconcile --server http://127.0.0.1:8000 --apply
 ```
 
 ## Docker
@@ -629,11 +623,11 @@ the existing CUDA 13.0 reinstall and architecture 12.1 settings.
 From `server/`:
 
 ```bash
-./scripts/docker_compose.sh build
-./scripts/docker_compose.sh up -d
+./scripts/serverctl docker build
+./scripts/serverctl docker start
 ```
 
-Running `./scripts/docker_compose.sh` without arguments also creates `.env` when needed and starts the stack with `up -d`.
+The Docker start command creates `.env` when needed and selects available host ports.
 
 This starts:
 
@@ -643,26 +637,8 @@ This starts:
 
 At container startup, the `api` and `worker` services will first run `opensportslib setup` for the selected `OSL_DOCKER_VQA_DEP_PROFILE`, then launch the service process.
 
-Optional Docker predownload is also supported. In v1, this is intended to run on the `worker` service only so the shared mounted Hugging Face cache is filled once before the worker starts.
-
-Set these in `.env` if you want that behavior:
-
-- `OSL_DOCKER_PREDOWNLOAD_ON_START=true`
-- `OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY=true`
-
-With that setting:
-
-- `worker` predownloads all repos listed by `scripts/predownload_hf_assets.py`
-- downloads go into the mounted `HOST_HF_CACHE`
-- `api` skips the predownload step and still starts normally
-
-If you want both `api` and `worker` to attempt predownload, set:
-
-```bash
-OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY=false
-```
-
-The recommended v1 setting is to keep `OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY=true`.
+Use `./scripts/serverctl docker start` to select free host ports, start the Compose
+services, wait for readiness, and write `runtime/service-endpoints.env`.
 
 The entrypoint defaults to `qwen` when `OSL_DOCKER_VQA_DEP_PROFILE` is unset
 or empty. This is a runtime setting, not a Docker build argument.
@@ -671,31 +647,31 @@ To use X-VARS, set `OSL_DOCKER_VQA_DEP_PROFILE=xvars` in `server/.env`, then
 recreate the containers:
 
 ```bash
-./scripts/docker_compose.sh up -d --force-recreate
+./scripts/serverctl docker start --force-recreate
 ```
 
 Use `none` to skip dependency setup. Changing profiles does not require rebuilding
 the image; recreating the containers applies the updated environment.
 
-Changing Docker predownload settings also requires restarting the containers:
+After changing Docker runtime settings, restart the containers:
 
 ```bash
-./scripts/docker_compose.sh down
-./scripts/docker_compose.sh up -d
+./scripts/serverctl docker stop
+./scripts/serverctl docker start
 ```
 
 ### Check service status
 
 ```bash
-./scripts/docker_compose.sh ps
-./scripts/docker_compose.sh logs -f api
-./scripts/docker_compose.sh logs -f worker
-./scripts/docker_compose.sh logs -f redis
+./scripts/serverctl docker status
+./scripts/serverctl docker logs api
+./scripts/serverctl docker logs worker
+./scripts/serverctl docker logs redis
 ```
 
-After `./scripts/docker_compose.sh up -d`, check `./scripts/docker_compose.sh logs -f worker` to confirm `opensportslib setup` completed before sending inference requests.
+After startup, use `./scripts/serverctl docker logs worker` to inspect worker initialization.
 
-If Docker predownload is enabled, the worker logs should also show that Hugging Face assets were downloaded before `opensportslib setup` began.
+Models are downloaded only when they are registered, never during container startup.
 
 ### Test the API
 
@@ -708,22 +684,25 @@ You can then use the same `/predict`, `/jobs/{job_id}`, and `/jobs/{job_id}/resu
 ### Stop Docker services
 
 ```bash
-./scripts/docker_stop_all.sh
+./scripts/serverctl docker clean
 ```
 
 This stops the containers and clears runtime artifacts created by Docker. If you only want to stop containers without cleanup, use:
 
 ```bash
-./scripts/docker_compose.sh down
+./scripts/serverctl docker stop
 ```
 
-If you have older `nobody:nogroup` runtime files from earlier Docker runs, `docker_stop_all.sh` is the preferred cleanup path because it performs the runtime wipe from inside Docker as root.
+Docker cleanup is explicit through `./scripts/serverctl docker clean`.
+
+Use `./scripts/serverctl docker reset` for the equivalent confirmed factory
+reset of Docker-owned state. `docker reset --yes` is available for unattended automation.
 
 ### Rebuild after code changes
 
 ```bash
-./scripts/docker_compose.sh build
-./scripts/docker_compose.sh up -d
+./scripts/serverctl docker build
+./scripts/serverctl docker start
 ```
 
 ### Model IDs in Docker requests
@@ -740,8 +719,8 @@ Use the same Hugging Face repo IDs as `model_id`:
 From the repository root with the environment activated:
 
 ```bash
-uv pip install pytest pytest-cov build
-python -m pytest tests/test_*.py
+uv pip install -e ".[test]" build
+bash scripts/run_tests.sh
 python -m build
 ```
 

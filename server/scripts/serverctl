@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RUNTIME_DIR="${ROOT_DIR}/runtime"
+PID_DIR="${RUNTIME_DIR}/pids"
+LOG_DIR="${ROOT_DIR}/logs"
+ENDPOINT_FILE="${RUNTIME_DIR}/service-endpoints.env"
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/serverctl <command> [options]
+
+Commands:
+  setup                         Install and configure the local server
+  start                         Start local Redis, API, and worker
+  stop                          Stop project-owned local processes
+  status                        Show local service state and endpoints
+  clean                         Remove transient runtime data (preserves Redis/models/cache)
+  reset [--yes]                 Factory-reset runtime data, registrations, models, cache, and logs
+  reconcile [options]           Inspect/recover stale jobs (dry-run by default)
+  docker build                  Build Docker services
+  docker start [options]        Start Docker services on available host ports
+  docker stop                   Stop Docker services without deleting runtime data
+  docker status                 Show Docker service status
+  docker logs [service]         Follow Docker logs
+  docker clean                  Remove transient Docker-owned runtime data
+  docker reset [--yes]          Stop Docker and perform a destructive factory reset
+EOF
+}
+
+port_available() {
+  python - "$1" "$2" <<'PY'
+import socket, sys
+with socket.socket() as sock:
+    try: sock.bind((sys.argv[1], int(sys.argv[2])))
+    except OSError: raise SystemExit(1)
+PY
+}
+
+find_free_port() {
+  local host="$1" port="$2" limit=$((port + 100))
+  while (( port <= limit )); do
+    if port_available "${host}" "${port}"; then echo "${port}"; return 0; fi
+    port=$((port + 1))
+  done
+  echo "No free port found between $2 and ${limit}" >&2; return 1
+}
+
+redis_healthy() {
+  command -v redis-cli >/dev/null 2>&1 &&
+    [[ "$(redis-cli --raw -h "$1" -p "$2" ping 2>/dev/null || true)" == "PONG" ]]
+}
+
+pid_running() { [[ -f "$1" ]] && kill -0 "$(<"$1")" >/dev/null 2>&1; }
+
+ensure_layout() {
+  mkdir -p "${PID_DIR}" "${LOG_DIR}" "${RUNTIME_DIR}/jobs" "${RUNTIME_DIR}/results" \
+    "${RUNTIME_DIR}/sessions" "${RUNTIME_DIR}/tmp" "${RUNTIME_DIR}/redis" "${ROOT_DIR}/models"
+}
+
+ensure_env() {
+  if [[ ! -f "${ROOT_DIR}/.env" ]]; then
+    cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+    echo "Created ${ROOT_DIR}/.env from .env.example"
+  fi
+}
+
+write_endpoints() {
+  local api_port="$1" redis_host="$2" redis_port="$3"
+  {
+    echo "OSL_API_URL=http://127.0.0.1:${api_port}"
+    echo "OSL_SERVER_PORT=${api_port}"
+    echo "OSL_REDIS_URL=redis://${redis_host}:${redis_port}/0"
+    echo "REDIS_PORT=${redis_port}"
+  } > "${ENDPOINT_FILE}"
+}
+
+cmd_setup() {
+  local profile="${OSL_VQA_DEP_PROFILE:-qwen}"
+  [[ -n "${CONDA_DEFAULT_ENV:-}" || -n "${VIRTUAL_ENV:-}" ]] || { echo "Activate a Conda or virtual environment first." >&2; return 1; }
+  python -c 'import sys; assert sys.version_info >= (3, 12), "Python 3.12 or newer is required"'
+  if command -v uv >/dev/null 2>&1; then uv pip install --python "$(command -v python)" pip -e "${ROOT_DIR}"; else python -m pip install -e "${ROOT_DIR}"; fi
+  case "${profile}" in
+    qwen) opensportslib setup --vqa_qwen ;;
+    xvars) opensportslib setup --vqa_xvars ;;
+    none) ;;
+    *) echo "OSL_VQA_DEP_PROFILE must be qwen, xvars, or none" >&2; return 1 ;;
+  esac
+  if ! command -v redis-server >/dev/null 2>&1 && command -v conda >/dev/null 2>&1; then
+    conda install -y -c conda-forge redis
+  fi
+  python "${ROOT_DIR}/scripts/generate_flat_configs.py"
+  ensure_env; ensure_layout
+  echo "Setup complete. Start with: ${ROOT_DIR}/scripts/serverctl start"
+}
+
+start_redis() {
+  local host="$1" port="$2" pid_file="${RUNTIME_DIR}/redis/redis.pid"
+  if redis_healthy "${host}" "${port}"; then echo "Redis: reusing ${host}:${port}"; return; fi
+  command -v redis-server >/dev/null 2>&1 || { echo "redis-server is not installed." >&2; return 1; }
+  redis-server --bind "${host}" --port "${port}" --dir "${RUNTIME_DIR}/redis" --daemonize yes \
+    --logfile "${LOG_DIR}/redis.log" --pidfile "${pid_file}"
+}
+
+start_process() {
+  local name="$1" pid_file="$2" log_file="$3"; shift 3
+  if pid_running "${pid_file}"; then echo "${name}: already running (PID $(<"${pid_file}"))"; return; fi
+  [[ ! -f "${pid_file}" ]] || rm -f "${pid_file}"
+  (cd "${ROOT_DIR}"; nohup "$@" > "${log_file}" 2>&1 < /dev/null & echo $! > "${pid_file}")
+  echo "${name}: started (PID $(<"${pid_file}"))"
+}
+
+cmd_start() {
+  ensure_layout; ensure_env
+  if pid_running "${PID_DIR}/api.pid" && pid_running "${PID_DIR}/worker.pid"; then
+    echo "API and worker are already running."
+    cmd_status
+    return 0
+  fi
+  if pid_running "${PID_DIR}/api.pid" || pid_running "${PID_DIR}/worker.pid"; then
+    echo "Only part of the local stack is running; run 'serverctl stop' before restarting." >&2
+    return 1
+  fi
+  local redis_host="${REDIS_HOST:-127.0.0.1}" requested="${REDIS_PORT:-6379}" redis_port api_port
+  if redis_healthy "${redis_host}" "${requested}"; then redis_port="${requested}"; else redis_port="$(find_free_port "${redis_host}" "${requested}")"; fi
+  api_port="$(find_free_port 127.0.0.1 "${OSL_SERVER_PORT:-8000}")"
+  export PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}" REDIS_HOST="${redis_host}" REDIS_PORT="${redis_port}"
+  export OSL_SERVER_HOST="${OSL_SERVER_HOST:-0.0.0.0}" OSL_SERVER_PORT="${api_port}" OSL_REDIS_URL="redis://${redis_host}:${redis_port}/0"
+  write_endpoints "${api_port}" "${redis_host}" "${redis_port}"
+  start_redis "${redis_host}" "${redis_port}"
+  start_process API "${PID_DIR}/api.pid" "${LOG_DIR}/api.log" python -m uvicorn app.main:app --host "${OSL_SERVER_HOST}" --port "${api_port}"
+  start_process Worker "${PID_DIR}/worker.pid" "${LOG_DIR}/worker.log" python -m worker.main
+  local ready=false
+  for _ in $(seq 1 60); do
+    if curl --fail --silent "http://127.0.0.1:${api_port}/health" | grep -q '"worker_alive":true'; then ready=true; break; fi
+    sleep 1
+  done
+  [[ "${ready}" == true ]] || { echo "Services did not become ready; inspect ${LOG_DIR}/api.log and ${LOG_DIR}/worker.log" >&2; return 1; }
+  echo "API: http://127.0.0.1:${api_port} (PID $(<"${PID_DIR}/api.pid"))"
+  echo "Redis: ${redis_host}:${redis_port}"
+  echo "Worker: ready (PID $(<"${PID_DIR}/worker.pid"))"
+  echo "Endpoints: ${ENDPOINT_FILE}"
+  echo "Logs: ${LOG_DIR}"
+}
+
+stop_pid() {
+  local name="$1" file="$2"
+  if pid_running "${file}"; then kill "$(<"${file}")"; echo "${name}: stopped"; else echo "${name}: not running"; fi
+  [[ ! -f "${file}" ]] || rm -f "${file}"
+}
+
+cmd_stop() {
+  stop_pid Worker "${PID_DIR}/worker.pid"
+  stop_pid API "${PID_DIR}/api.pid"
+  stop_pid Redis "${RUNTIME_DIR}/redis/redis.pid"
+}
+
+cmd_status() {
+  for item in "API:${PID_DIR}/api.pid" "Worker:${PID_DIR}/worker.pid" "Redis:${RUNTIME_DIR}/redis/redis.pid"; do
+    local name="${item%%:*}" file="${item#*:}"
+    if pid_running "${file}"; then echo "${name}: running (PID $(<"${file}"))"; elif [[ -f "${file}" ]]; then echo "${name}: stale PID file (${file})"; else echo "${name}: stopped"; fi
+  done
+  [[ ! -f "${ENDPOINT_FILE}" ]] || { echo "Endpoints:"; sed 's/^/  /' "${ENDPOINT_FILE}"; }
+}
+
+clear_dir() { [[ ! -d "$1" ]] || find "$1" -mindepth 1 -maxdepth 1 ! -name .gitkeep -exec rm -rf {} +; }
+
+cmd_clean() {
+  if pid_running "${PID_DIR}/api.pid" || pid_running "${PID_DIR}/worker.pid" || pid_running "${RUNTIME_DIR}/redis/redis.pid"; then
+    echo "Stop local services before cleaning runtime data." >&2; return 1
+  fi
+  clear_dir "${RUNTIME_DIR}/tmp"; clear_dir "${RUNTIME_DIR}/jobs"; clear_dir "${RUNTIME_DIR}/results"; clear_dir "${RUNTIME_DIR}/sessions"; clear_dir "${PID_DIR}"
+  rm -f "${ENDPOINT_FILE}"
+  echo "Transient runtime data cleared; Redis registrations, models, and Hugging Face cache preserved."
+}
+
+confirm_reset() {
+  if [[ "${1:-}" == "--yes" ]]; then return 0; fi
+  if [[ $# -gt 0 ]]; then echo "Usage: serverctl reset [--yes]" >&2; return 2; fi
+  if [[ ! -t 0 ]]; then
+    echo "Reset requires interactive confirmation or --yes." >&2
+    return 1
+  fi
+  echo "This permanently deletes Redis registrations, runtime data, downloaded Hugging Face cache, local models, and logs."
+  read -r -p "Continue? [y/N] " answer
+  [[ "${answer}" == "y" || "${answer}" == "Y" || "${answer}" == "yes" || "${answer}" == "YES" ]]
+}
+
+cmd_reset() {
+  confirm_reset "$@" || { echo "Reset cancelled." >&2; return 1; }
+  if pid_running "${PID_DIR}/api.pid" || pid_running "${PID_DIR}/worker.pid" || pid_running "${RUNTIME_DIR}/redis/redis.pid"; then
+    echo "Stop local services before resetting." >&2; return 1
+  fi
+  clear_dir "${RUNTIME_DIR}"
+  clear_dir "${ROOT_DIR}/models"
+  clear_dir "${LOG_DIR}"
+  ensure_layout
+  echo "Factory reset complete. Source code, configuration, and .env were preserved."
+}
+
+docker_cmd() { (cd "${ROOT_DIR}"; docker compose "$@"); }
+
+docker_start() {
+  ensure_env; ensure_layout
+  local redis_port api_port ready=false
+  redis_port="$(find_free_port 127.0.0.1 "${OSL_HOST_REDIS_PORT:-6379}")"
+  api_port="$(find_free_port 127.0.0.1 "${OSL_HOST_API_PORT:-8000}")"
+  [[ "${api_port}" != "${redis_port}" ]] || api_port="$(find_free_port 127.0.0.1 "$((api_port + 1))")"
+  export OSL_HOST_REDIS_PORT="${redis_port}" OSL_HOST_API_PORT="${api_port}"
+  write_endpoints "${api_port}" 127.0.0.1 "${redis_port}"
+  docker_cmd up -d "$@"
+  for _ in $(seq 1 90); do
+    if curl --fail --silent "http://127.0.0.1:${api_port}/health" | grep -q '"worker_alive":true'; then ready=true; break; fi
+    sleep 1
+  done
+  [[ "${ready}" == true ]] || { docker_cmd ps; echo "Docker services did not become ready; run serverctl docker logs." >&2; return 1; }
+  echo "API: http://127.0.0.1:${api_port}"; echo "Redis: 127.0.0.1:${redis_port}"; echo "Endpoints: ${ENDPOINT_FILE}"; docker_cmd ps
+}
+
+cmd_docker() {
+  local action="${1:-}"; [[ $# -eq 0 ]] || shift
+  case "${action}" in
+    build) ensure_env; docker_cmd build "$@" ;;
+    start) docker_start "$@" ;;
+    stop) docker_cmd down "$@" ;;
+    status) docker_cmd ps "$@" ;;
+    logs) docker_cmd logs -f "$@" ;;
+    clean)
+      docker_cmd down
+      docker_cmd run --rm --no-deps -u 0:0 --entrypoint /app/scripts/serverctl api clean
+      ;;
+    reset)
+      confirm_reset "$@" || { echo "Reset cancelled." >&2; return 1; }
+      if pid_running "${PID_DIR}/api.pid" || pid_running "${PID_DIR}/worker.pid" || pid_running "${RUNTIME_DIR}/redis/redis.pid"; then
+        echo "Stop local services before resetting Docker-owned state." >&2; return 1
+      fi
+      docker_cmd down
+      docker_cmd run --rm --no-deps -u 0:0 --entrypoint /app/scripts/serverctl api reset --yes
+      ;;
+    *) usage; return 2 ;;
+  esac
+}
+
+cmd_reconcile() {
+  if [[ -f "${ENDPOINT_FILE}" ]]; then
+    set -a
+    # Generated by serverctl and contains only shell-safe endpoint assignments.
+    source "${ENDPOINT_FILE}"
+    set +a
+    export OSL_SERVER_URL="${OSL_API_URL}"
+  fi
+  (cd "${ROOT_DIR}"; export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"; python -m app.admin_cli "$@")
+}
+
+command="${1:-}"; [[ $# -eq 0 ]] || shift
+case "${command}" in
+  setup) cmd_setup "$@" ;;
+  start) cmd_start "$@" ;;
+  stop) cmd_stop "$@" ;;
+  status) cmd_status "$@" ;;
+  clean) cmd_clean "$@" ;;
+  reset) cmd_reset "$@" ;;
+  reconcile) cmd_reconcile "$@" ;;
+  docker) cmd_docker "$@" ;;
+  help|-h|--help|"") usage ;;
+  *) echo "Unknown command: ${command}" >&2; usage >&2; exit 2 ;;
+esac

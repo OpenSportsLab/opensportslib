@@ -9,9 +9,9 @@ See the [complete inference server guide](docs/server/inference-server.md) for
 installation, registry administration, curl requests, single-video inference,
 full-test-set and per-sample remote inference, job polling, and sessions.
 
-For Docker administration, set `OSL_MODEL_ADMIN_TOKEN` in the private
-`server/.env` file, recreate the containers after changes, and use the exact
-same value as the Python client's `admin_token`. Never commit the real token.
+Hugging Face registration is authorized by repository access. Set `HF_TOKEN`
+on the worker or pass `hf_token` per request. The optional `OSL_API_KEY`
+protects local-model and general administrative operations.
 
 ## Configuration From Hugging Face
 
@@ -102,7 +102,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 > Requires **Python 3.12+**.  
 > Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
-> PyTorch Geometric is supported up to PyTorch 2.10.*.
+> PyTorch Geometric uses a dedicated PyTorch 2.12.1 compatibility profile.
 
 ### Create conda env
 
@@ -134,7 +134,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
@@ -518,7 +519,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
@@ -599,8 +601,8 @@ this repository, activate a fresh Python 3.12 or newer environment and install t
 
 ```bash
 pip install -e ./server
-bash server/scripts/setup_env.sh
-bash server/scripts/start_all.sh
+server/scripts/serverctl setup
+server/scripts/serverctl start
 ```
 
 The server installs the OpenSportsLib release from PyPI pinned to the root project

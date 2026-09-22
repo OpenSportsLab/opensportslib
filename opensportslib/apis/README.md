@@ -147,9 +147,9 @@ The complete HTTP reference, including equivalent curl commands, model
 registration/unregistration, job polling, sessions, and single-video,
 full-test-set, and per-sample modes is in the [Inference Server guide](../../docs/server/inference-server.md).
 
-For Docker deployments, put the private `OSL_MODEL_ADMIN_TOKEN` in
+For Docker deployments, put the optional private `OSL_API_KEY` in
 `server/.env`, not only in `.env.example`, recreate the containers after
-changing it, and pass the exact same value as `admin_token`. Keep the real
+changing it, and pass the exact same value as `api_key`. Keep the real
 token out of documentation and source control. A 401 usually means the
 container is using an older/different `.env`, the client is connecting to a
 different host, or the request is missing the `Bearer ` prefix.
@@ -188,10 +188,11 @@ the registration call is the same for both types.
 ```python
 from opensportslib import RemoteModelRegistry
 
-registry = RemoteModelRegistry("http://server-ip:8000", admin_token="<same-private-admin-token>")
+registry = RemoteModelRegistry("http://server-ip:8000", api_key="<optional-api-key>")
 operation = registry.register_model(
     task_type="classification",
     huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
+    hf_token="<optional-request-token>",
 )
 registry.wait_for_operation(operation["operation_id"])
 ```

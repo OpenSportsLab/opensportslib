@@ -13,7 +13,7 @@ dependencies = [ "SoccerNet", "av", "decord; platform_system != 'Darwin' and pla
 name = "Jeet Vora"
 
 [project.optional-dependencies]
-test = [ "pytest", "pytest-cov",]
+test = [ "pytest", "pytest-cov", "pytest-json-report", "pytest-timeout",]
 
 [project.scripts]
 opensportslib = "opensportslib.cli:main"
@@ -28,6 +28,11 @@ omit = [ "*/.ipynb_checkpoints/*",]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --import-mode=importlib"
+timeout = 300
+timeout_method = "thread"
 
 [tool.setuptools.packages.find]
 exclude = [ "server", "server.*",]

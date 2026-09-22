@@ -1,15 +1,120 @@
-pytest_plugins = ["suite_support.plugin"]
-
 from pathlib import Path
 import json
+import os
 import pickle
 import random
+import socket
 
 import pytest
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - test env compatibility
     import yaml_compat as yaml
+
+
+MARKERS = {
+    "unit": "Fast, isolated unit test.",
+    "integration": "Integration test spanning multiple OpenSportsLib components.",
+    "smoke": "Minimal package or workflow health check.",
+    "e2e": "End-to-end workflow test.",
+    "gpu": "Requires a CUDA-capable GPU.",
+    "dali": "Requires the optional NVIDIA DALI integration.",
+    "slow": "Intentionally unsuitable for the fast development suite.",
+    "release": "Heavy release-verification test.",
+    "network": "Requires access to an external network service.",
+    "pretrained": "Requires downloading or loading pretrained artifacts.",
+    "classification": "Classification task coverage.",
+    "localization": "Localization task coverage.",
+    "vqa": "Visual-question-answering task coverage.",
+    "vqa_qwen": "Requires the Qwen VQA dependency profile.",
+    "vqa_xvars": "Requires the X-VARS VQA dependency profile.",
+}
+
+
+def pytest_configure(config):
+    """Register the suite vocabulary in one discoverable location."""
+
+    for name, description in MARKERS.items():
+        config.addinivalue_line("markers", f"{name}: {description}")
+
+
+def pytest_collection_modifyitems(items):
+    """Derive stable tier/task markers from the directory contract."""
+
+    for item in items:
+        normalized = str(item.fspath).replace("\\", "/")
+        for tier in ("unit", "smoke", "integration", "release"):
+            if f"/tests/{tier}/" in normalized:
+                item.add_marker(getattr(pytest.mark, tier))
+                break
+        for task in ("classification", "localization", "vqa"):
+            if task in normalized.lower() or task in item.nodeid.lower():
+                item.add_marker(getattr(pytest.mark, task))
+
+        # Fast runs deliberately remain offline and artifact-free. Explicitly
+        # marked external/pretrained checks belong to release verification and
+        # stay visible as skips rather than failing because a developer has no
+        # private model cache or network access.
+        if (
+            not item.get_closest_marker("release")
+            and item.get_closest_marker("pretrained")
+            and os.environ.get("OSL_ALLOW_PRETRAINED_TESTS") != "1"
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Pretrained-artifact test is reserved for release verification.")
+            )
+        if (
+            not item.get_closest_marker("release")
+            and item.get_closest_marker("network")
+            and os.environ.get("OSL_ALLOW_TEST_NETWORK") != "1"
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason="Network test is reserved for release verification.")
+            )
+
+
+@pytest.fixture(autouse=True)
+def deterministic_random_state():
+    """Give fast tests repeatable Python/NumPy/Torch random streams."""
+
+    random.seed(42)
+    try:
+        import numpy as np
+
+        np.random.seed(42)
+    except ImportError:
+        pass
+    try:
+        import torch
+
+        torch.manual_seed(42)
+    except ImportError:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def block_external_network(request, monkeypatch):
+    """Make accidental network use in the fast suite fail at its source."""
+
+    if (
+        request.node.get_closest_marker("network")
+        or request.node.get_closest_marker("release")
+        or os.environ.get("OSL_ALLOW_TEST_NETWORK") == "1"
+    ):
+        return
+
+    original_connect = socket.socket.connect
+
+    def guarded_connect(sock, address):
+        host = address[0] if isinstance(address, tuple) and address else address
+        if host in {"127.0.0.1", "::1", "localhost"}:
+            return original_connect(sock, address)
+        raise RuntimeError(
+            f"Fast tests may not access the network (attempted {address!r}). "
+            "Mock the external boundary or mark a release/network test explicitly."
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
 
 
 def _write_config(path: Path, payload: dict) -> str:
@@ -242,7 +347,9 @@ def _localization_payload(
                         "results": result_name,
                         "metric": "tight",
                         "nms_window": 2,
-                        "overlap_len": 50,
+                        # The synthetic clip is 16 frames; overlap must stay
+                        # strictly smaller or canonical validation rejects it.
+                        "overlap_len": 0,
                         "dataloader": {
                             "batch_size": 1,
                             "shuffle": False,

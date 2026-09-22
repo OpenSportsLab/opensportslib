@@ -1,6 +1,7 @@
 import platform
 import subprocess
 import sys
+import tempfile
 
 
 CUDA_WHEEL_VERSIONS = {
@@ -13,6 +14,20 @@ LEGACY_GPU_MAX_COMPUTE_CAPABILITY = (7, 4)
 LEGACY_GPU_CUDA_WHEEL = "cu126"
 LEGACY_GPU_CUDA_WHEEL_MAX_COMPUTE_CAPABILITY = (9, 0)
 CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY = (10, 0)
+
+# PyG extension wheels are published for a narrower PyTorch matrix than the
+# base PyTorch packages.  Keep this profile explicit: selecting ``--pyg`` is
+# allowed to replace an otherwise newer PyTorch installation.
+PYG_TORCH_VERSION = "2.12.1"
+PYG_TORCH_PACKAGES = (
+    f"torch=={PYG_TORCH_VERSION}",
+    "torchvision==0.27.1",
+)
+PYG_EXTENSION_PACKAGES = (
+    "pyg-lib",
+    "torch-scatter",
+    "torch-sparse",
+)
 
 XVARS_DEPENDENCY_PINS = {
     "transformers": "4.38.2",
@@ -154,10 +169,17 @@ def install_xvars_dependencies(DEPENDENCY_PINS):
     subprocess.check_call([python, "-m", "pip", "install", *pinned_packages])
     print("Dependencies installed successfully.")
 
-def install_torch():
+def install_torch(*, pyg_compatible=False):
+    """Install the default Torch stack or the pinned PyG-compatible stack."""
     python = sys.executable
     subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
-    packages = select_torch_packages(GPU_COMPUTE_CAPABILITIES)
+    packages = PYG_TORCH_PACKAGES if pyg_compatible else select_torch_packages(GPU_COMPUTE_CAPABILITIES)
+
+    if pyg_compatible:
+        print(
+            "\nInstalling the PyTorch Geometric compatibility profile: "
+            f"PyTorch {PYG_TORCH_VERSION}. This replaces the installed Torch stack.\n"
+        )
 
     subprocess.check_call([
         python, "-m", "pip", "install",
@@ -167,6 +189,30 @@ def install_torch():
     ])
     print(f"\nSuccess with {CUDA_TAG}: {', '.join(packages)}")
     return CUDA_TAG
+
+
+def pyg_wheel_url(torch_version=None, cuda_tag=None):
+    torch_version = torch_version or PYG_TORCH_VERSION
+    cuda_tag = CUDA_TAG if cuda_tag is None else cuda_tag
+    suffix = "cpu" if cuda_tag == "cpu" else cuda_tag
+    return f"https://data.pyg.org/whl/torch-{torch_version}+{suffix}.html"
+
+
+def validate_pyg_wheels():
+    """Ensure every required PyG wheel exists before replacing Torch.
+
+    ``--only-binary`` is intentional: pip otherwise falls back to a source
+    build, which is both slow and incompatible with its isolated build
+    environment unless Torch is installed there as well.
+    """
+    python = sys.executable
+    url = pyg_wheel_url()
+    print("\nChecking PyTorch Geometric wheels before replacing the Torch stack...\n")
+    with tempfile.TemporaryDirectory(prefix="opensportslib-pyg-wheel-check-") as download_dir:
+        subprocess.check_call([
+            python, "-m", "pip", "download", "--no-deps", "--only-binary=:all:",
+            "--dest", download_dir, *PYG_EXTENSION_PACKAGES, "-f", url,
+        ])
 
 def install_dali():
 
@@ -202,36 +248,24 @@ def install_dali():
 
 def install_pyg():
     import torch
-    from packaging import version
 
     python = sys.executable
-    torch_version = "2.10.0" if version.parse(torch.__version__.split("+")[0]) > version.parse("2.10.0") else torch.__version__.split("+")[0]
-    cuda_tag = CUDA_TAG
+    torch_version = torch.__version__.split("+")[0]
+    if torch_version != PYG_TORCH_VERSION:
+        raise RuntimeError(
+            "PyTorch Geometric extensions require the OpenSportsLib PyG compatibility "
+            f"profile (PyTorch {PYG_TORCH_VERSION}); found PyTorch {torch_version}. "
+            "Run 'opensportslib setup --pyg' so the matching Torch stack is installed."
+        )
     print("\nInstalling Py-Geometric ecosystem...\n")
-    if cuda_tag == "cpu":
-        url =  f"https://data.pyg.org/whl/torch-{torch_version}+cpu.html"
-    else:
-        url = f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_tag}.html"
+    url = pyg_wheel_url(torch_version)
 
     subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-geometric", "-f", url
+        python, "-m", "pip", "install", "torch-geometric",
     ])
     subprocess.check_call([
         python, "-m", "pip", "install",
-        "torch-scatter", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-sparse", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-cluster", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-spline-conv", "-f", url
+        *PYG_EXTENSION_PACKAGES, "--only-binary=:all:", "-f", url
     ])
 
 def install_extras(dali=False, pyg=False):
@@ -256,7 +290,9 @@ def verify():
         print("Running on CPU")
 
 def setup(dali=False, pyg=False, vqa_xvars=False, vqa_qwen=False):
-    install_torch()
+    if pyg:
+        validate_pyg_wheels()
+    install_torch(pyg_compatible=pyg)
     install_extras(dali=dali, pyg=pyg)
     if vqa_xvars:
         install_xvars_dependencies(XVARS_DEPENDENCY_PINS)

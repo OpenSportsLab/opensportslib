@@ -14,7 +14,8 @@ empty placeholder -- the real data lives on named branches: "224p" and
 (smaller/faster); override with OSL_RELEASE_VQA_REVISION=720p for the
 higher-resolution branch. There's no non-sharded fallback dataset for VQA in
 the org, so unlike the classification/localization fixtures this one has
-nothing to fall back to -- it's OSL-XFoul@<revision> or skip.
+nothing to fall back to -- an enabled release run fails with a remediation
+message until OSL-XFoul@<revision> is available.
 
 download_shard_split() (in _release_common.py) downloads and converts each
 split via opensportslib.tools.hf_transfer.download_dataset_split_from_hf(...,
@@ -36,26 +37,17 @@ already set correctly by that file's own defaults:
                  Heaviest (downloads an 8B-parameter VLM). Requires
                  `opensportslib setup --vqa_qwen`.
 
-Each test imports its backend's runtime module lazily and skips with the
-actual ImportError message if the optional dependency profile hasn't been
-installed, rather than guessing package names up front.
+Each test imports its backend lazily and fails with the actual ImportError
+message when the required release dependency profile is incomplete.
 
-Run:
-    RUN_OSL_RELEASE_TESTS=1 pytest tests/release/test_vqa_release.py -v -s
-
-    # higher-resolution branch:
-    RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_VQA_REVISION=720p \\
-        pytest tests/release/test_vqa_release.py -v -s
-
-    # skip the heaviest backend:
-    RUN_OSL_RELEASE_TESTS=1 pytest tests/release/test_vqa_release.py -v -s \\
-        -k "not qwen3_vl_native"
+Run through the repository's single command: bash scripts/run_tests.sh.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 
 import pytest
 
@@ -69,6 +61,7 @@ from ._release_common import (
     materialize_config,
     prefer_osl_ready_dataset,
     report_step,
+    record_release_metadata,
     require_release_enabled,
     require_repo_access,
     system_block,
@@ -101,6 +94,7 @@ def xfoul_dataset():
 
 
 def _run_vqa_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
+    started = time.perf_counter()
     split_paths = dataset["split_paths"]
 
     report_step(f"[{run_name}] instantiate VQAModel")
@@ -113,6 +107,10 @@ def _run_vqa_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
         use_wandb=False,
     )
     assert checkpoint, f"[{run_name}] train() did not return a checkpoint"
+    record_release_metadata(
+        "pipeline", task="vqa", model_family=run_name,
+        config_path=config_path, checkpoint_path=str(checkpoint),
+    )
 
     report_step(f"[{run_name}] infer()")
     predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
@@ -122,9 +120,14 @@ def _run_vqa_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
     pred_path = CACHE_ROOT / "outputs" / f"vqa_{run_name}_predictions.json"
     model.save_predictions(output_path=str(pred_path), predictions=predictions)
     assert pred_path.exists()
+    record_release_metadata("prediction", task="vqa", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
     metrics = model.evaluate(test_set=str(split_paths["test"]), predictions=predictions, use_wandb=False)
+    record_release_metadata(
+        "result", task="vqa", model_family=run_name,
+        runtime_seconds=round(time.perf_counter() - started, 3),
+    )
     print(f"[{run_name}] metrics: {metrics}")
 
 
@@ -146,12 +149,13 @@ def _dataset_overrides(run_name: str, dataset: dict) -> dict:
 
 
 @pytest.mark.release
+@pytest.mark.vqa_xvars
 def test_vqa_xvars_videochatgpt_lora(xfoul_dataset):
     require_release_enabled()
     try:
         import peft  # noqa: F401
     except ImportError as exc:
-        pytest.skip(f"X-VARS LoRA deps not installed (run `opensportslib setup --vqa_xvars` first): {exc}")
+        pytest.fail(f"X-VARS LoRA deps not installed (run `opensportslib setup --vqa_xvars` first): {exc}")
 
     overrides = _dataset_overrides("xvars", xfoul_dataset)
     config_path = materialize_config("vqa", "xvars", overrides, out_name="vqa_xvars.yaml")
@@ -159,12 +163,13 @@ def test_vqa_xvars_videochatgpt_lora(xfoul_dataset):
 
 
 @pytest.mark.release
+@pytest.mark.vqa_qwen
 def test_vqa_clip_qwen_lora(xfoul_dataset):
     require_release_enabled()
     try:
         import peft  # noqa: F401
     except ImportError as exc:
-        pytest.skip(f"Qwen LoRA deps not installed (run `opensportslib setup --vqa_qwen` first): {exc}")
+        pytest.fail(f"Qwen LoRA deps not installed (run `opensportslib setup --vqa_qwen` first): {exc}")
 
     overrides = _dataset_overrides("qwen_lora", xfoul_dataset)
     config_path = materialize_config("vqa", "qwen_lora", overrides, out_name="vqa_qwen_lora.yaml")
@@ -173,13 +178,14 @@ def test_vqa_clip_qwen_lora(xfoul_dataset):
 
 @pytest.mark.release
 @pytest.mark.slow
+@pytest.mark.vqa_qwen
 def test_vqa_qwen3_vl_native_lora(xfoul_dataset):
     """Heaviest backend: downloads an 8B-parameter end-to-end VLM."""
     require_release_enabled()
     try:
         import peft  # noqa: F401
     except ImportError as exc:
-        pytest.skip(f"Qwen VL native LoRA deps not installed (run `opensportslib setup --vqa_qwen` first): {exc}")
+        pytest.fail(f"Qwen VL native LoRA deps not installed (run `opensportslib setup --vqa_qwen` first): {exc}")
 
     overrides = _dataset_overrides("qwen3_vl_native", xfoul_dataset)
     config_path = materialize_config(
