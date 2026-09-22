@@ -7,7 +7,7 @@ Run these commands from the OpenSportsLib repository root. If you already have t
 ```bash
 conda create -n osl-gar python=3.12 pip -y
 conda activate osl-gar
-python -m pip install -e '.[hf-tracking]'
+python -m pip install -e .
 opensportslib setup
 python -m pip install torch-geometric
 
@@ -28,9 +28,9 @@ hf auth login
 
 Gated datasets require both approved access and authentication. [Hugging Face documentation](https://huggingface.co/docs/hub/datasets-gated)
 
-The [sngar_tracking_hf.yaml](/home/giancos/git/opensportslib/sngar_tracking_hf.yaml) config reads the train, valid, and test splits from the `tracking` branch. It streams each split's small metadata tables with `datasets`, then downloads TAR shards when the weighted sampler first requests a clip inside them. Shards remain in `/home/giancos/OSLdata/sngar/hf_cache`; individual Parquet clips are read in memory and are never extracted as separate files.
+The [sngar_tracking_hf.yaml](/home/giancos/git/opensportslib/sngar_tracking_hf.yaml) config reads the train, valid, and test splits from the `tracking` branch. It streams each requested split's small metadata tables with `datasets`, then downloads every TAR shard referenced by that split before training or inference starts. Shards remain in `/home/giancos/OSLdata/sngar/hf_cache`; individual Parquet clips are read in memory and are never extracted as separate files.
 
-The paper's replacement sampler requests 40,000 clips per epoch. It can reach most shards early in the first epoch, so initial batches may wait for shard downloads. Later epochs and runs reuse the cached TARs. The branch is pinned to a Hub commit for each run, and cached metadata is scoped to that commit.
+The paper's replacement sampler requests 40,000 clips per epoch. Initial setup waits for the required train and validation shards; batches then read cached TARs. Later epochs and runs reuse them, and missing cached shards are downloaded again before the split is used. The branch is pinned to a Hub commit for each run, and cached metadata is scoped to that commit.
 
 If you prefer the existing fully extracted dataset workflow, use the local config and download the splits:
 

@@ -99,6 +99,19 @@ def test_hf_json_stages_each_split_and_reuses_cache(tmp_path, hub):
     )
 
 
+def test_hf_json_restages_missing_media_before_returning_manifest(tmp_path, hub):
+    _, calls = hub
+    config = _config(tmp_path)
+    prepared = prepare_hf_json_split(config, "train")
+    video = prepared.source_path / "train/video/1.mp4"
+    video.unlink()
+    before = len(calls)
+
+    assert prepare_hf_json_split(config, "train") == prepared
+    assert video.is_file()
+    assert calls[before:] == ["train/video/1.mp4"]
+
+
 def test_hf_json_rejects_missing_video_input(tmp_path, hub):
     remote, _ = hub
     manifest = remote / "train.json"

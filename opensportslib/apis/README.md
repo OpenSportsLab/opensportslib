@@ -104,11 +104,12 @@ Annotation and prediction payloads follow the OSL JSON data model. For the full
 schema, see the docs page `docs/data/osl-json-format.md`.
 
 For SN-GAR tracking, `sngar_tracking_hf.yaml` configures `ClassificationModel`
-to stage annotations from Hugging Face and fetch indexed TAR shards on demand.
+to stage annotations and every referenced TAR shard before loading each split.
 Call `train()`, `infer()`, and `evaluate()` without split path arguments; this
 backend uses the train, valid, and test splits named in its Hub source and does
 not accept `train_set`, `valid_set`, or `test_set` overrides. Install the
-`hf-tracking` extra and authenticate with `hf auth login` first.
+the library and authenticate with `hf auth login` first. The `datasets` package
+is included in the standard installation.
 
 For E2E video spotting, `sngar_spotting_video_hf.yaml` configures
 `LocalizationModel` with `DATA.inputs.video.source.format: hf_json`. The loader
@@ -116,6 +117,7 @@ pins the configured Hub branch to a commit, downloads the selected OSL JSON
 manifest and all referenced MP4s for each requested split, then uses the
 standard OpenCV spotting dataset. The SN-GAR example uses the `multimodal`
 branch and selects only `video` inputs; tracking files are not downloaded.
+Staging checks the selected media again on later runs and repairs missing files.
 Set `source.repo_id`, `source.revision`,
 `source.annotation_pattern`, `source.input_type`, and `source.cache_dir` for
 another compatible dataset. Manifest paths must be relative to the repository

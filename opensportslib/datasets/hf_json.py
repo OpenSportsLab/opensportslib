@@ -92,14 +92,16 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
 
     with (root / f".{split}.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if annotation_path.is_file():
-            return prepared
         try:
-            remote_manifest = hf_hub_download(
-                repo_id=repo_id, filename=manifest_name, repo_type="dataset",
-                revision=revision, token=True, cache_dir=str(hub_cache),
-            )
-            payload = json.loads(Path(remote_manifest).read_text(encoding="utf-8"))
+            cached_manifest = annotation_path.is_file()
+            if cached_manifest:
+                payload = json.loads(annotation_path.read_text(encoding="utf-8"))
+            else:
+                remote_manifest = hf_hub_download(
+                    repo_id=repo_id, filename=manifest_name, repo_type="dataset",
+                    revision=revision, token=True, cache_dir=str(hub_cache),
+                )
+                payload = json.loads(Path(remote_manifest).read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
                 raise ValueError(f"{manifest_name} is not an OSL JSON manifest")
             if not payload["data"]:
@@ -107,7 +109,8 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
 
             filenames = set()
             for sample in payload["data"]:
-                selected = [item for item in sample.get("inputs", []) if item.get("type") == media_type]
+                expected_type = "video" if cached_manifest else media_type
+                selected = [item for item in sample.get("inputs", []) if item.get("type") == expected_type]
                 if len(selected) != 1:
                     raise ValueError(
                         f"Expected one {media_type!r} input for sample {sample.get('game_id', sample.get('id'))!r}"
@@ -140,12 +143,13 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
             with ThreadPoolExecutor(max_workers=min(4, len(filenames))) as executor:
                 list(executor.map(stage_media, sorted(filenames)))
 
-            temporary = annotation_path.with_name(f".{annotation_path.name}.{os.getpid()}.tmp")
-            try:
-                temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-                os.replace(temporary, annotation_path)
-            finally:
-                temporary.unlink(missing_ok=True)
+            if not cached_manifest:
+                temporary = annotation_path.with_name(f".{annotation_path.name}.{os.getpid()}.tmp")
+                try:
+                    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                    os.replace(temporary, annotation_path)
+                finally:
+                    temporary.unlink(missing_ok=True)
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to stage {split!r} from {repo_id}@{revision}: {exc}"

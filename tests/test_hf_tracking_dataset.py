@@ -112,6 +112,10 @@ def hub_fixture(tmp_path, monkeypatch):
 def test_hf_tracking_matches_local_graphs_and_caches_shard(hub_fixture):
     config, payloads, local, remote, calls = hub_fixture
     hf_data = build(config, None, split="train")
+    assert sorted(calls) == [
+        "train/shards/shard-000000.tar",
+        "train/shards/shard-000001.tar",
+    ]
     local_config = copy.deepcopy(config)
     local_config.DATA.inputs.tracking.source.format = "parquet"
     local_config.DATA.common.splits.train.source_path = str(local)
@@ -129,6 +133,7 @@ def test_hf_tracking_matches_local_graphs_and_caches_shard(hub_fixture):
 
     hf_data[0]
     assert calls.count("train/shards/shard-000000.tar") == 1
+    assert calls.count("train/shards/shard-000001.tar") == 1
     assert not list((Path(config.DATA.inputs.tracking.source.cache_dir)).rglob("clip_*.parquet"))
     assert hf_data.get_sample_weights().tolist() == local_data.get_sample_weights().tolist()
 
@@ -180,6 +185,34 @@ def test_hf_tracking_hub_access_error_names_login(hub_fixture, monkeypatch):
     monkeypatch.setattr("huggingface_hub.HfApi.repo_info", deny_access)
     with pytest.raises(RuntimeError, match="hf auth login"):
         prepare_hf_tracking_split(config, "train")
+
+
+def test_hf_tracking_fails_before_training_if_a_shard_is_unavailable(
+    hub_fixture, monkeypatch
+):
+    config, _, _, _, _ = hub_fixture
+
+    def unavailable(*, filename, **kwargs):
+        if filename.endswith("shard-000001.tar"):
+            raise FileNotFoundError(filename)
+        return str(hub_fixture[3] / filename)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", unavailable)
+    with pytest.raises(RuntimeError, match="train/shards/shard-000001.tar"):
+        prepare_hf_tracking_split(config, "train")
+
+
+def test_hf_tracking_reuses_all_staged_shards(hub_fixture, monkeypatch):
+    config, _, _, _, calls = hub_fixture
+    prepared = prepare_hf_tracking_split(config, "train")
+    assert len(calls) == 2
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download",
+        lambda **kwargs: pytest.fail("cached shards must not be downloaded again"),
+    )
+    assert prepare_hf_tracking_split(config, "train") == prepared
+    data = build(config, None, split="train")
+    assert data[0]["id"] == "train_0"
 
 
 def test_hf_tracking_keeps_all_sngar_train_shards_open(tmp_path, monkeypatch):

@@ -35,7 +35,8 @@ For SN-GAR video spotting from the Hugging Face `multimodal` branch, use
 `LocalizationModel(config="sngar_spotting_video_hf.yaml").train(use_wandb=False)`.
 The `hf_json` source stages each requested OSL JSON split and the video files
 named in its manifest in
-`/home/giancos/OSLdata/sngar/hf_json_cache`. Approve access to the gated
+`/home/giancos/OSLdata/sngar/hf_json_cache` before the loader starts. It checks
+cached media again on later runs and downloads missing files. Approve access to the gated
 dataset and run `hf auth login` first.
 
 ### 4. VQA

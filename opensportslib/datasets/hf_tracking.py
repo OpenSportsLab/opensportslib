@@ -1,4 +1,4 @@
-"""Metadata staging and lazy TAR access for Hugging Face tracking datasets."""
+"""Metadata and TAR staging for Hugging Face tracking datasets."""
 
 from __future__ import annotations
 
@@ -60,8 +60,42 @@ def _write_json_atomic(path: Path, payload) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _stage_shards(prepared: PreparedTrackingSplit) -> None:
+    """Cache every TAR referenced by the split before a DataLoader can start."""
+    from huggingface_hub import hf_hub_download
+
+    with prepared.index_path.open(encoding="utf-8") as handle:
+        index = json.load(handle)
+    shards = sorted({shard for shard, _ in index["members"].values()})
+    cached = index.get("shard_paths", {})
+    paths = {}
+    for shard in shards:
+        path = cached.get(shard)
+        if not path or not Path(path).is_file():
+            try:
+                path = hf_hub_download(
+                    repo_id=prepared.repo_id,
+                    repo_type="dataset",
+                    revision=prepared.revision,
+                    filename=f"{prepared.split}/shards/{shard}",
+                    cache_dir=str(prepared.cache_dir / "hub"),
+                    token=True,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Cannot download tracking TAR shard {prepared.split}/shards/{shard} "
+                    f"from {prepared.repo_id}@{prepared.revision}"
+                ) from exc
+        if not Path(path).is_file():
+            raise FileNotFoundError(f"Downloaded tracking TAR shard is missing: {path}")
+        paths[shard] = str(path)
+    if cached != paths:
+        _write_json_atomic(prepared.index_path, {**index, "shard_paths": paths})
+    logger.info("Cached all %d %s tracking TAR shards", len(paths), prepared.split)
+
+
 def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
-    """Stream the small metadata tables once and cache an OSL annotation/index pair."""
+    """Index metadata and cache all required TAR shards for one split."""
     source = hf_tracking_source(config)
     if not source:
         raise ValueError("Tracking source format must be 'hf_webdataset'.")
@@ -103,6 +137,7 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
     with (directory / ".prepare.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if annotations_path.is_file() and index_path.is_file():
+            _stage_shards(prepared)
             return prepared
         logger.info("Staging %s tracking metadata from %s@%s", split, repo_id, resolved)
 
@@ -110,8 +145,8 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
             from datasets import load_dataset
         except ImportError as exc:
             raise ImportError(
-                "Hugging Face tracking requires `datasets`; install with "
-                "`python -m pip install -e '.[hf-tracking]'`."
+                    "Hugging Face tracking requires `datasets`; install with "
+                    "`python -m pip install -e .`."
             ) from exc
 
         def rows(filename: str):
@@ -177,6 +212,7 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
             raise RuntimeError(
                 f"Could not stage {split} tracking metadata from {repo_id}@{resolved}: {exc}"
             ) from exc
+        _stage_shards(prepared)
 
     return prepared
 
@@ -187,19 +223,19 @@ class HFTarTrackingReader:
     def __init__(self, prepared: PreparedTrackingSplit):
         self.prepared = prepared
         with prepared.index_path.open(encoding="utf-8") as handle:
-            self.members = json.load(handle)["members"]
+            index = json.load(handle)
+        self.members = index["members"]
         # SN-GAR training samples randomly across 13 shards. An eight-handle
         # cache repeatedly evicts and reindexes TARs (about 0.18 s per reopen).
         # Keep all of its shards open, while bounding descriptors for larger sets.
         self._max_open_tars = min(32, max(8, len({item[0] for item in self.members.values()})))
         self._pid = os.getpid()
-        self._shard_paths = {}
+        self._shard_paths = index.get("shard_paths", {}).copy()
         self._open_tars = OrderedDict()
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state["_pid"] = None
-        state["_shard_paths"] = {}
         state["_open_tars"] = OrderedDict()
         return state
 
@@ -212,7 +248,6 @@ class HFTarTrackingReader:
             for tar in self._open_tars.values():
                 tar.close()
             self._pid = os.getpid()
-            self._shard_paths = {}
             self._open_tars = OrderedDict()
 
     def _tar(self, shard_name: str):
