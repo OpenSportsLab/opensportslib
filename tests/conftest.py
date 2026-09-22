@@ -28,6 +28,7 @@ MARKERS = {
     "vqa": "Visual-question-answering task coverage.",
     "vqa_qwen": "Requires the Qwen VQA dependency profile.",
     "vqa_xvars": "Requires the X-VARS VQA dependency profile.",
+    "release_gar": "SoccerNet-GAR/PyG release profile.",
 }
 
 

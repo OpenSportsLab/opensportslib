@@ -56,6 +56,9 @@ do not document or add another pytest entry point.
   the server report demonstrates a higher sustainable baseline.
 - Once release mode is enabled, missing required CUDA, data, credentials, or optional
   training dependencies are failures rather than silent passes.
+- Release tests must reuse `tests/release/_release_common.py` for Hub downloads,
+  pinned revisions, provenance, and release-cache paths. Do not add alternate
+  model/dataset download implementations or commit extracted features/checkpoints.
 
 ## Markers
 

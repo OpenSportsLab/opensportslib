@@ -15,6 +15,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 RELEASE_ENV_FLAG = "RUN_OSL_RELEASE_TESTS"
+RELEASE_SCALE_ENV = "OSL_RELEASE_SCALE"
+RELEASE_PROFILE_ENV = "OSL_RELEASE_PROFILE"
+RELEASE_PROFILES = {"qwen", "xvars", "gar"}
 
 # Where materialized configs / run outputs (checkpoints, logs, predictions)
 # are cached. Override with OSL_RELEASE_CACHE_DIR to point at a disk with
@@ -111,15 +116,42 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
-def epochs_for(default: int) -> int:
-    """TRAIN.epochs override. OSL_RELEASE_EPOCHS=0 means 'keep config default'."""
-    value = _env_int("OSL_RELEASE_EPOCHS", default)
-    return default if value == 0 else value
+def release_scale() -> str:
+    """Return ``full`` (the release default) or explicit bounded debug mode."""
+    value = os.environ.get(RELEASE_SCALE_ENV, "full").strip().lower()
+    if value not in {"full", "bounded"}:
+        raise ValueError(f"{RELEASE_SCALE_ENV} must be 'full' or 'bounded', got {value!r}.")
+    return value
+
+
+def release_profile() -> str:
+    value = os.environ.get(RELEASE_PROFILE_ENV, "qwen").strip().lower()
+    if value not in RELEASE_PROFILES:
+        raise ValueError(f"{RELEASE_PROFILE_ENV} must be one of {sorted(RELEASE_PROFILES)}, got {value!r}.")
+    return value
+
+
+def training_overrides(bounded_default: int) -> dict[str, int]:
+    """Return an epoch override only when the caller explicitly requests one.
+
+    Full release runs preserve the canonical preset schedule. ``0`` has the
+    same preserve-default meaning; bounded mode retains the previous small
+    release schedule unless an explicit positive override is supplied.
+    """
+    raw = os.environ.get("OSL_RELEASE_EPOCHS")
+    if raw is not None and raw != "":
+        value = int(raw)
+        if value < 0:
+            raise ValueError("OSL_RELEASE_EPOCHS must be zero or a positive integer.")
+        return {} if value == 0 else {"epochs": value}
+    return {"epochs": bounded_default} if release_scale() == "bounded" else {}
 
 
 def max_items_for(env_name: str, default: int | None) -> int | None:
     """Generic dataset-subset-size override. 0 (or 'all') means 'download everything'."""
     raw = os.environ.get(env_name)
+    if (raw is None or raw == "") and release_scale() == "full":
+        return None
     if raw is None or raw == "":
         return default
     if raw.strip().lower() == "all":
@@ -289,6 +321,7 @@ def snapshot_dataset(
     local_dir: Path,
     *,
     allow_patterns: list[str] | None = None,
+    revision: str = "main",
 ) -> Path:
     """Download (or update) a full dataset repo, or a pattern-restricted
     subset of it, into local_dir. Safe to call repeatedly (resumable)."""
@@ -301,8 +334,50 @@ def snapshot_dataset(
         local_dir=str(local_dir),
         token=hf_token(),
         allow_patterns=allow_patterns,
+        revision=revision,
     )
     return local_dir
+
+
+def require_model_repo(repo_id: str) -> None:
+    """Fail with release remediation when a published model cannot be read."""
+    require_repo_access(repo_id, repo_type="model")
+
+
+def download_model_snapshot(repo_id: str, local_dir: Path, *, revision: str = "main") -> Path:
+    """Download/cache a model repository and write non-secret provenance."""
+    from huggingface_hub import snapshot_download
+
+    local_dir.mkdir(parents=True, exist_ok=True)
+    path = Path(snapshot_download(
+        repo_id=repo_id, repo_type="model", revision=revision,
+        local_dir=str(local_dir), token=hf_token(),
+    ))
+    record_release_metadata("model", repo_id=repo_id, revision=revision, local_path=str(path))
+    return path
+
+
+def run_xvars_preprocessing(dataset_root: Path, output_root: Path, *, weights_path: Path) -> None:
+    """Run the project-owned X-VARS feature and index builders once per cache."""
+    marker = output_root / ".osl_xvars_prepared.json"
+    if marker.exists():
+        record_release_metadata("xvars_preprocess", status="cached", marker=str(marker))
+        return
+    output_root.mkdir(parents=True, exist_ok=True)
+    extractor = REPO_ROOT / "tools" / "convert" / "extract_xvars_clip_features.py"
+    indexer = REPO_ROOT / "tools" / "convert" / "build_xvars_indexes.py"
+    command = [
+        sys.executable, str(extractor), "--dataset-root", str(dataset_root),
+        "--dataset-output-root", str(output_root), "--mode", "strict_xvars",
+        "--weights-path", str(weights_path),
+    ]
+    subprocess.check_call(command)
+    subprocess.check_call([
+        sys.executable, str(indexer), "--dataset-root", str(dataset_root),
+        "--features-root", str(output_root),
+    ])
+    marker.write_text(json.dumps({"weights_path": str(weights_path)}), encoding="utf-8")
+    record_release_metadata("xvars_preprocess", status="complete", output_root=str(output_root))
 
 
 def download_files(repo_id: str, filenames: list[str], local_dir: Path) -> list[Path]:
