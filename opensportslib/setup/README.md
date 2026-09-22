@@ -133,11 +133,18 @@ The supported OpenSportsLib command is:
 opensportslib setup --pyg
 ```
 
-It verifies that binary PyG extension wheels are available, then replaces the
-Torch stack with the PyG-compatible PyTorch 2.12.1 profile. It intentionally
-does not fall back to compiling extensions from source. On an unsupported
-platform such as an ARM64 CUDA system without published extension wheels, the
-command fails before modifying the existing Torch installation.
+It installs `torch-geometric` and replaces the Torch stack with the
+PyG-compatible PyTorch 2.12.1 profile. Compiled PyG extension wheels are not
+installed by default, so this command works on servers without matching wheels.
+
+Install the optional compiled extensions only when a workload requires them:
+
+```bash
+opensportslib setup --pyg --pyg_extensions
+```
+
+That opt-in command verifies that every extension wheel is available before
+modifying the Torch installation and does not fall back to compiling from source.
 
 For manual installation, use the PyG-compatible Torch version below.
 

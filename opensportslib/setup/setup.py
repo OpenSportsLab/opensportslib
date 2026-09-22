@@ -16,8 +16,9 @@ LEGACY_GPU_CUDA_WHEEL_MAX_COMPUTE_CAPABILITY = (9, 0)
 CUDA13_REQUIRED_MIN_COMPUTE_CAPABILITY = (10, 0)
 
 # PyG extension wheels are published for a narrower PyTorch matrix than the
-# base PyTorch packages.  Keep this profile explicit: selecting ``--pyg`` is
-# allowed to replace an otherwise newer PyTorch installation.
+# base PyTorch packages.  They are optional: most OpenSportsLib graph paths
+# only need ``torch-geometric`` and must remain usable on platforms where no
+# matching extension wheels are published.
 PYG_TORCH_VERSION = "2.12.1"
 PYG_TORCH_PACKAGES = (
     f"torch=={PYG_TORCH_VERSION}",
@@ -199,7 +200,7 @@ def pyg_wheel_url(torch_version=None, cuda_tag=None):
 
 
 def validate_pyg_wheels():
-    """Ensure every required PyG wheel exists before replacing Torch.
+    """Ensure every optional PyG extension wheel is available before installing it.
 
     ``--only-binary`` is intentional: pip otherwise falls back to a source
     build, which is both slow and incompatible with its isolated build
@@ -246,7 +247,7 @@ def install_dali():
                 "cupy-cuda12x"
             ])
 
-def install_pyg():
+def install_pyg(*, extensions=False):
     import torch
 
     python = sys.executable
@@ -257,23 +258,25 @@ def install_pyg():
             f"profile (PyTorch {PYG_TORCH_VERSION}); found PyTorch {torch_version}. "
             "Run 'opensportslib setup --pyg' so the matching Torch stack is installed."
         )
-    print("\nInstalling Py-Geometric ecosystem...\n")
-    url = pyg_wheel_url(torch_version)
+    print("\nInstalling PyTorch Geometric...\n")
 
     subprocess.check_call([
         python, "-m", "pip", "install", "torch-geometric",
     ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        *PYG_EXTENSION_PACKAGES, "--only-binary=:all:", "-f", url
-    ])
 
-def install_extras(dali=False, pyg=False):
+    if extensions:
+        url = pyg_wheel_url(torch_version)
+        subprocess.check_call([
+            python, "-m", "pip", "install",
+            *PYG_EXTENSION_PACKAGES, "--only-binary=:all:", "-f", url
+        ])
+
+def install_extras(dali=False, pyg=False, pyg_extensions=False):
     if dali:
         install_dali()
         print("NVIDIA DALI installed successfully.")
     if pyg:
-        install_pyg()
+        install_pyg(extensions=pyg_extensions)
         print("PyTorch Geometric installed successfully.")
 
 
@@ -289,11 +292,13 @@ def verify():
     else:
         print("Running on CPU")
 
-def setup(dali=False, pyg=False, vqa_xvars=False, vqa_qwen=False):
-    if pyg:
+def setup(dali=False, pyg=False, pyg_extensions=False, vqa_xvars=False, vqa_qwen=False):
+    if pyg_extensions and not pyg:
+        raise ValueError("--pyg_extensions requires --pyg")
+    if pyg_extensions:
         validate_pyg_wheels()
     install_torch(pyg_compatible=pyg)
-    install_extras(dali=dali, pyg=pyg)
+    install_extras(dali=dali, pyg=pyg, pyg_extensions=pyg_extensions)
     if vqa_xvars:
         install_xvars_dependencies(XVARS_DEPENDENCY_PINS)
     if vqa_qwen:
@@ -310,9 +315,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--pyg", action="store_true")
+    parser.add_argument("--pyg_extensions", action="store_true")
     parser.add_argument("--vqa_xvars", action="store_true")
     parser.add_argument("--vqa_qwen", action="store_true")
 
     args = parser.parse_args()
 
-    setup(dali=args.dali, pyg=args.pyg, vqa_xvars=args.vqa_xvars, vqa_qwen=args.vqa_qwen)
+    setup(
+        dali=args.dali,
+        pyg=args.pyg,
+        pyg_extensions=args.pyg_extensions,
+        vqa_xvars=args.vqa_xvars,
+        vqa_qwen=args.vqa_qwen,
+    )

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from opensportslib import cli
@@ -46,7 +49,7 @@ def test_install_torch_uses_the_pinned_pyg_compatibility_profile(monkeypatch):
     )
 
 
-def test_validate_pyg_wheels_checks_all_binary_wheels_before_torch_reinstall(monkeypatch):
+def test_validate_pyg_wheels_checks_all_optional_binary_wheels(monkeypatch):
     calls: list[list[str]] = []
 
     monkeypatch.setattr(setup_lib.sys, "executable", "/usr/bin/python3")
@@ -71,7 +74,23 @@ def test_pyg_extension_packages_match_the_supported_optional_libraries():
     )
 
 
-def test_setup_selects_pyg_torch_profile_before_installing_pyg(monkeypatch):
+def test_install_pyg_skips_optional_extension_downloads_by_default(monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(setup_lib.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(__version__="2.12.1+cu130"),
+    )
+    monkeypatch.setattr(setup_lib.subprocess, "check_call", lambda cmd: calls.append(cmd) or 0)
+
+    setup_lib.install_pyg()
+
+    assert calls == [["/usr/bin/python3", "-m", "pip", "install", "torch-geometric"]]
+
+
+def test_setup_installs_pyg_without_optional_extensions(monkeypatch):
     calls: list[object] = []
 
     monkeypatch.setattr(
@@ -79,17 +98,41 @@ def test_setup_selects_pyg_torch_profile_before_installing_pyg(monkeypatch):
         "install_torch",
         lambda *, pyg_compatible=False: calls.append(("torch", pyg_compatible)),
     )
-    monkeypatch.setattr(setup_lib, "validate_pyg_wheels", lambda: calls.append("validate"))
     monkeypatch.setattr(
         setup_lib,
         "install_extras",
-        lambda dali=False, pyg=False: calls.append(("extras", dali, pyg)),
+        lambda dali=False, pyg=False, pyg_extensions=False: calls.append(
+            ("extras", dali, pyg, pyg_extensions)
+        ),
     )
     monkeypatch.setattr(setup_lib, "verify", lambda: calls.append("verify"))
 
     setup_lib.setup(pyg=True)
 
-    assert calls == ["validate", ("torch", True), ("extras", False, True), "verify"]
+    assert calls == [("torch", True), ("extras", False, True, False), "verify"]
+
+
+def test_setup_validates_extensions_only_when_explicitly_requested(monkeypatch):
+    calls: list[object] = []
+
+    monkeypatch.setattr(setup_lib, "validate_pyg_wheels", lambda: calls.append("validate"))
+    monkeypatch.setattr(
+        setup_lib,
+        "install_torch",
+        lambda *, pyg_compatible=False: calls.append(("torch", pyg_compatible)),
+    )
+    monkeypatch.setattr(
+        setup_lib,
+        "install_extras",
+        lambda dali=False, pyg=False, pyg_extensions=False: calls.append(
+            ("extras", dali, pyg, pyg_extensions)
+        ),
+    )
+    monkeypatch.setattr(setup_lib, "verify", lambda: calls.append("verify"))
+
+    setup_lib.setup(pyg=True, pyg_extensions=True)
+
+    assert calls == ["validate", ("torch", True), ("extras", False, True, True), "verify"]
 
 
 def test_select_cuda_wheel_uses_cu130_for_dgx_spark():
@@ -108,9 +151,10 @@ def test_select_cuda_wheel_uses_highest_driver_compatible_wheel():
 def test_cli_setup_forwards_xvars_flag(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_setup(*, dali: bool, pyg: bool, vqa_xvars: bool, vqa_qwen: bool):
+    def fake_setup(*, dali: bool, pyg: bool, pyg_extensions: bool, vqa_xvars: bool, vqa_qwen: bool):
         captured["dali"] = dali
         captured["pyg"] = pyg
+        captured["pyg_extensions"] = pyg_extensions
         captured["vqa_xvars"] = vqa_xvars
         captured["vqa_qwen"] = vqa_qwen
 
@@ -119,15 +163,16 @@ def test_cli_setup_forwards_xvars_flag(monkeypatch):
     rc = cli.main(["setup", "--vqa_xvars", "--dali"])
 
     assert rc == 0
-    assert captured == {"dali": True, "pyg": False, "vqa_xvars": True, "vqa_qwen": False}
+    assert captured == {"dali": True, "pyg": False, "pyg_extensions": False, "vqa_xvars": True, "vqa_qwen": False}
 
 
 def test_cli_setup_forwards_qwen_flag(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_setup(*, dali: bool, pyg: bool, vqa_xvars: bool, vqa_qwen: bool):
+    def fake_setup(*, dali: bool, pyg: bool, pyg_extensions: bool, vqa_xvars: bool, vqa_qwen: bool):
         captured["dali"] = dali
         captured["pyg"] = pyg
+        captured["pyg_extensions"] = pyg_extensions
         captured["vqa_xvars"] = vqa_xvars
         captured["vqa_qwen"] = vqa_qwen
 
@@ -136,7 +181,7 @@ def test_cli_setup_forwards_qwen_flag(monkeypatch):
     rc = cli.main(["setup", "--vqa_qwen", "--pyg"])
 
     assert rc == 0
-    assert captured == {"dali": False, "pyg": True, "vqa_xvars": False, "vqa_qwen": True}
+    assert captured == {"dali": False, "pyg": True, "pyg_extensions": False, "vqa_xvars": False, "vqa_qwen": True}
 
 
 def test_install_xvars_dependencies_uninstalls_then_reinstalls(monkeypatch):
@@ -192,7 +237,13 @@ def test_install_xvars_dependencies_uninstalls_then_reinstalls(monkeypatch):
 def test_setup_skips_vqa_dependency_install_when_flags_are_false(monkeypatch):
     calls: list[str] = []
 
-    monkeypatch.setattr(setup_lib, "install_extras", lambda dali=False, pyg=False: calls.append(f"extras:{dali}:{pyg}"))
+    monkeypatch.setattr(
+        setup_lib,
+        "install_extras",
+        lambda dali=False, pyg=False, pyg_extensions=False: calls.append(
+            f"extras:{dali}:{pyg}:{pyg_extensions}"
+        ),
+    )
     monkeypatch.setattr(setup_lib, "install_xvars_dependencies", lambda pins: calls.append(f"deps:{sorted(pins)}"))
     monkeypatch.setattr(setup_lib, "verify", lambda: calls.append("verify"))
     monkeypatch.setattr(
@@ -203,4 +254,4 @@ def test_setup_skips_vqa_dependency_install_when_flags_are_false(monkeypatch):
 
     setup_lib.setup(dali=True, pyg=False, vqa_xvars=False, vqa_qwen=False)
 
-    assert calls == ["torch:False", "extras:True:False", "verify"]
+    assert calls == ["torch:False", "extras:True:False:False", "verify"]
