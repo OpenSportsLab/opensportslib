@@ -1,17 +1,36 @@
-name: Auto Pre-release Publish to PyPI
+name: CI Fast Tests and Auto Pre-release Publish to PyPI
 
 on:
-  workflow_run:
-    workflows: ["CI Fast Tests"]
+  push:
     branches:
       - dev
-    types: [completed]
+  pull_request:
+    branches:
+      - dev
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]" -e ./server
+
+      - name: Run OpenSportsLib tests
+        run: bash scripts/run_tests.sh
+
   publish:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -24,7 +43,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Setup Python
