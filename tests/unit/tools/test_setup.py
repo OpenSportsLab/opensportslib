@@ -9,11 +9,13 @@ from opensportslib import cli
 from opensportslib.setup import setup as setup_lib
 
 
-def test_select_cuda_wheel_uses_cu126_for_pre_sm75_gpu_with_cuda_13():
+def test_select_cuda_wheel_uses_cu126_for_pre_sm75_gpu_with_cuda_13(monkeypatch):
+    monkeypatch.setattr(setup_lib.platform, "machine", lambda: "x86_64")
     assert setup_lib.select_cuda_wheel("13.0", [(7, 0)]) == "cu126"
 
 
-def test_select_cuda_wheel_uses_cu126_for_pascal_with_cuda_13():
+def test_select_cuda_wheel_uses_cu126_for_pascal_with_cuda_13(monkeypatch):
+    monkeypatch.setattr(setup_lib.platform, "machine", lambda: "x86_64")
     assert setup_lib.select_cuda_wheel("13.0", [(6, 0)]) == "cu126"
 
 
@@ -151,10 +153,10 @@ def test_select_cuda_wheel_uses_highest_driver_compatible_wheel():
 def test_cli_setup_forwards_xvars_flag(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_setup(*, dali: bool, pyg: bool, pyg_extensions: bool, vqa_xvars: bool, vqa_qwen: bool):
+    def fake_setup(*, dali: bool, pyg: bool, vqa_xvars: bool, vqa_qwen: bool, **kwargs):
         captured["dali"] = dali
         captured["pyg"] = pyg
-        captured["pyg_extensions"] = pyg_extensions
+        captured.update(kwargs)
         captured["vqa_xvars"] = vqa_xvars
         captured["vqa_qwen"] = vqa_qwen
 
@@ -163,16 +165,16 @@ def test_cli_setup_forwards_xvars_flag(monkeypatch):
     rc = cli.main(["setup", "--vqa_xvars", "--dali"])
 
     assert rc == 0
-    assert captured == {"dali": True, "pyg": False, "pyg_extensions": False, "vqa_xvars": True, "vqa_qwen": False}
+    assert captured == {"dali": True, "pyg": False, "vqa_xvars": True, "vqa_qwen": False}
 
 
 def test_cli_setup_forwards_qwen_flag(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_setup(*, dali: bool, pyg: bool, pyg_extensions: bool, vqa_xvars: bool, vqa_qwen: bool):
+    def fake_setup(*, dali: bool, pyg: bool, vqa_xvars: bool, vqa_qwen: bool, **kwargs):
         captured["dali"] = dali
         captured["pyg"] = pyg
-        captured["pyg_extensions"] = pyg_extensions
+        captured.update(kwargs)
         captured["vqa_xvars"] = vqa_xvars
         captured["vqa_qwen"] = vqa_qwen
 
@@ -181,7 +183,7 @@ def test_cli_setup_forwards_qwen_flag(monkeypatch):
     rc = cli.main(["setup", "--vqa_qwen", "--pyg"])
 
     assert rc == 0
-    assert captured == {"dali": False, "pyg": True, "pyg_extensions": False, "vqa_xvars": False, "vqa_qwen": True}
+    assert captured == {"dali": False, "pyg": True, "vqa_xvars": False, "vqa_qwen": True}
 
 
 def test_install_xvars_dependencies_uninstalls_then_reinstalls(monkeypatch):

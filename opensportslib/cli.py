@@ -18,13 +18,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "setup":
-        setup(
+        setup_kwargs = dict(
             pyg=args.pyg,
-            pyg_extensions=args.pyg_extensions,
             dali=args.dali,
             vqa_xvars=args.vqa_xvars,
-            vqa_qwen=args.vqa_qwen
+            vqa_qwen=args.vqa_qwen,
         )
+        # Preserve the established setup() call contract unless the new,
+        # opt-in extension install was explicitly requested.
+        if args.pyg_extensions:
+            setup_kwargs["pyg_extensions"] = True
+        setup(**setup_kwargs)
         return 0
 
     return 2
