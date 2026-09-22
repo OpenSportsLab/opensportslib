@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 
 class TaskType(str, Enum):
@@ -144,6 +144,7 @@ class HealthResponse(BaseModel):
 class HuggingFaceModelSource(BaseModel):
     type: Literal["huggingface"]
     model_id: str
+    hf_token: SecretStr | None = Field(default=None, exclude=True)
 
 
 class LocalModelSource(BaseModel):

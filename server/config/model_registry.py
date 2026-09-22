@@ -5,7 +5,6 @@ import hmac
 import json
 import re
 import uuid
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,6 +16,7 @@ if TYPE_CHECKING:
 MODEL_KEY = "osl:model-registry:models"
 DEFAULT_KEY = "osl:model-registry:defaults"
 OPERATION_KEY = "osl:model-registry:operations"
+SECRET_KEY_PREFIX = "osl:model-registry:secret:"
 LOCAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 READY, REGISTERING, FAILED, UNREGISTERING = "ready", "registering", "failed", "unregistering"
 CHECKPOINT, CONFIG_ONLY = "checkpoint", "config_only"
@@ -107,21 +107,20 @@ class ModelRegistry:
                              weights=None if source_mode == CONFIG_ONLY else record["source"],
                              source_mode=source_mode)
 
-    def bootstrap_legacy_models(self) -> None:
-        if self.redis.hlen(MODEL_KEY):
-            return
-        for item in self.settings.model_settings():
-            if not item.enabled or not item.config_path:
-                continue
-            warnings.warn(f"Environment model `{item.model_id}` is deprecated; use POST /models.",
-                          FutureWarning, stacklevel=2)
-            now = utc_now()
-            self.put({"model_id": item.model_id, "task_type": item.task_type, "source_type": "legacy",
-                      "source": item.weights, "config_path": item.config_path,
-                      "source_mode": infer_source_mode(item.config_path, item.weights), "status": READY,
-                      "generation": 1, "created_at": now, "updated_at": now, "error": None})
-            if not self.redis.hexists(DEFAULT_KEY, item.task_type):
-                self.redis.hset(DEFAULT_KEY, item.task_type, item.model_id)
+    def store_operation_secret(self, operation_id: str, token: str) -> None:
+        self.redis.setex(
+            f"{SECRET_KEY_PREFIX}{operation_id}",
+            self.settings.model_operation_timeout_seconds,
+            token,
+        )
+
+    def consume_operation_secret(self, operation_id: str) -> str | None:
+        key = f"{SECRET_KEY_PREFIX}{operation_id}"
+        raw = self.redis.getdel(key)
+        return _decode(raw) if raw else None
+
+    def delete_operation_secret(self, operation_id: str) -> None:
+        self.redis.delete(f"{SECRET_KEY_PREFIX}{operation_id}")
 
 
 def validate_local_model_id(model_id: str) -> str:
@@ -170,17 +169,17 @@ def infer_source_mode(config_path: str | None, source: str | None) -> str:
     return CHECKPOINT
 
 
-def resolve_huggingface_source(model_id: str) -> tuple[str, str, str | None]:
+def resolve_huggingface_source(model_id: str, token: str | None = None) -> tuple[str, str, str | None]:
     """Resolve config and normalize checkpoint versus config-only HF sources."""
     from opensportslib.core.utils.config import resolve_config_path
 
-    config_path = str(resolve_config_path(model_id))
+    config_path = str(resolve_config_path(model_id, hf_token=token))
     try:
         from huggingface_hub import list_repo_files
 
-        files = list_repo_files(model_id)
+        files = list_repo_files(model_id, token=token)
     except Exception as exc:
-        raise ValueError(f"Could not inspect Hugging Face repository `{model_id}`: {exc}") from exc
+        raise ValueError(f"Could not access Hugging Face repository `{model_id}`.") from exc
     has_checkpoint = any(str(path).lower().endswith(CHECKPOINT_SUFFIXES) for path in files)
     if has_checkpoint:
         return config_path, CHECKPOINT, model_id
@@ -192,12 +191,12 @@ def resolve_huggingface_source(model_id: str) -> tuple[str, str, str | None]:
     )
 
 
-def require_admin_token(settings: Settings, authorization: str | None) -> None:
-    if not settings.model_admin_token:
-        raise RuntimeError("Model administration is disabled because OSL_MODEL_ADMIN_TOKEN is empty.")
+def require_api_key(settings: Settings, authorization: str | None) -> None:
+    if not settings.api_key:
+        raise RuntimeError("This operation is disabled because OSL_API_KEY is empty.")
     supplied = authorization.removeprefix("Bearer ") if authorization else ""
-    if not hmac.compare_digest(supplied, settings.model_admin_token):
-        raise PermissionError("Invalid model administration token.")
+    if not hmac.compare_digest(supplied, settings.api_key):
+        raise PermissionError("Invalid API key.")
 
 
 def public_record(record: dict[str, Any], include_source: bool = False) -> dict[str, Any]:

@@ -44,6 +44,15 @@ class FakeRedis:
     def hgetall(self, key):
         return dict(self.hashes.get(key, {}))
 
+    def setex(self, key, ttl, value):
+        self.hashes.setdefault("strings", {})[key] = value
+
+    def getdel(self, key):
+        return self.hashes.setdefault("strings", {}).pop(key, None)
+
+    def delete(self, key):
+        self.hashes.setdefault("strings", {}).pop(key, None)
+
 
 def record(model_id="model", source="org/model"):
     return {
@@ -111,3 +120,12 @@ def test_ordinary_config_requires_checkpoint(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text("TRAIN:\n  runner:\n    type: default\n")
     assert infer_source_mode(str(config), "org/model") == "checkpoint"
+
+
+def test_operation_secret_is_consumed_and_not_part_of_records():
+    settings = SimpleNamespace(redis_url="redis://unused", model_operation_timeout_seconds=60)
+    registry = ModelRegistry(settings, FakeRedis())
+    registry.store_operation_secret("operation", "hf_secret")
+    assert registry.consume_operation_secret("operation") == "hf_secret"
+    assert registry.consume_operation_secret("operation") is None
+    assert registry.list() == []

@@ -21,7 +21,7 @@ class FakeResponse:
 
 
 def test_register_huggingface_uses_one_registration_method():
-    client = RemoteModelRegistry("http://server", "secret")
+    client = RemoteModelRegistry("http://server")
     with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
         urlopen.return_value = FakeResponse({"model_id": "org/model", "status": "registering"})
         result = client.register_model(task_type="classification", huggingface_model_id="org/model")
@@ -31,12 +31,12 @@ def test_register_huggingface_uses_one_registration_method():
         "task_type": "classification",
         "source": {"type": "huggingface", "model_id": "org/model"},
     }
-    assert outgoing.headers["Authorization"] == "Bearer secret"
+    assert "Authorization" not in outgoing.headers
     assert result["model_id"] == "org/model"
 
 
 def test_register_local_supports_custom_or_generated_model_id():
-    client = RemoteModelRegistry("http://server", "secret")
+    client = RemoteModelRegistry("http://server", api_key="secret")
     with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
         urlopen.return_value = FakeResponse({"model_id": "custom", "status": "registering"})
         client.register_model(
@@ -53,6 +53,29 @@ def test_register_local_supports_custom_or_generated_model_id():
         "weights_path": "/models/custom/model.pth",
         "config_path": "/models/custom/config.yaml",
     }
+    assert urlopen.call_args.args[0].headers["Authorization"] == "Bearer secret"
+
+
+def test_huggingface_request_token_is_sent_only_in_registration_payload():
+    client = RemoteModelRegistry("http://server")
+    with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
+        urlopen.return_value = FakeResponse({"model_id": "org/private", "status": "registering"})
+        client.register_model(
+            task_type="classification", huggingface_model_id="org/private", hf_token="hf_private"
+        )
+    outgoing = urlopen.call_args.args[0]
+    assert json.loads(outgoing.data)["source"]["hf_token"] == "hf_private"
+    assert "Authorization" not in outgoing.headers
+
+
+def test_unregister_sends_hf_token_in_header():
+    client = RemoteModelRegistry("http://server")
+    with patch("opensportslib.remote_registry.request.urlopen") as urlopen:
+        urlopen.return_value = FakeResponse({"model_id": "org/private", "status": "unregistering"})
+        client.unregister_model("org/private", hf_token="hf_private")
+    outgoing = urlopen.call_args.args[0]
+    assert outgoing.headers["X-hf-token"] == "hf_private"
+    assert outgoing.data is None
 
 
 @pytest.mark.parametrize(

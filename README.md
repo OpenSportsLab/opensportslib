@@ -9,9 +9,9 @@ See the [complete inference server guide](docs/server/inference-server.md) for
 installation, registry administration, curl requests, single-video inference,
 full-test-set and per-sample remote inference, job polling, and sessions.
 
-For Docker administration, set `OSL_MODEL_ADMIN_TOKEN` in the private
-`server/.env` file, recreate the containers after changes, and use the exact
-same value as the Python client's `admin_token`. Never commit the real token.
+Hugging Face registration is authorized by repository access. Set `HF_TOKEN`
+on the worker or pass `hf_token` per request. The optional `OSL_API_KEY`
+protects local-model and general administrative operations.
 
 ## Configuration From Hugging Face
 
@@ -601,8 +601,8 @@ this repository, activate a fresh Python 3.12 or newer environment and install t
 
 ```bash
 pip install -e ./server
-bash server/scripts/setup_env.sh
-bash server/scripts/start_all.sh
+server/scripts/serverctl setup
+server/scripts/serverctl start
 ```
 
 The server installs the OpenSportsLib release from PyPI pinned to the root project
