@@ -217,22 +217,22 @@ def install_pyg():
         python, "-m", "pip", "install",
         "torch-geometric", "-f", url
     ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-scatter", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-sparse", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-cluster", "-f", url
-    ])
-    subprocess.check_call([
-        python, "-m", "pip", "install",
-        "torch-spline-conv", "-f", url
-    ])
+    # subprocess.check_call([
+    #     python, "-m", "pip", "install",
+    #     "torch-scatter", "-f", url
+    # ])
+    # subprocess.check_call([
+    #     python, "-m", "pip", "install",
+    #     "torch-sparse", "-f", url
+    # ])
+    # subprocess.check_call([
+    #     python, "-m", "pip", "install",
+    #     "torch-cluster", "-f", url
+    # ])
+    # subprocess.check_call([
+    #     python, "-m", "pip", "install",
+    #     "torch-spline-conv", "-f", url
+    # ])
 
 def install_extras(dali=False, pyg=False):
     if dali:

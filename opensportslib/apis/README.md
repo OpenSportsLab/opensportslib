@@ -103,6 +103,13 @@ Additional weight behavior:
 Annotation and prediction payloads follow the OSL JSON data model. For the full
 schema, see the docs page `docs/data/osl-json-format.md`.
 
+For SN-GAR tracking, `sngar_tracking_hf.yaml` configures `ClassificationModel`
+to stage annotations from Hugging Face and fetch indexed TAR shards on demand.
+Call `train()`, `infer()`, and `evaluate()` without split path arguments; this
+backend uses the train, valid, and test splits named in its Hub source and does
+not accept `train_set`, `valid_set`, or `test_set` overrides. Install the
+`hf-tracking` extra and authenticate with `hf auth login` first.
+
 ## Minimal Usage
 
 ```python

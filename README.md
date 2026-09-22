@@ -398,6 +398,12 @@ VQA setup workflow.
 
 OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
 
+For SN-GAR tracking classification, `sngar_tracking_hf.yaml` loads split metadata
+through `datasets` and caches TAR shards as samples are requested. It preserves
+the weighted replacement sampler without extracting individual clips. Install
+with `python -m pip install -e '.[hf-tracking]'`, authenticate with `hf auth login`,
+and see [SN-GAR-README.md](SN-GAR-README.md) for the training command and cache layout.
+
 ### Python API
 
 ```python
