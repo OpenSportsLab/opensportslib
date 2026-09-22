@@ -156,6 +156,7 @@ class _FrameCapture:
         self.position = 0
         self.seek_positions = []
         self.read_positions = []
+        self.grab_positions = []
         self.__class__.instances.append(self)
 
     def get(self, key):
@@ -176,6 +177,13 @@ class _FrameCapture:
         self.read_positions.append(self.position)
         self.position += 1
         return True, np.zeros((2, 2, 3), dtype=np.uint8)
+
+    def grab(self):
+        if self.position >= 100:
+            return False
+        self.grab_positions.append(self.position)
+        self.position += 1
+        return True
 
     def release(self):
         pass
@@ -208,6 +216,7 @@ def test_frame_reader_seeks_and_stops_inside_interval(monkeypatch):
     assert capture.seek_positions == [20]
     assert min(capture.read_positions) == 20
     assert max(capture.read_positions) < 50
+    assert capture.grab_positions
 
 
 def test_ntsc_video_uses_five_fps_for_annotations_and_decoding(
@@ -260,7 +269,10 @@ def test_ntsc_video_uses_five_fps_for_annotations_and_decoding(
     )
     frames = reader.load_frames_ocv("unused.mp4", 0, 3)
     assert frames.shape == (3, 3, 2, 2)
-    assert NTSCFrames.instances[-1].read_positions == list(range(13))
+    assert NTSCFrames.instances[-1].read_positions == [0, 6, 12]
+    assert NTSCFrames.instances[-1].grab_positions == [
+        1, 2, 3, 4, 5, 7, 8, 9, 10, 11
+    ]
 
 
 def test_frame_reader_can_preserve_aspect_ratio_before_crop():

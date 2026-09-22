@@ -695,7 +695,13 @@ class FrameReader:
         while out_frame_num < frames_to_read:
             if target_start_frame + i >= physical_stop_frame:
                 break
-            ret, frame = vc.read()
+            # The source MP4 is ~30 fps, but spotting uses ~5 fps. Avoid
+            # retrieving and converting the five frames skipped between
+            # samples; grab still advances the video decoder correctly.
+            if i % stride_extract == 0:
+                ret, frame = vc.read()
+            else:
+                ret = vc.grab()
             if ret:
                 if i % stride_extract == 0:
                     frame = self._resize_frame_ocv(frame)
