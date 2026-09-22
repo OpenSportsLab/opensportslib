@@ -59,6 +59,7 @@ class SpoTTAConfig:
     drift_scale: float = 10.0
     drift_threshold: float = 1.0
     drift_gamma: float = 0.2
+    augmentation: bool = True
 
     @classmethod
     def from_mapping(cls, value: Any) -> "SpoTTAConfig":
@@ -69,6 +70,7 @@ class SpoTTAConfig:
         memory = _mapping(root.get("memory"))
         optimizer = _mapping(root.get("optimizer"))
         teacher = _mapping(root.get("teacher"))
+        augmentation = _mapping(root.get("augmentation"))
 
         _require_supported_value(
             root,
@@ -76,6 +78,34 @@ class SpoTTAConfig:
             "adapt_then_predict",
             "adaptation",
         )
+        _require_supported_value(tether, "mode", "bayesian", "robust_bn.tether")
+        _require_supported_value(
+            gate,
+            "uncertainty",
+            "one_minus_max_probability",
+            "confidence_gate",
+        )
+        _require_supported_value(
+            gate,
+            "aggregation",
+            "min_over_predicted_action_frames",
+            "confidence_gate",
+        )
+        _require_supported_value(optimizer, "type", "Adam", "optimizer")
+        _require_supported_value(
+            optimizer,
+            "trainable_parameters",
+            "batch_norm_affine_only",
+            "optimizer",
+        )
+        _require_supported_value(teacher, "type", "ema", "teacher")
+        _require_supported_value(
+            teacher, "adaptive_from_bn_drift", True, "teacher"
+        )
+        _require_supported_value(
+            augmentation, "mode", "framewise_rotta_strong", "augmentation"
+        )
+
         config = cls(
             alpha=float(robust_bn.get("alpha", cls.alpha)),
             tether_cap=float(tether.get("cap", cls.tether_cap)),
@@ -103,6 +133,7 @@ class SpoTTAConfig:
                 teacher.get("drift_threshold", cls.drift_threshold)
             ),
             drift_gamma=float(teacher.get("drift_gamma", cls.drift_gamma)),
+            augmentation=bool(augmentation.get("enabled", cls.augmentation)),
         )
         config.validate()
         return config
@@ -546,10 +577,13 @@ class SpoTTA:
         with torch.no_grad():
             teacher_logits = _logits(self.teacher(clips))
 
-        batch, time, channels, height, width = clips.shape
-        augmented = self.augmentation(
-            clips.reshape(batch * time, channels, height, width)
-        ).reshape(batch, time, channels, height, width)
+        if self.config.augmentation:
+            batch, time, channels, height, width = clips.shape
+            augmented = self.augmentation(
+                clips.reshape(batch * time, channels, height, width)
+            ).reshape(batch, time, channels, height, width)
+        else:
+            augmented = clips
 
         self.student.train()
         student_logits = _logits(self.student(augmented))
