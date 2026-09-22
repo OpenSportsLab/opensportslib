@@ -404,6 +404,22 @@ the weighted replacement sampler without extracting individual clips. Install
 with `python -m pip install -e '.[hf-tracking]'`, authenticate with `hf auth login`,
 and see [SN-GAR-README.md](SN-GAR-README.md) for the training command and cache layout.
 
+For SN-GAR video action spotting, `sngar_spotting_video_hf.yaml` uses
+`DATA.inputs.video.source.format: hf_json` to stage OSL JSON manifests and MP4s
+from the `multimodal` branch of `OpenSportsLab/SNGAR-Action-Spotting`. It reads
+the JSON manifests and downloads only their selected video inputs, leaving the
+tracking Parquet files alone. Run
+`LocalizationModel(config="sngar_spotting_video_hf.yaml").train(use_wandb=False)`
+after `hf auth login` and dataset access approval. The first train/validation
+stage downloads all videos in those splits; subsequent runs reuse the cache.
+The example keeps the 300-frame window but uses one clip per step, limited
+DataLoader prefetch, and four gradient accumulation steps to control memory.
+For the OpenCV loader, accumulation combines successive batches, so batch size
+one with four accumulation steps is valid.
+The 29.97-fps videos are sampled every sixth source frame for approximately
+5 fps and a 60-second window. Restart training after a sampling change so
+decoded clips and event labels use the same frame rate.
+
 ### Python API
 
 ```python

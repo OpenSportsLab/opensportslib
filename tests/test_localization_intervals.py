@@ -12,6 +12,7 @@ from opensportslib.core.utils.load_annotations import (
     annotationstoe2eformat,
     expand_localization_intervals,
 )
+from opensportslib.core.utils.video_processing import get_stride, read_fps
 from opensportslib.datasets.localization_dataset import FrameReader
 
 
@@ -207,6 +208,59 @@ def test_frame_reader_seeks_and_stops_inside_interval(monkeypatch):
     assert capture.seek_positions == [20]
     assert min(capture.read_positions) == 20
     assert max(capture.read_positions) < 50
+
+
+def test_ntsc_video_uses_five_fps_for_annotations_and_decoding(
+    tmp_path, monkeypatch
+):
+    class NTSCMetadata(_MetadataCapture):
+        def get(self, key):
+            if key == cv2.CAP_PROP_FPS:
+                return 30000 / 1001
+            return super().get(key)
+
+    class NTSCFrames(_FrameCapture):
+        def get(self, key):
+            if key == cv2.CAP_PROP_FPS:
+                return 30000 / 1001
+            return super().get(key)
+
+    assert get_stride(30000 / 1001, 5) == 6
+    assert read_fps(30000 / 1001, 5) == pytest.approx(30000 / 1001 / 6)
+    assert get_stride(25, 2) == 12  # Preserve non-NTSC truncation.
+
+    record = _record()
+    del record["metadata"]["intervals"]
+    record["events"] = [
+        {"head": "Actions", "label": "Action", "position_ms": 60_000}
+    ]
+    annotation_path = tmp_path / "annotations.json"
+    annotation_path.write_text(json.dumps(_document([record])))
+    video_path = tmp_path / "videos" / "sample.mp4"
+    video_path.parent.mkdir()
+    video_path.touch()
+    monkeypatch.setattr(cv2, "VideoCapture", NTSCMetadata)
+
+    labels, _ = annotationstoe2eformat(
+        str(annotation_path), str(tmp_path), 30, 5, False
+    )
+    assert labels[0]["fps"] == pytest.approx(30000 / 1001 / 6)
+    assert labels[0]["events"] == [{"frame": 299, "label": "Action"}]
+
+    NTSCFrames.instances.clear()
+    monkeypatch.setattr(cv2, "VideoCapture", NTSCFrames)
+    reader = FrameReader(
+        "rgb",
+        crop_transform=None,
+        img_transform=lambda image: image,
+        same_transform=False,
+        sample_fps=5,
+        TARGET_HEIGHT=2,
+        TARGET_WIDTH=2,
+    )
+    frames = reader.load_frames_ocv("unused.mp4", 0, 3)
+    assert frames.shape == (3, 3, 2, 2)
+    assert NTSCFrames.instances[-1].read_positions == list(range(13))
 
 
 def test_frame_reader_can_preserve_aspect_ratio_before_crop():

@@ -1,0 +1,149 @@
+TASK: localization
+VERSION: 2
+
+SYSTEM:
+  paths:
+    save_dir: ./checkpoints_as_video
+  gpu:
+    count: 1
+
+DATA:
+  common:
+    dataset_name: SNGAR-Action-Spotting-Video
+    data_root: /home/giancos/OSLdata/sngar/hf_json_cache
+    classes: [PASS, HEADER, HIGH PASS, OUT, CROSS, THROW IN, SHOT, PLAYER SUCCESSFUL TACKLE, FREE KICK, GOAL]
+    runtime:
+      loader_backend: opencv
+    splits:
+      train:
+        type: VideoGameWithOpencv
+        annotation_path: ${DATA.common.data_root}/annotations_train.json
+        source_path: ${DATA.common.data_root}
+        # One decoded 300-frame clip is about 306 MiB before model activations.
+        dataloader:
+          batch_size: 1
+          shuffle: true
+          num_workers: 2
+          prefetch_factor: 1
+          pin_memory: false
+      valid:
+        type: VideoGameWithOpencv
+        annotation_path: ${DATA.common.data_root}/annotations_valid.json
+        source_path: ${DATA.common.data_root}
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 1
+          prefetch_factor: 1
+          pin_memory: false
+      valid_data_frames:
+        type: VideoGameWithOpencvVideo
+        annotation_path: ${DATA.common.splits.valid.annotation_path}
+        source_path: ${DATA.common.splits.valid.source_path}
+        overlap_len: 0
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 1
+          prefetch_factor: 1
+          pin_memory: false
+      test:
+        type: VideoGameWithOpencvVideo
+        annotation_path: ${DATA.common.data_root}/annotations_test.json
+        source_path: ${DATA.common.data_root}
+        results: results_spotting_test
+        metric: tight
+        nms_window: 2
+        overlap_len: 270
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 1
+          prefetch_factor: 1
+          pin_memory: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: hf_json
+        repo_id: OpenSportsLab/SNGAR-Action-Spotting
+        revision: multimodal
+        annotation_pattern: "{split}.json"
+        input_type: video
+        cache_dir: ${DATA.common.data_root}
+      sampling:
+        epoch_num_frames: 1500000
+        clip_len: 300
+        input_fps: 30
+        # 29.97-fps MP4s use stride 6: 4.995 sampled fps, about 60 s/clip.
+        extract_fps: 5
+      transform:
+        resize:
+          height: 224
+          width: 398
+        normalization:
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+      params:
+        crop_dim: -1
+        dilate_len: 1
+        mixup: false
+
+MODEL:
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny008_gsm
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+  topology:
+    - from: video_encoder
+      to: task_head
+
+IO:
+  inputs:
+    video: video_encoder
+    label: task_head
+  outputs:
+    logits: task_head
+
+TRAIN:
+  trainer:
+    type: trainer_e2e
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.0008
+  scheduler:
+    type: ChainedSchedulerE2E
+    # Match execution.acc_grad_iter so the schedule advances per optimizer step.
+    acc_grad_iter: 4
+    num_epochs: ${TRAIN.epochs}
+    warm_up_epochs: 5
+  execution:
+    enabled: true
+    multi_gpu: false
+    acc_grad_iter: 4
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 10
+    criterion_valid: map
+  selection:
+    monitor: valid_loss
+    mode: min
+  checkpoint:
+    save_best: true

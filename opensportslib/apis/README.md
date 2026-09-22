@@ -110,6 +110,27 @@ backend uses the train, valid, and test splits named in its Hub source and does
 not accept `train_set`, `valid_set`, or `test_set` overrides. Install the
 `hf-tracking` extra and authenticate with `hf auth login` first.
 
+For E2E video spotting, `sngar_spotting_video_hf.yaml` configures
+`LocalizationModel` with `DATA.inputs.video.source.format: hf_json`. The loader
+pins the configured Hub branch to a commit, downloads the selected OSL JSON
+manifest and all referenced MP4s for each requested split, then uses the
+standard OpenCV spotting dataset. The SN-GAR example uses the `multimodal`
+branch and selects only `video` inputs; tracking files are not downloaded.
+Set `source.repo_id`, `source.revision`,
+`source.annotation_pattern`, `source.input_type`, and `source.cache_dir` for
+another compatible dataset. Manifest paths must be relative to the repository
+root and start with the split name. Explicit `train_set`, `valid_set`, or
+`test_set` paths bypass Hub staging; their video paths must be absolute or
+resolve under the configured split `source_path`. Authenticate with
+`hf auth login` before loading gated datasets.
+
+With the OpenCV E2E loader, `TRAIN.execution.acc_grad_iter` accumulates across
+successive DataLoader batches; it does not need to divide the batch size. DALI
+uses the configured batch size to form microbatches and requires divisibility.
+For 29.97-fps MP4s, `extract_fps: 5` samples every sixth source frame (about
+4.995 fps), so the 300-frame SN-GAR clip spans about 60 seconds. Restart a
+training run to apply changes to the sampling rate or annotation timing.
+
 ## Minimal Usage
 
 ```python

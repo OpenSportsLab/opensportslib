@@ -860,9 +860,16 @@ def check_config(cfg, split="train"):
         ]
         head_type = get_component_name_by_kind(cfg, "head")
         assert head_type in ["", "gru", "deeper_gru", "mstcn", "asformer"]
-        # assert cfg.dataset.batch_size % cfg.training.acc_grad_iter == 0
         train_bs = cfg.DATA.common.splits.train.dataloader.batch_size
-        assert train_bs % cfg.TRAIN.execution.acc_grad_iter == 0
+        acc_grad_iter = cfg.TRAIN.execution.acc_grad_iter
+        if acc_grad_iter < 1:
+            raise ValueError("TRAIN.execution.acc_grad_iter must be at least 1")
+        # DALI divides its configured batch into accumulation microbatches.
+        # OpenCV accumulates gradients across independent DataLoader batches.
+        if get_loader_backend(cfg) == "dali" and train_bs % acc_grad_iter != 0:
+            raise ValueError(
+                "DALI train batch_size must be divisible by TRAIN.execution.acc_grad_iter"
+            )
         assert cfg.TRAIN.execution.criterion_valid in ["map", "loss"]
         assert get_train_epochs(cfg) == cfg.TRAIN.scheduler.num_epochs
         assert cfg.TRAIN.execution.acc_grad_iter == cfg.TRAIN.scheduler.acc_grad_iter

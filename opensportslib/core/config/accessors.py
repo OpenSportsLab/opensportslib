@@ -182,6 +182,20 @@ def get_split_source_path(cfg: Any, split: str) -> str | None:
     return getattr(split_cfg, "source_path", None)
 
 
+def set_split_source_path(cfg: Any, split: str, path: str) -> None:
+    data = getattr(cfg, "DATA", None)
+    if data is None:
+        data = SimpleNamespace()
+        setattr(cfg, "DATA", data)
+    common = _ensure_child(data, "common")
+    splits = _ensure_child(common, "splits")
+    split_cfg = _ensure_child(splits, split)
+    if isinstance(split_cfg, dict):
+        split_cfg["source_path"] = path
+    else:
+        setattr(split_cfg, "source_path", path)
+
+
 def classes_to_ordered_list(classes: Any) -> list[str]:
     """Normalise a classes spec to a list ordered by class index.
 

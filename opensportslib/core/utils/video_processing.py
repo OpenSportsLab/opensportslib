@@ -99,6 +99,13 @@ def get_stride(src_fps, sample_fps):
     if sample_fps <= 0:
         stride = 1
     else:
+        # MP4s commonly report 30000/1001 rather than the nominal 30 fps.
+        # Truncating 29.97 / 5 gives 5, which samples at almost 6 fps.
+        nominal_fps = round(src_fps)
+        if nominal_fps > 0 and math.isclose(
+            src_fps, nominal_fps, rel_tol=0.0011
+        ):
+            src_fps = nominal_fps
         stride = int(src_fps / sample_fps)
     return stride
 
