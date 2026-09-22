@@ -421,6 +421,21 @@ The 29.97-fps videos are sampled every sixth source frame for approximately
 5 fps and a 60-second window. Restart training after a sampling change so
 decoded clips and event labels use the same frame rate.
 
+For tracking action spotting, use
+`LocalizationModel(config="sngar_spotting_tracking_hf.yaml").train(use_wandb=False)`.
+This config selects `tracking_parquet` from the same `multimodal` JSON manifests,
+downloads only the whole-game tracking tables in the requested splits,
+and passes them to the tracking graph dataset. The staged manifest keeps the
+`tracking_parquet` input type. Tracking files are cached under
+`/home/giancos/OSLdata/sngar/hf_json_tracking_cache`; video MP4s are skipped.
+
+To run the five example baselines sequentially with their full epoch settings,
+see [tools/train/weekend_train.sh](tools/train/weekend_train.sh). Run it with
+`bash tools/train/weekend_train.sh` after `hf auth login`. Each algorithm and
+dataset has its own section in the script. Video spotting alone was measured at
+about 10 days for 100 epochs on one user's machine, so the complete sequence
+will extend beyond a weekend on similar hardware.
+
 ### Python API
 
 ```python

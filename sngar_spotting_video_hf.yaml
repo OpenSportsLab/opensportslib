@@ -23,9 +23,9 @@ DATA:
         dataloader:
           batch_size: 1
           shuffle: true
-          num_workers: 2
-          prefetch_factor: 1
-          pin_memory: false
+          num_workers: 4
+          prefetch_factor: 2
+          pin_memory: true
       valid:
         type: VideoGameWithOpencv
         annotation_path: ${DATA.common.data_root}/annotations_valid.json

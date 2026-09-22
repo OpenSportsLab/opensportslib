@@ -48,9 +48,10 @@ def _set_resolved_revision(config, revision: str) -> None:
 def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
     """Download one split's selected media, then publish its local manifest.
 
-    The existing video loader probes each file during construction. Staging all
-    videos in the requested split first therefore preserves its sampling and
-    evaluation behavior. Hub blobs are linked into a small split directory.
+    The localization video and tracking loaders inspect each file during
+    construction. Stage only the configured input type while keeping its
+    manifest type and other metadata intact. Hub blobs are linked into a
+    small split directory.
     """
     source = hf_json_source(config)
     if not source:
@@ -96,7 +97,21 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
             cached_manifest = annotation_path.is_file()
             if cached_manifest:
                 payload = json.loads(annotation_path.read_text(encoding="utf-8"))
-            else:
+                # Older caches could contain an input relabeled to ``video``.
+                # Refresh those manifests so the selected source type is kept.
+                valid_cache = isinstance(payload, dict) and isinstance(payload.get("data"), list)
+                if valid_cache:
+                    valid_cache = all(
+                        isinstance(sample, dict)
+                        and len([
+                            item for item in sample.get("inputs", [])
+                            if isinstance(item, dict) and item.get("type") == media_type
+                        ]) == 1
+                        for sample in payload["data"]
+                    )
+                if not valid_cache:
+                    cached_manifest = False
+            if not cached_manifest:
                 remote_manifest = hf_hub_download(
                     repo_id=repo_id, filename=manifest_name, repo_type="dataset",
                     revision=revision, token=True, cache_dir=str(hub_cache),
@@ -109,8 +124,7 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
 
             filenames = set()
             for sample in payload["data"]:
-                expected_type = "video" if cached_manifest else media_type
-                selected = [item for item in sample.get("inputs", []) if item.get("type") == expected_type]
+                selected = [item for item in sample.get("inputs", []) if item.get("type") == media_type]
                 if len(selected) != 1:
                     raise ValueError(
                         f"Expected one {media_type!r} input for sample {sample.get('game_id', sample.get('id'))!r}"
@@ -120,8 +134,6 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
                 if not filename.startswith(f"{split}/"):
                     raise ValueError(f"Media path {filename!r} is outside split {split!r}")
                 filenames.add(filename)
-                # The E2E video adapter expects the generic OSL video type.
-                item["type"] = "video"
                 sample["inputs"] = [item]
 
             def stage_media(filename: str) -> None:

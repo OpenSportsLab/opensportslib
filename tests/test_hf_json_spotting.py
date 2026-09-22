@@ -112,6 +112,61 @@ def test_hf_json_restages_missing_media_before_returning_manifest(tmp_path, hub)
     assert calls[before:] == ["train/video/1.mp4"]
 
 
+def test_hf_json_selects_tracking_without_rewriting_its_type(tmp_path, hub):
+    remote, calls = hub
+    tracking = remote / "train/tracking/1.parquet"
+    tracking.parent.mkdir(parents=True, exist_ok=True)
+    tracking.write_bytes(b"test parquet placeholder")
+    config = _config(tmp_path)
+    source = config.DATA.inputs.video.source
+    source.input_type = "tracking_parquet"
+
+    prepared = prepare_hf_json_split(config, "train")
+    payload = json.loads(prepared.annotation_path.read_text())
+    assert payload["data"][0]["inputs"] == [{
+        "type": "tracking_parquet", "path": "train/tracking/1.parquet"
+    }]
+    assert (prepared.source_path / "train/tracking/1.parquet").is_file()
+    assert calls == ["train.json", "train/tracking/1.parquet"]
+    before = len(calls)
+    assert prepare_hf_json_split(config, "train") == prepared
+    assert len(calls) == before
+
+
+def test_hf_json_keeps_video_mp4_type_when_selected(tmp_path, hub):
+    remote, _ = hub
+    manifest = remote / "train.json"
+    payload = json.loads(manifest.read_text())
+    payload["data"][0]["inputs"][1]["type"] = "video_mp4"
+    manifest.write_text(json.dumps(payload))
+    config = _config(tmp_path)
+    config.DATA.inputs.video.source.input_type = "video_mp4"
+
+    prepared = prepare_hf_json_split(config, "train")
+    staged = json.loads(prepared.annotation_path.read_text())
+    assert staged["data"][0]["inputs"][0]["type"] == "video_mp4"
+
+
+def test_hf_json_refreshes_old_relabeled_cache(tmp_path, hub):
+    remote, calls = hub
+    remote_manifest = remote / "train.json"
+    payload = json.loads(remote_manifest.read_text())
+    payload["data"][0]["inputs"][1]["type"] = "video_mp4"
+    remote_manifest.write_text(json.dumps(payload))
+    config = _config(tmp_path)
+    config.DATA.inputs.video.source.input_type = "video_mp4"
+    cache = tmp_path / "cache" / "OpenSportsLab--SNGAR-Action-Spotting" / "abc123"
+    cache.mkdir(parents=True)
+    old = dict(payload)
+    old["data"] = [dict(payload["data"][0], inputs=[dict(payload["data"][0]["inputs"][1], type="video")])]
+    (cache / "selected_video_mp4_train.json").write_text(json.dumps(old))
+
+    prepared = prepare_hf_json_split(config, "train")
+    staged = json.loads(prepared.annotation_path.read_text())
+    assert staged["data"][0]["inputs"][0]["type"] == "video_mp4"
+    assert calls == ["train.json", "train/video/1.mp4"]
+
+
 def test_hf_json_rejects_missing_video_input(tmp_path, hub):
     remote, _ = hub
     manifest = remote / "train.json"

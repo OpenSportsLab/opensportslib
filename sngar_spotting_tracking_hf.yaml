@@ -1,0 +1,207 @@
+# SN-GAR tracking action spotting from the multimodal Hub JSON manifests.
+# Hyperparameters match opensportslib/configs/localization/tracking_action_spotting.yaml.
+SYSTEM:
+  paths:
+    log_dir: ./logs
+    save_dir: ./checkpoints_as_tracking_hf
+    work_dir: ./checkpoints_as_tracking_hf
+  device: auto
+  gpu:
+    id: 0
+    count: 1
+  reproducibility:
+    use_seed: true
+    seed: 42
+DATA:
+  common:
+    runtime:
+      loader_backend: opencv
+    dataset_name: SoccerNet-GAR-Spotting-Tracking
+    data_root: /home/giancos/OSLdata/sngar/hf_json_tracking_cache
+    classes:
+    - PASS
+    - HEADER
+    - HIGH PASS
+    - OUT
+    - CROSS
+    - THROW IN
+    - SHOT
+    - PLAYER SUCCESSFUL TACKLE
+    - FREE KICK
+    - GOAL
+    splits:
+      train:
+        annotation_path: ${DATA.common.data_root}/annotations_train.json
+        source_path: ${DATA.common.data_root}
+        output_map:
+        - data
+        - label
+        dataloader:
+          batch_size: 4
+          shuffle: true
+          num_workers: 16
+          pin_memory: true
+        type: TrackingActionSpot
+      valid:
+        annotation_path: ${DATA.common.data_root}/annotations_valid.json
+        source_path: ${DATA.common.data_root}
+        output_map:
+        - data
+        - label
+        dataloader:
+          batch_size: 4
+          shuffle: false
+          num_workers: 16
+          pin_memory: true
+        type: TrackingActionSpot
+      test:
+        annotation_path: ${DATA.common.data_root}/annotations_test.json
+        source_path: ${DATA.common.data_root}
+        output_map:
+        - data
+        - label
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 2
+          pin_memory: false
+        type: TrackingActionSpotVideo
+        results: results_spotting_test
+        metric: tight
+        nms_window: 2
+        overlap_len: 270
+      valid_data_frames:
+        type: TrackingActionSpotVideo
+        annotation_path: ${DATA.common.data_root}/annotations_valid.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 0
+        dataloader:
+          batch_size: 1
+          shuffle: false
+          num_workers: 2
+          pin_memory: false
+  inputs:
+    video:
+      modality: tracking_parquet
+      representation: raw
+      source:
+        format: hf_json
+        repo_id: OpenSportsLab/SNGAR-Action-Spotting
+        revision: multimodal
+        annotation_pattern: '{split}.json'
+        input_type: tracking_parquet
+        cache_dir: ${DATA.common.data_root}
+      sampling:
+        clip_len: 300
+        input_fps: 25
+        extract_fps: 5
+        epoch_num_frames: 1500000
+      transform:
+        resize:
+          height: 224
+          width: 398
+        normalization:
+          mean:
+          - 0.485
+          - 0.456
+          - 0.406
+          std:
+          - 0.229
+          - 0.224
+          - 0.225
+        normalize: true
+      augmentations:
+        vertical_flip: true
+        horizontal_flip: true
+        team_flip: true
+      params:
+        color_mode: rgb
+        crop_dim: -1
+        mixup: false
+        dilate_len: 1
+        objects:
+          num_objects: 23
+          feature_dim: 8
+          pitch_half_length: 85.0
+          pitch_half_width: 50.0
+          max_displacement: 110.0
+          max_ball_height: 30.0
+MODEL:
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: graph_conv_seq
+      params:
+        encoder: graphconv
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+        edge_type: positional
+        k: 8
+        radius: 15.0
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+      params: {}
+      overrides: {}
+  topology:
+  - from: video_encoder
+    to: task_head
+IO:
+  inputs:
+    video: video_encoder
+    label: task_head
+  outputs:
+    logits: task_head
+TASK: localization
+VERSION: 2
+TRAIN:
+  trainer:
+    type: trainer_e2e
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.001
+  scheduler:
+    type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: 100
+    warm_up_epochs: 5
+  execution:
+    enabled: true
+    multi_gpu: false
+    acc_grad_iter: 1
+    base_num_valid_epochs: 30
+    start_valid_epoch: 4
+    valid_map_every: 10
+    criterion_valid: map
+  sampling: {}
+  selection:
+    monitor: valid_loss
+    mode: min
+  checkpoint:
+    save_best: true

@@ -118,11 +118,17 @@ manifest and all referenced MP4s for each requested split, then uses the
 standard OpenCV spotting dataset. The SN-GAR example uses the `multimodal`
 branch and selects only `video` inputs; tracking files are not downloaded.
 Staging checks the selected media again on later runs and repairs missing files.
+For E2E tracking spotting, `sngar_spotting_tracking_hf.yaml` uses the same
+`hf_json` source with `input_type: tracking_parquet`. It stages only the
+referenced whole-game Parquet files and routes them through
+`TrackingActionSpotDataset` and `TrackingActionSpotVideoDataset`. The staged
+manifest preserves the selected input type; it never rewrites tracking to
+`video`.
 Set `source.repo_id`, `source.revision`,
 `source.annotation_pattern`, `source.input_type`, and `source.cache_dir` for
 another compatible dataset. Manifest paths must be relative to the repository
 root and start with the split name. Explicit `train_set`, `valid_set`, or
-`test_set` paths bypass Hub staging; their video paths must be absolute or
+`test_set` paths bypass Hub staging; their media paths must be absolute or
 resolve under the configured split `source_path`. Authenticate with
 `hf auth login` before loading gated datasets.
 
