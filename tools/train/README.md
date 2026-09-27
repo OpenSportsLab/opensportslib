@@ -14,7 +14,17 @@ bash tools/train/weekend_train.sh
 ```
 
 Detach with `Ctrl-B`, then `D`; reconnect with `tmux attach -t osl-weekend`.
-The script stops at the first failed command. It downloads the XFoul and GAR
+The script stops at the first failed command. To continue at a specific section,
+set `START_AT` to its number. For example, after the first run has completed:
+
+```bash
+set -o pipefail
+START_AT=2 bash tools/train/weekend_train.sh 2>&1 | tee -a weekend_runs/weekend.log
+```
+
+This skips GAR tracking, starts with XFoul, displays output in the terminal,
+and appends stdout and stderr to `weekend_runs/weekend.log`. Existing downloaded
+split manifests are reused. It downloads the XFoul and GAR
 frames train, valid, and test splits under `/home/giancos/OSLdata`, creates
 their local YAML configs in `weekend_runs`, and lets the two HF spotting
 configs and GAR tracking config stage their own selected data. Set

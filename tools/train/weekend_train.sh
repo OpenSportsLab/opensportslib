@@ -5,22 +5,31 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 PYTHON_BIN="${PYTHON_BIN:-python}"
 export OSL_DATA_ROOT="${OSL_DATA_ROOT:-/home/giancos/OSLdata}"
+START_AT="${START_AT:-1}"
 mkdir -p weekend_runs "$OSL_DATA_ROOT"
+
+if [[ ! "$START_AT" =~ ^[1-5]$ ]]; then
+  echo "START_AT must be an integer from 1 to 5" >&2
+  exit 2
+fi
 
 
 # 1. GIN + positional edges on SoccerNet-GAR tracking
 echo '=== 1/5: GIN on SoccerNet-GAR tracking ==='
-"$PYTHON_BIN" -u - <<'PY'
-from opensportslib.apis import ClassificationModel
-
-model = ClassificationModel(config="sngar_tracking_hf.yaml")
-model.train(use_wandb=False)
-PY
+if (( START_AT <= 1 )); then
+  "$PYTHON_BIN" -u tools/train/train_config.py classification sngar_tracking_hf.yaml
+fi
 
 
 # 2. MViTv2-S on OSL-XFoul video
 echo '=== 2/5: MViTv2-S on OSL-XFoul video ==='
+if (( START_AT <= 2 )); then
 for split in train valid test; do
+  annotation="$OSL_DATA_ROOT/xfoul/224p/$split/$split.json"
+  if [[ -f "$annotation" ]]; then
+    echo "Reusing $annotation"
+    continue
+  fi
   "$PYTHON_BIN" tools/download/download_osl_hf.py \
     --repo-id OpenSportsLab/OSL-XFoul \
     --revision 224p \
@@ -46,17 +55,19 @@ cfg["SYSTEM"]["paths"]["save_dir"] = "./weekend_runs/checkpoints_xfoul"
 cfg["SYSTEM"]["paths"]["work_dir"] = "./weekend_runs/checkpoints_xfoul"
 Path("weekend_runs/xfoul_mvit.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
 PY
-"$PYTHON_BIN" -u - <<'PY'
-from opensportslib.apis import ClassificationModel
-
-model = ClassificationModel(config="weekend_runs/xfoul_mvit.yaml")
-model.train(use_wandb=False)
-PY
+"$PYTHON_BIN" -u tools/train/train_config.py classification weekend_runs/xfoul_mvit.yaml
+fi
 
 
 # 3. VideoMAEv2-Base on SoccerNet-GAR frames
 echo '=== 3/5: VideoMAEv2-Base on SoccerNet-GAR frames ==='
+if (( START_AT <= 3 )); then
 for split in train valid test; do
+  annotation="$OSL_DATA_ROOT/sngar_frames/frames/$split/$split.json"
+  if [[ -f "$annotation" ]]; then
+    echo "Reusing $annotation"
+    continue
+  fi
   "$PYTHON_BIN" tools/download/download_osl_hf.py \
     --repo-id OpenSportsLab/SoccerNet-GAR \
     --revision frames \
@@ -82,31 +93,21 @@ cfg["SYSTEM"]["paths"]["save_dir"] = "./weekend_runs/checkpoints_frames"
 cfg["SYSTEM"]["paths"]["work_dir"] = "./weekend_runs/checkpoints_frames"
 Path("weekend_runs/gar_frames_videomae.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
 PY
-"$PYTHON_BIN" -u - <<'PY'
-from opensportslib.apis import ClassificationModel
-
-model = ClassificationModel(config="weekend_runs/gar_frames_videomae.yaml")
-model.train(use_wandb=False)
-PY
+"$PYTHON_BIN" -u tools/train/train_config.py classification weekend_runs/gar_frames_videomae.yaml
+fi
 
 
 # 4. GraphConvSeq + GRU on SN-GAR action spotting tracking
 echo '=== 4/5: GraphConvSeq on SN-GAR action spotting tracking ==='
-"$PYTHON_BIN" -u - <<'PY'
-from opensportslib.apis import LocalizationModel
-
-model = LocalizationModel(config="sngar_spotting_tracking_hf.yaml")
-model.train(use_wandb=False)
-PY
+if (( START_AT <= 4 )); then
+  "$PYTHON_BIN" -u tools/train/train_config.py localization sngar_spotting_tracking_hf.yaml
+fi
 
 
 # 5. RNY008-GSM + GRU on SN-GAR action spotting video
 echo '=== 5/5: RNY008-GSM on SN-GAR action spotting video ==='
-"$PYTHON_BIN" -u - <<'PY'
-from opensportslib.apis import LocalizationModel
-
-model = LocalizationModel(config="sngar_spotting_video_hf.yaml")
-model.train(use_wandb=False)
-PY
+if (( START_AT <= 5 )); then
+  "$PYTHON_BIN" -u tools/train/train_config.py localization sngar_spotting_video_hf.yaml
+fi
 
 echo 'All five training runs finished.'
