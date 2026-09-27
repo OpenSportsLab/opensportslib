@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -17,13 +18,23 @@ class RemoteRegistryError(RuntimeError):
 class RemoteModelRegistry:
     """Administrative client for an OpenSportsLib server model registry."""
 
-    def __init__(self, remote: str, admin_token: str, timeout: float = 30.0):
+    def __init__(
+        self,
+        remote: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+        *,
+        admin_token: str | None = None,
+    ):
         if not remote:
             raise ValueError("remote is required.")
-        if not admin_token:
-            raise ValueError("admin_token is required.")
+        if admin_token is not None:
+            warnings.warn("admin_token is deprecated; use api_key.", DeprecationWarning, stacklevel=2)
+            if api_key is not None and api_key != admin_token:
+                raise ValueError("api_key and admin_token must match when both are provided.")
+            api_key = admin_token
         self.remote = remote.rstrip("/")
-        self.admin_token = admin_token
+        self.api_key = api_key
         self.timeout = float(timeout)
         if self.timeout <= 0:
             raise ValueError("timeout must be positive.")
@@ -36,6 +47,7 @@ class RemoteModelRegistry:
         weights_path: str | Path | None = None,
         config_path: str | Path | None = None,
         model_id: str | None = None,
+        hf_token: str | None = None,
     ) -> dict[str, Any]:
         """Register exactly one Hugging Face or server-local model source."""
         if (huggingface_model_id is None) == (weights_path is None):
@@ -45,9 +57,12 @@ class RemoteModelRegistry:
                 raise ValueError("config_path applies only to local models.")
             if model_id is not None and model_id != huggingface_model_id:
                 raise ValueError("A Hugging Face model uses its repository ID as model_id.")
+            source = {"type": "huggingface", "model_id": huggingface_model_id}
+            if hf_token is not None:
+                source["hf_token"] = hf_token
             payload = {
                 "task_type": task_type,
-                "source": {"type": "huggingface", "model_id": huggingface_model_id},
+                "source": source,
             }
         else:
             payload = {
@@ -59,7 +74,7 @@ class RemoteModelRegistry:
                     "config_path": str(config_path) if config_path is not None else None,
                 },
             }
-        return self._request("POST", "/models", payload, authenticated=True)
+        return self._request("POST", "/models", payload, authenticated=weights_path is not None)
 
     def list_models(self) -> list[dict[str, Any]]:
         return self._request("GET", "/models")["models"]
@@ -69,7 +84,7 @@ class RemoteModelRegistry:
         return self._request("GET", f"/models/status?{query}")
 
     def get_operation(self, operation_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/model-operations/{parse.quote(operation_id, safe='')}", authenticated=True)
+        return self._request("GET", f"/model-operations/{parse.quote(operation_id, safe='')}")
 
     def wait_for_operation(
         self,
@@ -93,9 +108,9 @@ class RemoteModelRegistry:
         task = parse.quote(task_type, safe="")
         return self._request("PUT", f"/models/defaults/{task}", {"model_id": model_id}, authenticated=True)
 
-    def unregister_model(self, model_id: str) -> dict[str, Any]:
+    def unregister_model(self, model_id: str, hf_token: str | None = None) -> dict[str, Any]:
         encoded = parse.quote(model_id, safe="")
-        return self._request("DELETE", f"/models/{encoded}", authenticated=True)
+        return self._request("DELETE", f"/models/{encoded}", authenticated=True, hf_token=hf_token)
 
     def reconcile_runtime(
         self,
@@ -117,11 +132,14 @@ class RemoteModelRegistry:
         endpoint: str,
         payload: dict[str, Any] | None = None,
         authenticated: bool = False,
+        hf_token: str | None = None,
     ) -> dict[str, Any]:
         body = json.dumps(payload).encode() if payload is not None else None
         headers = {"Content-Type": "application/json"}
-        if authenticated:
-            headers["Authorization"] = f"Bearer {self.admin_token}"
+        if authenticated and self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if hf_token:
+            headers["X-HF-Token"] = hf_token
         outgoing = request.Request(self.remote + endpoint, data=body, method=method, headers=headers)
         try:
             with request.urlopen(outgoing, timeout=self.timeout) as response:

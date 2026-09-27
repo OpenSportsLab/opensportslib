@@ -206,9 +206,27 @@ def _preferred_loader_backend(payload: dict[str, Any]) -> str | None:
     if _declares_opencv_split_types(payload):
         return "opencv"
 
+    # DALI cannot run on CPU, regardless of an explicit preference in a
+    # configuration.  This safety fallback also remaps DALI split types below.
     mode = str(system.get("device", "auto")).lower()
     if mode == "cpu":
         return "opencv"
+
+    data = payload.get("DATA", {})
+    common = data.get("common", {}) if isinstance(data, dict) else {}
+    runtime = common.get("runtime", {}) if isinstance(common, dict) else {}
+    configured_backend = (
+        str(runtime.get("loader_backend", "auto")).lower()
+        if isinstance(runtime, dict)
+        else "auto"
+    )
+    # An explicit backend is part of the configuration contract.  Runtime
+    # detection is only a default for configs which leave that choice as auto.
+    if configured_backend == "opencv":
+        return "opencv"
+    if configured_backend == "dali":
+        return "dali" if _dali_available() else "opencv"
+
     if mode == "cuda":
         return "dali" if _dali_available() else "opencv"
     if mode == "auto":

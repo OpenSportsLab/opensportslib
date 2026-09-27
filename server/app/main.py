@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.schemas import (
@@ -30,7 +33,7 @@ from config.model_registry import (
     ModelRegistry,
     generated_local_model_id,
     public_record,
-    require_admin_token,
+    require_api_key,
     resolve_local_source,
     utc_now,
     validate_local_model_id,
@@ -59,12 +62,21 @@ app = FastAPI(title="OSL Inference Server", version="0.1.0")
 logger = logging.getLogger("osl.api")
 
 
-@app.on_event("startup")
-def bootstrap_model_registry() -> None:
-    try:
-        model_registry.bootstrap_legacy_models()
-    except Exception:
-        logger.exception("Could not bootstrap the model registry.")
+def _redact_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[redacted]" if key.lower() in {"hf_token", "authorization", "x-hf-token"}
+            else _redact_secrets(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": _redact_secrets(exc.errors())}))
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -93,9 +105,9 @@ def health() -> HealthResponse:
     )
 
 
-def _authorize_model_admin(authorization: str | None) -> None:
+def _authorize_api_key(authorization: str | None) -> None:
     try:
-        require_admin_token(settings, authorization)
+        require_api_key(settings, authorization)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except PermissionError as exc:
@@ -107,7 +119,7 @@ def reconcile_runtime(
     request: RuntimeReconcileRequest,
     authorization: str | None = Header(None),
 ) -> dict[str, Any]:
-    _authorize_model_admin(authorization)
+    _authorize_api_key(authorization)
     summary = runtime_cleaner.reconcile_jobs(dry_run=request.dry_run)
     if request.include_active:
         summary["include_active"] = True
@@ -119,7 +131,6 @@ def register_model(
     request: ModelRegistrationRequest,
     authorization: str | None = Header(None),
 ) -> dict[str, Any]:
-    _authorize_model_admin(authorization)
     now = utc_now()
     if request.source.type == "huggingface":
         try:
@@ -136,6 +147,7 @@ def register_model(
         config_path = None
         source_mode = "pending"
     else:
+        _authorize_api_key(authorization)
         try:
             weights_path, resolved_config = resolve_local_source(
                 settings, request.source.weights_path, request.source.config_path
@@ -179,12 +191,17 @@ def register_model(
     operation = model_registry.create_operation("register", model_id)
     record["operation_id"] = operation["operation_id"]
     model_registry.put(record)
+    if request.source.type == "huggingface" and request.source.hf_token is not None:
+        model_registry.store_operation_secret(
+            operation["operation_id"], request.source.hf_token.get_secret_value()
+        )
     try:
         enqueue_model_registration(
             get_queue(settings), operation["operation_id"], model_id,
             settings.model_operation_timeout_seconds,
         )
     except Exception as exc:
+        model_registry.delete_operation_secret(operation["operation_id"])
         record["status"] = FAILED
         record["error"] = "Failed to enqueue registration."
         model_registry.put(record)
@@ -214,8 +231,7 @@ def get_model_status(model_id: str) -> dict[str, Any]:
 
 
 @app.get("/model-operations/{operation_id}")
-def get_model_operation(operation_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
-    _authorize_model_admin(authorization)
+def get_model_operation(operation_id: str) -> dict[str, Any]:
     operation = model_registry.get_operation(operation_id)
     if operation is None:
         raise HTTPException(status_code=404, detail="Model operation not found.")
@@ -228,7 +244,7 @@ def set_default_model(
     request: ModelDefaultRequest,
     authorization: str | None = Header(None),
 ) -> dict[str, str]:
-    _authorize_model_admin(authorization)
+    _authorize_api_key(authorization)
     try:
         model_registry.set_default(task_type.value, request.model_id)
     except KeyError as exc:
@@ -239,8 +255,11 @@ def set_default_model(
 
 
 @app.delete("/models/{model_id:path}", status_code=status.HTTP_202_ACCEPTED)
-def unregister_model(model_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
-    _authorize_model_admin(authorization)
+def unregister_model(
+    model_id: str,
+    authorization: str | None = Header(None),
+    x_hf_token: str | None = Header(None, alias="X-HF-Token"),
+) -> dict[str, Any]:
     record = model_registry.get(model_id)
     if record is None:
         raise HTTPException(status_code=404, detail="MODEL_NOT_REGISTERED")
@@ -250,17 +269,22 @@ def unregister_model(model_id: str, authorization: str | None = Header(None)) ->
             "model_id": model_id,
             "status": UNREGISTERING,
         }
+    if record["source_type"] != "huggingface":
+        _authorize_api_key(authorization)
     record["status"] = UNREGISTERING
     model_registry.put(record)
     operation = model_registry.create_operation("unregister", model_id)
     record["unregistration_operation_id"] = operation["operation_id"]
     model_registry.put(record)
+    if record["source_type"] == "huggingface" and x_hf_token:
+        model_registry.store_operation_secret(operation["operation_id"], x_hf_token)
     try:
         enqueue_model_unregistration(
             get_queue(settings), operation["operation_id"], model_id,
             record["generation"], settings.model_operation_timeout_seconds,
         )
     except Exception as exc:
+        model_registry.delete_operation_secret(operation["operation_id"])
         record["status"] = READY
         model_registry.put(record)
         operation["status"] = "failed"

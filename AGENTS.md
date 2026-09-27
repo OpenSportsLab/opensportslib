@@ -101,10 +101,10 @@ git pull origin dev
 
 ## Testing Contract (Mandatory)
 
-Before opening a PR, run:
+Before opening a PR, run the single test entry point:
 
 ```bash
-pytest tests/test_*.py
+bash scripts/run_tests.sh
 ```
 
 When APIs/signatures/behavior change, update the relevant tests, including:
@@ -125,7 +125,7 @@ When API behavior changes, update the relevant docs in the same PR:
 
 - [ ] Branch created from `dev`
 - [ ] PR targets `dev`
-- [ ] Tests pass (`pytest tests/test_*.py`)
+- [ ] Tests pass (`bash scripts/run_tests.sh`)
 - [ ] Documentation updated for behavior/API changes
 - [ ] Backward compatibility reviewed
 - [ ] Commit/PR description includes API impact summary

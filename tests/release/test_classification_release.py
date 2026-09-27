@@ -35,34 +35,31 @@ opensportslib/models/builder.py::build_model_canonical for TASK=classification:
   end-to-end for r3d_18 against real downloaded video in a prior smoke test;
   the others share the exact same code path and canonical config
   (classification/video.yaml) and are expected to behave the same.
-* HuggingFace VideoMAE full-model path (encoder_type == "video_mae"):
-  included as best-effort — not verified this session.
+* HuggingFace VideoMAE full-model path (encoder_type == "video_mae").
 
-Not covered here (marked skip with a reason instead of a fake pass):
+Additional release coverage:
 * The VideoModel "frames_npy" family (dinov3, clip, videomae, videomae2 as
-  pure feature extractors) needs a pre-extraction step (raw video -> frame
-  .npy) that this suite does not implement yet. See the skipped test at the
-  bottom for the TODO.
+  pure feature extractors) uses a bounded raw-video -> frame `.npy`
+  materialization step before running the canonical frames pipeline.
 * Tracking-based classification (graph_conv / classification/sngar_tracking.yaml)
-  needs OpenSportsLab/SoccerNet-GAR, which is an unpublished placeholder repo
-  as of the last check (require_repo_populated will skip it cleanly; re-run
-  once it's populated).
+  uses OpenSportsLab/SoccerNet-GAR; missing required release data fails explicitly.
 
-Run:
-    RUN_OSL_RELEASE_TESTS=1 HF_TOKEN=hf_xxx \\
-        pytest tests/release/test_classification_release.py -v -s
+Run through the repository's single command: bash scripts/run_tests.sh.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter
 from pathlib import Path
 
 import pytest
+import numpy as np
 
 from opensportslib.apis.classification import ClassificationModel
+from opensportslib.core.utils.video_processing import read_video
 
 from ._release_common import (
     CACHE_ROOT,
@@ -74,6 +71,7 @@ from ._release_common import (
     max_items_for,
     prefer_osl_ready_dataset,
     report_step,
+    record_release_metadata,
     require_release_enabled,
     require_repo_access,
     require_repo_populated,
@@ -296,9 +294,16 @@ def classification_dataset():
 # (backbone name, torchvision provider) for the MVNetwork family. All share
 # the same video_adapter (MV_Aggregate) / task_head (MV_LinearLayer) wiring.
 MVNETWORK_BACKBONES = ["r3d_18", "mc3_18", "r2plus1d_18", "s3d", "mvit_v2_s"]
+FRAME_BACKBONES = {
+    "dinov3": ("facebook/dinov3-vitb16-pretrain-lvd1689m", 768),
+    "clip": ("openai/clip-vit-large-patch14", 1024),
+    "videomae": ("MCG-NJU/videomae-base", 768),
+    "videomae2": ("OpenGVLab/VideoMAEv2-Base", 768),
+}
 
 
 def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
+    started = time.perf_counter()
     split_paths = dataset["split_paths"]
 
     report_step(f"[{run_name}] instantiate ClassificationModel")
@@ -311,6 +316,10 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
         use_wandb=False,
     )
     assert checkpoint and Path(checkpoint).exists(), f"[{run_name}] checkpoint was not written"
+    record_release_metadata(
+        "pipeline", task="classification", model_family=run_name,
+        config_path=config_path, checkpoint_path=str(checkpoint),
+    )
 
     report_step(f"[{run_name}] infer()")
     predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
@@ -320,10 +329,15 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
     pred_path = CACHE_ROOT / "outputs" / f"classification_{run_name}_predictions.json"
     model.save_predictions(output_path=str(pred_path), predictions=predictions)
     assert pred_path.exists()
+    record_release_metadata("prediction", task="classification", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
     metrics = model.evaluate(test_set=str(split_paths["test"]), use_wandb=False)
     assert isinstance(metrics, dict), f"[{run_name}] evaluate() did not return metrics"
+    record_release_metadata(
+        "result", task="classification", model_family=run_name,
+        runtime_seconds=round(time.perf_counter() - started, 3),
+    )
     print(f"[{run_name}] metrics: {metrics}")
 
 
@@ -332,7 +346,7 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
 def test_classification_mvnetwork_backbone(classification_dataset, backbone):
     require_release_enabled()
     dataset = classification_dataset
-    max_frames = max_items_for("OSL_RELEASE_CLS_NUM_FRAMES", 16)
+    max_frames = max_items_for("OSL_RELEASE_CLS_NUM_FRAMES", 16) or 16
 
     overrides = system_block(f"classification_{backbone}")
     overrides["DATA"] = {
@@ -369,9 +383,9 @@ def test_classification_mvnetwork_backbone(classification_dataset, backbone):
 
 @pytest.mark.release
 def test_classification_video_mae_huggingface_backend(classification_dataset):
-    """Best-effort coverage of the HF VideoMAE full-model path
-    (encoder_type == 'video_mae' in build_model_canonical). Not verified
-    this session -- if it fails, check build_video_mae_backbone() in
+    """Coverage of the HF VideoMAE full-model path
+    (encoder_type == 'video_mae' in build_model_canonical). If it fails,
+    check build_video_mae_backbone() in
     opensportslib/models/base/video.py for what it actually expects from the
     dataloader batch.
     """
@@ -413,32 +427,136 @@ def test_classification_video_mae_huggingface_backend(classification_dataset):
     _run_classification_pipeline(config_path, dataset, "video_mae")
 
 
+@pytest.fixture(scope="module")
+def frames_npy_dataset(classification_dataset):
+    """Decode the bounded real-video split into the production frames_npy format."""
+
+    dataset = classification_dataset
+    root = DATA_DIR / "classification" / "frames_npy"
+    root.mkdir(parents=True, exist_ok=True)
+    frame_count = max_items_for("OSL_RELEASE_CLS_NUM_FRAMES", 16) or 16
+    split_paths = {}
+
+    for split, annotation_path in dataset["split_paths"].items():
+        payload = json.loads(Path(annotation_path).read_text(encoding="utf-8"))
+        output_items = []
+        for index, item in enumerate(payload.get("data", [])):
+            source_input = next(
+                (value for value in item.get("inputs", []) if value.get("type") == "video"),
+                None,
+            )
+            assert source_input, f"{split} item {item.get('id', index)!r} has no video input"
+            source = Path(source_input["path"])
+            if not source.is_absolute():
+                source = Path(dataset["source_paths"][split]) / source
+            assert source.is_file(), f"Release video does not exist: {source}"
+            frames = read_video(str(source))
+            assert frames, f"Release video decoded no frames: {source}"
+            indices = np.linspace(0, len(frames) - 1, frame_count).astype(int)
+            array = np.stack([frames[position] for position in indices]).astype(np.uint8)
+            relative = Path(split) / f"{item.get('id', index)}.npy"
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            np.save(destination, array)
+            converted = dict(item)
+            converted["inputs"] = [{"type": "frames_npy", "path": str(relative)}]
+            output_items.append(converted)
+        converted_payload = {**payload, "data": output_items}
+        output_path = root / f"{split}.json"
+        output_path.write_text(json.dumps(converted_payload, indent=2), encoding="utf-8")
+        split_paths[split] = output_path
+
+    return {
+        "data_root": root,
+        "classes": dataset["classes"],
+        "split_paths": split_paths,
+        "source_paths": {split: root for split in split_paths},
+    }
+
+
+@pytest.fixture(scope="module")
+def tracking_classification_dataset():
+    """Materialize populated SoccerNet-GAR OSL tracking splits."""
+
+    require_release_enabled()
+    require_repo_access(TRACKING_CLS_REPO)
+    require_repo_populated(TRACKING_CLS_REPO)
+    root = DATA_DIR / "classification" / TRACKING_CLS_REPO.split("/")[-1]
+    snapshot_dataset(TRACKING_CLS_REPO, root)
+    split_paths = {}
+    for split in ("train", "valid", "test"):
+        candidates = sorted(root.rglob(f"*{split}*.json"))
+        assert candidates, f"{TRACKING_CLS_REPO} has no {split} OSL annotation JSON"
+        split_paths[split] = candidates[0]
+    payload = json.loads(split_paths["train"].read_text(encoding="utf-8"))
+    classes = _exclude_dataset_labels(classes_from_osl_json(payload, head="action"))
+    assert classes, f"{TRACKING_CLS_REPO} training annotations declare no action classes"
+    return {
+        "data_root": root,
+        "classes": classes,
+        "split_paths": split_paths,
+        "source_paths": {split: root for split in split_paths},
+    }
+
+
 @pytest.mark.release
-def test_classification_tracking_graph_conv():
+def test_classification_tracking_graph_conv(tracking_classification_dataset):
     """Tracking-modality classification (graph_conv backbone,
     classification/sngar_tracking.yaml canonical config). Uses
-    OpenSportsLab/SoccerNet-GAR, which is an unpublished placeholder repo as
-    of the last check -- this cleanly skips until it is populated.
+    OpenSportsLab/SoccerNet-GAR. Missing required data fails release verification.
     """
     require_release_enabled()
-    require_repo_populated(TRACKING_CLS_REPO)
-    pytest.skip(
-        "SoccerNet-GAR is now populated but this test body still needs to be "
-        "written: download the tracking-parquet splits and point "
-        "classification/sngar_tracking.yaml's DATA.common.data_root at them "
-        "(same pattern as the video-backbone tests above)."
+    dataset = tracking_classification_dataset
+    overrides = system_block("classification_graph_conv")
+    overrides["DATA"] = {
+        "common": {
+            "dataset_name": dataset["data_root"].name,
+            "data_root": str(dataset["data_root"]),
+            "classes": dataset["classes"],
+            "splits": {
+                split: {"annotation_path": str(path), "source_path": str(dataset["source_paths"][split])}
+                for split, path in dataset["split_paths"].items()
+            },
+        },
+        "inputs": {"video": {"params": {"max_samples": max_items_for("OSL_RELEASE_MAX_CLIPS", 40)}}},
+    }
+    overrides["MODEL"] = {"components": {"task_head": {"params": {"num_classes": len(dataset["classes"])}}}}
+    overrides["TRAIN"] = {"epochs": epochs_for(1)}
+    config_path = materialize_config(
+        "classification", "sngar_tracking", overrides, out_name="cls_graph_conv.yaml"
     )
+    _run_classification_pipeline(config_path, dataset, "graph_conv")
 
 
 @pytest.mark.release
-@pytest.mark.skip(
-    reason=(
-        "The VideoModel 'frames_npy' family (dinov3/clip/videomae/videomae2 as "
-        "pure feature extractors, see opensportslib/models/base/video.py) needs "
-        "a raw-video -> frame-.npy pre-extraction step this suite doesn't "
-        "implement yet. Wire that up, then flesh this test out following the "
-        "MVNetwork parametrization above."
+@pytest.mark.parametrize("backbone", FRAME_BACKBONES)
+def test_classification_frames_npy_backbones(frames_npy_dataset, backbone):
+    require_release_enabled()
+    dataset = frames_npy_dataset
+    pretrained_model, hidden_dim = FRAME_BACKBONES[backbone]
+    overrides = system_block(f"classification_frames_{backbone}")
+    overrides["DATA"] = {
+        "common": {
+            "dataset_name": dataset["data_root"].name,
+            "data_root": str(dataset["data_root"]),
+            "classes": dataset["classes"],
+            "splits": {
+                split: {"annotation_path": str(path), "source_path": str(dataset["source_paths"][split])}
+                for split, path in dataset["split_paths"].items()
+            },
+        },
+        "inputs": {"video": {"sampling": {"num_frames": max_items_for("OSL_RELEASE_CLS_NUM_FRAMES", 16) or 16}}},
+    }
+    overrides["MODEL"] = {"components": {
+        "video_encoder": {
+            "source": {"name": backbone},
+            "params": {"pretrained_model": pretrained_model, "hidden_dim": hidden_dim},
+        },
+        "video_adapter": {"params": {"hidden_dim": hidden_dim}},
+        "task_head": {"params": {"hidden_dim": hidden_dim, "num_classes": len(dataset["classes"])}},
+    }}
+    overrides["TRAIN"] = {"epochs": epochs_for(1)}
+    config_path = materialize_config(
+        "classification", "sngar_frames", overrides, out_name=f"cls_frames_{backbone}.yaml"
     )
-)
-def test_classification_frames_npy_backbones():
-    pass
+    _run_classification_pipeline(config_path, dataset, f"frames_{backbone}")

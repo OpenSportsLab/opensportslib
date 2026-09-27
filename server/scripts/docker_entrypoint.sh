@@ -12,38 +12,11 @@ export OSL_SERVER_HOST="${OSL_SERVER_HOST:-0.0.0.0}"
 export OSL_SERVER_PORT="${OSL_SERVER_PORT:-8000}"
 export OSL_RUNTIME_DIR="${OSL_RUNTIME_DIR:-/app/runtime}"
 export OSL_REDIS_URL="${OSL_REDIS_URL:-redis://redis:6379/0}"
-export OSL_CLASSIFICATION_CONFIG_PATH="${OSL_CLASSIFICATION_CONFIG_PATH:-/app/config/classification_video.standalone.yaml}"
-export OSL_LOCALIZATION_CONFIG_PATH="${OSL_LOCALIZATION_CONFIG_PATH:-/app/config/localization_video_dali.standalone.yaml}"
-export OSL_VQA_QWEN3_CONFIG_PATH="${OSL_VQA_QWEN3_CONFIG_PATH:-/app/config/vqa_qwen3_vl_native.standalone.yaml}"
-export OSL_VQA_QWEN25_CONFIG_PATH="${OSL_VQA_QWEN25_CONFIG_PATH:-/app/config/vqa_qwen2_5_vl_native.standalone.yaml}"
-export OSL_VQA_XVARS_CONFIG_PATH="${OSL_VQA_XVARS_CONFIG_PATH:-/app/config/vqa_xvars.standalone.yaml}"
 
 PROFILE="${OSL_DOCKER_VQA_DEP_PROFILE:-qwen}"
 ROLE="${OSL_DOCKER_SERVICE_ROLE:-api}"
-PREDOWNLOAD_ON_START="${OSL_DOCKER_PREDOWNLOAD_ON_START:-false}"
-PREDOWNLOAD_WORKER_ONLY="${OSL_DOCKER_PREDOWNLOAD_WORKER_ONLY:-true}"
 
 echo "Docker entrypoint starting with OSL_DOCKER_SERVICE_ROLE=${ROLE} OSL_DOCKER_VQA_DEP_PROFILE=${PROFILE}"
-
-should_predownload="false"
-if [[ "${PREDOWNLOAD_ON_START}" == "true" ]]; then
-  if [[ "${PREDOWNLOAD_WORKER_ONLY}" == "true" ]]; then
-    if [[ "${ROLE}" == "worker" ]]; then
-      should_predownload="true"
-    else
-      echo "Skipping Hugging Face predownload on non-worker role ${ROLE}"
-    fi
-  else
-    should_predownload="true"
-  fi
-fi
-
-if [[ "${should_predownload}" == "true" ]]; then
-  echo "Predownloading configured Hugging Face assets before service startup"
-  /app/scripts/download_all_weights.sh
-else
-  echo "Skipping Hugging Face predownload at container startup"
-fi
 
 case "${PROFILE}" in
   qwen)

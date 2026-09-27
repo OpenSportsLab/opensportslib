@@ -127,11 +127,26 @@ python -m pip install cupy-cuda13x
 
 ## 5. Install PyTorch Geometric
 
-For basic PyTorch Geometric usage, this is usually enough:
+The supported OpenSportsLib command is:
 
 ```bash
-python -m pip install torch-geometric
+opensportslib setup --pyg
 ```
+
+It installs `torch-geometric` and replaces the Torch stack with the
+PyG-compatible PyTorch 2.12.1 profile. Compiled PyG extension wheels are not
+installed by default, so this command works on servers without matching wheels.
+
+Install the optional compiled extensions only when a workload requires them:
+
+```bash
+opensportslib setup --pyg --pyg_extensions
+```
+
+That opt-in command verifies that every extension wheel is available before
+modifying the Torch installation and does not fall back to compiling from source.
+
+For manual installation, use the PyG-compatible Torch version below.
 
 For the optional compiled extensions, first check your installed Torch and CUDA versions:
 
@@ -152,7 +167,7 @@ Then choose the matching command.
 ### CPU only
 
 ```bash
-TORCH=2.10.0
+TORCH=2.12.1
 CUDA=cpu
 
 python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
@@ -164,7 +179,7 @@ python -m pip install torch-geometric
 ### CUDA 12.6
 
 ```bash
-TORCH=2.10.0
+TORCH=2.12.1
 CUDA=cu126
 
 python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
@@ -176,7 +191,7 @@ python -m pip install torch-geometric
 ### CUDA 12.8
 
 ```bash
-TORCH=2.10.0
+TORCH=2.12.1
 CUDA=cu128
 
 python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
@@ -188,7 +203,7 @@ python -m pip install torch-geometric
 ### CUDA 13.0
 
 ```bash
-TORCH=2.10.0
+TORCH=2.12.1
 CUDA=cu130
 
 python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
@@ -197,7 +212,8 @@ python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spl
 python -m pip install torch-geometric
 ```
 
-If you installed a Torch version different from `2.10.0`, replace `TORCH=2.10.0` with the exact base version printed by:
+If you deliberately installed a different compatible Torch version, replace
+`TORCH=2.12.1` with the exact base version printed by:
 
 ```bash
 python -c "import torch; print(torch.__version__.split('+')[0])"
@@ -334,7 +350,7 @@ Example for Torch 2.10.0 with CUDA 12.8:
 
 ```bash
 python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-2.10.0+cu128.html
+  -f https://data.pyg.org/whl/torch-2.12.1+cu128.html
 ```
 
 On some platforms, especially Linux arm64, prebuilt wheels may not exist for every optional PyG extension. In that case, start with:

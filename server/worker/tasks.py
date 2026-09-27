@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 import traceback
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +25,26 @@ ACTIVE_MODEL_ID: str | None = None
 ACTIVE_SERVICE: BaseTaskService | None = None
 LAST_ACTIVITY_AT: datetime | None = None
 logger = logging.getLogger("osl.worker")
+
+
+def _hf_token(explicit: str | None = None) -> str | None:
+    return explicit or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+
+
+@contextmanager
+def _scoped_hf_token(token: str | None):
+    names = ("HF_TOKEN", "HUGGINGFACE_HUB_TOKEN", "HUGGINGFACE_TOKEN")
+    previous = {name: os.environ.get(name) for name in names}
+    try:
+        if token:
+            os.environ["HF_TOKEN"] = token
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def get_active_model_ids() -> list[str]:
@@ -257,13 +279,15 @@ def register_model_job(operation_id: str, model_id: str) -> dict:
         raise ValueError("Registration operation or model record no longer exists.")
     operation["status"] = "running"
     MODEL_REGISTRY.save_operation(operation)
+    token = _hf_token(MODEL_REGISTRY.consume_operation_secret(operation_id))
     try:
-        if record["source_type"] == "huggingface" and not record.get("config_path"):
-            config_path, source_mode, _resolved_weights = resolve_huggingface_source(record["source"])
-            record["config_path"] = config_path
-            record["source_mode"] = source_mode
-            MODEL_REGISTRY.put(record)
-        _get_or_load_service(model_id, allow_registering=True)
+        with _scoped_hf_token(token):
+            if record["source_type"] == "huggingface" and not record.get("config_path"):
+                config_path, source_mode, _resolved_weights = resolve_huggingface_source(record["source"], token)
+                record["config_path"] = config_path
+                record["source_mode"] = source_mode
+                MODEL_REGISTRY.put(record)
+            _get_or_load_service(model_id, allow_registering=True)
         record["status"] = READY
         MODEL_REGISTRY.put(record)
         operation["status"] = "succeeded"
@@ -271,14 +295,19 @@ def register_model_job(operation_id: str, model_id: str) -> dict:
         return {"model_id": model_id, "status": READY}
     except Exception as exc:
         record["status"] = FAILED
-        record["error"] = str(exc)
+        record["error"] = (
+            "Hugging Face repository access or model loading failed."
+            if record["source_type"] == "huggingface" else str(exc)
+        )
         MODEL_REGISTRY.put(record)
         operation["status"] = "failed"
-        operation["error"] = str(exc)
+        operation["error"] = record["error"]
         MODEL_REGISTRY.save_operation(operation)
         _unload_active_model(model_id)
         logger.exception("Model registration failed | model_id=%s", model_id)
         raise
+    finally:
+        MODEL_REGISTRY.delete_operation_secret(operation_id)
 
 
 def unregister_model_job(operation_id: str, model_id: str, generation: int) -> dict:
@@ -288,8 +317,15 @@ def unregister_model_job(operation_id: str, model_id: str, generation: int) -> d
         raise ValueError("Unregistration operation no longer exists.")
     operation["status"] = "running"
     MODEL_REGISTRY.save_operation(operation)
+    token = _hf_token(MODEL_REGISTRY.consume_operation_secret(operation_id))
     try:
         if record is not None and record["generation"] == generation:
+            if record["source_type"] == "huggingface":
+                from huggingface_hub import list_repo_files
+                try:
+                    list_repo_files(record["source"], token=token)
+                except Exception as exc:
+                    raise ValueError("Hugging Face repository access could not be verified.") from exc
             _unload_active_model(model_id)
             MODEL_REGISTRY.delete(model_id)
         operation["status"] = "succeeded"
@@ -304,6 +340,8 @@ def unregister_model_job(operation_id: str, model_id: str, generation: int) -> d
             MODEL_REGISTRY.put(record)
         logger.exception("Model unregistration failed | model_id=%s", model_id)
         raise
+    finally:
+        MODEL_REGISTRY.delete_operation_secret(operation_id)
 
 
 def _unload_active_model(model_id: str) -> None:

@@ -20,7 +20,7 @@ RUN conda create -y -n osl python=3.12 && \
     conda clean -afy
 
 RUN conda run -n osl python /app/scripts/generate_flat_configs.py && \
-    chmod +x /app/scripts/*.sh
+    chmod +x /app/scripts/serverctl /app/scripts/docker_entrypoint.sh
 
 ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

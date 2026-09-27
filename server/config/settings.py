@@ -60,43 +60,16 @@ class Settings:
     max_upload_file_count: int
     allowed_upload_extensions: tuple[str, ...]
     model_root: Path
-    model_admin_token: str
+    api_key: str
     model_operation_timeout_seconds: int
-    models: tuple[ModelSettings, ...]
 
     def ensure_runtime_dirs(self) -> None:
         for path in (self.runtime_dir, self.jobs_dir, self.results_dir, self.sessions_dir, self.tmp_dir):
             path.mkdir(parents=True, exist_ok=True)
 
-    def model_settings(self) -> list[ModelSettings]:
-        return list(self.models)
-
-
-def _model_settings(prefix: str, task_type: str, default_model_id: str) -> ModelSettings:
-    raw_config_path = os.getenv(f"{prefix}_CONFIG_PATH") or None
-    weights = os.getenv(f"{prefix}_WEIGHTS") or None
-    config_path = str(_resolve_repo_path(raw_config_path)) if raw_config_path else None
-    enabled = _as_bool(os.getenv(f"{prefix}_MODEL_ENABLED"), default=bool(config_path))
-    model_id = os.getenv(f"{prefix}_MODEL_ID", default_model_id)
-    return ModelSettings(
-        task_type=task_type,
-        model_id=model_id,
-        enabled=enabled,
-        config_path=config_path,
-        weights=weights,
-    )
-
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     runtime_dir = _resolve_repo_path(os.getenv("OSL_RUNTIME_DIR", "./runtime"))
-    models = (
-        _model_settings("OSL_CLASSIFICATION", "classification", "OpenSportsLab/OSL-cls-action-mvitv2"),
-        _model_settings("OSL_LOCALIZATION", "localization", "OpenSportsLab/OSL-loc-snbas-2025-e2e"),
-        _model_settings("OSL_VQA_QWEN3", "vqa", "OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora"),
-        _model_settings("OSL_VQA_QWEN25", "vqa", "OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora"),
-        _model_settings("OSL_VQA_XVARS", "vqa", "OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora"),
-    )
     settings = Settings(
         host=os.getenv("OSL_SERVER_HOST", "0.0.0.0"),
         port=int(os.getenv("OSL_SERVER_PORT", "8000")),
@@ -128,9 +101,8 @@ def get_settings() -> Settings:
             if item.strip()
         ),
         model_root=_resolve_repo_path(os.getenv("OSL_MODEL_ROOT", "./models")),
-        model_admin_token=os.getenv("OSL_MODEL_ADMIN_TOKEN", ""),
+        api_key=os.getenv("OSL_API_KEY", ""),
         model_operation_timeout_seconds=int(os.getenv("OSL_MODEL_OPERATION_TIMEOUT_SECONDS", "7200")),
-        models=models,
     )
     settings.ensure_runtime_dirs()
     return settings

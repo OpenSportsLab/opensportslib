@@ -12,12 +12,12 @@ uv venv --python 3.12 .venv
 source .venv/bin/activate
 uv pip install -e ./server
 cd server
-bash scripts/setup_env.sh
-./scripts/start_all.sh
+./scripts/serverctl setup
+./scripts/serverctl start
 ```
 
-`start_all.sh` starts or reuses Redis, the API, and the worker. Docker Compose
-is available with `./scripts/docker_compose.sh up -d`. A host `video_path` must
+`serverctl start` starts or reuses Redis, the API, and the worker. Docker Compose
+is available with `./scripts/serverctl docker start`. A host `video_path` must
 be visible inside the worker container; mount it read-only when using Docker.
 See [server/README.md](../../server/README.md) for Docker, GPU, dependency,
 and shutdown details.
@@ -29,7 +29,7 @@ curl http://127.0.0.1:8000/health
 ```
 
 Important settings include `OSL_REDIS_URL`, `OSL_RUNTIME_DIR`,
-`OSL_MODEL_ROOT`, `OSL_MODEL_ADMIN_TOKEN`, `OSL_JOB_TIMEOUT_SECONDS`,
+`OSL_MODEL_ROOT`, optional `OSL_API_KEY`, optional `HF_TOKEN`, `OSL_JOB_TIMEOUT_SECONDS`,
 `OSL_MODEL_OPERATION_TIMEOUT_SECONDS`, `OSL_SESSION_TTL_SECONDS`,
 `OSL_WORKER_EXECUTION_MODE`, and `OSL_WORKER_IDLE_UNLOAD_SECONDS`.
 `OSL_JOB_STALE_GRACE_SECONDS` adds a grace period before abandoned RQ jobs are
@@ -47,7 +47,7 @@ Inspect without changing state:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' -d '{"dry_run":true}'
 ```
 
@@ -55,12 +55,17 @@ Apply recovery and cleanup:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/runtime/reconcile \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' -d '{"dry_run":false}'
 ```
 
 Do not manually delete Redis keys or runtime files while jobs may be running;
 use the dry-run response and worker/API logs first.
+
+`./scripts/serverctl clean` removes transient request state while preserving
+registrations and model caches. `./scripts/serverctl reset` is a confirmed
+factory reset that deletes Redis registrations, runtime data, downloaded and
+local models, and logs; pass `--yes` only for unattended automation.
 
 The same operation is available through the Python client or helper script:
 
@@ -69,7 +74,7 @@ from opensportslib import RemoteModelRegistry
 
 registry = RemoteModelRegistry(
     "http://127.0.0.1:8000",
-    admin_token="<same-private-token>",
+    api_key="<optional-api-key>",
 )
 print(registry.reconcile_runtime(dry_run=True))
 print(registry.reconcile_runtime(dry_run=False))
@@ -78,11 +83,11 @@ print(registry.reconcile_runtime(dry_run=False))
 The script is dry-run by default; `--apply` is required to modify state:
 
 ```bash
-python server/scripts/reconcile_runtime.py --server http://127.0.0.1:8000
-python server/scripts/reconcile_runtime.py --server http://127.0.0.1:8000 --apply
+server/scripts/serverctl reconcile --server http://127.0.0.1:8000
+server/scripts/serverctl reconcile --server http://127.0.0.1:8000 --apply
 ```
 
-### Docker admin token setup
+### Docker credentials
 
 `server/.env.example` is only a template. Docker Compose loads the actual
 `server/.env` file:
@@ -92,10 +97,12 @@ cd server
 cp .env.example .env
 ```
 
-Edit `server/.env` and set one private token assignment:
+Set a machine Hugging Face token and, when local/admin operations are needed,
+an API key:
 
 ```env
-OSL_MODEL_ADMIN_TOKEN=<your-private-admin-token>
+HF_TOKEN=<optional-machine-hf-token>
+OSL_API_KEY=<optional-private-api-key>
 ```
 
 Do not put a real token in `.env.example`, documentation, or Git. The token
@@ -103,15 +110,15 @@ shared during troubleshooting should be treated as exposed and rotated before
 production use. Recreate the containers after changing it:
 
 ```bash
-./scripts/docker_compose.sh down
-./scripts/docker_compose.sh up -d --force-recreate
+./scripts/serverctl docker stop
+./scripts/serverctl docker start --force-recreate
 ```
 
 Verify that the API container received a token without printing its value:
 
 ```bash
 docker compose exec api sh -c \
-  'test -n "$OSL_MODEL_ADMIN_TOKEN" && echo "admin token is set" || echo "admin token is missing"'
+  'test -n "$HF_TOKEN" && echo "HF token is set" || echo "anonymous HF access"'
 ```
 
 Use the exact same private value in curl or Python:
@@ -126,20 +133,18 @@ from opensportslib import RemoteModelRegistry
 
 registry = RemoteModelRegistry(
     "http://10.64.74.111:8000",
-    admin_token="<same-private-token>",
+    api_key="<optional-api-key>",
 )
 ```
 
-If authentication returns 401, check that you edited `.env` rather than only
-`.env.example`, removed duplicate `OSL_MODEL_ADMIN_TOKEN` lines, recreated the
-containers, connected to the expected host, included the `Bearer ` prefix, and
-did not add quotes or trailing whitespace to the token.
+If API-key authentication returns 401, check the `OSL_API_KEY` value and Bearer header.
 
 ## Model registry
 
-Administration endpoints require `Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN`.
-Leave `OSL_MODEL_ADMIN_TOKEN` empty to disable administration. Public list and
-status responses redact local filesystem paths.
+HF model registration/removal verifies repository access using a request token
+or worker environment token. Local models, defaults, and runtime reconciliation
+require `Authorization: Bearer $OSL_API_KEY`; leaving it empty disables those
+operations. Public responses redact local filesystem paths and all credentials.
 
 ### Register models
 
@@ -147,16 +152,20 @@ Hugging Face models use their repository ID as `model_id`:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/models \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"task_type":"classification","source":{"type":"huggingface","model_id":"OpenSportsLab/OSL-cls-action-mvitv2"}}'
 ```
+
+For a private repository, add `"hf_token":"hf_..."` inside `source`. The
+request token overrides `HF_TOKEN`, `HUGGINGFACE_HUB_TOKEN`, and
+`HUGGINGFACE_TOKEN` from the worker environment and is deleted after the
+operation. Public repositories may use anonymous access.
 
 Server-local models must be below `OSL_MODEL_ROOT`:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/models \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"task_type":"localization","model_id":"football-model:v2","source":{"type":"local","weights_path":"/srv/models/football/model.pth","config_path":"/srv/models/football/config.yaml"}}'
 ```
@@ -176,7 +185,7 @@ error. This behavior is task-agnostic and does not depend on a model ID.
 Registration is asynchronous and returns an `operation_id`:
 
 ```bash
-curl -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+curl \
   http://127.0.0.1:8000/model-operations/<operation_id>
 curl http://127.0.0.1:8000/models
 curl 'http://127.0.0.1:8000/models/status?model_id=football-model:v2'
@@ -190,11 +199,14 @@ Set a task default and unregister a model:
 
 ```bash
 curl -X PUT http://127.0.0.1:8000/models/defaults/classification \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OSL_API_KEY" \
   -H 'Content-Type: application/json' -d '{"model_id":"OpenSportsLab/OSL-cls-action-mvitv2"}'
 curl -X DELETE http://127.0.0.1:8000/models/football-model%3Av2 \
-  -H "Authorization: Bearer $OSL_MODEL_ADMIN_TOKEN"
+  -H "Authorization: Bearer $OSL_API_KEY"
 ```
+
+For a Hugging Face model, omit the API-key header and optionally send
+`X-HF-Token: hf_...`; deletion succeeds only after repository access is verified.
 
 Poll the returned unregister operation before reusing the ID.
 
@@ -203,7 +215,7 @@ The Python administration client exposes the same lifecycle:
 ```python
 from opensportslib import RemoteModelRegistry
 
-r = RemoteModelRegistry("http://127.0.0.1:8000", admin_token="secret")
+r = RemoteModelRegistry("http://127.0.0.1:8000", api_key="secret")
 op = r.register_model(task_type="classification",
                       huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2")
 r.wait_for_operation(op["operation_id"])
