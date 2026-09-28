@@ -1,5 +1,5 @@
 site_name: OpenSportsLib
-site_description: OpenSportsLib is the professional library, designed for advanced video understanding in soccer. It provides state-of-the-art tools for action recognition, spotting, retrieval, and captioning, making it ideal for researchers, analysts, and developers working with soccer video data.
+site_description: Configuration-driven sports-video workflows for classification, action spotting, and visual question answering.
 repo_url: https://github.com/OpenSportsLab/opensportslib
 repo_name: OpenSportsLab/opensportslib
 
@@ -27,39 +27,47 @@ theme:
 
 nav:
   - Home: index.md
-  - Model Zoo: model-zoo.md
-
   - Getting Started:
       - Installation: getting-started/installation.md
       - Project Structure: getting-started/project_structure.md
+      - First Workflow: getting-started/first-workflow.md
       - SLURM Guide (salloc, srun): getting-started/slurm.md
-
-  - Server & Deployment:
+  - Workflows:
+      - Training, Inference & Evaluation: tni/tni.md
+      - Configuration: config/configuration-guide.md
       - Inference Server: server/inference-server.md
-
-  - Training & Inference:
-      - Training & Inference: tni/tni.md
-
-  - Action Spotting:
-      - Tracking Action Spotting: spotting/tracking-action-spotting.md
+  - Tasks:
+      - Classification: tni/tni.md
+      - Localization & Spotting: spotting/tracking-action-spotting.md
+      - VQA: tools/vqa.md
+      - HDF5 Header Spotting: headers/README.md
+  - Data:
+      - OSL JSON Format: data/osl-json-format.md
+      - Dataset Conversion: tools/dataset-conversion.md
+      - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
   - Configuration:
       - Configuration Guide: config/configuration-guide.md
       - Legacy to Canonical Mapping: config/legacy-to-canonical-mapping.md
       - Configuration Developer Guide: config/developer-guide.md
-
-  - Data Formats:
-      - OSL JSON Format: data/osl-json-format.md
-
-  - Tools:
-      - Dataset Conversion: tools/dataset-conversion.md
-      - SN-GAR Action Spotting: tools/sngar-spotting.md
-      - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
+  - Reference:
+      - Model Zoo: model-zoo.md
+      - Public Python API: api/api.md
+      - Inference Server: server/inference-server.md
       - Hugging Face Model Upload: tools/hf-model-upload.md
-
-  - API Reference:
-      - API: api/api.md
-  
-  - Contributing: contributing.md 
+      - SN-GAR Action Spotting: tools/sngar-spotting.md
+  - Developers:
+      - Architecture: developer/architecture.md
+      - Supported Extension Paths: developer/extensions.md
+      - Extension APIs:
+          - Configuration: developer/config-reference.md
+          - Data: developer/data-reference.md
+          - Model Construction: developer/model-reference.md
+          - Runtime & Metrics: developer/runtime-reference.md
+          - Tools: developer/tools-reference.md
+      - Internal Modules: developer/internal-catalog.md
+      - Testing & Review: developer/testing.md
+      - Configuration Authoring: config/developer-guide.md
+  - Contributing: contributing.md
       
 
 plugins:
@@ -70,6 +78,8 @@ plugins:
       handlers:
         python:
           paths: [.]
+          options:
+            show_source: true
 
 markdown_extensions:
   - admonition

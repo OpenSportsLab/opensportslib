@@ -75,8 +75,9 @@ It provides a unified framework to **train, evaluate, and run inference** for ke
 - **Action classification**
 - **Action localization / spotting**
 - **Visual Question Answering (VQA)**
-- **Action retrieval**
-- **Action description / captioning**
+
+Retrieval and action description/captioning are roadmap areas. They do not yet
+have first-class task wrappers or training workflows in this package.
 
 OpenSportsLib is designed for **researchers, ML engineers, and sports analytics teams** who want reproducible and extensible workflows for sports video AI.
 

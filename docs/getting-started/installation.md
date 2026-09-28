@@ -1,113 +1,38 @@
 # Installation
 
-OpenSportsLib can be installed either from **PyPI** or from source in **editable mode** (recommended for development).
+OpenSportsLib requires Python 3.12 or newer. Install the package first, then run its setup command to install a PyTorch profile for the current machine. The setup command replaces the installed Torch stack; use a dedicated environment.
 
----
+## Base installation
 
-## Option 1 — Install from PyPI
-
-#### Create a Virtual Environment
-Use Conda to manage dependencies and ensure Python 3.12 compatibility.
 ```bash
 conda create -n osl python=3.12 pip
 conda activate osl
-```
-
-> Requires **Python 3.12+**  
-> Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
-> PyTorch Geometric uses a dedicated PyTorch 2.12.1 compatibility profile.
-
-
-#### PyPI install
-Stable version
-```bash
+python -m pip install --upgrade pip
 pip install opensportslib
-```
-
-Pre-release version
-```bash
-pip install --pre opensportslib
-```
-!!! note
-    The `--pre` flag installs the latest pre-release version from PyPI.
-
-#### Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
-```bash
-# Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
-
-# Optional: install PyTorch Geometric support. This replaces the installed
-# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
-opensportslib setup --pyg
-
-# Optional: install for DALI support
-opensportslib setup --dali
-
-# Optional: install the X-VARS-compatible VQA dependency profile
-opensportslib setup --vqa_xvars
-
-# Optional: install the Qwen-compatible VQA dependency profile
-opensportslib setup --vqa_qwen
 ```
 
----
+For the latest prerelease, use `pip install --pre opensportslib`. For source development, clone the repository and replace the install command with `pip install -e .`.
 
-!!! note   
-    Run `opensportslib setup` to automatically configure dependencies.
-    If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
-    For VQA, choose `--vqa_xvars` for the X-VARS-compatible dependency pins or
-    `--vqa_qwen` for the Qwen-compatible dependency pins. The `vqa_qwen`
-    configuration supports `Qwen/Qwen2.5-7B-Instruct` and
-    `Qwen/Qwen3.5-9B-Base`.
+`opensportslib setup` detects `nvidia-smi` when available and installs a CPU wheel when it is not. It selects among CUDA 12.6, 12.8, and 13.0 wheel profiles from the reported driver and visible GPU compute capabilities; it is not a general CUDA toolkit installer.
 
+## Optional profiles
 
-## Verify installation
+| Command | Use when | Important behavior |
+| --- | --- | --- |
+| `opensportslib setup --dali` | Using DALI video loading on an NVIDIA GPU | Installs DALI/CuPy for the selected CUDA profile; DALI is not a CPU loader. |
+| `opensportslib setup --pyg` | Using graph/tracking models | Replaces Torch with the pinned PyG-compatible Torch 2.12.1 profile and installs `torch-geometric`. |
+| `opensportslib setup --pyg --pyg_extensions` | Optional compiled PyG extensions are required | Verifies binary wheels before installing extension packages. |
+| `opensportslib setup --vqa_xvars` | Running X-VARS VQA | Replaces the Hugging Face dependency set with X-VARS pins. |
+| `opensportslib setup --vqa_qwen` | Running Qwen VQA | Replaces the Hugging Face dependency set with Qwen pins. |
 
-```python
-import opensportslib
-print("OpenSportsLib installed successfully")
-```
+The X-VARS and Qwen profiles have incompatible dependency pins; use separate environments when both are needed. On CPU, compatible DALI-video configs are normalized to the OpenCV loader.
 
-## Option 2 — Install from Source (Editable Mode) ⭐ Recommended
+## Verify and authenticate
 
-- Use this method if you:
-- want the latest development version
-- plan to modify the code
-- are contributing to the project
-
-#### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/OpenSportsLab/opensportslib.git 
-cd opensportslib
-```
-#### Step 2: Create a Virtual Environment
-Use Conda to manage dependencies and ensure Python 3.12 compatibility.
-```bash
-conda create -n osl python=3.12 pip
-conda activate osl
-```
-#### Step 3: Install in Editable Mode
-Install the base package or include optional dependencies for specific tasks like localization:
-```bash
-# Install core package in editable mode
-pip install -e .
+python -c "from opensportslib.apis import ClassificationModel, LocalizationModel, VQAModel, Config; print('OpenSportsLib ready')"
+opensportslib setup --help
 ```
 
-#### Step 4: Setup Environment (PyTorch, CUDA aware & Optional Dependencies)
-```bash
-# Install PyTorch (CPU/GPU auto-detected)
-opensportslib setup
-
-# Optional: install PyTorch Geometric support. This replaces the installed
-# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
-opensportslib setup --pyg
-
-# Optional: install for DALI support
-opensportslib setup --dali
-
-# Optional: install the X-VARS-compatible VQA dependency profile
-opensportslib setup --vqa_xvars
-
-# Optional: install the Qwen-compatible VQA dependency profile
-opensportslib setup --vqa_qwen
-```
+Hugging Face access is required only for gated datasets or model repositories. Authenticate with `hf auth login` before such a workflow. The separately packaged inference server is not installed by `pip install opensportslib`; see the [server guide](../server/inference-server.md).

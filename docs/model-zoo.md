@@ -4,6 +4,10 @@ This page lists the pretrained OpenSportsLib models published on Hugging Face.
 Use the model repository ID with `load_weights(...)` to load a checkpoint into an
 OpenSportsLib model.
 
+Scores, class lists, and intended-use statements below are model-card metadata;
+they are not values computed or verified by this package at documentation-build
+time. Follow each linked model card for its authoritative artifact details.
+
 ## Available Models
 
 | Model | Task | Dataset trained on | Backbone / architecture | Classes / label set | Scores | Hugging Face link | Load weights snippet |

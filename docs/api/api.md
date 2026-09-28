@@ -1,226 +1,159 @@
-# API Overview
+# Public API Reference
 
-This page describes the high-level APIs and internal architecture of **OpenSportsLib**.  
-It explains how the framework is structured and where to extend it.
+> **Public / stable.** Import the symbols on this page from
+> `opensportslib.apis` or `opensportslib.tools`. Other package modules are not
+> compatibility-stable unless a developer page labels them an extension point.
 
----
-## 📁 Folder Structure
+## Task wrappers
 
-The following is the detailed folder structure for the `OpenSportsLib` repository, describing the organization of core modules, configurations, and documentation.
+All task wrappers accept a canonical config path or `Config`, optional local or
+Hugging Face `weights`, and optional remote-server connection parameters.
+`train()` uses configured or supplied manifests; `infer()` returns an in-memory
+prediction payload; `evaluate()` returns a metrics dictionary; and
+`save_predictions()` is the explicit disk-write operation.
 
----
-
-### Root Directory
-
-- **`README.md`**  
-  Project overview, feature list, installation instructions, and quick-start examples.
-
-- **`pyproject.toml`**  
-  Project metadata, build system requirements, and dependency lists.
-
-- **`MANIFEST.in`**  
-  Ensures non-Python files (such as YAML configurations) are included in package distributions.
-
----
-
-## `opensportslib/` (Source Code)
-
-The main package containing the framework’s core logic.
-
----
-
-### `apis/`
-High-level entry points for training and inference.
-
-- **`classification.py`**  
-  API for video-based action recognition and foul classification tasks.
-
-- **`localization.py`**  
-  API for temporal action spotting tasks.
-
-- **`vqa.py`**
-  API for visual question answering tasks.
-
-#### Public task wrapper contract
-
-Use the high-level wrappers from `opensportslib.apis`:
+| Class | Use | Important inputs and side effects |
+| --- | --- | --- |
+| `ClassificationModel` | Clip, frame-array, and supported tracking classification. | Creates run artifacts under the configured save directory; may load local/Hub weights. |
+| `LocalizationModel` | Action spotting/localization for configured video, feature, tracking, and HDF5 paths. | Model family and loader backend determine the execution route. |
+| `VQAModel` | X-VARS/Qwen visual question answering. | Requires the matching VQA dependency profile; direct inference accepts `video_path` and `question`. |
+| `BaseTaskModel` | Shared abstract wrapper contract. | Provides local/remote request lifecycle; subclass methods implement task execution. |
 
 ```python
-from opensportslib.apis import ClassificationModel, LocalizationModel, VQAModel
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(config="/path/to/classification.yaml")
+predictions = model.infer(test_set="/path/to/test.json")
+model.save_predictions("/path/to/predictions.json", predictions)
 ```
 
-Task wrappers inherit the shared `BaseTaskModel` contract:
+### Exact wrapper signatures
 
-| Method | Purpose | Return value |
-| --- | --- | --- |
-| `load_weights(weights=...)` | Load a local checkpoint or Hugging Face model ID. | `None` |
-| `train(train_set=..., valid_set=...)` | Train on OSL JSON split files. | Best checkpoint path or `None` |
-| `infer(test_set=...)` | Run prediction on an OSL JSON split file. | In-memory OSL JSON-style prediction dict |
-| `evaluate(test_set=...)` | Compute task metrics against ground truth. | Metrics dict |
-| `evaluate(test_set=..., predictions=...)` | Evaluate an existing prediction dict or prediction file. | Metrics dict |
-| `save_predictions(output_path=..., predictions=...)` | Persist a prediction dict returned by `infer()`. | Saved file path |
+::: opensportslib.apis.base_task_model.BaseTaskModel
+    options:
+      members:
+        - is_remote
+        - submit_inference
+        - submit_per_sample_inference
+        - submit_video_inference
+        - get_remote_job
+        - get_remote_result
+        - wait_for_remote_result
+        - wait_for_remote_batch
+        - clear_remote_session
+      show_source: true
 
-`infer()` is prediction-focused and returns a payload to the caller. Use
-`save_predictions(...)` when a workflow needs an explicit prediction file. Do
-not rely on task-specific trainer artifacts as the public persistence API.
+::: opensportslib.apis.classification.ClassificationModel
+    options:
+      members:
+        - load_weights
+        - train
+        - infer
+        - evaluate
+      show_source: true
 
-Annotation and prediction payloads follow the OSL JSON data model. See
-[OSL JSON Format](../data/osl-json-format.md) for the user-facing schema.
+::: opensportslib.apis.localization.LocalizationModel
+    options:
+      members:
+        - load_weights
+        - train
+        - infer
+        - evaluate
+      show_source: true
 
----
+::: opensportslib.apis.vqa.VQAModel
+    options:
+      members:
+        - load_weights
+        - train
+        - infer
+        - evaluate
+        - save_predictions
+      show_source: true
 
-### `core/`
-The internal engine of the framework.
+## Configuration API
 
-- **`trainer/`**  
-  Implementation of task-specific training and inference loops.
+`Config` loads, composes, migrates, validates, and edits a configuration before
+model allocation. `Config.from_pretrained()` downloads `config.yaml` from a Hub
+model repository, so it needs network access and any required Hugging Face
+authentication. Use `options()` before `update()` to discover supported,
+validated settings.
 
-- **`loss/`**  
-  Custom loss functions (e.g., Cross-Entropy and specialized localization losses).
+::: opensportslib.core.config.editable.Config
+    options:
+      members:
+        - from_file
+        - from_pretrained
+        - get_config
+        - options
+        - update
+        - apply_to
+        - remote_overrides
+      show_source: true
 
-- **`optimizer/` & `scheduler/`**  
-  Centralized builders for optimization strategies and learning rate schedules.
+## Remote model registry
 
-- **`sampler/`**  
-  Specialized data samplers, such as weighted samplers for handling imbalanced datasets.
+`RemoteModelRegistry` is an administrative client for the separately deployed
+server. `register_model`, `set_default`, `unregister_model`, and
+`reconcile_runtime` mutate server state; use `reconcile_runtime(dry_run=True)`
+to inspect safely. Local registration requires a server API key; Hub operations
+may require an HF token.
 
-- **`utils/`**  
-  Core utilities for:
-  - DDP setup  
-  - Configuration resolution  
-  - Checkpointing  
-  - Video processing  
+::: opensportslib.remote_registry.RemoteRegistryError
+    options:
+      show_source: true
 
----
+::: opensportslib.remote_registry.RemoteModelRegistry
+    options:
+      members:
+        - register_model
+        - list_models
+        - get_model
+        - get_operation
+        - wait_for_operation
+        - set_default
+        - unregister_model
+        - reconcile_runtime
+      show_source: true
 
-### `models/`
-Modular architecture components for flexible model building.
+## Conversion and Hugging Face tools
 
-- **`backbones/`, `necks/`, `heads/`**  
-  Layers and builders used to construct neural network architectures.
+These exports are stable, but many perform disk and network work. Conversion
+functions create Parquet/WebDataset or JSON output. Hugging Face download and
+upload functions access remote repositories and can write local media or remote
+repository content. Inspect their signatures before use and use the
+[dataset transfer guide](../tools/hf-dataset-transfer.md) for complete flows.
 
-- **`base/`**  
-  Base classes and modality-specific implementations  
-  (video-based, tracking-based, or end-to-end models).
+::: opensportslib.tools.osl_json_to_parquet
+    options:
+      members:
+        - parse_shard_size
+        - convert_json_to_parquet
+      show_source: true
 
-- **`utils/`**  
-  Shared layers and specialized modules such as:
-  - TSM  
-  - GSM  
-  - ASFormer  
+::: opensportslib.tools.parquet_to_osl_json
+    options:
+      members:
+        - convert_parquet_metadata_to_json
+        - convert_parquet_to_json
+      show_source: true
 
-- **`builder.py`**  
-  Centralized logic used to assemble full models from configuration files.
+::: opensportslib.tools.hf_transfer
+    options:
+      members:
+        - HfTransferCancelled
+        - MissingDatasetInputsError
+        - download_dataset_split_from_hf
+        - download_dataset_sample_inputs_from_hf
+        - download_dataset_missing_inputs_from_hf
+        - find_missing_dataset_inputs
+        - upload_dataset_inputs_from_json_to_hf
+        - upload_dataset_as_parquet_to_hf
+        - create_dataset_repo_on_hf
+        - dataset_repo_exists_on_hf
+        - create_dataset_branch_on_hf
+      show_source: true
 
----
-
-### `datasets/`
-Data ingestion and preprocessing logic for various soccer-related tasks.
-
-- **`classification_dataset.py`**  
-  Loaders for action recognition and foul classification.
-
-- **`localization_dataset.py`**  
-  High-performance loaders integrated with NVIDIA DALI for temporal action spotting.
-
-- **`builder.py`**  
-  Orchestrates dataset instantiation based on YAML settings.
-
----
-
-### `config/`
-Templates and configuration files defining task parameters.
-
-- **`classification.yaml`**  
-  Configuration template for foul classification tasks.
-
-- **`localization_video_dali.yaml`**  
-  Configuration template for action spotting tasks.
-
-- **`graph_tracking_classification/`**  
-  Specialized configurations for graph-based tracking models  
-  (e.g., GraphConv, GIN).
-
----
-
-### `metrics/`
-Evaluation logic and performance measurement tools.
-
-- **`classification_metric.py`**  
-  Calculates accuracy, precision, recall, and F1 scores.
-
-- **`localization_metric.py`**  
-  Computes Average Precision (mAP) for temporal spotting tasks.
-
-
-### 👨‍💻 Where to Start as a New Developer
-
-Start from the public APIs:
-```bash
-opensportslib/apis/classification.py
-opensportslib/apis/localization.py
-```
-These handle: config loading ,trainer creation, training execution, inference entry points  
-Most workflows begin here.
-
-### 📦 Add a New Dataset
-
-Work in:
-```bash
-opensportslib/datasets/
-opensportslib/datasets/builder.py
-```
-Steps:
-
-1. Create a dataset class.
-
-2. Register it in `datasets/builder.py`
-
-
-### 🧠 Add a New Model
-
-Work in:
-```bash
-opensportslib/models/
-opensportslib/models/builder.py
-```
-Steps:
-
-1. Implement your model inside one of:
-   - `backbones/`
-   - `necks/`
-   - `heads/`
-   - `base/`
-
-2. Register the model inside `models/builder.py`
-
-
-### ⚙️ Modify Configurations
-All experiment configs live in:
-```bash
-opensportslib/configs/**/*.yaml
-```
-Typical edits:
-- TYPE
-- DATA
-- MODEL
-- TRAIN
-- SYSTEM
-
-### 🔁 Modify the Training Loop
-
-To change training behavior, edit:
-```bash
-opensportslib/core/trainer/
-```
-This is where you can modify:
-
-- Forward pass  
-- Loss computation  
-- Logging  
-- Validation   
-- Checkpointing  
-
-### High-Level Workflow
-
-YAML Config -> APIs (apis/) -> Datasets (datasets/) -> Models (models/) -> Trainer (core/trainer/) -> Metrics (metrics/)
+See [extension APIs](../developer/config-reference.md) for builders and runtime
+modules, and [internal catalog](../developer/internal-catalog.md) for concrete
+implementation classes.

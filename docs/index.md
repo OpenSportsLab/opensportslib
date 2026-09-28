@@ -1,62 +1,31 @@
 # OpenSportsLib
 
-Welcome to the OpenSportsLib!
+OpenSportsLib is a configuration-driven Python library for sports-video experiments. The currently runnable task APIs are classification, localization (action spotting), and visual question answering (VQA).
 
-OpenSportsLib is a deep learning–based backend toolkit for advanced sports video understanding. It provides production-ready and research-grade modules for training, evaluating, and deploying state-of-the-art models on sports video data.
+![OpenSportsLib interface](assets/osl.jpg)
 
-From action recognition, temporal event spotting, and visual question answering to retrieval and automatic captioning, OpenSportsLib offers a unified framework for developing scalable sports video intelligence systems.
+```text
+Canonical YAML config -> task wrapper -> dataset and model builders
+-> trainer, inferer, or evaluator -> task metric / OSL JSON prediction payload
+```
 
+Retrieval and captioning are roadmap areas. They do not currently have runnable task wrappers, dataset dispatch, or model routes in this package.
 
-![Main GUI Screenshot](assets/osl.jpg)
+## Start here
 
-**Features**
+1. [Install OpenSportsLib](getting-started/installation.md).
+2. Read the [first workflow](getting-started/first-workflow.md). The package does not ship a demo dataset, so you must supply media and manifests.
+3. Choose a [canonical configuration](config/configuration-guide.md) and prepare an [OSL JSON](data/osl-json-format.md) split.
+4. Train, infer, evaluate, and explicitly save results using the [workflow guide](tni/tni.md).
 
-- Modular deep learning framework for soccer video understanding
-- Support for action recognition, event spotting, VQA, retrieval, and captioning
-- Training, evaluation, and inference pipelines
-- Config-driven experiments for reproducibility
-- Pretrained model support and checkpoint management
-- Multi-GPU and distributed training compatibility
-- Standardized dataset loaders for SN formats
-- Easy integration into research workflows and production backends
+## Guides by audience
 
-**Why use OpenSportsLib?**
-
-- Build and train state-of-the-art models for soccer video analysis
-- Unified pipeline for research and production deployment
-- Reproducible experiments with flexible configuration system
-- Designed for researchers, ML engineers, and sports analytics teams
-- Easily extendable to new tasks, datasets, and model architectures
-
-
-## Quick links
-
-- [Installation](getting-started/installation.md)
-- [OSL JSON Format](data/osl-json-format.md)
-- [Project Structure](getting-started/project_structure.md)
-- [SLURM Guide (salloc, srun)](getting-started/slurm.md)
-- [Training & Inference](tni/tni.md)
-- [Inference Server](server/inference-server.md)
-- [API Reference](api/api.md)
-
-## X-VARS Integration
-
-The authoritative X-VARS parity ledger lives in:
-
-- [VQA Setup Guide](tools/vqa.md)
-
-Use that document as the single source of truth for phase status, parity checklist, evidence paths, and verification dates.
-
+- New users: [installation](getting-started/installation.md), [project structure](getting-started/project_structure.md), and [first workflow](getting-started/first-workflow.md).
+- Researchers: [configuration](config/configuration-guide.md), [data format](data/osl-json-format.md), [model zoo](model-zoo.md), and [workflows](tni/tni.md).
+- Developers: [architecture](developer/architecture.md), [supported extensions](developer/extensions.md), and the [configuration developer guide](config/developer-guide.md).
+- Contributors: [contributing](contributing.md).
+- Remote serving: [inference server](server/inference-server.md).
 
 ## License
 
-This project offers two licensing options to suit different needs:
-
-- **AGPL-3.0 License**:  
-  This open-source license is intended for students, researchers, and the community. It supports open collaboration and sharing under the terms of the GNU Affero General Public License v3.0  
-
-- **Commercial License**:  
-  Designed for commercial use, this option allows integration of the software into proprietary products and services without the open-source obligations of AGPL-3.0.  
-  For commercial deployment, please contact the project maintainers to obtain a commercial license.
-
-**Contact:** OpenSportsLab / project maintainers
+OpenSportsLib is available under AGPL-3.0 and commercial licensing terms. See the repository license files for authoritative terms.

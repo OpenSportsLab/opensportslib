@@ -1,7 +1,30 @@
 # Install PyTorch, DALI, CuPy, and PyG
 
-This README replaces the automatic installation script with explicit `pip` commands.  
-Choose the command that matches the CUDA wheel you want to use.
+## Supported path
+
+Use `opensportslib setup` after installing OpenSportsLib. It detects the
+visible GPU/driver, chooses the supported Torch wheel profile, and installs
+optional profiles when requested. It replaces the installed Torch stack, so use
+a dedicated Python 3.12+ environment.
+
+```bash
+conda create -n opensportslib python=3.12 pip
+conda activate opensportslib
+python -m pip install --upgrade pip setuptools wheel packaging
+pip install -e .
+opensportslib setup
+```
+
+Manual `pip` commands below are diagnostic/recovery guidance. They do not
+replace setup’s compute-capability validation or guarantee a supported profile.
+
+| Command | Purpose | Behavior |
+| --- | --- | --- |
+| `opensportslib setup --dali` | NVIDIA DALI video loading | On a CUDA host installs `nvidia-dali-cuda120` plus `cupy-cuda12x` for CUDA 12.x, or `nvidia-dali-cuda130` plus `cupy-cuda13x` for CUDA 13. |
+| `opensportslib setup --pyg` | Graph/tracking workloads | Replaces Torch with the PyG-compatible Torch `2.12.1` / torchvision `0.27.1` profile and installs `torch-geometric`. |
+| `opensportslib setup --pyg --pyg_extensions` | Optional compiled PyG extensions | Verifies matching binary wheels before installing `pyg-lib`, `torch-scatter`, and `torch-sparse`. |
+| `opensportslib setup --vqa_xvars` | X-VARS VQA | Installs the X-VARS Hugging Face dependency pins. |
+| `opensportslib setup --vqa_qwen` | Qwen VQA | Installs the Qwen Hugging Face dependency pins. |
 
 ## Supported install targets
 
@@ -12,216 +35,178 @@ Choose the command that matches the CUDA wheel you want to use.
 | CUDA 12.8 | `cu128` | `nvidia-dali-cuda120` | `cupy-cuda12x` |
 | CUDA 13.0 | `cu130` | `nvidia-dali-cuda130` | `cupy-cuda13x` |
 
+`nvidia-smi` reports a driver-supported CUDA version such as `12.8`; PyTorch
+wheel tags use values such as `cu128`. The setup command selects the highest
+compatible supported tag using both driver version and visible GPU compute
+capabilities. It installs CPU wheels when no CUDA driver is available.
+
 Notes:
 
-- `nvidia-smi` reports versions such as `12.8`, while PyTorch wheel tags use values such as `cu128`.
-- For PyTorch, select one wheel tag: `cpu`, `cu126`, `cu128`, or `cu130`.
-- For DALI, CUDA 12.x uses the `nvidia-dali-cuda120` package, while CUDA 13.x uses `nvidia-dali-cuda130`.
-- For CuPy, CUDA 12.x uses `cupy-cuda12x`, while CUDA 13.x uses `cupy-cuda13x`.
-- `opensportslib setup` selects the wheel using both the driver CUDA version and visible GPU compute capabilities.
-- On Linux x86_64, GPUs from `SM 5.0` through `SM 7.4` use the pinned `torch==2.10.0`, `torchvision==0.25.0`, and `torchaudio==2.10.0` `cu126` builds. Newer PyTorch/cuDNN releases no longer support those architectures.
-- Linux ARM64 `cu126` wheels support Ampere and newer GPUs only. The installer reports a clear error instead of installing an unusable wheel for an older ARM64 GPU.
-- A host exposing both a legacy GPU (`SM 5.0` through `SM 7.4`) and a Blackwell GPU must select one compatible GPU group with `CUDA_VISIBLE_DEVICES` before setup.
-- GPUs from `SM 7.5` through `SM 9.x` use the highest wheel supported by the installed driver. GPUs at `SM 10.0` or newer, including DGX Spark (`SM 12.1`), require a CUDA 13.0-capable driver and use `cu130`.
+- Choose one Torch wheel tag: `cpu`, `cu126`, `cu128`, or `cu130`.
+- CUDA 12.x uses `nvidia-dali-cuda120` and `cupy-cuda12x`; CUDA 13.x uses
+  `nvidia-dali-cuda130` and `cupy-cuda13x`.
+- PyTorch wheels include their CUDA runtime. The driver must support the
+  selected wheel tag; a CUDA toolkit version shown elsewhere on the host is
+  not itself a wheel-selection rule.
 
-## 1. Create a clean environment
+GPUs below compute capability 5.0 are rejected. A visible legacy GPU (5.0–7.4)
+uses the `cu126` route when compatible; on Linux ARM64 that route supports
+Ampere and newer only. A mixed legacy/newer visible set can require selecting
+one group with `CUDA_VISIBLE_DEVICES`. GPUs requiring CUDA 13 need a driver
+reporting CUDA 13.0 or newer.
 
-```bash
-conda create -n opensportslib python=3.12
-conda activate opensportslib
+## 1. Clean an existing environment
 
-python -m pip install --upgrade pip setuptools wheel packaging
-```
-
-Optional cleanup if you already tried another Torch install:
+If an earlier experiment left incompatible packages installed, remove them
+before running the supported setup command again:
 
 ```bash
 python -m pip uninstall -y \
-  torch torchvision torchaudio \
-  torch-geometric pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
+  torch torchvision torchaudio torch-geometric \
+  pyg-lib torch-scatter torch-sparse \
   nvidia-dali-cuda120 nvidia-dali-cuda130 \
   cupy cupy-cuda12x cupy-cuda13x
+opensportslib setup
 ```
 
-## 2. Install PyTorch
+## 2. Manual Torch recovery commands
 
-Pick exactly one option.
-
-### Option A: CPU only
-
-```bash
-python -m pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cpu
-```
-
-### Option B: CUDA 12.6
-
-```bash
-python -m pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cu126
-```
-
-### Option C: CUDA 12.8
-
-```bash
-python -m pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cu128
-```
-
-### Option D: CUDA 13.0
-
-```bash
-python -m pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cu130
-```
-
-## 3. Reproducible pinned PyTorch install
-
-If you want a pinned version instead of the latest available compatible wheel, use one of the following commands.
+Pick exactly one command only when recovering a broken environment. The normal
+workflow is still `opensportslib setup`.
 
 ### CPU only
 
 ```bash
-python -m pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 \
+python -m pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### CUDA 12.6
 
 ```bash
-python -m pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 \
+python -m pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cu126
 ```
 
 ### CUDA 12.8
 
 ```bash
-python -m pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 \
+python -m pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cu128
 ```
 
 ### CUDA 13.0
 
 ```bash
-python -m pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 \
+python -m pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cu130
 ```
 
-## 4. Install optional DALI and CuPy support
+OpenSportsLib does not provide a general fixed-version Torch profile. Do not
+copy historical Torch pins: use the current setup command or inspect its
+selected wheel profile.
 
-Skip this section for a CPU only install.
+## 3. Optional DALI and CuPy support
 
-### For CUDA 12.6 or CUDA 12.8
-
-```bash
-python -m pip install --extra-index-url https://pypi.nvidia.com --upgrade nvidia-dali-cuda120
-python -m pip install cupy-cuda12x
-```
-
-### For CUDA 13.0
+DALI is for CUDA video workloads; it is not installed for CPU-only setup.
 
 ```bash
-python -m pip install --extra-index-url https://pypi.nvidia.com --upgrade nvidia-dali-cuda130
-python -m pip install cupy-cuda13x
+# CUDA 12.6 or 12.8
+python -m pip install nvidia-dali-cuda120 cupy-cuda12x
+
+# CUDA 13.0
+python -m pip install nvidia-dali-cuda130 cupy-cuda13x
 ```
 
-## 5. Install PyTorch Geometric
+The supported equivalent is:
 
-The supported OpenSportsLib command is:
+```bash
+opensportslib setup --dali
+```
+
+## 4. PyTorch Geometric
+
+Graph/tracking workloads use the dedicated PyG compatibility profile:
 
 ```bash
 opensportslib setup --pyg
 ```
 
-It installs `torch-geometric` and replaces the Torch stack with the
-PyG-compatible PyTorch 2.12.1 profile. Compiled PyG extension wheels are not
-installed by default, so this command works on servers without matching wheels.
-
-Install the optional compiled extensions only when a workload requires them:
+This replaces the Torch stack with Torch `2.12.1` and torchvision `0.27.1`,
+then installs `torch-geometric`. Optional compiled extension wheels are not
+installed by default. Install them only if the workload requires them:
 
 ```bash
 opensportslib setup --pyg --pyg_extensions
 ```
 
-That opt-in command verifies that every extension wheel is available before
-modifying the Torch installation and does not fall back to compiling from source.
+That command verifies binary wheel availability before installing `pyg-lib`,
+`torch-scatter`, and `torch-sparse`; it does not fall back to source builds.
+For manual recovery, first install the PyG-compatible Torch profile and
+`torch-geometric`, then select an extension-wheel URL matching the installed
+CUDA tag. The supported PyG Torch base version is `2.12.1`.
 
-For manual installation, use the PyG-compatible Torch version below.
+```bash
+python -m pip install torch==2.12.1 torchvision==0.27.1 \
+  --index-url https://download.pytorch.org/whl/cu128
+python -m pip install torch-geometric
+```
 
-For the optional compiled extensions, first check your installed Torch and CUDA versions:
+Use the matching index for the first command: `cpu`, `cu126`, `cu128`, or
+`cu130`. Check the result before installing extensions:
 
 ```bash
 python - <<'PY'
 import torch
 
-torch_version = torch.__version__.split("+")[0]
-cuda_tag = "cpu" if torch.version.cuda is None else "cu" + torch.version.cuda.replace(".", "")
-
-print("Torch version:", torch_version)
-print("CUDA tag:", cuda_tag)
+version = torch.__version__.split("+")[0]
+tag = "cpu" if torch.version.cuda is None else "cu" + torch.version.cuda.replace(".", "")
+print(version, tag)
 PY
 ```
 
-Then choose the matching command.
-
-### CPU only
+### CPU extensions
 
 ```bash
-TORCH=2.12.1
-CUDA=cpu
-
-python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
-
-python -m pip install torch-geometric
+TORCH_VERSION=2.12.1
+CUDA_TAG=cpu
+python -m pip install pyg-lib torch-scatter torch-sparse --only-binary=:all: \
+  -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 ```
 
-### CUDA 12.6
+### CUDA 12.6 extensions
 
 ```bash
-TORCH=2.12.1
-CUDA=cu126
-
-python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
-
-python -m pip install torch-geometric
+TORCH_VERSION=2.12.1
+CUDA_TAG=cu126
+python -m pip install pyg-lib torch-scatter torch-sparse --only-binary=:all: \
+  -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 ```
 
-### CUDA 12.8
+### CUDA 12.8 extensions
 
 ```bash
-TORCH=2.12.1
-CUDA=cu128
-
-python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
-
-python -m pip install torch-geometric
+TORCH_VERSION=2.12.1
+CUDA_TAG=cu128
+python -m pip install pyg-lib torch-scatter torch-sparse --only-binary=:all: \
+  -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 ```
 
-### CUDA 13.0
+### CUDA 13.0 extensions
 
 ```bash
-TORCH=2.12.1
-CUDA=cu130
-
-python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
-
-python -m pip install torch-geometric
+TORCH_VERSION=2.12.1
+CUDA_TAG=cu130
+python -m pip install pyg-lib torch-scatter torch-sparse --only-binary=:all: \
+  -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 ```
 
-If you deliberately installed a different compatible Torch version, replace
-`TORCH=2.12.1` with the exact base version printed by:
+If the extensions do not publish a matching binary wheel for your platform,
+keep the base `torch-geometric` installation; compiled extensions are optional.
 
-```bash
-python -c "import torch; print(torch.__version__.split('+')[0])"
-```
+## 5. Verify installation
 
-## 6. Verify the installation
-
-### Verify PyTorch
+### PyTorch
 
 ```bash
 python - <<'PY'
@@ -230,15 +215,12 @@ import torch
 print("Torch:", torch.__version__)
 print("Torch CUDA:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
-
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
-else:
-    print("Running on CPU")
 PY
 ```
 
-### Verify DALI
+### DALI
 
 ```bash
 python - <<'PY'
@@ -248,7 +230,7 @@ print("DALI:", dali.__version__)
 PY
 ```
 
-### Verify CuPy
+### CuPy
 
 ```bash
 python - <<'PY'
@@ -259,47 +241,7 @@ print("CUDA devices:", cp.cuda.runtime.getDeviceCount())
 PY
 ```
 
-## 7. Optional VQA dependency profiles
-
-If you want to use OpenSportsLib VQA, install one backend-specific Hugging Face
-dependency profile after the base Torch setup:
-
-### X-VARS-compatible VQA
-
-Use:
-
-```bash
-opensportslib setup --vqa_xvars
-```
-
-This installs the pinned versions from `XVARS_DEPENDENCY_PINS`:
-
-- `transformers==4.38.2`
-- `peft==0.9.0`
-- `tokenizers==0.15.2`
-- `accelerate==0.27.2`
-- `trl==0.10.1`
-
-### Qwen-compatible VQA
-
-Use:
-
-```bash
-opensportslib setup --vqa_qwen
-```
-
-This installs the pinned versions from `QWEN_DEPENDENCY_PINS`:
-
-- `transformers==5.13.0`
-- `peft==0.19.0`
-- `tokenizers==0.22.1`
-- `accelerate==1.14.0`
-- `trl==1.7.1`
-
-The `vqa_qwen` config supports `Qwen/Qwen2.5-7B-Instruct` and
-`Qwen/Qwen3.5-9B-Base`.
-
-### Verify PyTorch Geometric
+### PyTorch Geometric
 
 ```bash
 python - <<'PY'
@@ -309,54 +251,68 @@ print("PyG:", torch_geometric.__version__)
 PY
 ```
 
-## 7. Common issues
+## 6. VQA dependency profiles
+
+Install one VQA profile after the base Torch setup. X-VARS and Qwen pin
+incompatible Hugging Face dependency sets, so use separate environments when
+both are required.
+
+### X-VARS
+
+```bash
+opensportslib setup --vqa_xvars
+```
+
+This installs `transformers==4.38.2`, `peft==0.9.0`,
+`tokenizers==0.15.2`, `accelerate==0.27.2`, and `trl==0.10.1`.
+
+### Qwen
+
+```bash
+opensportslib setup --vqa_qwen
+```
+
+This installs `transformers==5.13.0`, `peft==0.19.0`,
+`tokenizers==0.22.1`, `accelerate==1.14.0`, and `trl==1.7.1`.
+
+## 7. Troubleshooting
 
 ### `torch.cuda.is_available()` is `False`
 
-Check that you did not accidentally install the CPU wheel:
+Confirm that a CPU wheel was not installed and that the host exposes the GPU:
 
 ```bash
-python - <<'PY'
-import torch
-
-print(torch.__version__)
-print(torch.version.cuda)
-print(torch.cuda.is_available())
-PY
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+nvidia-smi
 ```
 
-If `torch.version.cuda` prints `None`, uninstall Torch and reinstall using one of the CUDA commands above.
+Re-run `opensportslib setup` after resolving driver visibility or selecting the
+intended GPU group with `CUDA_VISIBLE_DEVICES`.
 
-### `nvidia-smi` shows CUDA 12.8, but you installed `cu126`
+### The driver cannot support the selected wheel
 
-This can still be valid. `nvidia-smi` reports the maximum CUDA version supported by the driver. PyTorch wheels include their own CUDA runtime. Use a PyTorch wheel supported by your driver and by your project dependencies.
+The setup command requires a CUDA 12.6+ compatible driver for its CUDA wheel
+profiles, and CUDA 13.0+ for GPUs that require `cu130`. Upgrade the NVIDIA
+driver rather than forcing a wheel tag unsupported by the driver.
+
+### `nvidia-smi` reports CUDA 12.8 but Torch uses `cu126`
+
+That can be valid. `nvidia-smi` reports the maximum CUDA version supported by
+the driver, whereas a Torch wheel supplies its own CUDA runtime. Let
+`opensportslib setup` select the highest compatible profile, or use one of the
+manual wheel tags above only for recovery.
 
 ### DALI import fails
 
-DALI dynamically links against CUDA libraries. Make sure your system has a compatible CUDA Toolkit installed and that the CUDA libraries are visible in your environment.
-
-For example:
-
-```bash
-export CUDA_PATH=/usr/local/cuda
-export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$LD_LIBRARY_PATH
-```
+Use the DALI package that matches the selected CUDA profile. DALI dynamically
+links CUDA libraries; on managed systems ensure the appropriate CUDA runtime is
+available before retrying `opensportslib setup --dali`. A typical diagnostic is
+to confirm the host's CUDA library path is visible to the environment, for
+example `CUDA_PATH=/usr/local/cuda` and `$CUDA_PATH/lib64` on Linux.
 
 ### PyG extensions fail to install
 
-Use the exact Torch version and CUDA tag in the PyG wheel URL.
-
-Example for Torch 2.10.0 with CUDA 12.8:
-
-```bash
-python -m pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-2.12.1+cu128.html
-```
-
-On some platforms, especially Linux arm64, prebuilt wheels may not exist for every optional PyG extension. In that case, start with:
-
-```bash
-python -m pip install torch-geometric
-```
-
-and only install compiled extensions when your code requires them.
+Run `opensportslib setup --pyg --pyg_extensions` so wheel availability is
+validated first. On platforms without matching binary extensions, retain
+`torch-geometric` from `opensportslib setup --pyg` and install extensions only
+when the selected model genuinely needs them.

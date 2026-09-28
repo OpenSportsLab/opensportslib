@@ -1,388 +1,68 @@
-# Training & Inference
+# Training, Inference, and Evaluation
 
-This section explains how to:
+This page covers the common lifecycle for the three implemented task wrappers. It uses real Python APIs; the `tools/training/` scripts provide equivalent command-line entry points.
 
-- Configure experiments
-- Train models (single & multi-GPU)
-- Run inference
-- Use pretrained weights from HuggingFace
+## Before running
 
-For full key-by-key config documentation and Python-only override workflow, see [Configuration Guide](../config/configuration-guide.md).
+- Install the dependency profile required by your config. DALI requires an NVIDIA GPU; graph/tracking paths may require `--pyg`; X-VARS and Qwen VQA require separate dependency profiles.
+- Use a canonical YAML under `opensportslib/configs/` or a compatible copy.
+- Supply OSL JSON manifests and the media they reference. The package does not include a training dataset.
+- Review [configuration](../config/configuration-guide.md) and [OSL JSON](../data/osl-json-format.md).
 
----
-## Configuration Sample (.yaml) file
+## Common lifecycle
 
-Use source-of-truth runnable configs from `opensportslib/configs/`.
-`examples/configs/` mirrors these files.
+```python
+from opensportslib.apis import ClassificationModel
 
-### 1. Classification (Video)
-
-- Source: [`opensportslib/configs/classification/video.yaml`](../../opensportslib/configs/classification/video.yaml)
-- Example mirror: [`examples/configs/classification_video.yaml`](../../examples/configs/classification_video.yaml)
-
-### 2. Classification (Tracking)
-
-- Source: [`opensportslib/configs/classification/sngar_tracking.yaml`](../../opensportslib/configs/classification/sngar_tracking.yaml)
-- Example mirror: [`examples/configs/classification_sngar_tracking.yaml`](../../examples/configs/classification_sngar_tracking.yaml)
-
-### 3. Localization (DALI)
-
-- Source: [`opensportslib/configs/localization/video_dali.yaml`](../../opensportslib/configs/localization/video_dali.yaml)
-- Example mirror: [`examples/configs/localization_video_dali.yaml`](../../examples/configs/localization_video_dali.yaml)
-
-For SN-GAR video spotting from the Hugging Face `multimodal` branch, use
-[`sngar_spotting_video_hf.yaml`](../../sngar_spotting_video_hf.yaml) with
-`LocalizationModel(config="sngar_spotting_video_hf.yaml").train(use_wandb=False)`.
-The `hf_json` source stages each requested OSL JSON split and the video files
-named in its manifest in
-`/home/giancos/OSLdata/sngar/hf_json_cache` before the loader starts. It checks
-cached media again on later runs and downloads missing files. Approve access to the gated
-dataset and run `hf auth login` first.
-
-### 4. VQA
-
-- Source configs:
-  - [`opensportslib/configs/vqa/xvars.yaml`](../../opensportslib/configs/vqa/xvars.yaml)
-  - [`opensportslib/configs/vqa/qwen.yaml`](../../opensportslib/configs/vqa/qwen.yaml)
-- Example mirrors:
-  - [`examples/configs/vqa_xvars.yaml`](../../examples/configs/vqa_xvars.yaml)
-  - [`examples/configs/vqa_qwen.yaml`](../../examples/configs/vqa_qwen.yaml)
-
-For canonical key definitions and migration-safe authoring rules, use the
-[Configuration Guide](../config/configuration-guide.md).
-
-## Annotations (train/valid/test) JSON Format
-
-OpenSportsLib uses the OSL JSON v2.0 format for annotation files. Each split
-file is a JSON object with a root `labels` schema and a `data` array of samples.
-For the full schema, supported input types, multi-modal examples, and prediction
-payloads, see [OSL JSON Format](../data/osl-json-format.md).
-
-### Classification annotations
-
-Classification samples use `data[].labels.action.label` by default. The label
-must be present in the root `labels.action.labels` list.
-
-```json
-{
-  "version": "2.0",
-  "task": "action_classification",
-  "labels": {
-    "action": {
-      "type": "single_label",
-      "labels": ["pass", "shot"]
-    }
-  },
-  "data": [
-    {
-      "id": "clip_0001",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "clips/clip_0001.mp4",
-          "fps": 25.0
-        }
-      ],
-      "labels": {
-        "action": {
-          "label": "shot"
-        }
-      }
-    }
-  ]
-}
+model = ClassificationModel(config="/path/to/config.yaml", weights=None)
+checkpoint = model.train(train_set="/path/to/train.json", valid_set="/path/to/valid.json")
+predictions = model.infer(test_set="/path/to/test.json", weights=checkpoint)
+metrics = model.evaluate(test_set="/path/to/test.json", predictions=predictions)
+model.save_predictions("/path/to/predictions.json", predictions)
 ```
 
-For video classification, `inputs[].path` is resolved from the split media root
-in the YAML config, such as `DATA.common.splits.train.source_path`. For tracking
-classification, use a tracking input block under `DATA.inputs` with
-`source.format: parquet`.
+Split arguments override the corresponding configured annotation path for that call. `infer()` does not implicitly save its returned payload. Pass a payload or saved path to `evaluate()` to avoid a second inference run.
 
-### Localization annotations
+## Task routes
 
-Localization samples use `data[].events[]`. OpenSportsLib prefers
-`position_ms` and falls back to `gameTime` in feature-based JSON loaders.
+### Classification
 
-```json
-{
-  "version": "2.0",
-  "task": "action_spotting",
-  "labels": {
-    "action": {
-      "type": "single_label",
-      "labels": ["pass", "shot"]
-    }
-  },
-  "data": [
-    {
-      "id": "game_0001",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "games/game_0001.mp4",
-          "fps": 25.0
-        }
-      ],
-      "events": [
-        {
-          "head": "action",
-          "label": "pass",
-          "position_ms": 1240,
-          "gameTime": "1 - 00:01"
-        }
-      ]
-    }
-  ]
-}
-```
+Use `ClassificationModel` with `opensportslib/configs/classification/video.yaml`, `sngar_frames.yaml`, or `sngar_tracking.yaml` as the starting point matching your input modality. The script route is:
 
-### VQA annotations
-
-VQA samples use `data[].answers[]` with a question and one or more reference
-answers.
-
-```json
-{
-  "version": "2.0",
-  "task": "vqa",
-  "data": [
-    {
-      "id": "clip_0001",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "clips/clip_0001.mp4",
-          "fps": 25.0
-        }
-      ],
-      "answers": [
-        {
-          "question": "What card would you give? Why?",
-          "answers": ["No card, because this is a fair challenge."]
-        }
-      ]
-    }
-  ]
-}
-```
-
-### Public example datasets
-
-Download or inspect annotation files from:
-
-- **Classification: MVFouls and SVFouls**<br>
-  https://huggingface.co/datasets/OpenSportsLab/opensportslib-classification-vars
-- **Localization: Ball Action Spotting**<br>
-  https://huggingface.co/datasets/OpenSportsLab/opensportslib-localization-snbas
-
-
----
-
-## Download Weights from HuggingFace
-
-For a comparison table with datasets, reported scores, and model links, see the
-[Model Zoo](../model-zoo.md).
-
-### 1. Classification (MViT)
-
-**MVFoul Classification (MViT backbone)**  
-https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2
-
-
-### 2. Localization (E2E Spotting)
-
-- **2023 Ball Action Spotting (2 classes)**  
-  https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2023-e2e  
-
-- **2024 Ball Action Spotting (12 classes)**  
-  https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e 
-
-These localization HF repos can now be loaded with the same model ID on both
-GPU and CPU. OpenSportsLib picks the runtime backend automatically: `dali` when
-CUDA/NVIDIA is available, otherwise `opencv`.
-
-### 3. VQA
-
-- **X-VARS LoRA on OSL-XFoul**  
-  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora
-
-- **Qwen2.5-VL-7B LoRA on OSL-XFoul**  
-  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora
-
-- **Qwen3-VL-8B LoRA on OSL-XFoul**  
-  https://huggingface.co/OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora
-
-Usage:
 ```bash
-### Load weights from HF ###
-
-#### For Classification ####
-myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")
-
-#### For Localization ####
-weights = "OpenSportsLab/OSL-loc-snbas-2023-e2e" # SNBAS - 2 classes (E2E spot)
-weights = "OpenSportsLab/OSL-loc-snbas-2025-e2e" # SNBAS - 12 classes (E2E spot)
-myModel.load_weights(weights=weights)
-
-#### For VQA ####
-weights = "OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora"
-weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora"
-weights = "OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora"
-myModel.load_weights(weights=weights)
+python tools/training/classification.py --config /path/to/classification.yaml \
+  --train-set /path/to/train.json --valid-set /path/to/valid.json --test-set /path/to/test.json
 ```
 
-## Train on SINGLE GPU
-```python
-from opensportslib import model
-import wandb
+### Localization / action spotting
 
-# Initialize model with config
-myModel = model.ClassificationModel(
-    config="/path/to/classification.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
+Use `LocalizationModel`. The canonical configs include OpenCV and DALI video routes, feature-based CALF/NetVLAD routes, tracking action spotting, E2E SpoTTA, and selected HDF5 header spotters. Loader selection is not merely a preference: non-video modalities and CPU execution fall back to OpenCV where applicable.
 
-## Localization ##
-# myModel = model.LocalizationModel(
-#     config="/path/to/localization_video_dali.yaml"
-# )
-
-# Train on your dataset
-myModel.train(
-    train_set="/path/to/train_annotations.json",
-    valid_set="/path/to/valid_annotations.json",
-)
+```bash
+python tools/training/localization.py --config /path/to/localization.yaml \
+  --train-set /path/to/train.json --valid-set /path/to/valid.json --test-set /path/to/test.json
 ```
 
-## Train on Multiple GPU (DDP)
-```python
-from opensportslib import model
+See [tracking action spotting](../spotting/tracking-action-spotting.md) and the [headers guide](../headers/README.md) for specialist routes.
 
-def main():
-    myModel = model.ClassificationModel(
-        config="/path/to/classification.yaml",
-        weights=None,  # optional: path or Hugging Face model ID
-    )
+### VQA
 
-    ## Localization ##
-    # myModel = model.LocalizationModel(
-    #     config="/path/to/classification.yaml"
-    # )
+Use `VQAModel` and first install either `opensportslib setup --vqa_xvars` or `opensportslib setup --vqa_qwen`. VQA training can resume a Hugging Face Trainer checkpoint.
 
-    myModel.train(
-        train_set="/path/to/train_annotations.json",
-        valid_set="/path/to/valid_annotations.json",
-        use_ddp=True,  # IMPORTANT
-    )
-
-if __name__ == "__main__":
-    main()
+```bash
+python tools/training/vqa.py --config /path/to/vqa.yaml \
+  --train-set /path/to/train.json --valid-set /path/to/valid.json \
+  --resume-from-checkpoint /path/to/checkpoint
 ```
 
+`--skip-infer` makes the script train only; `--use-wandb` opts into Weights & Biases logging. See the [VQA setup guide](../tools/vqa.md) for backend-specific data and feature requirements.
 
-## Test / Inference on SINGLE GPU
-```python
-from opensportslib import model
+## Checkpoints and pretrained models
 
-# Load trained model
-myModel = model.ClassificationModel(
-    config="/path/to/classification.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
+Pass a local checkpoint path or a Hugging Face model ID through `weights`. If no explicit config is supplied, a Hub model ID must provide a compatible OpenSportsLib `config.yaml`; a Transformers-only `config.json` is insufficient. The [model zoo](../model-zoo.md) links model cards and their recommended configurations.
 
-## Localization ##
-# myModel = model.LocalizationModel(
-#     config="/path/to/classification.yaml"
-# )
+## Multi-GPU and remote inference
 
-# Run inference on test set
-predictions = myModel.infer(
-    test_set="/path/to/test_annotations.json",
-)
+Task behavior is controlled by canonical `SYSTEM` and `TRAIN.execution` settings; use the configuration reference rather than shell launchers not provided by this repository. SLURM wrappers are documented in the [SLURM guide](../getting-started/slurm.md).
 
-saved_predictions = myModel.save_predictions(
-    output_path="/path/to/predictions.json",
-    predictions=predictions,
-)
-
-metrics = myModel.evaluate(
-    test_set="/path/to/test_annotations.json",
-)
-
-metrics_from_saved_predictions = myModel.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=saved_predictions,
-)
-```
-
-`infer()` returns an in-memory OSL JSON-style prediction payload. It does not
-require an output path. `save_predictions(...)` is the explicit API for writing
-that payload to disk.
-
-## VQA Inference and Evaluation
-
-```python
-from opensportslib.apis import VQAModel
-
-myModel = VQAModel(
-    config="opensportslib/configs/vqa/qwen.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
-
-predictions = myModel.infer(
-    test_set="/path/to/test_annotations.json",
-)
-
-```
-
-
-Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS backend. OpenSportsLib supports three VQA config paths:
-
-- `opensportslib/configs/vqa/xvars.yaml`
-  Original X-VARS / Video-ChatGPT path.
-- CLIP features + Qwen
-  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
-  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
-- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
-  Full end-to-end native QwenVL path.
-
-Use `opensportslib setup --vqa_qwen` for the CLIP+Qwen and native QwenVL
-paths. The CLIP+Qwen configs support `Qwen/Qwen2.5-7B-Instruct` and
-`Qwen/Qwen3.5-9B-Base`. The native config defaults to
-`Qwen/Qwen3-VL-8B-Instruct` and supports:
-
-- `Qwen/Qwen3-VL-8B-Instruct`
-- `Qwen/Qwen2.5-VL-7B-Instruct`
-
-Switch models by editing `MODEL.components.llm_decoder.params.repo_id`.
-
-For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
-when available and falls back to raw-video CLIP extraction during `infer()`.
-Pre-extracted features are still the preferred path for parity and throughput.
-See [tools/vqa.md](../tools/vqa.md) for the full VQA setup workflow.
-
-## Test / Inference on Multiple GPU (DDP)
-```python
-from opensportslib import model
-
-def main():
-    myModel = model.ClassificationModel(
-        config="/path/to/classification.yaml",
-        weights=None,  # optional: path or Hugging Face model ID
-    )
-
-    ## Localization ##
-    # myModel = model.LocalizationModel(
-    #     config="/path/to/classification.yaml"
-    # )
-
-    predictions = myModel.infer(
-        test_set="/path/to/test_annotations.json",
-        use_ddp=True,   # optional (usually not needed)
-    )
-
-
-if __name__ == "__main__":
-    main()
-```
+For remote prediction, construct a wrapper with `remote=...` and use its normal inference methods. The server owns model loading and accepts only inference; see [inference server](../server/inference-server.md).
