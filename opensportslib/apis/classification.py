@@ -33,6 +33,19 @@ class ClassificationModel(BaseTaskModel):
     """Top-level task wrapper for classification."""
 
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
+        if not self.is_remote:
+            from opensportslib.datasets.hf_tracking import (
+                hf_tracking_source,
+                prepare_hf_tracking_split,
+            )
+
+            if hf_tracking_source(self.config):
+                if override is not None:
+                    raise ValueError(
+                        "hf_webdataset uses its configured Hub splits; "
+                        "train_set, valid_set, and test_set overrides are unsupported."
+                    )
+                return str(prepare_hf_tracking_split(self.config, split).annotations_path)
         if override is not None:
             return expand(override)
 

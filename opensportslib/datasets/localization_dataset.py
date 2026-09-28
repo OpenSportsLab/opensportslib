@@ -11,7 +11,7 @@ import tqdm
 from types import SimpleNamespace
 from opensportslib.core.utils.default_args import get_default_args_dataset
 from opensportslib.core.utils.load_annotations import get_repartition_gpu
-from opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts
+from opensportslib.core.utils.video_processing import feats2clip, getChunks_anchors, getTimestampTargets, oneHotToShifts, get_stride
 from opensportslib.core.config.accessors import (
     get_component_params_by_kind,
     get_data_augmentations,
@@ -629,18 +629,6 @@ class FrameReader:
         import cv2
         import torch.nn as nn
 
-        def get_stride(src_fps):
-            """Get stride to apply based on the input and output fps.
-
-            Args:
-                src_fps (int): The input fps of the video.
-            """
-            if self._sample_fps <= 0:
-                stride_extract = 1
-            else:
-                stride_extract = int(src_fps / self._sample_fps)
-            return stride_extract
-
         # if self.infer:
         #     video_path = video_name
         # else:
@@ -661,7 +649,7 @@ class FrameReader:
             vc.release()
             raise ValueError(f"Invalid requested frame range [{start}, {end})")
 
-        stride_extract = get_stride(fps)
+        stride_extract = get_stride(fps, self._sample_fps)
         bounded = source_start_frame is not None or source_end_frame is not None
         if bounded and (
             source_start_frame is None or source_end_frame is None
@@ -707,7 +695,13 @@ class FrameReader:
         while out_frame_num < frames_to_read:
             if target_start_frame + i >= physical_stop_frame:
                 break
-            ret, frame = vc.read()
+            # The source MP4 is ~30 fps, but spotting uses ~5 fps. Avoid
+            # retrieving and converting the five frames skipped between
+            # samples; grab still advances the video decoder correctly.
+            if i % stride_extract == 0:
+                ret, frame = vc.read()
+            else:
+                ret = vc.grab()
             if ret:
                 if i % stride_extract == 0:
                     frame = self._resize_frame_ocv(frame)

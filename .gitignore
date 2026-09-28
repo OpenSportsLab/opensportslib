@@ -33,7 +33,9 @@ dcgm
 checkpoints_tracking/
 checkpoints_as_tracking/
 checkpoints_as_video/
+checkpoints_as_tracking_hf/
 checkpoints_gar/
+weekend_runs/
 
 # Built dataset releases (rebuild with tools/convert/build_sngar_spotting.py)
 release/

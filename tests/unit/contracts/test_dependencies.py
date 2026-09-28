@@ -8,6 +8,7 @@ import sys
 import tomllib
 
 import pytest
+from packaging.requirements import Requirement
 
 from tests.helpers.configs import PACKAGE_ROOT, REPOSITORY_ROOT
 
@@ -31,7 +32,7 @@ TRANSITIVE_LEGACY_IMPORTS = {"numpy", "packaging", "tqdm"}
 
 
 def _dependency_name(requirement: str) -> str:
-    return requirement.split(";", 1)[0].split("[", 1)[0].split("=", 1)[0].strip().lower()
+    return Requirement(requirement).name.lower()
 
 
 def _third_party_imports() -> set[str]:

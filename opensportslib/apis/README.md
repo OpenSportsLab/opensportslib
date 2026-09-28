@@ -103,6 +103,42 @@ Additional weight behavior:
 Annotation and prediction payloads follow the OSL JSON data model. For the full
 schema, see the docs page `docs/data/osl-json-format.md`.
 
+For SN-GAR tracking, `sngar_tracking_hf.yaml` configures `ClassificationModel`
+to stage annotations and every referenced TAR shard before loading each split.
+Call `train()`, `infer()`, and `evaluate()` without split path arguments; this
+backend uses the train, valid, and test splits named in its Hub source and does
+not accept `train_set`, `valid_set`, or `test_set` overrides. Install the
+the library and authenticate with `hf auth login` first. The `datasets` package
+is included in the standard installation.
+
+For E2E video spotting, `sngar_spotting_video_hf.yaml` configures
+`LocalizationModel` with `DATA.inputs.video.source.format: hf_json`. The loader
+pins the configured Hub branch to a commit, downloads the selected OSL JSON
+manifest and all referenced MP4s for each requested split, then uses the
+standard OpenCV spotting dataset. The SN-GAR example uses the `multimodal`
+branch and selects only `video` inputs; tracking files are not downloaded.
+Staging checks the selected media again on later runs and repairs missing files.
+For E2E tracking spotting, `sngar_spotting_tracking_hf.yaml` uses the same
+`hf_json` source with `input_type: tracking_parquet`. It stages only the
+referenced whole-game Parquet files and routes them through
+`TrackingActionSpotDataset` and `TrackingActionSpotVideoDataset`. The staged
+manifest preserves the selected input type; it never rewrites tracking to
+`video`.
+Set `source.repo_id`, `source.revision`,
+`source.annotation_pattern`, `source.input_type`, and `source.cache_dir` for
+another compatible dataset. Manifest paths must be relative to the repository
+root and start with the split name. Explicit `train_set`, `valid_set`, or
+`test_set` paths bypass Hub staging; their media paths must be absolute or
+resolve under the configured split `source_path`. Authenticate with
+`hf auth login` before loading gated datasets.
+
+With the OpenCV E2E loader, `TRAIN.execution.acc_grad_iter` accumulates across
+successive DataLoader batches; it does not need to divide the batch size. DALI
+uses the configured batch size to form microbatches and requires divisibility.
+For 29.97-fps MP4s, `extract_fps: 5` samples every sixth source frame (about
+4.995 fps), so the 300-frame SN-GAR clip spans about 60 seconds. Restart a
+training run to apply changes to the sampling rate or annotation timing.
+
 ## Minimal Usage
 
 ```python

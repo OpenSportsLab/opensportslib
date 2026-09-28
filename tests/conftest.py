@@ -106,6 +106,8 @@ def block_external_network(request, monkeypatch):
     original_connect = socket.socket.connect
 
     def guarded_connect(sock, address):
+        if sock.family == socket.AF_UNIX:
+            return original_connect(sock, address)
         host = address[0] if isinstance(address, tuple) and address else address
         if host in {"127.0.0.1", "::1", "localhost"}:
             return original_connect(sock, address)

@@ -16,6 +16,7 @@ from opensportslib.core.config.accessors import (
     get_split_annotation_path,
     get_split_cfg,
     set_split_annotation_path,
+    set_split_source_path,
     set_loader_backend,
     get_model_family,
 )
@@ -48,6 +49,15 @@ class LocalizationModel(BaseTaskModel):
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
         if override is not None:
             return expand(override)
+
+        from opensportslib.datasets.hf_json import hf_json_source, prepare_hf_json_split
+
+        if hf_json_source(self.config):
+            prepared = prepare_hf_json_split(self.config, split)
+            set_split_source_path(self.config, split, str(prepared.source_path))
+            if split == "valid":
+                set_split_source_path(self.config, "valid_data_frames", str(prepared.source_path))
+            return str(prepared.annotation_path)
 
         path = get_split_annotation_path(self.config, split)
         if path:
