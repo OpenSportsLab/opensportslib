@@ -82,7 +82,9 @@ git pull origin dev
 
 2. Create a feature/fix branch from `dev`.
 3. Open PRs targeting `dev` (not `main`).
-4. Use commit message prefixes:
+4. Every GitHub-linked commit author in a PR must accept the individual CLA
+   when prompted by the required `CLA check`; see [CONTRIBUTING.md](CONTRIBUTING.md).
+5. Use commit message prefixes:
    - `feat:` new feature
    - `fix:` bug fix
    - `refactor:` internal cleanup/refactor
