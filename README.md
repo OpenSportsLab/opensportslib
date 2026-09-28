@@ -583,6 +583,10 @@ opensportslib setup --vqa_qwen
 
 We welcome contributions to OpenSportsLib.
 
+All PRs must target `dev`. Before a PR can merge, every GitHub-linked commit
+author must accept the [Individual Contributor License Agreement](.github/CLA.md)
+when prompted by the `CLA check`.
+
 Please check:
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)

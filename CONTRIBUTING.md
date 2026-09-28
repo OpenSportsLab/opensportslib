@@ -95,6 +95,35 @@ git push origin feature/your-feature-name
 ### 5. Open Pull Request (PR) → dev
 Raise a Pull Request (PR) to merge your branch back into the `dev` branch.
 
+### Contributor License Agreement
+
+Every distinct GitHub-linked commit author in a PR targeting `dev` must accept
+the [OpenSportsLab Individual Contributor License Agreement](.github/CLA.md).
+When the `CLA check` reports a missing signature, each listed author must add
+this exact comment to the PR:
+
+> I have read the OpenSportsLab Individual Contributor License Agreement and I hereby sign it.
+
+The check records the GitHub account, agreement version, document hash, and
+acceptance timestamp in the project signing ledger. It blocks merging until all
+commit authors are recorded. Use the [OpenSportsLab GitHub organization](https://github.com/OpenSportsLab)
+for CLA questions, notices, or revocation requests. Contributions from
+unlinked commit identities must be amended to use a GitHub-linked author before
+they can pass the check.
+
+### Maintainer CLA setup
+
+Before marking `CLA check` as required, create an issue named **CLA Signature
+Ledger**, set its issue number as `ledger_issue` in
+[`.github/cla.yml`](.github/cla.yml), and deploy the CLA workflow to the
+repository default branch so GitHub can process `issue_comment` events. In
+repository settings, protect `dev` by requiring pull requests, CI, and the
+`CLA check` from GitHub Actions. Direct pushes and bypasses should remain
+disabled except for designated repository administrators and the
+`github-actions[bot]` automation needed by the existing development-release
+version-sync workflow. Re-run a test PR after configuration to make `CLA check`
+available in the required-status-check picker.
+
 ✅ PR Checklist:
 - [ ] Tests Pass: All existing logic remains functional.
 - [ ] Runs on GPU: Code is compatible with CUDA environments.
