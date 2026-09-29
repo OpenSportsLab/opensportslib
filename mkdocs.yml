@@ -80,6 +80,12 @@ plugins:
           paths: [.]
           options:
             show_source: true
+            # Keep strict mode focused on site-level problems (for example,
+            # broken navigation and documentation links). The current API
+            # reference includes legacy docstrings without complete type
+            # annotations, which Griffe otherwise reports as warnings.
+            docstring_options:
+              warnings: false
 
 markdown_extensions:
   - admonition
