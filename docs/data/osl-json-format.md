@@ -9,9 +9,9 @@ schema, and a `data` array of samples. Each sample points to one or more input
 files and can carry task-specific annotations.
 
 The current OpenSportsLib implementation supports classification,
-localization, and VQA workflows. The format also reserves payloads for
-description and dense description tasks so datasets can stay compatible with
-the broader OpenSportsLab ecosystem.
+localization, and VQA workflows. Fields for descriptions or captions may occur
+in interoperable OSL data, but OpenSportsLib does not currently dispatch a
+captioning or retrieval task pipeline.
 
 ## Minimal Structure
 
@@ -51,10 +51,21 @@ evaluation, include a root `labels` schema and task-specific sample payloads.
 | `metadata` | object | Optional | Dataset-level custom metadata. |
 | `labels` | object | Required for supervised tasks | Shared label schema by annotation head. |
 | `data` | array[object] | Required | Sample list. Must be a list. |
+| `hf_repo_id` | string | Optional | Hugging Face dataset repository recorded by the split downloader. |
+| `hf_branch` | string | Optional | Requested branch, tag, or revision. |
+| `hf_split` | string | Optional | Remote split containing this dataset. |
+| `hf_format` | string | Optional | Remote storage format: `json` or `parquet`. |
+| `hf_commit` | string | Optional | Resolved immutable commit used for the download. |
 
 Unknown top-level keys are preserved by conversion tools where possible. Keep
 custom dataset metadata under `metadata` unless another key is part of a
 documented workflow.
+
+The five `hf_*` provenance fields form the source locator for selective media
+downloads. They are written together after a successful Hugging Face split
+download. Consumers should require a complete locator before fetching assets;
+older JSON files with only repository/branch/split metadata should be
+downloaded again to acquire the format and commit pin.
 
 ## Label Schema
 
@@ -96,8 +107,8 @@ Each entry in `data` is one sample.
 | `metadata` | object | Optional sample-level metadata such as match, game, clip, or timing fields. |
 | `labels` | object | Classification annotations keyed by label head. |
 | `events` | array[object] | Timestamped localization events. |
-| `captions` | array[object] | Clip-level description captions. |
-| `dense_captions` | array[object] | Timestamped dense descriptions. |
+| `captions` | array[object] | Interoperability metadata; not consumed by a current OpenSportsLib task route. |
+| `dense_captions` | array[object] | Interoperability metadata; not consumed by a current OpenSportsLib task route. |
 | `answers` | array[object] | Grouped question/answer annotations. |
 
 Unknown sample keys are preserved by conversion tools where possible.
@@ -321,11 +332,12 @@ intervals currently require the OpenCV backend; selecting DALI raises an error
 instead of silently reading the wrong physical frames. Events outside declared
 intervals and overlapping or invalid intervals are rejected.
 
-## Description, Dense Description, And Q/A Payloads
+## Caption Interoperability and VQA Payloads
 
-These payloads are part of the OSL JSON ecosystem. They are useful for datasets
-that need to round-trip through OpenSportsLab annotation tools. Q/A payloads
-are used by the OpenSportsLib VQA workflow.
+These payloads are part of the OSL JSON ecosystem. `captions` and
+`dense_captions` can round-trip through annotation tools but are not consumed
+by a current OpenSportsLib task route. Q/A payloads are used by the VQA
+workflow.
 
 Clip-level captions:
 

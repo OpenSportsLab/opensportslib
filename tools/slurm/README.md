@@ -10,7 +10,8 @@ Scripts are organised under `tools/slurm/`:
 tools/slurm/
 ├── install_environment.sh          # create the conda env on a compute node
 ├── generic/                        # reusable allocation & job templates
-│   ├── ibex_salloc.sh              #   start an interactive allocation
+│   ├── ibex_salloc_cpu.sh          #   start a CPU interactive allocation
+│   ├── ibex_salloc_gpu.sh          #   start a GPU interactive allocation
 │   ├── ibex_srun.sh                #   one-shot srun wrapper
 │   └── ibex_job.sbatch             #   generic batch job
 ├── datasets/                       # dataset download jobs
@@ -20,8 +21,9 @@ tools/slurm/
 │   ├── download_gar_frames.sbatch
 │   └── download_hf_repo.sbatch
 └── training/                       # experiment-specific training jobs
-    ├── train_classification.sbatch
-    └── train_localization.sbatch
+    ├── classification_MVFouls.sbatch
+    ├── classification_XFoul.sbatch
+    └── localization_SNBAS-2023.sbatch
 ```
 
 Create logs directory before running:
@@ -39,7 +41,11 @@ sbatch tools/slurm/install_environment.sh
 ### 1) Interactive allocation (`salloc`)
 
 ```bash
-bash tools/slurm/generic/ibex_salloc.sh
+# GPU allocation
+bash tools/slurm/generic/ibex_salloc_gpu.sh
+
+# Or, for CPU-only work
+bash tools/slurm/generic/ibex_salloc_cpu.sh
 ```
 
 Then once the node is allocated:
@@ -126,11 +132,14 @@ See `tools/slurm/datasets/README.md` for dataset details.
 ### 5) Training jobs (`sbatch`)
 
 ```bash
-# classification
-sbatch tools/slurm/training/train_classification.sbatch
+# classification on MVFouls
+sbatch tools/slurm/training/classification_MVFouls.sbatch
 
-# localization
-sbatch tools/slurm/training/train_localization.sbatch
+# classification on X-Foul
+sbatch tools/slurm/training/classification_XFoul.sbatch
+
+# localization on SNBAS 2023
+sbatch tools/slurm/training/localization_SNBAS-2023.sbatch
 ```
 
 Monitor and manage jobs:

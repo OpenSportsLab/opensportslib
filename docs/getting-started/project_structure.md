@@ -1,60 +1,27 @@
 # Project Structure
 
-This page describes the core layout of the OpenSportsLib repository and where key components live.
-
----
-
-## Repository Layout
+Public users normally start in `opensportslib/apis/` and `opensportslib/configs/`. Other package modules are implementation details unless explicitly documented as extension points.
 
 ```text
 opensportslib/
-├── MANIFEST.in
-├── README.md
-├── pyproject.toml
-└── opensportslib/
-    ├── __init__.py
-
-    ├── apis/                   # High-level user APIs
-    │   ├── classification.py
-    │   └── localization.py
-
-    ├── config/                 # Default configuration files
-    │   ├── default.yaml
-    │   ├── classification/
-    │   │   ├── default.yaml
-    │   │   ├── video.yaml
-    │   │   ├── sngar_tracking.yaml
-    │   │   └── sngar_frames.yaml
-    │   └── localization/
-    │       ├── default.yaml
-    │       ├── video_ocv.yaml
-    │       ├── video_dali.yaml
-    │       ├── calf_resnetpca512.yaml
-    │       └── netvladpp_resnetpca512.yaml
-
-    ├── core/                   # Training engine & utilities
-    │   ├── loss/
-    │   ├── optimizer/
-    │   ├── scheduler/
-    │   ├── sampler/
-    │   ├── trainer/
-    │   └── utils/
-
-    ├── datasets/               # Dataset loaders and builders
-    │   ├── builder.py
-    │   ├── classification_dataset.py
-    │   ├── localization_dataset.py
-    │   └── utils/
-
-    ├── metrics/                # Evaluation metrics
-    │   ├── classification_metric.py
-    │   └── localization_metric.py
-
-    └── models/                 # Model architectures
-        ├── backbones/
-        ├── heads/
-        ├── neck/
-        ├── base/
-        ├── utils/
-        └── builder.py
+├── apis/                 public wrappers: Config, classification, localization, VQA
+├── configs/              canonical YAML root, task defaults, and experiment configs
+├── core/config/          composition, migration, validation, editable config support
+├── core/trainer/         task training, inference, and evaluation routes
+├── datasets/             task dispatch plus video, tracking, HDF5, and Hub data handling
+├── metrics/              classification, localization, and VQA metrics
+├── models/               canonical model dispatch and implementation components
+├── setup/                `opensportslib setup` implementation
+├── tools/                package conversion and Hugging Face transfer APIs
+├── examples/             config mirrors and minimal Python examples
+├── tools/                command-line training, conversion, download, and upload scripts
+├── tests/                smoke, unit, integration, and opt-in release suites
+├── server/               separately installed FastAPI/RQ inference service
+└── docs/                 this MkDocs site
 ```
+
+## Config locations
+
+Canonical configurations are under `opensportslib/configs/classification/`, `localization/`, and `vqa/`. Loading YAML from one of these task directories composes the root `configs/default.yaml`, the task `default.yaml`, and the selected config. `opensportslib/legacy_config/` holds compatibility fixtures, not new experiment configs.
+
+See [architecture](../developer/architecture.md) for runtime flow and [configuration](../config/configuration-guide.md) for the canonical contract.

@@ -1,17 +1,22 @@
 # opensportslib/apis/__init__.py
 
 # Import task APIs
+from opensportslib.apis.config import Config
 from opensportslib.apis.base_task_model import BaseTaskModel
 from opensportslib.apis.classification import ClassificationModel
 from opensportslib.apis.localization import LocalizationModel
 from opensportslib.apis.vqa import VQAModel
+from opensportslib.remote_registry import RemoteModelRegistry, RemoteRegistryError
 import warnings
 warnings.filterwarnings("ignore")
 
 # Expose only these
 __all__ = [
+    "Config",
     "BaseTaskModel",
     "ClassificationModel",
     "LocalizationModel",
     "VQAModel",
+    "RemoteModelRegistry",
+    "RemoteRegistryError",
 ]

@@ -1,0 +1,3 @@
+# Run from the repository root. Dependency versions live in server/pyproject.toml.
+# Installing the server also installs its pinned OpenSportsLib release from PyPI.
+-e ./server

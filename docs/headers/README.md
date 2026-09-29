@@ -574,10 +574,6 @@ api.save_predictions("predictions.json", predictions)
 
 ## Tests
 
-```bash
-python -m pytest tests/test_h5_header_skeleton_spotter.py \
-                 tests/test_h5_header_rule_spotter.py
-```
+Use the repository's single test command: `bash scripts/run_tests.sh`.
 
 These build small synthetic H5 files, so they need no tracking data.
-

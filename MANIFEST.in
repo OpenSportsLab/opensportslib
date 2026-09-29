@@ -1,3 +1,4 @@
 include README.md
 include LICENSE
 recursive-include opensportslib/config *.yaml
+prune server

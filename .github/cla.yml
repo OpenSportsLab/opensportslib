@@ -1,0 +1,9 @@
+# Update `version` whenever .github/CLA.md changes. Existing signatures are
+# intentionally invalidated when the version or document hash changes.
+version: "OSL-ICLA-1.0"
+required_signing_phrase: "I have read the OpenSportsLab Individual Contributor License Agreement and I hereby sign it."
+# Create an issue titled "CLA Signature Ledger", then replace 0 with its issue
+# number before enabling the required status check. Only bot-authored records
+# are treated as signatures.
+ledger_issue: 0
+maintainer_contact: "https://github.com/OpenSportsLab"

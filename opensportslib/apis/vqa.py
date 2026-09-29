@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 from typing import Any
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import get_split_annotation_path, get_system_gpu_count, get_train_execution, get_vqa_backend
 from opensportslib.core.utils.config import expand, resolve_config_omega
 
@@ -131,6 +133,7 @@ class VQAModel(BaseTaskModel):
         self.last_loaded_weights = weights
         self.best_checkpoint = weights
 
+    @config_operation
     def train(
         self,
         train_set: str | None = None,
@@ -143,7 +146,7 @@ class VQAModel(BaseTaskModel):
     ) -> str | None:
         del kwargs
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         execution = get_train_execution(self.config)
         backend = str(execution.get("training_backend", "placeholder")).lower()
         vqa_backend = get_vqa_backend(self.config)
@@ -226,6 +229,7 @@ class VQAModel(BaseTaskModel):
             "Only 'xvars_videochatgpt_lora' and 'qwen_xvars_lora' are supported."
         )
 
+    @config_operation
     def infer(
         self,
         test_set: str | None = None,
@@ -233,8 +237,73 @@ class VQAModel(BaseTaskModel):
         use_wandb: bool = True,
         video_path: str | None = None,
         question: str | None = None,
+        session_id: str | None = None,
         **kwargs,
     ) -> dict:
+        remote_mode_provided = "remote_mode" in kwargs
+        remote_mode = kwargs.pop("remote_mode", "full_test_set")
+        if self.is_remote:
+            remote_model_id = kwargs.pop("remote_model_id", None)
+            remote_task_options = kwargs.pop("remote_task_options", None)
+            if kwargs:
+                raise TypeError(f"Unsupported remote inference options: {', '.join(kwargs)}")
+            if test_set is not None:
+                if video_path is not None or question is not None or session_id is not None:
+                    raise ValueError("Remote VQA manifest inference accepts only `test_set`.")
+                if remote_mode == "per_sample":
+                    batch = self.submit_per_sample_inference(
+                        task_type="vqa",
+                        test_set=self._resolve_split_path("test", test_set),
+                        model_id=remote_model_id,
+                        task_options=remote_task_options,
+                    )
+                    collected = self.wait_for_remote_batch(batch)
+                    self.last_remote_failures = collected["failures"]
+                    if self.last_remote_failures:
+                        logging.warning("Remote per-sample inference completed with %d failures.", len(self.last_remote_failures))
+                    return collected["predictions"]
+                if remote_mode != "full_test_set":
+                    raise ValueError("`remote_mode` must be `full_test_set` or `per_sample`.")
+                job = self.submit_inference(
+                    task_type="vqa",
+                    test_set=self._resolve_split_path("test", test_set),
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                self.last_remote_failures = []
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+            if remote_mode != "full_test_set":
+                raise ValueError("`remote_mode=per_sample` requires `test_set`, not direct VQA input.")
+            # A stored session is for question-only follow-ups. A new video
+            # must start a fresh server session; explicitly supplied session
+            # IDs remain caller-controlled and are forwarded as requested.
+            active_session_id = (
+                session_id
+                if session_id is not None
+                else (self.remote_session_id if video_path is None else None)
+            )
+            if active_session_id is not None and video_path is None and question:
+                job = self.submit_session_inference(
+                    task_type="vqa",
+                    session_id=active_session_id,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                    question=str(question),
+                )
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+            if not video_path or not str(question or "").strip():
+                raise ValueError("Remote direct VQA inference requires `video_path` and a non-empty `question`.")
+            job = self.submit_video_inference(
+                task_type="vqa",
+                video_path=video_path,
+                question=str(question),
+                session_id=active_session_id,
+                model_id=remote_model_id,
+                task_options=remote_task_options,
+            )
+            return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+        if remote_mode_provided:
+            raise ValueError("`remote_mode` is available only when `remote` is configured.")
         del kwargs
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
@@ -247,7 +316,7 @@ class VQAModel(BaseTaskModel):
         if direct_requested and (not video_path or not str(question or "").strip()):
             raise ValueError("Direct VQA inference requires both `video_path` and a non-empty `question`.")
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         backend = get_vqa_backend(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         _set_model_checkpoint_path(self.config, effective_weights)
@@ -284,6 +353,7 @@ class VQAModel(BaseTaskModel):
         self._init_wandb(use_wandb=use_wandb)
         return self.trainer.infer(model, test_data, use_wandb=use_wandb)
 
+    @config_operation
     def evaluate(
         self,
         test_set: str | None = None,
@@ -296,7 +366,7 @@ class VQAModel(BaseTaskModel):
         from opensportslib.core.trainer.vqa_trainer import Trainer_VQA
         from opensportslib.datasets.builder import build_dataset
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         test_set = self._resolve_split_path("test", test_set)
         test_data = build_dataset(self.config, test_set, None, split="test")
         self._init_wandb(use_wandb=use_wandb)

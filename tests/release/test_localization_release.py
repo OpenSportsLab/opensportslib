@@ -30,26 +30,18 @@ take the fallback path; re-run after either lands to switch automatically.
   LearnablePooling (NetVLAD++) families, matching
   opensportslib/configs/localization/calf_resnetpca512.yaml and
   netvladpp_resnetpca512.yaml's own 17-class SoccerNet Action Spotting label
-  set. Not verified end-to-end this session (the E2E/tennis path was); if a
-  schema (either OSL-SoccerNet's shards, or the fallback's annotations.json)
+  set. If a schema (either OSL-SoccerNet's shards, or the fallback's annotations.json)
   has moved on, that's the first place to check.
 
-Run:
-    RUN_OSL_RELEASE_TESTS=1 pytest tests/release/test_localization_release.py -v -s
-
-    # bigger (but still capped) fallback subsets:
-    RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_MAX_CLIPS=200 OSL_RELEASE_MAX_GAMES=50 \\
-        pytest tests/release/test_localization_release.py -v -s
-
-    # full-scale fallback feature dataset (~111GB, 2210 individual files):
-    RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_MAX_GAMES=all \\
-        pytest tests/release/test_localization_release.py -k feature -v -s
+Run through the repository's single command: bash scripts/run_tests.sh.
+Environment variables control dataset caps without changing the command.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -63,13 +55,15 @@ from ._release_common import (
     classes_from_osl_json,
     download_files,
     download_shard_split,
-    epochs_for,
+    training_overrides,
     hf_token,
     materialize_config,
     max_items_for,
     optional_module_available,
     prefer_osl_ready_dataset,
     report_step,
+    record_release_metadata,
+    release_scale,
     require_release_enabled,
     require_repo_access,
     snapshot_dataset,
@@ -105,6 +99,7 @@ E2E_FALLBACK_REPO = os.environ.get("OSL_RELEASE_LOC_E2E_FALLBACK_REPO", "OpenSpo
 # the (non-sharded, 2210-file) SoccerNet-ActionSpotting-Features dataset only
 # if that branch isn't up.
 FEATURES_PRIMARY_REPO = os.environ.get("OSL_RELEASE_LOC_FEATURES_REPO", "OpenSportsLab/OSL-SoccerNet")
+PUBLISHED_LOCALIZATION_MODEL = "OpenSportsLab/OSL-loc-snbas-2025-e2e"
 FEATURES_PRIMARY_REVISION = os.environ.get("OSL_RELEASE_LOC_FEATURES_REVISION", "ResNET_PCA512")
 FEATURES_FALLBACK_REPO = os.environ.get(
     "OSL_RELEASE_LOC_FEATURES_FALLBACK_REPO", "OpenSportsLab/SoccerNet-ActionSpotting-Features"
@@ -207,14 +202,15 @@ def _e2e_overrides(run_name: str, dataset: dict, backbone: str, head: str, *, lo
             "task_head": {"source": {"name": head}},
         }
     }
-    overrides["TRAIN"] = {
-        "epochs": epochs_for(2),
-        "scheduler": {"num_epochs": epochs_for(2)},
-    }
+    train_overrides = training_overrides(2)
+    overrides["TRAIN"] = train_overrides
+    if "epochs" in train_overrides:
+        overrides["TRAIN"]["scheduler"] = {"num_epochs": train_overrides["epochs"]}
     return overrides
 
 
 def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
+    started = time.perf_counter()
     split_paths = dataset["split_paths"]
 
     report_step(f"[{run_name}] instantiate LocalizationModel")
@@ -227,19 +223,45 @@ def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -
         use_wandb=False,
     )
     assert checkpoint and Path(checkpoint).exists(), f"[{run_name}] checkpoint was not written"
+    record_release_metadata(
+        "pipeline", task="localization", model_family=run_name,
+        config_path=config_path, checkpoint_path=str(checkpoint),
+    )
 
-    report_step(f"[{run_name}] infer()")
-    predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
+    report_step(f"[{run_name}] fresh checkpoint load + infer()")
+    restored_model = LocalizationModel(config=config_path, weights=checkpoint)
+    predictions = restored_model.infer(test_set=str(split_paths["test"]), use_wandb=False)
     assert isinstance(predictions, dict) and predictions.get("data"), f"[{run_name}] empty predictions"
 
     report_step(f"[{run_name}] save_predictions()")
     pred_path = CACHE_ROOT / "outputs" / f"localization_{run_name}_predictions.json"
     model.save_predictions(output_path=str(pred_path), predictions=predictions)
     assert pred_path.exists()
+    record_release_metadata("prediction", task="localization", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
-    metrics = model.evaluate(test_set=str(split_paths["test"]), use_wandb=False)
+    metrics = restored_model.evaluate(test_set=str(split_paths["test"]), predictions=predictions, use_wandb=False)
+    record_release_metadata(
+        "result", task="localization", model_family=run_name,
+        runtime_seconds=round(time.perf_counter() - started, 3),
+    )
     print(f"[{run_name}] metrics: {metrics}")
+
+
+@pytest.mark.release
+def test_published_localization_model_inference(e2e_localization_dataset):
+    require_release_enabled()
+    from ._release_common import require_model_repo
+
+    require_model_repo(PUBLISHED_LOCALIZATION_MODEL)
+    dataset = e2e_localization_dataset
+    overrides = _e2e_overrides("published_loc_e2e", dataset, "rny008_gsm", "gru", loader_backend="dali")
+    config_path = materialize_config("localization", "video_dali", overrides, out_name="published_loc_e2e.yaml")
+    model = LocalizationModel(config=config_path, weights=PUBLISHED_LOCALIZATION_MODEL)
+    predictions = model.infer(test_set=str(dataset["split_paths"]["test"]), use_wandb=False)
+    assert isinstance(predictions, dict) and predictions.get("data")
+    metrics = model.evaluate(test_set=str(dataset["split_paths"]["test"]), predictions=predictions, use_wandb=False)
+    record_release_metadata("published_model_result", task="localization", model_id=PUBLISHED_LOCALIZATION_MODEL, metrics=metrics)
 
 
 # Curated backbone x head coverage. Full cross product of every
@@ -250,7 +272,11 @@ def _run_localization_pipeline(config_path: str, dataset: dict, run_name: str) -
 # coverage on a dedicated release-test machine.
 E2E_BACKBONES = ["rn18", "rn50", "rny002", "rny008_gsm", "convnextt"]
 E2E_HEADS = ["gru", "deeper_gru", "mstcn", "asformer"]
-E2E_MATRIX = [(b, "gru") for b in E2E_BACKBONES] + [("rn18", h) for h in E2E_HEADS if h != "gru"]
+E2E_MATRIX = (
+    [(backbone, head) for backbone in E2E_BACKBONES for head in E2E_HEADS]
+    if release_scale() == "full"
+    else [(b, "gru") for b in E2E_BACKBONES] + [("rn18", h) for h in E2E_HEADS if h != "gru"]
+)
 
 
 @pytest.mark.release
@@ -264,12 +290,11 @@ def test_localization_e2e_opencv(e2e_localization_dataset, backbone, head):
 
 
 @pytest.mark.release
-@pytest.mark.skipif(
-    not optional_module_available("nvidia.dali"),
-    reason="DALI backend not installed; run `opensportslib setup --dali` first.",
-)
 def test_localization_e2e_dali(e2e_localization_dataset):
     require_release_enabled()
+    assert optional_module_available("nvidia.dali"), (
+        "DALI is required release coverage; run `opensportslib setup --dali` first."
+    )
     run_name = "rny008_gsm_gru_dali"
     overrides = _e2e_overrides(run_name, e2e_localization_dataset, "rny008_gsm", "gru", loader_backend="dali")
     config_path = materialize_config("localization", "video_dali", overrides, out_name=f"loc_{run_name}.yaml")
@@ -362,7 +387,7 @@ def _feature_family_overrides(run_name: str, dataset: dict) -> dict:
             },
         },
     }
-    overrides["TRAIN"] = {"epochs": epochs_for(3)}
+    overrides["TRAIN"] = training_overrides(3)
     return overrides
 
 

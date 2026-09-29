@@ -82,7 +82,9 @@ git pull origin dev
 
 2. Create a feature/fix branch from `dev`.
 3. Open PRs targeting `dev` (not `main`).
-4. Use commit message prefixes:
+4. Every GitHub-linked commit author in a PR must accept the individual CLA
+   when prompted by the required `CLA check`; see [CONTRIBUTING.md](CONTRIBUTING.md).
+5. Use commit message prefixes:
    - `feat:` new feature
    - `fix:` bug fix
    - `refactor:` internal cleanup/refactor
@@ -101,10 +103,10 @@ git pull origin dev
 
 ## Testing Contract (Mandatory)
 
-Before opening a PR, run:
+Before opening a PR, run the single test entry point:
 
 ```bash
-pytest tests/test_*.py
+bash scripts/run_tests.sh
 ```
 
 When APIs/signatures/behavior change, update the relevant tests, including:
@@ -125,7 +127,7 @@ When API behavior changes, update the relevant docs in the same PR:
 
 - [ ] Branch created from `dev`
 - [ ] PR targets `dev`
-- [ ] Tests pass (`pytest tests/test_*.py`)
+- [ ] Tests pass (`bash scripts/run_tests.sh`)
 - [ ] Documentation updated for behavior/API changes
 - [ ] Backward compatibility reviewed
 - [ ] Commit/PR description includes API impact summary

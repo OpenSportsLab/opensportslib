@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 
 from opensportslib.apis.base_task_model import BaseTaskModel
+from opensportslib.apis.configuration import config_operation
 from opensportslib.core.config.accessors import (
     get_data_classes,
     get_loader_backend,
@@ -15,6 +16,7 @@ from opensportslib.core.config.accessors import (
     get_split_annotation_path,
     get_split_cfg,
     set_split_annotation_path,
+    set_split_source_path,
     set_loader_backend,
     get_model_family,
 )
@@ -47,6 +49,15 @@ class LocalizationModel(BaseTaskModel):
     def _resolve_split_path(self, split: str, override: str | None = None) -> str:
         if override is not None:
             return expand(override)
+
+        from opensportslib.datasets.hf_json import hf_json_source, prepare_hf_json_split
+
+        if hf_json_source(self.config):
+            prepared = prepare_hf_json_split(self.config, split)
+            set_split_source_path(self.config, split, str(prepared.source_path))
+            if split == "valid":
+                set_split_source_path(self.config, "valid_data_frames", str(prepared.source_path))
+            return str(prepared.annotation_path)
 
         path = get_split_annotation_path(self.config, split)
         if path:
@@ -290,6 +301,7 @@ class LocalizationModel(BaseTaskModel):
             "best_criterion_valid": best_criterion_valid,
         }
 
+    @config_operation
     def train(
         self,
         train_set=None,
@@ -327,7 +339,7 @@ class LocalizationModel(BaseTaskModel):
         # with explicit valid annotation overrides.
         self._set_split_path("valid_data_frames", valid_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -418,14 +430,89 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return self.best_checkpoint
 
+    @config_operation
     def infer(
         self,
         test_set=None,
         weights=None,
         use_wandb=True,
+        video_path: str | None = None,
+        session_id: str | None = None,
         **kwargs,
     ):
         """Run model inference and return predictions in OSL JSON format."""
+        if test_set is not None and video_path is not None:
+            raise ValueError("Provide either `test_set` or `video_path`, not both.")
+        remote_mode_provided = "remote_mode" in kwargs
+        remote_mode = kwargs.pop("remote_mode", "full_test_set")
+        if self.is_remote:
+            remote_model_id = kwargs.pop("remote_model_id", None)
+            remote_task_options = kwargs.pop("remote_task_options", None)
+            if kwargs:
+                raise TypeError(f"Unsupported remote inference options: {', '.join(kwargs)}")
+            active_session_id = (
+                session_id
+                if session_id is not None
+                else (self.remote_session_id if video_path is None else None)
+            )
+            if video_path is not None:
+                if remote_mode != "full_test_set":
+                    raise ValueError("`remote_mode=per_sample` requires `test_set`, not direct video input.")
+                job = self.submit_video_inference(
+                    task_type="localization",
+                    video_path=video_path,
+                    session_id=active_session_id,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                self.last_remote_failures = []
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+            if test_set is None and active_session_id is not None:
+                job = self.submit_session_inference(
+                    task_type="localization",
+                    session_id=active_session_id,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                self.last_remote_failures = []
+                return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+            test_set = self._resolve_split_path("test", test_set)
+            if remote_mode == "per_sample":
+                batch = self.submit_per_sample_inference(
+                    task_type="localization",
+                    test_set=test_set,
+                    model_id=remote_model_id,
+                    task_options=remote_task_options,
+                )
+                collected = self.wait_for_remote_batch(batch)
+                self.last_remote_failures = collected["failures"]
+                if self.last_remote_failures:
+                    logging.warning("Remote per-sample inference completed with %d failures.", len(self.last_remote_failures))
+                return collected["predictions"]
+            if remote_mode != "full_test_set":
+                raise ValueError("`remote_mode` must be `full_test_set` or `per_sample`.")
+            job = self.submit_inference(
+                task_type="localization",
+                test_set=test_set,
+                model_id=remote_model_id,
+                task_options=remote_task_options,
+            )
+            self.last_remote_failures = []
+            return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
+        if remote_mode_provided:
+            raise ValueError("`remote_mode` is available only when `remote` is configured.")
+        if video_path is not None:
+            from opensportslib.core.utils.direct_video import direct_video_manifest
+            from opensportslib.core.utils.config import resolve_config_omega
+
+            manifest_config = self._effective_config(resolve_config_omega(self.config, weights=weights))
+            manifest_config = resolve_inference_class_metadata(manifest_config)
+            with direct_video_manifest(manifest_config, video_path, "localization") as manifest:
+                return self.infer(
+                    test_set=manifest,
+                    weights=weights,
+                    use_wandb=use_wandb,
+                )
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_inferer
@@ -441,7 +528,7 @@ class LocalizationModel(BaseTaskModel):
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
 
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)
@@ -498,6 +585,7 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return predictions
 
+    @config_operation
     def evaluate(
         self,
         test_set=None,
@@ -519,7 +607,7 @@ class LocalizationModel(BaseTaskModel):
 
         test_set = self._resolve_split_path("test", test_set)
         self._set_split_path("test", test_set)
-        self.config = resolve_config_omega(self.config, weights=weights)
+        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
         self.config = resolve_inference_class_metadata(self.config)
         effective_weights = weights if weights is not None else self.last_loaded_weights
         self._adapt_hf_backend_for_device(effective_weights)

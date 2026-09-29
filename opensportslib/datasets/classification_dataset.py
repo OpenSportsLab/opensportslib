@@ -65,6 +65,10 @@ def build(config, annotations_path, processor=None, split="train"):
     modality = get_data_modality(config).lower()
 
     if modality in ("tracking", "tracking_parquet"):
+        from opensportslib.datasets.hf_tracking import hf_tracking_source
+
+        if hf_tracking_source(config):
+            return HFTrackingDataset(config, split=split)
         return TrackingDataset(config, annotations_path, split)
     elif modality in H5_TRACKING_MODALITIES:
         return H5TrackingDataset(config, annotations_path, split)
@@ -748,6 +752,22 @@ class TrackingDataset(ClassificationDataset):
             out["label"] = label
         return out
         
+
+class HFTrackingDataset(TrackingDataset):
+    """Tracking graphs backed by indexed Hugging Face WebDataset TAR shards."""
+
+    def __init__(self, config, split="train"):
+        from opensportslib.datasets.hf_tracking import HFTarTrackingReader, prepare_hf_tracking_split
+
+        if get_data_params(config).get("preload_data", False):
+            raise ValueError("hf_webdataset requires DATA.inputs.tracking.params.preload_data=false")
+        prepared = prepare_hf_tracking_split(config, split)
+        self._hf_reader = HFTarTrackingReader(prepared)
+        super().__init__(config, str(prepared.annotations_path), split)
+
+    def _load_tracking_clip(self, path):
+        return self._hf_reader.read_parquet(path)
+
 
 class H5TrackingDataset(ClassificationDataset):
     """Graph-based classification dataset for UTC-indexed player/ball H5 files."""

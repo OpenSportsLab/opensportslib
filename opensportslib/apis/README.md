@@ -1,11 +1,66 @@
 # OpenSportsLib APIs
 
+## Configuration From Hugging Face
+
+The public `Config` class composes bundled configuration layers and keeps
+interpolation links until user changes have been applied:
+
+```python
+from opensportslib.apis import Config, LocalizationModel
+
+config = Config.from_file("opensportslib/configs/localization/video_ocv.yaml")
+config.update(
+    data={"data_root": "/datasets/soccernet"},
+    training={"epochs": 20},
+    overrides={"TRAIN.scheduler.warm_up_epochs": 2},
+)
+model = LocalizationModel(config=config)
+```
+
+Use `config.options()` for friendly task/backend settings and
+`config.get_config()` to inspect valid canonical dotted paths. Updates are
+transactional: unsupported names, unknown paths, invalid types, collisions, and
+ineffective variant-controlled settings leave the configuration unchanged.
+An explicit `train_set`, `valid_set`, or `test_set` method argument applies only
+to that call. Remote inference accepts advertised friendly inference settings;
+remote dotted overrides, worker counts, device changes, and training are rejected.
+
+When `weights` is a Hugging Face model ID, `config` may be omitted if the
+repository contains a compatible OpenSportsLib `config.yaml`:
+
+```python
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
+```
+
+This also applies to localization and VQA wrappers. Local checkpoints and
+repositories containing only a Transformers `config.json` still require an
+explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
+Provide your own input data when running inference; published dataset paths may
+refer to the machine used for training.
+
+## Direct Video Inference
+
+Classification and localization can infer one video without a JSON manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+The result is the regular one-item OSL prediction document. Classification uses
+the configured sampling policy for one sample; localization returns events on
+the complete video timeline. Use `test_set=` for batch inference or evaluation.
+
+
 This folder contains the high-level task wrappers used by users of OpenSportsLib.
 
 ## Public Entry Points
 
 Use task model classes from `opensportslib.apis`:
 
+- `Config.from_file(...)` / `Config.from_pretrained(...)`
 - `ClassificationModel(...)`
 - `LocalizationModel(...)`
 - `VQAModel(...)`
@@ -48,6 +103,42 @@ Additional weight behavior:
 Annotation and prediction payloads follow the OSL JSON data model. For the full
 schema, see the docs page `docs/data/osl-json-format.md`.
 
+For SN-GAR tracking, `sngar_tracking_hf.yaml` configures `ClassificationModel`
+to stage annotations and every referenced TAR shard before loading each split.
+Call `train()`, `infer()`, and `evaluate()` without split path arguments; this
+backend uses the train, valid, and test splits named in its Hub source and does
+not accept `train_set`, `valid_set`, or `test_set` overrides. Install the
+the library and authenticate with `hf auth login` first. The `datasets` package
+is included in the standard installation.
+
+For E2E video spotting, `sngar_spotting_video_hf.yaml` configures
+`LocalizationModel` with `DATA.inputs.video.source.format: hf_json`. The loader
+pins the configured Hub branch to a commit, downloads the selected OSL JSON
+manifest and all referenced MP4s for each requested split, then uses the
+standard OpenCV spotting dataset. The SN-GAR example uses the `multimodal`
+branch and selects only `video` inputs; tracking files are not downloaded.
+Staging checks the selected media again on later runs and repairs missing files.
+For E2E tracking spotting, `sngar_spotting_tracking_hf.yaml` uses the same
+`hf_json` source with `input_type: tracking_parquet`. It stages only the
+referenced whole-game Parquet files and routes them through
+`TrackingActionSpotDataset` and `TrackingActionSpotVideoDataset`. The staged
+manifest preserves the selected input type; it never rewrites tracking to
+`video`.
+Set `source.repo_id`, `source.revision`,
+`source.annotation_pattern`, `source.input_type`, and `source.cache_dir` for
+another compatible dataset. Manifest paths must be relative to the repository
+root and start with the split name. Explicit `train_set`, `valid_set`, or
+`test_set` paths bypass Hub staging; their media paths must be absolute or
+resolve under the configured split `source_path`. Authenticate with
+`hf auth login` before loading gated datasets.
+
+With the OpenCV E2E loader, `TRAIN.execution.acc_grad_iter` accumulates across
+successive DataLoader batches; it does not need to divide the batch size. DALI
+uses the configured batch size to form microbatches and requires divisibility.
+For 29.97-fps MP4s, `extract_fps: 5` samples every sixth source frame (about
+4.995 fps), so the 300-frame SN-GAR clip spans about 60 seconds. Restart a
+training run to apply changes to the sampling rate or annotation timing.
+
 ## Minimal Usage
 
 ```python
@@ -85,6 +176,101 @@ metrics = m.evaluate(
     predictions="/path/to/predictions.json",
 )
 ```
+
+## Remote Inference
+
+The complete HTTP reference, including equivalent curl commands, model
+registration/unregistration, job polling, sessions, and single-video,
+full-test-set, and per-sample modes is in the [Inference Server guide](../../docs/server/inference-server.md).
+
+For Docker deployments, put the optional private `OSL_API_KEY` in
+`server/.env`, not only in `.env.example`, recreate the containers after
+changing it, and pass the exact same value as `api_key`. Keep the real
+token out of documentation and source control. A 401 usually means the
+container is using an older/different `.env`, the client is connecting to a
+different host, or the request is missing the `Bearer ` prefix.
+
+Pass `remote` to send inference to an `opensportslib-server` worker. Local
+training and evaluation are unchanged. For a test-set call, OpenSportsLib
+packages the JSON manifest and every local media path it references into one
+ZIP upload, waits for the server job, and returns predictions like local inference.
+
+Remote wrappers do not require local `config` or `weights`; the registered
+server model owns its configuration and checkpoint:
+
+```python
+from opensportslib.apis import VQAModel
+
+vqa = VQAModel(
+    remote="http://server-ip:8000",
+    remote_model_id="OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora",
+)
+```
+
+Each direct remote request stores the returned session ID on the wrapper as
+`last_remote_session_id`. VQA follow-ups reuse it automatically; classification
+and localization calls without new input reuse the latest cached session result;
+providing a new video starts a new session automatically.
+Call `clear_remote_session()` to start a new conversation/workflow. Explicit
+`session_id=` arguments remain supported.
+
+Models must be registered before inference. One method handles Hugging Face
+and server-local sources:
+
+Hugging Face repositories can provide learned checkpoints or a supported
+configuration-only runner. The server resolves this source mode automatically;
+the registration call is the same for both types.
+
+```python
+from opensportslib import RemoteModelRegistry
+
+registry = RemoteModelRegistry("http://server-ip:8000", api_key="<optional-api-key>")
+operation = registry.register_model(
+    task_type="classification",
+    huggingface_model_id="OpenSportsLab/OSL-cls-action-mvitv2",
+    hf_token="<optional-request-token>",
+)
+registry.wait_for_operation(operation["operation_id"])
+```
+
+For local registration, pass `weights_path`, optional `config_path`, and an
+optional custom `model_id`. If the ID is omitted, use the generated ID returned
+by `register_model()`.
+
+```python
+model = ClassificationModel(
+    config="/path/to/classification.yaml",
+    remote="http://server-ip:8000",
+    remote_model_id="OpenSportsLab/OSL-cls-action-mvitv2",  # optional server registry ID
+)
+
+predictions = model.infer(test_set="/path/to/test.json")
+```
+
+Use `submit_inference(...)`, `get_remote_job(job_id)`, and
+`get_remote_result(job_id)` only when your application needs manual asynchronous
+job control. `remote_task_options={...}` passes task-specific options through
+to the server. Direct VQA calls upload one video; the wrapper stores the
+returned `session_id` as `last_remote_session_id` and automatically reuses it
+for a follow-up question. Pass `session_id=` explicitly when restoring a known
+session.
+
+For long test sets, process each sample as a separate remote job while
+preserving all media referenced by that sample:
+
+```python
+predictions = model.infer(test_set="/path/to/test.json", remote_mode="per_sample")
+failures = model.last_remote_failures
+```
+
+`remote_mode="full_test_set"` is the default. Per-sample submission continues
+after individual upload failures; successful predictions are returned and failed
+samples are available through `model.last_remote_failures`.
+
+The registry client also provides `list_models()`, `get_model()`,
+`get_operation()`, `wait_for_operation()`, `set_default()`, and
+`unregister_model()`, and `reconcile_runtime(dry_run=True)`. Administrative failures raise `RemoteRegistryError` with
+the HTTP status and structured server detail.
 
 ## Localization Usage
 

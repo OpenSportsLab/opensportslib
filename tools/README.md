@@ -27,7 +27,8 @@ tools/
     ├── README.md
     ├── install_environment.sh
     ├── generic/
-    │   ├── ibex_salloc.sh
+    │   ├── ibex_salloc_cpu.sh
+    │   ├── ibex_salloc_gpu.sh
     │   ├── ibex_srun.sh
     │   └── ibex_job.sbatch
     ├── datasets/
@@ -36,8 +37,9 @@ tools/
     │   ├── download_gar_tracking.sbatch
     │   └── download_gar_frames.sbatch
     └── training/
-        ├── train_classification.sbatch
-        └── train_localization.sbatch
+        ├── classification_MVFouls.sbatch
+        ├── classification_XFoul.sbatch
+        └── localization_SNBAS-2023.sbatch
 ```
 
 ---

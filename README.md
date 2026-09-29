@@ -1,4 +1,71 @@
 # OpenSportsLib
+
+OpenSportsLib inference servers support runtime model registration through
+`RemoteModelRegistry`. Its unified `register_model()` method accepts Hugging
+Face or server-local weights; the returned model ID is then used by the existing
+remote task APIs. Unregistered model IDs are rejected.
+
+See the [complete inference server guide](docs/server/inference-server.md) for
+installation, registry administration, curl requests, single-video inference,
+full-test-set and per-sample remote inference, job polling, and sessions.
+
+Hugging Face registration is authorized by repository access. Set `HF_TOKEN`
+on the worker or pass `hf_token` per request. The optional `OSL_API_KEY`
+protects local-model and general administrative operations.
+
+## Configuration From Hugging Face
+
+Prepare and inspect configuration before model weights are allocated:
+
+```python
+from opensportslib.apis import Config, ClassificationModel
+
+config = Config.from_pretrained("OpenSportsLab/OSL-cls-action-mvitv2")
+# Or: Config.from_file("opensportslib/configs/classification/video.yaml")
+
+config.update(
+    data={"data_root": "/datasets/fouls"},
+    training={"epochs": 30, "batch_size": 8},
+    inference={"batch_size": 4},
+    overrides={"TRAIN.scheduler.step_size": 5},
+)
+print(config.options())
+model = ClassificationModel(config=config)
+```
+
+`options()` reports editable parameters supported by the selected task and
+backend. `get_config()` returns a detached canonical dictionary for discovering
+advanced dotted paths. Dotted overrides must already exist, are validated as
+one atomic update, and are intended for local execution. Initialization-sensitive
+settings such as device and output directory must be changed before creating the
+model. `model.update_config(...)` supports safe settings for the next operation.
+
+When `weights` is a Hugging Face model ID, `config` may be omitted if the
+repository contains a compatible OpenSportsLib `config.yaml`:
+
+```python
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
+```
+
+This also applies to localization and VQA wrappers. Local checkpoints and
+repositories containing only a Transformers `config.json` still require an
+explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
+Provide your own input data when running inference; published dataset paths may
+refer to the machine used for training.
+
+Classification and localization accept a video directly, without a manifest:
+
+```python
+classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
+localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
+```
+
+Direct classification treats the file as one sample. Direct localization treats
+it as one timeline and returns detected events. Both return the regular OSL JSON
+prediction document; use `test_set=` instead when evaluating labeled data.
+
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.
@@ -8,8 +75,9 @@ It provides a unified framework to **train, evaluate, and run inference** for ke
 - **Action classification**
 - **Action localization / spotting**
 - **Visual Question Answering (VQA)**
-- **Action retrieval**
-- **Action description / captioning**
+
+Retrieval and action description/captioning are roadmap areas. They do not yet
+have first-class task wrappers or training workflows in this package.
 
 OpenSportsLib is designed for **researchers, ML engineers, and sports analytics teams** who want reproducible and extensible workflows for sports video AI.
 
@@ -35,7 +103,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 > Requires **Python 3.12+**.  
 > Supports CUDA 12.6 / 12.8 / 13.0 (with CPU fallback).  
-> PyTorch Geometric is supported up to PyTorch 2.10.*.
+> PyTorch Geometric uses a dedicated PyTorch 2.12.1 compatibility profile.
 
 ### Create conda env
 
@@ -67,7 +135,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
@@ -331,11 +400,50 @@ VQA setup workflow.
 
 OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
 
+For SN-GAR tracking classification, `sngar_tracking_hf.yaml` loads split metadata
+through `datasets` and caches every referenced TAR shard before using each split.
+It preserves the weighted replacement sampler without extracting individual clips. Install
+with `python -m pip install -e .`, authenticate with `hf auth login`,
+and see [SN-GAR-README.md](SN-GAR-README.md) for the training command and cache layout.
+
+For SN-GAR video action spotting, `sngar_spotting_video_hf.yaml` uses
+`DATA.inputs.video.source.format: hf_json` to stage OSL JSON manifests and MP4s
+from the `multimodal` branch of `OpenSportsLab/SNGAR-Action-Spotting`. It reads
+the JSON manifests and downloads only their selected video inputs, leaving the
+tracking Parquet files alone. Run
+`LocalizationModel(config="sngar_spotting_video_hf.yaml").train(use_wandb=False)`
+after `hf auth login` and dataset access approval. The first train/validation
+stage downloads all videos in those splits; subsequent runs reuse the cache.
+If a cached video is missing, staging downloads it again before training starts.
+The example keeps the 300-frame window but uses one clip per step, limited
+DataLoader prefetch, and four gradient accumulation steps to control memory.
+For the OpenCV loader, accumulation combines successive batches, so batch size
+one with four accumulation steps is valid.
+The 29.97-fps videos are sampled every sixth source frame for approximately
+5 fps and a 60-second window. Restart training after a sampling change so
+decoded clips and event labels use the same frame rate.
+
+For tracking action spotting, use
+`LocalizationModel(config="sngar_spotting_tracking_hf.yaml").train(use_wandb=False)`.
+This config selects `tracking_parquet` from the same `multimodal` JSON manifests,
+downloads only the whole-game tracking tables in the requested splits,
+and passes them to the tracking graph dataset. The staged manifest keeps the
+`tracking_parquet` input type. Tracking files are cached under
+`/home/giancos/OSLdata/sngar/hf_json_tracking_cache`; video MP4s are skipped.
+
+To run the five example baselines sequentially with their full epoch settings,
+see [tools/train/weekend_train.sh](tools/train/weekend_train.sh). Run it with
+`bash tools/train/weekend_train.sh` after `hf auth login`. Each algorithm and
+dataset has its own section in the script. Video spotting alone was measured at
+about 10 days for 100 epochs on one user's machine, so the complete sequence
+will extend beyond a weekend on similar hardware.
+
 ### Python API
 
 ```python
 from opensportslib.tools import (
     download_dataset_split_from_hf,
+    download_dataset_sample_inputs_from_hf,
     upload_dataset_inputs_from_json_to_hf,
     upload_dataset_as_parquet_to_hf,
 )
@@ -344,13 +452,35 @@ from opensportslib.tools import (
 ### Scripts
 
 ```bash
-python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data
+python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data --annotations-only
 python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
 
 Downloads are placed under `<output-dir>/<revision>/<split>`.
-For Parquet/WebDataset downloads, an existing `<split>.json` in that directory
-is reused without downloading or converting the split again.
+Pass `annotations_only=True` to download or reconstruct only `<split>.json`.
+The JSON records the resolved Hugging Face commit and can later be passed to
+`download_dataset_sample_inputs_from_hf()` to fetch one sample or input. A full
+Parquet/WebDataset download always completes the local split even when a
+metadata-only `<split>.json` already exists.
+
+Download APIs accept `byte_progress_cb(filename, downloaded_bytes,
+total_bytes)`. When the repository file is Xet-backed, OpenSportsLib keeps the
+accelerated Xet transfer and adapts Xet's byte updates to this callback. It
+falls back to classic HTTP progress when Xet is unavailable, disabled, or not
+used by the file.
+When byte progress is enabled, Parquet downloads also emit `[current/total]`
+file messages through `progress_cb` so clients can present file-count progress.
+High-level split downloads also accept `file_plan_cb(filenames)`,
+`file_completed_cb(filename, local_path)`, and
+`json_ready_cb(split, json_path)`. These are transfer lifecycle notifications;
+callers remain responsible for queue policy and presentation. For non-dry-run
+JSON datasets, pinned source metadata is persisted before `json_ready_cb` runs.
+
+JSON uploads support partially downloaded datasets: the JSON and all
+referenced files available locally are committed, while missing referenced
+files are skipped and reported. Remote files not included in that commit are
+left untouched. Parquet/WebDataset uploads remain strict and require every
+referenced file locally before conversion.
 
 ---
 
@@ -428,7 +558,8 @@ pip install -e .
 # Install PyTorch (CPU/GPU auto-detected)
 opensportslib setup
 
-# Optional: install PyTorch Geometric support
+# Optional: install PyTorch Geometric support. This replaces the installed
+# Torch stack with the PyG-compatible PyTorch 2.12.1 profile.
 opensportslib setup --pyg
 
 # Optional: install for DALI support
@@ -452,6 +583,10 @@ opensportslib setup --vqa_qwen
 ## Contributing
 
 We welcome contributions to OpenSportsLib.
+
+All PRs must target `dev`. Before a PR can merge, every GitHub-linked commit
+author must accept the [Individual Contributor License Agreement](.github/CLA.md)
+when prompted by the `CLA check`.
 
 Please check:
 
@@ -497,3 +632,25 @@ If you use OpenSportsLib in your research, please cite the project.
 ## Acknowledgments
 
 OpenSportsLib is developed within the broader OpenSportsLab effort for sports video understanding.
+
+## Inference server
+
+The optional FastAPI + Redis/RQ inference server lives in [`server/`](server/README.md),
+beside the main library package. It supports classification, localization, VQA,
+video/manifest uploads, and the library's remote inference client.
+
+`pip install opensportslib` installs the library only. To run the server from
+this repository, activate a fresh Python 3.12 or newer environment and install the server:
+
+```bash
+pip install -e ./server
+server/scripts/serverctl setup
+server/scripts/serverctl start
+```
+
+The server installs the OpenSportsLib release from PyPI pinned to the root project
+version. That release must be published before installing or building the server.
+
+See the [server guide](server/README.md) for uv setup, model configuration,
+Redis and GPU deployment with Docker Compose. Server dependencies
+and runtime data are managed separately from the library.
