@@ -19,7 +19,7 @@ cd server
 `serverctl start` starts or reuses Redis, the API, and the worker. Docker Compose
 is available with `./scripts/serverctl docker start`. A host `video_path` must
 be visible inside the worker container; mount it read-only when using Docker.
-See [server/README.md](../../server/README.md) for Docker, GPU, dependency,
+See [server/README.md](https://github.com/OpenSportsLab/opensportslib/blob/main/server/README.md) for Docker, GPU, dependency,
 and shutdown details.
 
 Check readiness:

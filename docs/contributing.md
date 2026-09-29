@@ -101,6 +101,15 @@ git push origin feature/your-feature-name
 ### 5. Open Pull Request (PR) → dev
 Raise a Pull Request (PR) to merge your branch back into the `dev` branch.
 
+Every GitHub-linked commit author must accept the Individual CLA when prompted
+by the `CLA check`. Post the exact signing phrase configured in
+`.github/cla.yml`; see `.github/CLA.md` for the agreement. Run the supported
+test entry point before opening the PR:
+
+```bash
+bash scripts/run_tests.sh
+```
+
 ✅ PR Checklist:
 - [ ] Tests Pass: All existing logic remains functional.
 - [ ] Runs on GPU: Code is compatible with CUDA environments.

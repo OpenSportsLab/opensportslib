@@ -9,11 +9,11 @@ See also:
 ## Canonical Config Examples
 
 Use production-ready canonical templates from:
-- [opensportslib/configs/default.yaml](../../opensportslib/configs/default.yaml)
-- [opensportslib/configs/](../../opensportslib/configs/)
-- [opensportslib/configs/classification/](../../opensportslib/configs/classification/)
-- [opensportslib/configs/localization/](../../opensportslib/configs/localization/)
-- [opensportslib/configs/vqa/](../../opensportslib/configs/vqa/)
+- [opensportslib/configs/default.yaml](https://github.com/OpenSportsLab/opensportslib/blob/main/opensportslib/configs/default.yaml)
+- [opensportslib/configs/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/)
+- [opensportslib/configs/classification/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/classification/)
+- [opensportslib/configs/localization/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/localization/)
+- [opensportslib/configs/vqa/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/vqa/)
 
 ## 1) Canonical Contract
 
@@ -24,7 +24,7 @@ Use production-ready canonical templates from:
 ## 2) Top-Level Schema
 
 ```yaml
-TASK: <classification|localization|vqa|retrieval|captioning|reasoning>
+TASK: <classification|localization|vqa>
 VERSION: 2
 
 SYSTEM: <SystemSchema>
@@ -38,7 +38,7 @@ IO: <IoSchema>
 
 | Key | Type | Required | Default | Allowed values | Owner | Runtime consumer / validator notes |
 |---|---|---|---|---|---|---|
-| `TASK` | string | yes | none | `classification`, `localization`, `vqa`, `retrieval`, `captioning`, `reasoning` | config author | Used for task routing and migration decisions. |
+| `TASK` | string | yes | none | `classification`, `localization`, `vqa` | config author | The currently runnable task routes. Generic config validation does not itself implement other task pipelines. |
 | `VERSION` | int | yes | none | currently canonical payloads use `2` | config policy | Required section by validator; compatibility marker retained. |
 | `SYSTEM` | object | yes | none | see SYSTEM section | platform/runtime | Required section by validator. |
 | `DATA` | object | yes | none | see DATA section | data pipeline | Required section by validator. |
@@ -114,7 +114,7 @@ DATA:
 | `dataset_name` | string | yes | none | any | data pipeline | Dataset identity token. |
 | `data_root` | string/null | no | `null` | path or `null` | data pipeline | Optional base path. |
 | `classes` | list[string] | no | `[]` | label names | task owner | Used to derive `num_classes` when present. |
-| `runtime.loader_backend` | string | yes | `opencv` | `opencv`, `dali` | runtime | Read by loader backend accessor (`get_loader_backend`). |
+| `runtime.loader_backend` | string | no | `auto` | `auto`, `opencv`, `dali` | runtime | Runtime selects DALI only for compatible video inputs with DALI available; CPU and non-video inputs use OpenCV where applicable. |
 
 ### 4.2 `DATA.common.splits.<split>`
 
@@ -253,7 +253,7 @@ MODEL:
 
 The reference configuration for attaching SpoTTA to an E2ESpot model is
 available in
-[`e2e_spotta.yaml`](../../opensportslib/configs/localization/e2e_spotta.yaml).
+[`e2e_spotta.yaml`](https://github.com/OpenSportsLab/opensportslib/blob/main/opensportslib/configs/localization/e2e_spotta.yaml).
 It is attached after source checkpoint loading and maintains one continuous
 adaptation state across the ordinary dataloader batches produced during one
 `LocalizationModel.infer()` call. A later `infer()` call starts a fresh session

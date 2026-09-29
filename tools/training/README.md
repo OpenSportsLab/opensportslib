@@ -17,9 +17,9 @@ Minimal training scripts for each task. Run from the **repository root**.
 | Argument | Required | Description |
 |---|---|---|
 | `--config` | yes | Path to the YAML config file |
-| `--train-set` | no | Path to train annotations JSON; defaults to `DATA.train.path` |
-| `--valid-set` | no | Path to validation annotations JSON; defaults to `DATA.valid.path` |
-| `--test-set` | no | Path to test annotations JSON; defaults to `DATA.test.path` |
+| `--train-set` | no | Path to train annotations JSON; defaults to `DATA.common.splits.train.annotation_path` |
+| `--valid-set` | no | Path to validation annotations JSON; defaults to `DATA.common.splits.valid.annotation_path` |
+| `--test-set` | no | Path to test annotations JSON; defaults to `DATA.common.splits.test.annotation_path` |
 | `--weights` | no | Path to pretrained weights |
 
 `vqa.py` accepts the following CLI arguments:

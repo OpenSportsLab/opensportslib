@@ -1,148 +1,60 @@
 # Training SLURM Jobs
 
-Submit training jobs on the Ibex cluster using the provided sbatch scripts.
+Submit these Ibex jobs from the repository root. They are concrete,
+dataset-specific examples; edit their paths, account, resources, and Python
+arguments for another experiment.
 
-All commands must be run from the **repository root**.
+## Available jobs
 
----
+| Script | Task and dataset | Entrypoint |
+| --- | --- | --- |
+| `classification_MVFouls.sbatch` | Classification on SoccerNet MVFouls | `tools/training/classification.py` |
+| `classification_XFoul.sbatch` | Classification on OSL-XFoul | `tools/training/classification.py` |
+| `localization_SNBAS-2023.sbatch` | Localization on SoccerNet SNBAS 2023 | `tools/training/localization.py` |
 
-## Scripts
+All three use the Ibex `batch` partition, one V100 GPU, 90G memory, six CPUs,
+and a 47:59:00 time limit. They activate the `opensportslib` Conda environment
+and write `ibex_logs/osl_<job_id>.out` and `.err`.
 
-| Script | Task |
-|---|---|
-| `train_classification.sbatch` | Action classification |
-| `train_localization.sbatch` | Action localization |
-
----
-
-## Default SLURM Parameters
-
-Both scripts share the same defaults, tuned for Ibex:
-
-| Parameter | Value |
-|---|---|
-| `--partition` | `batch` |
-| `--gpus` | `v100:1` |
-| `--mem` | `90G` |
-| `--time` | `47:59:00` |
-| `--cpus-per-task` | `6` |
-| `--nodes` | `1` |
-| `--ntasks` | `1` |
-
-Logs are written to `ibex_logs/osl_<job_id>.out` and `ibex_logs/osl_<job_id>.err`.
-
----
-
-## Usage
-
-### Classification
+## Submit a job
 
 ```bash
-sbatch tools/slurm/training/train_classification.sbatch
+# Classification
+sbatch tools/slurm/training/classification_MVFouls.sbatch
+sbatch tools/slurm/training/classification_XFoul.sbatch
+
+# Localization
+sbatch tools/slurm/training/localization_SNBAS-2023.sbatch
 ```
 
-By default this runs `examples/quickstart/basic_classification.py`. Edit the script to point to your own training entry point and config:
+Each script supplies its config and train/valid/test manifest paths through the
+task wrapper CLI. Those options override the matching canonical config fields:
+`DATA.common.splits.train.annotation_path`,
+`DATA.common.splits.valid.annotation_path`, and
+`DATA.common.splits.test.annotation_path`.
+
+## Customize resources or data
+
+Override scheduler values at submission time:
 
 ```bash
-# inside train_classification.sbatch
-python opensportslib/core/trainer/classification_trainer.py \
-    --config /path/to/your/classification_config.yaml
+sbatch --gpus=v100:2 --time=23:59:00 \
+  tools/slurm/training/classification_MVFouls.sbatch
 ```
 
-### Localization
+For permanent changes, edit the selected script’s `#SBATCH` header and the
+`python tools/training/...` invocation. Do not assume the hard-coded Ibex data
+paths exist on another cluster. Use the [dataset jobs](../datasets/README.md)
+or your own manifests to stage data first.
+
+## Monitor jobs
 
 ```bash
-sbatch tools/slurm/training/train_localization.sbatch
-```
-
-By default this runs `examples/quickstart/basic_localization.py`. Edit the script to point to your own training entry point and config:
-
-```bash
-# inside train_localization.sbatch
-python opensportslib/core/trainer/localization_trainer.py \
-    --config /path/to/your/localization_config.yaml
-```
-
----
-
-## Customizing SLURM Parameters
-
-Override any parameter at submission time without editing the file:
-
-```bash
-# Use 2 GPUs and extend the time limit
-sbatch --gpus=v100:2 --time=23:59:00 tools/slurm/training/train_classification.sbatch
-
-# Use an account allocation
-sbatch --account=conf-neurips-2026.05.15-ghanembs tools/slurm/training/train_localization.sbatch
-```
-
-To make changes permanent, edit the `#SBATCH` header lines directly in the script.
-
----
-
-## Adding a Dataset Download Step
-
-Both scripts include a commented-out download step. Uncomment and adapt it to pre-fetch your dataset before training starts:
-
-```bash
-# Classification script
-python tools/download/download_osl_hf.py \
-    --repo-id OpenSportsLab/soccernetpro-classification-vars \
-    --revision mvfouls \
-    --split annotations_test \
-    --format json \
-    --output-dir /ibex/project/c2134/opensportslab/datasets/mvfouls
-```
-
-```bash
-# Localization script
-python tools/download/download_osl_hf.py \
-    --repo-id OpenSportsLab/soccernetpro-localization-snas \
-    --revision 224p \
-    --split annotations-test \
-    --format json \
-    --output-dir /ibex/project/c2134/opensportslab/datasets/soccernetpro-localization-snas
-```
-
-See [tools/download/README.md](../../download/README.md) for full download options.
-
----
-
-## Monitoring Jobs
-
-```bash
-# List your running/pending jobs
-squeue -u $USER
-
-# Watch live
-watch squeue -u $USER
-
-# Check logs
+squeue -u "$USER"
+scontrol show job <job_id>
+scancel <job_id>
 tail -f ibex_logs/osl_<job_id>.out
-tail -f ibex_logs/osl_<job_id>.err
 ```
 
----
-
-## Example Configs
-
-Ready-to-use YAML configs are in `examples/configs/`:
-
-```
-examples/configs/classification_video.yaml
-examples/configs/classification_sngar_tracking.yaml
-examples/configs/localization_video_dali.yaml
-```
-
----
-
-## Example training on Ibex
-
-```bash
-python tools/training/classification.py \
-    --config tools/slurm/training/configs/classification.yaml \
-    --train-set /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls/annotations_train.json \
-    --valid-set /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls/annotations_valid.json \
-    --test-set /ibex/project/c2134/opensportslab/datasets/soccernetpro-classification-vars/mvfouls/annotations_test.json
-```
+For local equivalent commands and all CLI options, see
+[training scripts](../../training/README.md).
