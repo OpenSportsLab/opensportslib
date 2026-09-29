@@ -66,7 +66,7 @@ def hub(tmp_path, monkeypatch):
 
 
 def _config(tmp_path):
-    payload = Config.from_file("sngar_spotting_video_hf.yaml").get_config()
+    payload = Config.from_file("examples/sngar/sngar_spotting_video_hf.yaml").get_config()
     payload["DATA"]["inputs"]["video"]["source"]["cache_dir"] = str(tmp_path / "cache")
     return dict_to_namespace(payload)
 
@@ -223,7 +223,7 @@ def test_hf_json_builds_video_spotting_clip(tmp_path, hub):
 def test_opencv_accumulates_across_batches_without_batch_divisibility():
     from opensportslib.core.utils.load_annotations import check_config
 
-    config = dict_to_namespace(Config.from_file("sngar_spotting_video_hf.yaml").get_config())
+    config = dict_to_namespace(Config.from_file("examples/sngar/sngar_spotting_video_hf.yaml").get_config())
     assert config.DATA.common.splits.train.dataloader.batch_size == 1
     assert config.TRAIN.execution.acc_grad_iter == 4
     check_config(config, split="train")

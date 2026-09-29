@@ -29,3 +29,12 @@ Retrieval and captioning are roadmap areas. They do not currently have runnable 
 ## License
 
 OpenSportsLib is available under AGPL-3.0 and commercial licensing terms. See the repository license files for authoritative terms.
+
+## Acknowledgments
+
+OpenSportsLib is developed within the broader OpenSportsLab effort for sports
+video understanding. Core contributors include:
+
+- [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
+- [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc
+- [Dr. Silvio Giancola](https://www.silviogiancola.com/) — Research Scientist

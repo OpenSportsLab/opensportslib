@@ -103,7 +103,7 @@ def hub_fixture(tmp_path, monkeypatch):
 
     monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
 
-    config_dict = Config.from_file("sngar_tracking_hf.yaml").get_config()
+    config_dict = Config.from_file("examples/sngar/sngar_tracking_hf.yaml").get_config()
     config_dict["DATA"]["inputs"]["tracking"]["source"]["cache_dir"] = str(tmp_path / "cache")
     config_dict["DATA"]["inputs"]["tracking"]["augmentations"] = {}
     return dict_to_namespace(config_dict), payloads, local, remote, calls
