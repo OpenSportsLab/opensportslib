@@ -33,7 +33,7 @@ OpenSportsLib is available under AGPL-3.0 and commercial licensing terms. See th
 ## Acknowledgments
 
 OpenSportsLib is developed within the broader OpenSportsLab effort for sports
-video understanding. Core contributors include:
+video understanding. Core contributors affiliated with KAUST include:
 
 - [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
 - [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc
