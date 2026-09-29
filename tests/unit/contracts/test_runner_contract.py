@@ -35,3 +35,11 @@ def test_agent_and_ci_contracts_use_single_runner():
     ]
     for path in sources:
         assert expected in path.read_text(encoding="utf-8"), f"{path} does not use the single test runner"
+
+
+def test_runner_exposes_explicit_release_profile_and_scale_contracts():
+    source = (REPOSITORY_ROOT / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
+    assert "OSL_RELEASE_PROFILE" in source
+    assert "OSL_RELEASE_SCALE" in source
+    assert "write_release_manifest.py" in source
+    assert "release_gar" in source

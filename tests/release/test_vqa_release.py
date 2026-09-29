@@ -57,11 +57,14 @@ from ._release_common import (
     CACHE_ROOT,
     DATA_DIR,
     download_shard_split,
-    epochs_for,
+    training_overrides,
     materialize_config,
     prefer_osl_ready_dataset,
     report_step,
     record_release_metadata,
+    download_model_snapshot,
+    require_model_repo,
+    run_xvars_preprocessing,
     require_release_enabled,
     require_repo_access,
     system_block,
@@ -69,6 +72,13 @@ from ._release_common import (
 
 XFOUL_REPO = os.environ.get("OSL_RELEASE_VQA_REPO", "OpenSportsLab/OSL-XFoul")
 XFOUL_REVISION = os.environ.get("OSL_RELEASE_VQA_REVISION", "224p")
+XVARS_BASE_MODEL = "OpenSportsLab/base_model_videoChatGPT"
+XVARS_VISUAL_MODEL = "OpenSportsLab/trained-clip-vit-large-patch14"
+PUBLISHED_VQA_MODELS = {
+    "xvars": ("OpenSportsLab/OSL-VQA-XFOUL-XVARS-lora", "xvars"),
+    "qwen25": ("OpenSportsLab/OSL-VQA-XFOUL-qwen2.5-7B-VL-lora", "qwen3_vl_native"),
+    "qwen3": ("OpenSportsLab/OSL-VQA-XFOUL-qwen3-8B-VL-lora", "qwen3_vl_native"),
+}
 
 os.environ.setdefault("WANDB_MODE", "disabled")
 
@@ -112,8 +122,9 @@ def _run_vqa_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
         config_path=config_path, checkpoint_path=str(checkpoint),
     )
 
-    report_step(f"[{run_name}] infer()")
-    predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
+    report_step(f"[{run_name}] fresh checkpoint load + infer()")
+    restored_model = VQAModel(config=config_path, weights=checkpoint)
+    predictions = restored_model.infer(test_set=str(split_paths["test"]), use_wandb=False)
     assert isinstance(predictions, dict) and predictions.get("data"), f"[{run_name}] empty predictions"
 
     report_step(f"[{run_name}] save_predictions()")
@@ -123,7 +134,7 @@ def _run_vqa_pipeline(config_path: str, dataset: dict, run_name: str) -> None:
     record_release_metadata("prediction", task="vqa", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
-    metrics = model.evaluate(test_set=str(split_paths["test"]), predictions=predictions, use_wandb=False)
+    metrics = restored_model.evaluate(test_set=str(split_paths["test"]), predictions=predictions, use_wandb=False)
     record_release_metadata(
         "result", task="vqa", model_family=run_name,
         runtime_seconds=round(time.perf_counter() - started, 3),
@@ -144,8 +155,44 @@ def _dataset_overrides(run_name: str, dataset: dict) -> dict:
             },
         }
     }
-    overrides["TRAIN"] = {"epochs": epochs_for(1)}
+    overrides["TRAIN"] = training_overrides(1)
     return overrides
+
+
+@pytest.mark.release
+@pytest.mark.vqa_xvars
+def test_xvars_dependency_models_and_preprocessing(xfoul_dataset):
+    """Download/cache the real X-VARS prerequisites and materialize features."""
+    require_release_enabled()
+    dependency_root = CACHE_ROOT / "models" / "xvars"
+    for repo_id in (XVARS_BASE_MODEL, XVARS_VISUAL_MODEL):
+        require_model_repo(repo_id)
+        path = download_model_snapshot(repo_id, dependency_root / repo_id.rsplit("/", 1)[-1])
+        assert any(path.rglob("*")), f"{repo_id} downloaded no files"
+    visual_root = dependency_root / XVARS_VISUAL_MODEL.rsplit("/", 1)[-1]
+    checkpoints = list(visual_root.rglob("14_model.pth.tar"))
+    assert checkpoints, f"{XVARS_VISUAL_MODEL} is missing required 14_model.pth.tar"
+    feature_root = DATA_DIR / "vqa" / "xvars_features"
+    run_xvars_preprocessing(xfoul_dataset["data_root"], feature_root, weights_path=checkpoints[0])
+
+
+@pytest.mark.release
+@pytest.mark.parametrize("name,model_id,preset", [
+    pytest.param(name, model_id, preset, marks=pytest.mark.vqa_xvars if name == "xvars" else ())
+    for name, (model_id, preset) in PUBLISHED_VQA_MODELS.items()
+])
+def test_published_vqa_model_inference(xfoul_dataset, name, model_id, preset):
+    require_release_enabled()
+    require_model_repo(model_id)
+    overrides = _dataset_overrides(f"published_{name}", xfoul_dataset)
+    if name == "qwen25":
+        overrides.setdefault("MODEL", {}).setdefault("components", {}).setdefault("llm_decoder", {}).setdefault("params", {})["repo_id"] = "Qwen/Qwen2.5-VL-7B-Instruct"
+    config_path = materialize_config("vqa", preset, overrides, out_name=f"published_{name}.yaml")
+    model = VQAModel(config=config_path, weights=model_id)
+    predictions = model.infer(test_set=str(xfoul_dataset["split_paths"]["test"]), use_wandb=False)
+    assert isinstance(predictions, dict) and predictions.get("data"), f"{name} produced no predictions"
+    metrics = model.evaluate(test_set=str(xfoul_dataset["split_paths"]["test"]), predictions=predictions, use_wandb=False)
+    record_release_metadata("published_model_result", task="vqa", model_id=model_id, metrics=metrics)
 
 
 @pytest.mark.release

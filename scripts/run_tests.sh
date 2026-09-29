@@ -57,13 +57,15 @@ ENV_REPORT="$REPORT_ROOT/environment.txt"
   echo "command=bash scripts/run_tests.sh"
   echo "utc_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "release_mode=${RUN_OSL_RELEASE_TESTS:-0}"
+  echo "release_scale=${OSL_RELEASE_SCALE:-full}"
+  echo "release_profile=${OSL_RELEASE_PROFILE:-qwen}"
   echo "test_vqa_profile=${OSL_TEST_VQA_PROFILE:-qwen}"
   echo "auto_setup=${OSL_TEST_AUTO_SETUP:-1}"
   echo "deterministic_seed=42"
   echo "fast_markers=unit,smoke,integration"
   echo "release_markers=release,gpu,slow,network,pretrained,classification,localization,vqa"
   echo "python_command=$PYTHON_BIN"
-  for name in OSL_RELEASE_CACHE_DIR OSL_RELEASE_DATA_DIR OSL_RELEASE_EPOCHS \
+  for name in OSL_RELEASE_SCALE OSL_RELEASE_PROFILE OSL_RELEASE_CACHE_DIR OSL_RELEASE_DATA_DIR OSL_RELEASE_EPOCHS \
     OSL_RELEASE_MAX_CLIPS OSL_RELEASE_MAX_GAMES OSL_RELEASE_CLS_NUM_FRAMES \
     OSL_RELEASE_CLS_REPO OSL_RELEASE_CLS_REVISION OSL_RELEASE_LOC_E2E_REPO \
     OSL_RELEASE_LOC_FEATURES_REPO OSL_RELEASE_VQA_REPO OSL_RELEASE_VQA_REVISION; do
@@ -176,10 +178,16 @@ fi
 
 SETUP_LOG="$REPORT_ROOT/setup.log"
 if [[ "${OSL_TEST_AUTO_SETUP:-1}" == "1" ]]; then
-  SETUP_ARGS=(setup --pyg --dali)
-  if [[ "$TEST_VQA_PROFILE" == "qwen" ]]; then
+  if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" && "${OSL_RELEASE_PROFILE:-qwen}" == "gar" ]]; then
+    SETUP_ARGS=(setup --pyg)
+  elif [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" && "${OSL_RELEASE_PROFILE:-qwen}" == "xvars" ]]; then
+    SETUP_ARGS=(setup --vqa_xvars)
+  else
+    SETUP_ARGS=(setup --pyg --dali)
+  fi
+  if [[ "$TEST_VQA_PROFILE" == "qwen" && "${OSL_RELEASE_PROFILE:-qwen}" != "gar" ]]; then
     SETUP_ARGS+=(--vqa_qwen)
-  elif [[ "$TEST_VQA_PROFILE" == "xvars" ]]; then
+  elif [[ "$TEST_VQA_PROFILE" == "xvars" && "${OSL_RELEASE_PROFILE:-qwen}" != "xvars" ]]; then
     SETUP_ARGS+=(--vqa_xvars)
   fi
   echo "Provisioning OpenSportsLib test profile ($TEST_VQA_PROFILE); full log: $SETUP_LOG"
@@ -257,18 +265,31 @@ if [[ "$FAST_STATUS" -ne 0 ]]; then
 fi
 
 if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
+  RELEASE_PROFILE="${OSL_RELEASE_PROFILE:-qwen}"
+  if [[ "$RELEASE_PROFILE" != "qwen" && "$RELEASE_PROFILE" != "xvars" && "$RELEASE_PROFILE" != "gar" ]]; then
+    bootstrap_failure "configuration" "Unsupported OSL_RELEASE_PROFILE=$RELEASE_PROFILE." "Use qwen, xvars, or gar."
+    finish 2
+    exit 2
+  fi
+  RELEASE_SCALE="${OSL_RELEASE_SCALE:-full}"
+  if [[ "$RELEASE_SCALE" != "full" && "$RELEASE_SCALE" != "bounded" ]]; then
+    bootstrap_failure "configuration" "Unsupported OSL_RELEASE_SCALE=$RELEASE_SCALE." "Use full (default) or bounded."
+    finish 2
+    exit 2
+  fi
   RELEASE_REPORT="$REPORT_ROOT/release"
   mkdir -p "$RELEASE_REPORT"
   RELEASE_LOG="$RELEASE_REPORT/release.log"
   RELEASE_JSON="$RELEASE_REPORT/release-report.json"
   RELEASE_JUNIT="$RELEASE_REPORT/release-junit.xml"
   export OSL_RELEASE_REPORT_DIR="$RELEASE_REPORT"
-  echo "Running GPU release verification; full log: $RELEASE_LOG"
+  echo "Running GPU release verification (profile=$RELEASE_PROFILE scale=$RELEASE_SCALE); full log: $RELEASE_LOG"
   set +e
-  RELEASE_MARKER="not vqa_xvars"
-  if [[ "$TEST_VQA_PROFILE" == "xvars" ]]; then
-    RELEASE_MARKER="not vqa_qwen"
-  fi
+  case "$RELEASE_PROFILE" in
+    qwen) RELEASE_MARKER="not vqa_xvars and not release_gar" ;;
+    xvars) RELEASE_MARKER="vqa_xvars or gpu" ;;
+    gar) RELEASE_MARKER="release_gar or gpu" ;;
+  esac
   "$PYTHON_BIN" -m pytest tests/release -vv -ra -s --tb=long --showlocals --strict-markers --import-mode=importlib -m "$RELEASE_MARKER" --maxfail=1 \
     --timeout="${OSL_RELEASE_TEST_TIMEOUT:-7200}" --durations=0 \
     --log-cli-level=INFO --json-report --json-report-file="$RELEASE_JSON" \
@@ -289,6 +310,9 @@ if [[ "${RUN_OSL_RELEASE_TESTS:-0}" == "1" ]]; then
     RELEASE_STATUS="$SUMMARY_STATUS"
   fi
   write_release_artifact_index "$RELEASE_REPORT"
+  "$PYTHON_BIN" scripts/write_release_manifest.py \
+    --report-dir "$RELEASE_REPORT" --profile "$RELEASE_PROFILE" --scale "$RELEASE_SCALE" \
+    --exit-code "$RELEASE_STATUS" || RELEASE_STATUS=$?
   printf '\n\n' >>"$REPORT_ROOT/summary.md"
   cat "$RELEASE_REPORT/summary.md" >>"$REPORT_ROOT/summary.md"
   if [[ "$RELEASE_STATUS" -ne 0 ]]; then

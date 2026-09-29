@@ -32,6 +32,38 @@ See `tests/release/README.md` for datasets, credentials, caching, optional packa
 and scaling controls. CI branch/tag wiring is intentionally outside this test-suite
 contract.
 
+### Full release profiles
+
+Release mode defaults to `OSL_RELEASE_SCALE=full`: complete selected datasets,
+canonical preset epoch schedules, fresh checkpoint loading, and the complete
+localization E2E matrix. `OSL_RELEASE_SCALE=bounded` is only for a smaller
+manual debugging run.
+
+The same runner is invoked on three prepared GPU environments; each produces
+`.test-reports/<run-id>/release/release-manifest.json` bound to its Git commit:
+
+```bash
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=qwen bash scripts/run_tests.sh
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=xvars OSL_TEST_VQA_PROFILE=xvars bash scripts/run_tests.sh
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=gar bash scripts/run_tests.sh
+```
+
+- `qwen` verifies classification/localization plus published Qwen adapters.
+- `xvars` downloads the VideoChatGPT and CLIP dependency models, generates
+  X-VARS features/indexes using project tools, then verifies X-VARS training
+  and the published adapter.
+- `gar` requires approved access to `OpenSportsLab/SoccerNet-GAR@tracking`
+  and usable PyG extensions for tracking classification.
+
+Copy the three manifests to the release coordinator and verify that they all
+passed for one commit:
+
+```bash
+python scripts/verify_release_manifests.py <qwen> <xvars> <gar>
+```
+
+Do not download release datasets or models during fast pytest execution.
+
 ## Debug reports
 
 Every run writes a timestamped directory under `.test-reports/`, with

@@ -35,19 +35,10 @@ As of the last check, all three OSL-ready datasets (`OSL-XFoul`, `OSL-SNBAS`,
 currently takes its fallback path. Re-run after any of them lands to switch
 automatically — no code change needed.
 
-Known gaps intentionally fail an enabled release run so they cannot be mistaken
-for verified coverage:
-
-- The `frames_npy` VideoModel classification family (dinov3, clip, videomae,
-  videomae2 as pure feature extractors) needs a raw-video → frame-`.npy`
-  pre-extraction step this suite doesn't implement yet.
-- Tracking-modality classification (`graph_conv`,
-  `classification/sngar_tracking.yaml`) depends on
-  `OpenSportsLab/SoccerNet-GAR`, which is an unpublished placeholder repo as
-  of this writing.
-- Retrieval and description/captioning have no first-class training workflow
-  in the library yet (per the README's roadmap section), so there's nothing
-  to verify here.
+The suite materializes `frames_npy` inputs from raw release videos and runs
+tracking classification from `SoccerNet-GAR@tracking`. Retrieval and
+description/captioning still have no first-class training workflow in the
+library, so they have no release-training entry yet.
 
 ## Prerequisites
 
@@ -74,6 +65,30 @@ for verified coverage:
 Set `RUN_OSL_RELEASE_TESTS=1` on the prepared release machine, then use the
 repository's single command: `bash scripts/run_tests.sh`. Dataset/cache tuning
 uses the environment variables below; the command itself never changes.
+
+### Profiles and scale
+
+Release verification defaults to `OSL_RELEASE_SCALE=full`: all selected data,
+the canonical preset epoch schedules, fresh checkpoint loading, and the full
+localization E2E matrix. Use `OSL_RELEASE_SCALE=bounded` only for a smaller
+debugging run.
+
+Run each required profile in its own prepared environment:
+
+```bash
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=qwen bash scripts/run_tests.sh
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=xvars OSL_TEST_VQA_PROFILE=xvars bash scripts/run_tests.sh
+RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_PROFILE=gar bash scripts/run_tests.sh
+```
+
+The X-VARS profile downloads/caches `OpenSportsLab/base_model_videoChatGPT`
+and `OpenSportsLab/trained-clip-vit-large-patch14`, then invokes the repository
+feature/index preprocessing tools. The GAR profile requires approved access to
+`OpenSportsLab/SoccerNet-GAR@tracking` and a platform with usable PyG binary
+extensions. Each report includes a commit-bound `release-manifest.json`; all
+three manifests must pass for a release tag. Copy those manifests to the
+release coordinator and verify them with
+`python scripts/verify_release_manifests.py <qwen> <xvars> <gar>`.
 
 ## Tuning a run
 

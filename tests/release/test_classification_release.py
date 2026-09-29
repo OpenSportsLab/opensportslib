@@ -66,7 +66,7 @@ from ._release_common import (
     DATA_DIR,
     classes_from_osl_json,
     download_shard_split,
-    epochs_for,
+    training_overrides,
     materialize_config,
     max_items_for,
     prefer_osl_ready_dataset,
@@ -93,6 +93,8 @@ CLS_PRIMARY_REPO = os.environ.get("OSL_RELEASE_CLS_REPO", "OpenSportsLab/OSL-XFo
 CLS_PRIMARY_REVISION = os.environ.get("OSL_RELEASE_CLS_REVISION", "224p")
 CLS_FALLBACK_REPO = os.environ.get("OSL_RELEASE_CLS_FALLBACK_REPO", "OpenSportsLab/OSL-cls-UEFA-fouls")
 TRACKING_CLS_REPO = os.environ.get("OSL_RELEASE_TRACKING_CLS_REPO", "OpenSportsLab/SoccerNet-GAR")
+TRACKING_CLS_REVISION = os.environ.get("OSL_RELEASE_TRACKING_CLS_REVISION", "tracking")
+PUBLISHED_CLASSIFICATION_MODEL = "OpenSportsLab/OSL-cls-action-mvitv2"
 
 os.environ.setdefault("WANDB_MODE", "disabled")
 os.environ.setdefault("OSL_PRETRAINED_WEIGHTS", "0")
@@ -321,8 +323,9 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
         config_path=config_path, checkpoint_path=str(checkpoint),
     )
 
-    report_step(f"[{run_name}] infer()")
-    predictions = model.infer(test_set=str(split_paths["test"]), weights=checkpoint, use_wandb=False)
+    report_step(f"[{run_name}] fresh checkpoint load + infer()")
+    restored_model = ClassificationModel(config=config_path, weights=checkpoint)
+    predictions = restored_model.infer(test_set=str(split_paths["test"]), use_wandb=False)
     assert isinstance(predictions, dict) and predictions.get("data"), f"[{run_name}] empty predictions"
 
     report_step(f"[{run_name}] save_predictions()")
@@ -332,13 +335,37 @@ def _run_classification_pipeline(config_path: str, dataset: dict, run_name: str)
     record_release_metadata("prediction", task="classification", model_family=run_name, prediction_path=str(pred_path))
 
     report_step(f"[{run_name}] evaluate()")
-    metrics = model.evaluate(test_set=str(split_paths["test"]), use_wandb=False)
+    metrics = restored_model.evaluate(test_set=str(split_paths["test"]), predictions=predictions, use_wandb=False)
     assert isinstance(metrics, dict), f"[{run_name}] evaluate() did not return metrics"
     record_release_metadata(
         "result", task="classification", model_family=run_name,
         runtime_seconds=round(time.perf_counter() - started, 3),
     )
     print(f"[{run_name}] metrics: {metrics}")
+
+
+@pytest.mark.release
+def test_published_classification_model_inference(classification_dataset):
+    """Published model artifact must load with its canonical inference path."""
+    require_release_enabled()
+    from ._release_common import require_model_repo
+
+    require_model_repo(PUBLISHED_CLASSIFICATION_MODEL)
+    dataset = classification_dataset
+    overrides = system_block("published_classification_mvitv2")
+    overrides["DATA"] = {
+        "common": {
+            "data_root": str(dataset["data_root"]), "classes": dataset["classes"],
+            "splits": {split: {"annotation_path": str(path), "source_path": str(dataset["source_paths"][split])}
+                       for split, path in dataset["split_paths"].items()},
+        }
+    }
+    config_path = materialize_config("classification", "video", overrides, out_name="published_cls_mvitv2.yaml")
+    model = ClassificationModel(config=config_path, weights=PUBLISHED_CLASSIFICATION_MODEL)
+    predictions = model.infer(test_set=str(dataset["split_paths"]["test"]), use_wandb=False)
+    assert isinstance(predictions, dict) and predictions.get("data")
+    metrics = model.evaluate(test_set=str(dataset["split_paths"]["test"]), predictions=predictions, use_wandb=False)
+    record_release_metadata("published_model_result", task="classification", model_id=PUBLISHED_CLASSIFICATION_MODEL, metrics=metrics)
 
 
 @pytest.mark.release
@@ -375,7 +402,7 @@ def test_classification_mvnetwork_backbone(classification_dataset, backbone):
             "task_head": {"params": {"num_classes": len(dataset["classes"])}},
         }
     }
-    overrides["TRAIN"] = {"epochs": epochs_for(2)}
+    overrides["TRAIN"] = training_overrides(2)
 
     config_path = materialize_config("classification", "video", overrides, out_name=f"cls_{backbone}.yaml")
     _run_classification_pipeline(config_path, dataset, backbone)
@@ -421,7 +448,7 @@ def test_classification_video_mae_huggingface_backend(classification_dataset):
             "task_head": {"params": {"num_classes": len(dataset["classes"])}},
         }
     }
-    overrides["TRAIN"] = {"epochs": epochs_for(2)}
+    overrides["TRAIN"] = training_overrides(2)
 
     config_path = materialize_config("classification", "video", overrides, out_name="cls_video_mae.yaml")
     _run_classification_pipeline(config_path, dataset, "video_mae")
@@ -480,9 +507,9 @@ def tracking_classification_dataset():
 
     require_release_enabled()
     require_repo_access(TRACKING_CLS_REPO)
-    require_repo_populated(TRACKING_CLS_REPO)
-    root = DATA_DIR / "classification" / TRACKING_CLS_REPO.split("/")[-1]
-    snapshot_dataset(TRACKING_CLS_REPO, root)
+    require_repo_populated(TRACKING_CLS_REPO, revision=TRACKING_CLS_REVISION)
+    root = DATA_DIR / "classification" / f"{TRACKING_CLS_REPO.split('/')[-1]}-{TRACKING_CLS_REVISION}"
+    snapshot_dataset(TRACKING_CLS_REPO, root, revision=TRACKING_CLS_REVISION)
     split_paths = {}
     for split in ("train", "valid", "test"):
         candidates = sorted(root.rglob(f"*{split}*.json"))
@@ -500,6 +527,7 @@ def tracking_classification_dataset():
 
 
 @pytest.mark.release
+@pytest.mark.release_gar
 def test_classification_tracking_graph_conv(tracking_classification_dataset):
     """Tracking-modality classification (graph_conv backbone,
     classification/sngar_tracking.yaml canonical config). Uses
@@ -521,7 +549,7 @@ def test_classification_tracking_graph_conv(tracking_classification_dataset):
         "inputs": {"video": {"params": {"max_samples": max_items_for("OSL_RELEASE_MAX_CLIPS", 40)}}},
     }
     overrides["MODEL"] = {"components": {"task_head": {"params": {"num_classes": len(dataset["classes"])}}}}
-    overrides["TRAIN"] = {"epochs": epochs_for(1)}
+    overrides["TRAIN"] = training_overrides(1)
     config_path = materialize_config(
         "classification", "sngar_tracking", overrides, out_name="cls_graph_conv.yaml"
     )
@@ -555,7 +583,7 @@ def test_classification_frames_npy_backbones(frames_npy_dataset, backbone):
         "video_adapter": {"params": {"hidden_dim": hidden_dim}},
         "task_head": {"params": {"hidden_dim": hidden_dim, "num_classes": len(dataset["classes"])}},
     }}
-    overrides["TRAIN"] = {"epochs": epochs_for(1)}
+    overrides["TRAIN"] = training_overrides(1)
     config_path = materialize_config(
         "classification", "sngar_frames", overrides, out_name=f"cls_frames_{backbone}.yaml"
     )
