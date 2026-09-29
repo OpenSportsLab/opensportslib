@@ -280,7 +280,7 @@ If you use OpenSportsLib in your research, please cite the project.
 ## Acknowledgments
 
 OpenSportsLib is developed within the broader OpenSportsLab effort for sports
-video understanding. Core contributors include:
+video understanding. Core contributors affiliated with KAUST include:
 
 - [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
 - [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc
