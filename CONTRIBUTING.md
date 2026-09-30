@@ -95,6 +95,13 @@ git push origin feature/your-feature-name
 ### 5. Open Pull Request (PR) → dev
 Raise a Pull Request (PR) to merge your branch back into the `dev` branch.
 
+Package versions are managed by GitHub Actions. Do not change the root
+`pyproject.toml` package version or the OpenSportsLib dependency pin in
+`server/pyproject.toml` in a PR to `dev`; the required Version Integrity check
+will reject those edits. Maintainers should follow the
+[release-management guide](docs/developer/release-management.md) for feature
+release-line preparation and stable releases.
+
 ### Contributor License Agreement
 
 Every distinct GitHub-linked commit author in a PR targeting `dev` must accept

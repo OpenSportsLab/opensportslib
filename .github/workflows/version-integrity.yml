@@ -1,0 +1,38 @@
+name: Version Integrity
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - "pyproject.toml"
+      - "server/pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  protected-version-metadata:
+    name: Reject contributor version changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request merge revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare protected metadata with dev
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1
+          base_root=$(git show "origin/$BASE_REF:pyproject.toml" | sed -n '/^\[project\]/,/^\[/ s/^version[[:space:]]*=[[:space:]]*//p')
+          head_root=$(git show "$HEAD_SHA:pyproject.toml" | sed -n '/^\[project\]/,/^\[/ s/^version[[:space:]]*=[[:space:]]*//p')
+          base_pin=$(git show "origin/$BASE_REF:server/pyproject.toml" | sed -n 's/.*"opensportslib==\([^"]*\)".*/\1/p')
+          head_pin=$(git show "$HEAD_SHA:server/pyproject.toml" | sed -n 's/.*"opensportslib==\([^"]*\)".*/\1/p')
+
+          if [ "$base_root" != "$head_root" ] || [ "$base_pin" != "$head_pin" ]; then
+            echo "::error::Version metadata is managed by GitHub Actions. Do not change pyproject.toml project.version or the opensportslib server dependency pin in a PR to dev."
+            exit 1
+          fi

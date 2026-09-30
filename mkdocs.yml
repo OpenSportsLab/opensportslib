@@ -66,6 +66,7 @@ nav:
           - Tools: developer/tools-reference.md
       - Internal Modules: developer/internal-catalog.md
       - Testing & Review: developer/testing.md
+      - Release Management: developer/release-management.md
       - Configuration Authoring: config/developer-guide.md
   - Contributing: contributing.md
       
