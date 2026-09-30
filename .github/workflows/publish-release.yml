@@ -31,6 +31,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install build twine
 
+      - name: Require the release tag to match main
+        run: |
+          git fetch origin main --depth=1
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "::error::Publish a release only from the current main commit."
+            exit 1
+          fi
+
+      - name: Validate prepared release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/release_versions.py validate-release "$RELEASE_TAG"
+
       - name: Synchronize stable version for build
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -65,3 +78,22 @@ jobs:
             git commit -m "fix: synchronize stable release version"
             git push origin main
           fi
+
+      - name: Checkout latest dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Advance dev to the next patch release line
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/release_versions.py advance-dev "$RELEASE_TAG"
+
+      - name: Commit next development version to dev
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add pyproject.toml server/pyproject.toml
+          git commit -m "chore: start next development version"
+          git push origin HEAD:dev
