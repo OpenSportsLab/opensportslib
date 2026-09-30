@@ -12,7 +12,7 @@ DEV_VERSION = re.compile(r"^(?P<base>\d+\.\d+\.\d+)\.dev(?P<number>\d+)$")
 PROJECT_VERSION = re.compile(
     r'(?ms)(^\[project\]\s*.*?^version\s*=\s*")[^"]+("\s*$)'
 )
-SERVER_PIN = re.compile(r'("opensportslib==)([^"]+)("[,\s]*$)', re.MULTILINE)
+SERVER_PIN = re.compile(r'("opensportslib==)([^"]+)(")')
 
 
 def next_dev_version(current: str) -> str:
