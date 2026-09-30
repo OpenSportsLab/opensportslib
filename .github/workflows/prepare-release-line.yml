@@ -1,0 +1,39 @@
+name: Prepare Development Release Line
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Target release tag (for example, v0.4.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: prepare-release-line
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Validate and initialize development line
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python scripts/release_versions.py prepare-dev "$RELEASE_TAG"
+
+      - name: Commit prepared development version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add pyproject.toml server/pyproject.toml
+          git commit -m "chore: prepare development release line"
+          git push origin HEAD:dev
