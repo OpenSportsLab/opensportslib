@@ -1,71 +1,5 @@
 # OpenSportsLib
 
-OpenSportsLib inference servers support runtime model registration through
-`RemoteModelRegistry`. Its unified `register_model()` method accepts Hugging
-Face or server-local weights; the returned model ID is then used by the existing
-remote task APIs. Unregistered model IDs are rejected.
-
-See the [complete inference server guide](docs/server/inference-server.md) for
-installation, registry administration, curl requests, single-video inference,
-full-test-set and per-sample remote inference, job polling, and sessions.
-
-Hugging Face registration is authorized by repository access. Set `HF_TOKEN`
-on the worker or pass `hf_token` per request. The optional `OSL_API_KEY`
-protects local-model and general administrative operations.
-
-## Configuration From Hugging Face
-
-Prepare and inspect configuration before model weights are allocated:
-
-```python
-from opensportslib.apis import Config, ClassificationModel
-
-config = Config.from_pretrained("OpenSportsLab/OSL-cls-action-mvitv2")
-# Or: Config.from_file("opensportslib/configs/classification/video.yaml")
-
-config.update(
-    data={"data_root": "/datasets/fouls"},
-    training={"epochs": 30, "batch_size": 8},
-    inference={"batch_size": 4},
-    overrides={"TRAIN.scheduler.step_size": 5},
-)
-print(config.options())
-model = ClassificationModel(config=config)
-```
-
-`options()` reports editable parameters supported by the selected task and
-backend. `get_config()` returns a detached canonical dictionary for discovering
-advanced dotted paths. Dotted overrides must already exist, are validated as
-one atomic update, and are intended for local execution. Initialization-sensitive
-settings such as device and output directory must be changed before creating the
-model. `model.update_config(...)` supports safe settings for the next operation.
-
-When `weights` is a Hugging Face model ID, `config` may be omitted if the
-repository contains a compatible OpenSportsLib `config.yaml`:
-
-```python
-from opensportslib.apis import ClassificationModel
-
-model = ClassificationModel(weights="OpenSportsLab/OSL-cls-action-mvitv2")
-```
-
-This also applies to localization and VQA wrappers. Local checkpoints and
-repositories containing only a Transformers `config.json` still require an
-explicit OpenSportsLib config. Explicit configs retain existing merge behavior.
-Provide your own input data when running inference; published dataset paths may
-refer to the machine used for training.
-
-Classification and localization accept a video directly, without a manifest:
-
-```python
-classification_predictions = classification_model.infer(video_path="/path/to/clip.mp4")
-localization_predictions = localization_model.infer(video_path="/path/to/full-match.mp4")
-```
-
-Direct classification treats the file as one sample. Direct localization treats
-it as one timeline and returns detected events. Both return the regular OSL JSON
-prediction document; use `test_set=` instead when evaluating labeled data.
-
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.
@@ -94,6 +28,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 - **Documentation:** https://opensportslab.github.io/opensportslib/
 - **OSL JSON format:** https://opensportslab.github.io/opensportslib/data/osl-json-format/
+- **Inference server:** [server/README.md](server/README.md)
 - **PyPI:** https://pypi.org/project/opensportslib/
 - **Issues:** https://github.com/OpenSportsLab/opensportslib/issues
 
@@ -184,92 +119,15 @@ reported scores, datasets, and loading snippets.
 
 ## Dataset format
 
-OpenSportsLib annotation files use the **OSL JSON v2.0** format. A dataset JSON
-contains top-level metadata, a shared `labels` schema, and a `data` array where
-each sample points to one or more inputs.
-
-Minimal classification sample:
-
-```json
-{
-  "labels": {
-    "action": {
-      "type": "single_label",
-      "labels": ["pass", "shot"]
-    }
-  },
-  "data": [
-    {
-      "id": "clip_0001",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "clips/clip_0001.mp4",
-          "fps": 25.0
-        }
-      ],
-      "labels": {
-        "action": {
-          "label": "shot"
-        }
-      }
-    }
-  ]
-}
-```
-
-Minimal localization sample:
-
-```json
-{
-  "labels": {
-    "action": {
-      "type": "single_label",
-      "labels": ["pass", "shot"]
-    }
-  },
-  "data": [
-    {
-      "id": "game_0001",
-      "inputs": [
-        {
-          "type": "video",
-          "path": "games/game_0001.mp4",
-          "fps": 25.0
-        }
-      ],
-      "events": [
-        {
-          "head": "action",
-          "label": "pass",
-          "position_ms": 1240
-        }
-      ]
-    }
-  ]
-}
-```
-
-Relative paths in `inputs[].path` are resolved from the split media root in the
-YAML config, for example `DATA.common.splits.train.source_path`. Localization
-records may also declare half-open physical-video ranges in
-`metadata.intervals`; the OpenCV loader treats them as ordered logical videos
-and evaluates only segments marked `verified`. See the full
-[OSL JSON format guide](docs/data/osl-json-format.md) for field definitions,
-multi-modal examples, prediction payloads, and conversion notes.
+OpenSportsLib uses the **OSL JSON v2.0** annotation format for multimodal
+datasets and predictions. See the [OSL JSON format guide](docs/data/osl-json-format.md)
+for its schema, examples, and conversion notes.
 
 ---
 
 ## Quickstart
 
-### Import the library
-
-```python
-import opensportslib
-print("OpenSportsLib imported successfully")
-```
-
-### Train a classification model
+### Classification
 
 ```python
 from opensportslib.apis import ClassificationModel
@@ -283,115 +141,17 @@ my_model.train(
     train_set="/path/to/train_annotations.json",
     valid_set="/path/to/valid_annotations.json",
 )
-```
 
-### Run inference
-
-```python
-from opensportslib.apis import ClassificationModel
-
-my_model = ClassificationModel(
-    config="/path/to/classification.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
-
-predictions = my_model.infer(
-    test_set="/path/to/test_annotations.json",
-)
-
-saved_predictions = my_model.save_predictions(
+predictions = my_model.infer(test_set="/path/to/test_annotations.json")
+my_model.save_predictions(
     output_path="/path/to/predictions.json",
     predictions=predictions,
 )
-
-metrics = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-)
-
-metrics_from_file = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=saved_predictions,
-)
-
-print(metrics)
 ```
 
-### Localization example
-
-```python
-from opensportslib.apis import LocalizationModel
-
-my_model = LocalizationModel(
-    config="/path/to/localization_video_dali.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
-
-predictions = my_model.infer(
-    test_set="/path/to/test_annotations.json",
-)
-
-saved_predictions = my_model.save_predictions(
-    output_path="/path/to/predictions.json",
-    predictions=predictions,
-)
-
-metrics = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-)
-
-metrics_from_file = my_model.evaluate(
-    test_set="/path/to/test_annotations.json",
-    predictions=saved_predictions,
-)
-```
-
-### VQA example
-
-```python
-from opensportslib.apis import VQAModel
-
-my_model = VQAModel(
-    config="opensportslib/configs/vqa/qwen.yaml",
-    weights=None,  # optional: path or Hugging Face model ID
-)
-
-predictions = my_model.infer(
-    test_set="/path/to/test_annotations.json",
-)
-
-# Headless single-video VQA uses the same prediction payload shape.
-single_prediction = my_model.infer(
-    video_path="/path/to/video.mp4",
-    question="What card would you give? Why?",
-)
-```
-
-Use `opensportslib/configs/vqa/xvars.yaml` with `opensportslib setup --vqa_xvars`
-for the X-VARS backend. OpenSportsLib supports three VQA options:
-
-- `opensportslib/configs/vqa/xvars.yaml`
-  Original X-VARS / Video-ChatGPT path.
-- CLIP features + Qwen
-  Use `opensportslib/configs/vqa/qwen.yaml` for inference and
-  `opensportslib/configs/vqa/qwen_lora.yaml` for LoRA training.
-- `opensportslib/configs/vqa/qwen3_vl_native.yaml`
-  Full end-to-end native QwenVL path. This is the single canonical QwenVL
-  config; change `MODEL.components.llm_decoder.params.repo_id` to switch model
-  IDs.
-
-Use `opensportslib setup --vqa_qwen` for both the CLIP+Qwen and native QwenVL
-paths. The CLIP+Qwen configs support `Qwen/Qwen2.5-7B-Instruct` and
-`Qwen/Qwen3.5-9B-Base`. The native QwenVL config defaults to
-`Qwen/Qwen3-VL-8B-Instruct` and supports:
-
-- `Qwen/Qwen3-VL-8B-Instruct`
-- `Qwen/Qwen2.5-VL-7B-Instruct`
-
-For X-VARS, `feature_source: indexed_or_raw_clip` prefers indexed CLIP features
-when available and falls back to extracting CLIP features from raw video during
-`infer()`. Pre-extracted features remain the preferred path for parity, speed,
-and reproducibility. See [docs/tools/vqa.md](docs/tools/vqa.md) for the full
-VQA setup workflow.
+For localization, VQA, and additional end-to-end examples, see the
+[API guide](opensportslib/apis/README.md), [quickstart scripts](examples/quickstart/),
+and [VQA guide](docs/tools/vqa.md).
 
 
 ---
@@ -400,43 +160,8 @@ VQA setup workflow.
 
 OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
 
-For SN-GAR tracking classification, `sngar_tracking_hf.yaml` loads split metadata
-through `datasets` and caches every referenced TAR shard before using each split.
-It preserves the weighted replacement sampler without extracting individual clips. Install
-with `python -m pip install -e .`, authenticate with `hf auth login`,
-and see [SN-GAR-README.md](SN-GAR-README.md) for the training command and cache layout.
-
-For SN-GAR video action spotting, `sngar_spotting_video_hf.yaml` uses
-`DATA.inputs.video.source.format: hf_json` to stage OSL JSON manifests and MP4s
-from the `multimodal` branch of `OpenSportsLab/SNGAR-Action-Spotting`. It reads
-the JSON manifests and downloads only their selected video inputs, leaving the
-tracking Parquet files alone. Run
-`LocalizationModel(config="sngar_spotting_video_hf.yaml").train(use_wandb=False)`
-after `hf auth login` and dataset access approval. The first train/validation
-stage downloads all videos in those splits; subsequent runs reuse the cache.
-If a cached video is missing, staging downloads it again before training starts.
-The example keeps the 300-frame window but uses one clip per step, limited
-DataLoader prefetch, and four gradient accumulation steps to control memory.
-For the OpenCV loader, accumulation combines successive batches, so batch size
-one with four accumulation steps is valid.
-The 29.97-fps videos are sampled every sixth source frame for approximately
-5 fps and a 60-second window. Restart training after a sampling change so
-decoded clips and event labels use the same frame rate.
-
-For tracking action spotting, use
-`LocalizationModel(config="sngar_spotting_tracking_hf.yaml").train(use_wandb=False)`.
-This config selects `tracking_parquet` from the same `multimodal` JSON manifests,
-downloads only the whole-game tracking tables in the requested splits,
-and passes them to the tracking graph dataset. The staged manifest keeps the
-`tracking_parquet` input type. Tracking files are cached under
-`/home/giancos/OSLdata/sngar/hf_json_tracking_cache`; video MP4s are skipped.
-
-To run the five example baselines sequentially with their full epoch settings,
-see [tools/train/weekend_train.sh](tools/train/weekend_train.sh). Run it with
-`bash tools/train/weekend_train.sh` after `hf auth login`. Each algorithm and
-dataset has its own section in the script. Video spotting alone was measured at
-about 10 days for 100 epochs on one user's machine, so the complete sequence
-will extend beyond a weekend on similar hardware.
+For SN-GAR classification and action-spotting configurations, setup, caching,
+and training commands, see the [SN-GAR examples](examples/sngar/README.md).
 
 ### Python API
 
@@ -455,66 +180,6 @@ from opensportslib.tools import (
 python tools/download/download_osl_hf.py --repo-id <org/repo> --revision main --split test --format parquet --output-dir downloaded_data --annotations-only
 python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_dataset.json> --split test --revision main
 ```
-
-Downloads are placed under `<output-dir>/<revision>/<split>`.
-Pass `annotations_only=True` to download or reconstruct only `<split>.json`.
-The JSON records the resolved Hugging Face commit and can later be passed to
-`download_dataset_sample_inputs_from_hf()` to fetch one sample or input. A full
-Parquet/WebDataset download always completes the local split even when a
-metadata-only `<split>.json` already exists.
-
-Download APIs accept `byte_progress_cb(filename, downloaded_bytes,
-total_bytes)`. When the repository file is Xet-backed, OpenSportsLib keeps the
-accelerated Xet transfer and adapts Xet's byte updates to this callback. It
-falls back to classic HTTP progress when Xet is unavailable, disabled, or not
-used by the file.
-When byte progress is enabled, Parquet downloads also emit `[current/total]`
-file messages through `progress_cb` so clients can present file-count progress.
-High-level split downloads also accept `file_plan_cb(filenames)`,
-`file_completed_cb(filename, local_path)`, and
-`json_ready_cb(split, json_path)`. These are transfer lifecycle notifications;
-callers remain responsible for queue policy and presentation. For non-dry-run
-JSON datasets, pinned source metadata is persisted before `json_ready_cb` runs.
-
-JSON uploads support partially downloaded datasets: the JSON and all
-referenced files available locally are committed, while missing referenced
-files are skipped and reported. Remote files not included in that commit are
-left untouched. Parquet/WebDataset uploads remain strict and require every
-referenced file locally before conversion.
-
----
-
-## What you can do with OpenSportsLib
-
-### Action Classification
-Classify clips or event centered samples into predefined categories.
-
-### Action Localization / Spotting
-Predict when key events happen in long untrimmed sports videos.
-
-### Visual Question Answering (VQA)
-Answer natural-language questions about sports video clips.
-
-### Action Retrieval
-Search and retrieve relevant clips or moments from a collection of sports videos.
-This is part of the roadmap and OSL data model, not a first-class OpenSportsLib
-training workflow yet.
-
-### Action Description / Captioning
-Generate text descriptions for sports events and temporal segments.
-This is part of the roadmap and OSL data model, not a first-class OpenSportsLib
-training workflow yet.
-
----
-
-## Typical workflow
-
-1. Prepare your dataset in the expected format
-2. Select or create a YAML config
-3. Initialize the task specific model
-4. Train on your annotations
-5. Run inference on new data
-6. Extend the pipeline with your own datasets or models
 
 ---
 
@@ -572,33 +237,16 @@ opensportslib setup --vqa_xvars
 opensportslib setup --vqa_qwen
 ```
 
-### Git workflow
-
-1. Make sure you are branching from `dev`
-2. Create your feature or fix branch from `dev`
-3. Open a pull request back into `dev`
-
 ---
 
 ## Contributing
 
-We welcome contributions to OpenSportsLib.
+We welcome contributions. Pull requests must target `dev`, and each
+GitHub-linked commit author must accept the [Individual Contributor License
+Agreement](.github/CLA.md) when prompted by the `CLA check`.
 
-All PRs must target `dev`. Before a PR can merge, every GitHub-linked commit
-author must accept the [Individual Contributor License Agreement](.github/CLA.md)
-when prompted by the `CLA check`.
-
-Please check:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [DEVELOPERS.md](DEVELOPERS.md)
-
-These documents describe:
-
-- how to add models and datasets
-- coding standards
-- training pipeline structure
-- how to run and test the framework
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and
+[DEVELOPERS.md](DEVELOPERS.md) for architecture and extension guidance.
 
 ---
 
@@ -631,26 +279,9 @@ If you use OpenSportsLib in your research, please cite the project.
 
 ## Acknowledgments
 
-OpenSportsLib is developed within the broader OpenSportsLab effort for sports video understanding.
+OpenSportsLib is developed within the broader OpenSportsLab effort for sports
+video understanding. Core contributors affiliated with KAUST include:
 
-## Inference server
-
-The optional FastAPI + Redis/RQ inference server lives in [`server/`](server/README.md),
-beside the main library package. It supports classification, localization, VQA,
-video/manifest uploads, and the library's remote inference client.
-
-`pip install opensportslib` installs the library only. To run the server from
-this repository, activate a fresh Python 3.12 or newer environment and install the server:
-
-```bash
-pip install -e ./server
-server/scripts/serverctl setup
-server/scripts/serverctl start
-```
-
-The server installs the OpenSportsLib release from PyPI pinned to the root project
-version. That release must be published before installing or building the server.
-
-See the [server guide](server/README.md) for uv setup, model configuration,
-Redis and GPU deployment with Docker Compose. Server dependencies
-and runtime data are managed separately from the library.
+- [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
+- [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc
+- [Dr. Silvio Giancola](https://www.silviogiancola.com/) — Research Scientist

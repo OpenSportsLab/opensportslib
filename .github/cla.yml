@@ -5,5 +5,5 @@ required_signing_phrase: "I have read the OpenSportsLab Individual Contributor L
 # Create an issue titled "CLA Signature Ledger", then replace 0 with its issue
 # number before enabling the required status check. Only bot-authored records
 # are treated as signatures.
-ledger_issue: 0
+ledger_issue: 78
 maintainer_contact: "https://github.com/OpenSportsLab"

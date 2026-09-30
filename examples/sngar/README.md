@@ -1,3 +1,15 @@
+# SN-GAR examples
+
+This directory contains ready-to-run examples for SN-GAR tracking
+classification and video/tracking action spotting:
+
+- `sngar_tracking_hf.yaml`: tracking classification from Hugging Face shards.
+- `sngar_tracking_local.yaml`: tracking classification from extracted Parquet clips.
+- `sngar_spotting_video_hf.yaml`: video action spotting from Hugging Face media.
+- `sngar_spotting_tracking_hf.yaml`: tracking action spotting from Hugging Face media.
+
+## Tracking classification
+
 Here’s a clean path to reproduce the **tracking model with the highest reported balanced accuracy**: GIN + MaxPool + positional edges. The paper reports **77.8% balanced accuracy and 57.0% macro F1**, averaged over five runs. Its baseline config uses seed 42, so the steps below produce one run, which may differ from that average. [Paper repository](https://github.com/drishyakarki/pixels_vs_positions)
 
 ### 1. Set up OpenSportsLib
@@ -28,7 +40,7 @@ hf auth login
 
 Gated datasets require both approved access and authentication. [Hugging Face documentation](https://huggingface.co/docs/hub/datasets-gated)
 
-The [sngar_tracking_hf.yaml](/home/giancos/git/opensportslib/sngar_tracking_hf.yaml) config reads the train, valid, and test splits from the `tracking` branch. It streams each requested split's small metadata tables with `datasets`, then downloads every TAR shard referenced by that split before training or inference starts. Shards remain in `/home/giancos/OSLdata/sngar/hf_cache`; individual Parquet clips are read in memory and are never extracted as separate files.
+The [sngar_tracking_hf.yaml](sngar_tracking_hf.yaml) config reads the train, valid, and test splits from the `tracking` branch. It streams each requested split's small metadata tables with `datasets`, then downloads every TAR shard referenced by that split before training or inference starts. Shards remain in `/home/giancos/OSLdata/sngar/hf_cache`; individual Parquet clips are read in memory and are never extracted as separate files.
 
 The paper's replacement sampler requests 40,000 clips per epoch. Initial setup waits for the required train and validation shards; batches then read cached TARs. Later epochs and runs reuse them, and missing cached shards are downloaded again before the split is used. The branch is pinned to a Hub commit for each run, and cached metadata is scoped to that commit.
 
@@ -48,14 +60,14 @@ This produces `/home/giancos/OSLdata/sngar/tracking/train/train.json`, and equiv
 
 ### 3. Use the paper’s config
 
-Both [sngar_tracking_hf.yaml](/home/giancos/git/opensportslib/sngar_tracking_hf.yaml) and [sngar_tracking_local.yaml](/home/giancos/git/opensportslib/sngar_tracking_local.yaml) use OpenSportsLib's canonical v2 layout. They share the [paper baseline's](https://github.com/drishyakarki/pixels_vs_positions/blob/main/main_tracking_gin_positional_maxpool.yaml) GIN model, 100 epochs, batch size 32, 4,000 replacement samples per class per epoch, Adam at `0.001`, and seed 42. Only the data source and split paths differ: the HF config reads cached TAR shards, while the local config reads extracted Parquet clips under `/home/giancos/OSLdata/sngar/tracking`.
+Both [sngar_tracking_hf.yaml](sngar_tracking_hf.yaml) and [sngar_tracking_local.yaml](sngar_tracking_local.yaml) use OpenSportsLib's canonical v2 layout. They share the [paper baseline's](https://github.com/drishyakarki/pixels_vs_positions/blob/main/main_tracking_gin_positional_maxpool.yaml) GIN model, 100 epochs, batch size 32, 4,000 replacement samples per class per epoch, Adam at `0.001`, and seed 42. Only the data source and split paths differ: the HF config reads cached TAR shards, while the local config reads extracted Parquet clips under `/home/giancos/OSLdata/sngar/tracking`.
 
 No clip extraction or full split download is needed for streaming. To check the config:
 
 ```bash
 python - <<'PY'
 from opensportslib.apis import Config
-config = Config.from_file("sngar_tracking_hf.yaml").get_config()
+config = Config.from_file("examples/sngar/sngar_tracking_hf.yaml").get_config()
 assert config["TRAIN"]["sampling"]["samples_per_class"] == 4000
 print(config["DATA"]["inputs"]["tracking"]["source"])
 PY
@@ -70,7 +82,7 @@ from opensportslib.apis import ClassificationModel
 
 
 def main():
-    model = ClassificationModel(config="sngar_tracking_hf.yaml")
+    model = ClassificationModel(config="examples/sngar/sngar_tracking_hf.yaml")
 
     checkpoint = model.train(use_ddp=False, use_wandb=False)
     print("Best checkpoint:", checkpoint)
@@ -96,3 +108,38 @@ python run_sngar_tracking.py
 OpenSportsLib selects the best validation checkpoint during training, then `infer()` uses that checkpoint for the test set. The config saves checkpoints under `checkpoints_tracking/graph_conv/`.
 
 The GIN baseline is the tracking result to use for **balanced accuracy**. If by “best” you mean **macro F1**, the paper reports a slightly higher F1 for its TCN temporal aggregation config (58.4%, with 75.5% balanced accuracy). [Paper results](https://github.com/drishyakarki/pixels_vs_positions#full-results)
+
+## Action spotting
+
+The video example uses `sngar_spotting_video_hf.yaml` to stage OSL JSON
+manifests and MP4 files from the `multimodal` branch of
+`OpenSportsLab/SNGAR-Action-Spotting`. It downloads only selected video inputs,
+uses a 300-frame window, and samples the 29.97-fps source every sixth frame for
+approximately 5 fps. Train it from the repository root after authentication:
+
+```python
+from opensportslib.apis import LocalizationModel
+
+model = LocalizationModel(config="examples/sngar/sngar_spotting_video_hf.yaml")
+model.train(use_wandb=False)
+```
+
+The tracking example uses `sngar_spotting_tracking_hf.yaml` with
+`input_type: tracking_parquet`. It downloads only the whole-game tracking
+tables referenced by the selected manifests and skips video files:
+
+```python
+from opensportslib.apis import LocalizationModel
+
+model = LocalizationModel(config="examples/sngar/sngar_spotting_tracking_hf.yaml")
+model.train(use_wandb=False)
+```
+
+Missing cached media is downloaded again before training. Restart training
+after changing sampling parameters so decoded clips and event labels use the
+same frame rate.
+
+To run all five example baselines sequentially with their full epoch settings,
+run `bash tools/train/weekend_train.sh` after `hf auth login`. Video spotting
+alone may take about 10 days for 100 epochs on comparable hardware, so the full
+sequence can take longer than a weekend.

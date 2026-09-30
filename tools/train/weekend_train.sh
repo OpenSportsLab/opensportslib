@@ -17,7 +17,7 @@ fi
 # 1. GIN + positional edges on SoccerNet-GAR tracking
 echo '=== 1/5: GIN on SoccerNet-GAR tracking ==='
 if (( START_AT <= 1 )); then
-  "$PYTHON_BIN" -u tools/train/train_config.py classification sngar_tracking_hf.yaml
+  "$PYTHON_BIN" -u tools/train/train_config.py classification examples/sngar/sngar_tracking_hf.yaml
 fi
 
 
@@ -100,14 +100,14 @@ fi
 # 4. GraphConvSeq + GRU on SN-GAR action spotting tracking
 echo '=== 4/5: GraphConvSeq on SN-GAR action spotting tracking ==='
 if (( START_AT <= 4 )); then
-  "$PYTHON_BIN" -u tools/train/train_config.py localization sngar_spotting_tracking_hf.yaml
+  "$PYTHON_BIN" -u tools/train/train_config.py localization examples/sngar/sngar_spotting_tracking_hf.yaml
 fi
 
 
 # 5. RNY008-GSM + GRU on SN-GAR action spotting video
 echo '=== 5/5: RNY008-GSM on SN-GAR action spotting video ==='
 if (( START_AT <= 5 )); then
-  "$PYTHON_BIN" -u tools/train/train_config.py localization sngar_spotting_video_hf.yaml
+  "$PYTHON_BIN" -u tools/train/train_config.py localization examples/sngar/sngar_spotting_video_hf.yaml
 fi
 
 echo 'All five training runs finished.'

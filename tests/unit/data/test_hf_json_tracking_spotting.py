@@ -64,7 +64,7 @@ def tracking_hub(tmp_path, monkeypatch):
 
 
 def test_tracking_hf_json_builds_graph_clips_for_all_splits(tmp_path, tracking_hub):
-    payload = Config.from_file("sngar_spotting_tracking_hf.yaml").get_config()
+    payload = Config.from_file("examples/sngar/sngar_spotting_tracking_hf.yaml").get_config()
     payload["DATA"]["inputs"]["video"]["source"]["cache_dir"] = str(tmp_path / "cache")
     payload["DATA"]["inputs"]["video"]["sampling"]["clip_len"] = 10
     payload["DATA"]["inputs"]["video"]["sampling"]["epoch_num_frames"] = 100
