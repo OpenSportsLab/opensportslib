@@ -1,12 +1,14 @@
 # Developer Testing and Review
 
-OpenSportsLib has one supported test entry point:
+OpenSportsLib has one standard command for running its test suite:
 
 ```bash
 bash scripts/run_tests.sh
 ```
 
-The command runs the fast smoke, unit, and integration suites and writes diagnostics under `.test-reports/`. Set `RUN_OSL_RELEASE_TESTS=1` only on a prepared machine for the real-data/GPU/network release suite.
+The command runs the fast smoke, unit, and integration tests and writes reports
+under `.test-reports/`. Set `RUN_OSL_RELEASE_TESTS=1` only on a prepared
+machine when you need the release suite, which uses real data, GPUs, or network access.
 
 ## Put tests in the correct tier
 

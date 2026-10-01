@@ -1,7 +1,7 @@
 # SN-GAR Action Spotting Datasets
 
-How the two SN-GAR action-spotting datasets are built from raw event and
-tracking data, what guarantees the build carries, and how to rebuild or
+This page explains how the two SN-GAR action-spotting datasets are built from
+raw event and tracking data, what the build guarantees, and how to rebuild or
 publish them.
 
 | script | purpose |

@@ -1,16 +1,17 @@
 # Public API Reference
 
-> **Public / stable.** Import the symbols on this page from
-> `opensportslib.apis` or `opensportslib.tools`. Other package modules are not
-> compatibility-stable unless a developer page labels them an extension point.
+> **Public / stable.** Import the names on this page from `opensportslib.apis`
+> or `opensportslib.tools`. Other package modules may change unless a developer
+> page explicitly describes them as an extension point.
 
 ## Task wrappers
 
-All task wrappers accept a canonical config path or `Config`, optional local or
-Hugging Face `weights`, and optional remote-server connection parameters.
-`train()` uses configured or supplied manifests; `infer()` returns an in-memory
-prediction payload; `evaluate()` returns a metrics dictionary; and
-`save_predictions()` is the explicit disk-write operation.
+Each task API accepts a supported configuration path or `Config`, optional local
+or Hugging Face `weights`, and optional remote-server connection settings. A
+task wrapper is the Python object you use to work with one task. `train()` uses
+the configured or supplied manifests, `infer()` returns predictions in memory,
+`evaluate()` returns metric values, and `save_predictions()` writes predictions
+to disk when you ask it to.
 
 | Class | Use | Important inputs and side effects |
 | --- | --- | --- |

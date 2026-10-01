@@ -1,7 +1,7 @@
 # Tool and Utility Reference
 
-> **Public / stable:** exports from `opensportslib.tools` are supported. The
-> implementation modules and non-exported helpers are **internal**.
+> **Public / stable:** names exported from `opensportslib.tools` are supported.
+> Implementation modules and helpers that are not exported are **internal**.
 
 ## Side effects and requirements
 
@@ -12,7 +12,7 @@
 | Hugging Face transfer | `download_dataset_*`, `upload_dataset_*`, repository helpers | Uses network and Hub credentials as needed; downloads media or mutates Hub repository contents. |
 | SN VQA helpers | `convert_sn_vqa_2026_to_osl`, `evaluate_sn_vqa_predictions` | Converts/evaluates the supported SoccerNet VQA workflow. |
 
-The remaining stable helpers are provenance and repository utilities:
+The remaining stable helpers work with source-history metadata and repositories:
 `read_hf_source_metadata_from_dataset`,
 `write_hf_source_metadata_to_dataset_json`, `get_json_repo_folder`,
 `extract_repo_paths_from_json`, `extract_local_input_upload_entries_from_json`,

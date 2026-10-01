@@ -1,8 +1,8 @@
 # Internal Module Catalog
 
-> **Internal.** This catalog is for maintainers who need to navigate the
-> current codebase. Names here are not a compatibility promise. Private
-> underscore-prefixed helpers are intentionally omitted.
+> **Internal.** This catalog helps maintainers find code in the current
+> repository. The names listed here are not stable public APIs. Private helpers
+> whose names start with an underscore are intentionally omitted.
 
 ## Configuration and runtime
 

@@ -1,13 +1,15 @@
 # Training, Inference, and Evaluation
 
-This page covers the common lifecycle for the three implemented task wrappers. It uses real Python APIs; the `tools/training/` scripts provide equivalent command-line entry points.
+This page shows the shared workflow for the three supported task APIs. A task
+wrapper is the Python object you use for one task. The examples use the public
+Python API; `tools/training/` provides equivalent command-line scripts.
 
 ## Before running
 
-- Install the dependency profile required by your config. DALI requires an NVIDIA GPU; graph/tracking paths may require `--pyg`; X-VARS and Qwen VQA require separate dependency profiles.
-- Use a canonical YAML under `opensportslib/configs/` or a compatible copy.
-- Supply OSL JSON manifests and the media they reference. The package does not include a training dataset.
-- Review [configuration](../config/configuration-guide.md) and [OSL JSON](../data/osl-json-format.md).
+- Install the dependency profile required by your configuration. DALI needs an NVIDIA GPU; graph/tracking workflows may need `--pyg`; X-VARS and Qwen VQA each need their own dependency profile.
+- Use a supported YAML file under `opensportslib/configs/` or a compatible copy.
+- Provide OSL JSON manifest files and the media files they reference. The package does not include a training dataset.
+- Read the [configuration guide](../config/configuration-guide.md) and [OSL JSON format guide](../data/osl-json-format.md) before editing either file type.
 
 ## Common lifecycle
 
@@ -21,7 +23,10 @@ metrics = model.evaluate(test_set="/path/to/test.json", predictions=predictions)
 model.save_predictions("/path/to/predictions.json", predictions)
 ```
 
-Split arguments override the corresponding configured annotation path for that call. `infer()` does not implicitly save its returned payload. Pass a payload or saved path to `evaluate()` to avoid a second inference run.
+Split arguments replace the corresponding configured annotation path for that
+one call. `infer()` returns predictions but does not save them automatically.
+Pass those predictions, or their saved path, to `evaluate()` to avoid running
+inference a second time.
 
 ## Task routes
 
@@ -36,7 +41,11 @@ python tools/training/classification.py --config /path/to/classification.yaml \
 
 ### Localization / action spotting
 
-Use `LocalizationModel`. The canonical configs include OpenCV and DALI video routes, feature-based CALF/NetVLAD routes, tracking action spotting, E2E SpoTTA, and selected HDF5 header spotters. Loader selection is not merely a preference: non-video modalities and CPU execution fall back to OpenCV where applicable.
+Use `LocalizationModel`. The supported configurations cover OpenCV and DALI
+video inputs, CALF/NetVLAD features, tracking-based action spotting, E2E
+SpoTTA, and selected HDF5 header spotters. The loader is chosen from the input
+and available hardware: compatible non-video inputs and CPU runs use OpenCV
+where appropriate.
 
 ```bash
 python tools/training/localization.py --config /path/to/localization.yaml \
@@ -59,10 +68,17 @@ python tools/training/vqa.py --config /path/to/vqa.yaml \
 
 ## Checkpoints and pretrained models
 
-Pass a local checkpoint path or a Hugging Face model ID through `weights`. If no explicit config is supplied, a Hub model ID must provide a compatible OpenSportsLib `config.yaml`; a Transformers-only `config.json` is insufficient. The [model zoo](../model-zoo.md) links model cards and their recommended configurations.
+Pass either a local checkpoint path or a Hugging Face model ID through
+`weights`. If you do not supply a configuration, a Hub model repository must
+include a compatible OpenSportsLib `config.yaml`; a Transformers-only
+`config.json` is not enough. The [model zoo](../model-zoo.md) links each model
+card and its recommended configuration.
 
 ## Multi-GPU and remote inference
 
-Task behavior is controlled by canonical `SYSTEM` and `TRAIN.execution` settings; use the configuration reference rather than shell launchers not provided by this repository. SLURM wrappers are documented in the [SLURM guide](../getting-started/slurm.md).
+Task behavior is controlled by the supported `SYSTEM` and `TRAIN.execution`
+settings. Use the configuration reference for those settings rather than shell
+launchers that this repository does not provide. SLURM wrappers are documented
+in the [SLURM guide](../getting-started/slurm.md).
 
 For remote prediction, construct a wrapper with `remote=...` and use its normal inference methods. The server owns model loading and accepts only inference; see [inference server](../server/inference-server.md).

@@ -1,12 +1,12 @@
 # Model Zoo
 
-This page lists the pretrained OpenSportsLib models published on Hugging Face.
-Use the model repository ID with `load_weights(...)` to load a checkpoint into an
-OpenSportsLib model.
+This page lists pretrained OpenSportsLib models available on Hugging Face. To
+use one, pass its repository ID to `load_weights(...)`; OpenSportsLib downloads
+the checkpoint and loads it into your model.
 
-Scores, class lists, and intended-use statements below are model-card metadata;
-they are not values computed or verified by this package at documentation-build
-time. Follow each linked model card for its authoritative artifact details.
+The scores, class lists, and intended-use notes below come from each model card.
+OpenSportsLib does not calculate or verify them while building this site. Open
+the linked model card for the source details and files.
 
 ## Available Models
 

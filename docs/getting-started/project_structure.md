@@ -1,6 +1,6 @@
 # Project Structure
 
-Public users normally start in `opensportslib/apis/` and `opensportslib/configs/`. Other package modules are implementation details unless explicitly documented as extension points.
+Most users only need `opensportslib/apis/` and `opensportslib/configs/`. The other package modules implement the library internally unless a developer page explicitly identifies them as supported extension points.
 
 ```text
 opensportslib/
@@ -22,6 +22,6 @@ opensportslib/
 
 ## Config locations
 
-Canonical configurations are under `opensportslib/configs/classification/`, `localization/`, and `vqa/`. Loading YAML from one of these task directories composes the root `configs/default.yaml`, the task `default.yaml`, and the selected config. `opensportslib/legacy_config/` holds compatibility fixtures, not new experiment configs.
+The supported configuration files are in `opensportslib/configs/classification/`, `localization/`, and `vqa/`. When you load a YAML file from one of these directories, OpenSportsLib combines the root `configs/default.yaml`, the task-level `default.yaml`, and the file you selected. `opensportslib/legacy_config/` exists for backward-compatibility tests, not for new experiments.
 
-See [architecture](../developer/architecture.md) for runtime flow and [configuration](../config/configuration-guide.md) for the canonical contract.
+See [architecture](../developer/architecture.md) to understand how the library runs an experiment, or the [configuration guide](../config/configuration-guide.md) for the supported configuration format.

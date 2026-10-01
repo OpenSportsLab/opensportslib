@@ -1,18 +1,20 @@
 # SLURM Guide: salloc and srun
 
-This guide shows practical SLURM patterns to run OpenSportsLib workloads on Ibex using `salloc`, `srun`, and `sbatch`.
+This guide shows how to run OpenSportsLib jobs on the Ibex SLURM cluster with
+`salloc`, `srun`, and `sbatch`. Use it if you already have access to a SLURM
+cluster; it is not needed for running OpenSportsLib on your own machine.
 
 ---
 
 ## Quick mental model
 
-- `salloc`: reserve resources first, then run commands interactively inside the allocation.
-- `srun`: launch a command on allocated resources. It can be used either:
+- `salloc`: reserve resources first, then run commands interactively in that reservation.
+- `srun`: run a command on reserved resources. You can use it either:
   - inside an existing `salloc` session, or
   - directly (one-shot job step).
 
-Use `salloc` when you want interactive debugging and iteration.
-Use direct `srun` when you want a clean one-command run.
+Use `salloc` when you want to debug or iterate interactively.
+Use direct `srun` for a one-command run.
 
 Reference Ibex-style defaults used below:
 

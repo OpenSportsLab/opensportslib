@@ -1,8 +1,8 @@
 # Download Tools
 
-Scripts to download and upload OSL datasets via Hugging Face Hub. These tools
-read file references from OSL JSON `data[].inputs[]`; see
-`docs/data/osl-json-format.md` for the dataset schema.
+Use these scripts to download or upload OSL datasets through Hugging Face Hub.
+They read file references from OSL JSON `data[].inputs[]`; see
+`docs/data/osl-json-format.md` for the dataset format.
 
 ## Scripts
 

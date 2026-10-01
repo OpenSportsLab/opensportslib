@@ -2,27 +2,30 @@
 
 <img src="docs/assets/osl.jpg" height="400">
 
-OpenSportsLib is a modular Python library for sports video understanding.
+OpenSportsLib is a Python library for building machine-learning workflows with
+sports video.
 
-It provides a unified framework to **train, evaluate, and run inference** for key temporal understanding tasks in sports video, including:
+It gives you one consistent way to **train models, make predictions, and
+evaluate results** for sports-video tasks, including:
 
 - **Action classification**
 - **Action localization / spotting**
 - **Visual Question Answering (VQA)**
 
-Retrieval and action description/captioning are roadmap areas. They do not yet
-have first-class task wrappers or training workflows in this package.
+Retrieval and action description/captioning are planned for the future. They do
+not yet have dedicated task APIs or training workflows in this package.
 
-OpenSportsLib is designed for **researchers, ML engineers, and sports analytics teams** who want reproducible and extensible workflows for sports video AI.
+OpenSportsLib is for **researchers, ML engineers, and sports analytics teams**
+who need reproducible, adaptable sports-video AI workflows.
 
 ## Why OpenSportsLib?
 
-- Unified workflow for training and inference
-- Modular design for adding new tasks, datasets, and models
-- Config driven experiments for reproducibility
-- Optional SpoTTA test-time adaptation for E2ESpot inference
-- Support for multiple modalities and sports workflows
-- Research friendly while still usable in applied settings
+- One workflow for training, prediction, and evaluation
+- A modular design for adding tasks, datasets, and models
+- YAML configuration files that make experiments reproducible
+- Optional SpoTTA test-time adaptation for E2ESpot prediction
+- Support for several input types and sports workflows
+- Suitable for research and applied projects
 
 ## Quick links
 
@@ -86,10 +89,11 @@ opensportslib setup --vqa_qwen
 ---
 
 **Note:**  
-Run `opensportslib setup` to automatically configure dependencies.  
-If issues occur, manually install compatible versions of `torch`, `torchvision`, and related libraries according to your CUDA version or system compatibility.
+Run `opensportslib setup` to install the matching dependencies automatically.
+If setup fails, install versions of `torch`, `torchvision`, and related
+libraries that match your CUDA version or system.
 
-For VQA, use exactly one backend-specific dependency profile:
+For VQA, install exactly one backend-specific dependency profile:
 
 - `--vqa_xvars` installs the X-VARS-compatible Hugging Face stack from `XVARS_DEPENDENCY_PINS`
 - `--vqa_qwen` installs the Qwen-compatible Hugging Face stack from `QWEN_DEPENDENCY_PINS`
@@ -100,28 +104,30 @@ The `vqa_qwen` config supports `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen3.5-9B-B
 
 ## Data and pretrained models
 
-OpenSportsLib uses external annotation files, datasets, and pretrained checkpoints.
+OpenSportsLib uses annotation files, datasets, and pretrained checkpoints that
+are stored outside the package.
 
 Public assets are hosted under the **OpenSportsLab Hugging Face organization**:
 
 **https://huggingface.co/OpenSportsLab**
 
-Use it as the main entry point to find:
+Use it to find:
 - datasets
 - annotation files
 - extracted features
 - pretrained models and checkpoints
 
-See the [Model Zoo](docs/model-zoo.md) for available pretrained models,
-reported scores, datasets, and loading snippets.
+See the [Model Zoo](docs/model-zoo.md) for available pretrained models, their
+reported scores and datasets, and loading examples.
 
 ---
 
 ## Dataset format
 
-OpenSportsLib uses the **OSL JSON v2.0** annotation format for multimodal
-datasets and predictions. See the [OSL JSON format guide](docs/data/osl-json-format.md)
-for its schema, examples, and conversion notes.
+OpenSportsLib uses the **OSL JSON v2.0** format for datasets and predictions. A
+dataset manifest is an OSL JSON file that lists samples, their input files, and
+their annotations. See the [OSL JSON format guide](docs/data/osl-json-format.md)
+for the full structure, examples, and conversion notes.
 
 ---
 
@@ -149,7 +155,7 @@ my_model.save_predictions(
 )
 ```
 
-For localization, VQA, and additional end-to-end examples, see the
+For localization, VQA, and complete examples, see the
 [API guide](opensportslib/apis/README.md), [quickstart scripts](examples/quickstart/),
 and [VQA guide](docs/tools/vqa.md).
 
@@ -158,7 +164,8 @@ and [VQA guide](docs/tools/vqa.md).
 
 ## Hugging Face Dataset Transfer
 
-OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
+OpenSportsLib provides Python APIs and scripts for downloading and uploading
+OSL datasets through Hugging Face.
 
 For SN-GAR classification and action-spotting configurations, setup, caching,
 and training commands, see the [SN-GAR examples](examples/sngar/README.md).
@@ -185,7 +192,7 @@ python tools/download/upload_osl_hf.py --repo-id <org/repo> --json-path <local_d
 
 ## Examples and documentation
 
-Use the README for the fast start, then go deeper through:
+Use this README to get started, then use these guides when you need more detail:
 
 - Full documentation: https://opensportslab.github.io/opensportslib/
 - OSL JSON format: [docs/data/osl-json-format.md](docs/data/osl-json-format.md)
@@ -200,7 +207,8 @@ Use the README for the fast start, then go deeper through:
 
 ## Development setup
 
-For contributors who want to work from source:
+Use these steps if you want to contribute or run OpenSportsLib directly from
+the source repository:
 
 ```bash
 git clone https://github.com/OpenSportsLab/opensportslib.git
@@ -243,7 +251,10 @@ opensportslib setup --vqa_qwen
 
 We welcome contributions. Pull requests must target `dev`, and each
 GitHub-linked commit author must accept the [Individual Contributor License
-Agreement](.github/CLA.md) when prompted by the `CLA check`.
+Agreement](.github/CLA.md) when prompted by the `CLA check`. Each listed author
+must post this exact comment on the pull request:
+
+> I have read the OpenSportsLab Individual Contributor License Agreement and I hereby sign it.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and
 [DEVELOPERS.md](DEVELOPERS.md) for architecture and extension guidance.
@@ -279,8 +290,8 @@ If you use OpenSportsLib in your research, please cite the project.
 
 ## Acknowledgments
 
-OpenSportsLib is developed within the broader OpenSportsLab effort for sports
-video understanding. Core contributors affiliated with KAUST include:
+OpenSportsLib is part of the broader OpenSportsLab effort in sports-video
+understanding. Core contributors affiliated with KAUST include:
 
 - [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
 - [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc

@@ -1,9 +1,9 @@
 # Convert Tools
 
-Scripts for building OpenSportsLib (OSL) datasets from raw sources, and for
-converting OSL JSON annotations to and from a Parquet + WebDataset
-representation suited for large-scale training. For the annotation schema, see
-the OSL JSON format guide in `docs/data/osl-json-format.md`.
+These scripts build OpenSportsLib (OSL) datasets from raw sources and convert
+OSL JSON annotations to or from Parquet + WebDataset files for large-scale
+training. For the annotation format, see the OSL JSON guide in
+`docs/data/osl-json-format.md`.
 
 ## Scripts
 

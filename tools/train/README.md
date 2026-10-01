@@ -1,6 +1,6 @@
 # Five sequential training runs
 
-The [Bash script](weekend_train.sh) contains one section per algorithm and
+The [Bash script](weekend_train.sh) has one section for each algorithm and
 dataset. It runs the full configurations in this order: GAR tracking GIN,
 XFoul MViTv2-S, GAR frames VideoMAEv2-Base, tracking action spotting
 GraphConvSeq, and video action spotting RNY008-GSM.
@@ -14,8 +14,8 @@ bash tools/train/weekend_train.sh
 ```
 
 Detach with `Ctrl-B`, then `D`; reconnect with `tmux attach -t osl-weekend`.
-The script stops at the first failed command. To continue at a specific section,
-set `START_AT` to its number. For example, after the first run has completed:
+The script stops at the first command that fails. To continue at a specific
+section, set `START_AT` to its number. For example, after the first run:
 
 ```bash
 set -o pipefail

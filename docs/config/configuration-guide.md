@@ -1,6 +1,8 @@
 # OpenSportsLib Configuration Guide
 
-Canonical configuration authoring reference for training, inference, and evaluation.
+This is the reference for the supported OpenSportsLib configuration format used
+for training, prediction, and evaluation. Start with a bundled YAML template;
+use this page when you need to understand or change a specific setting.
 
 See also:
 - [Legacy to Canonical Mapping](legacy-to-canonical-mapping.md)
@@ -8,7 +10,7 @@ See also:
 
 ## Canonical Config Examples
 
-Use production-ready canonical templates from:
+Start from these supported, ready-to-edit templates:
 - [opensportslib/configs/default.yaml](https://github.com/OpenSportsLab/opensportslib/blob/main/opensportslib/configs/default.yaml)
 - [opensportslib/configs/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/)
 - [opensportslib/configs/classification/](https://github.com/OpenSportsLab/opensportslib/tree/main/opensportslib/configs/classification/)
@@ -17,9 +19,9 @@ Use production-ready canonical templates from:
 
 ## 1) Canonical Contract
 
-- Runtime consumes canonical config only.
-- Legacy config is accepted only at ingestion and migrated once.
-- Canonical payloads containing legacy aliases are rejected.
+- OpenSportsLib runs only the supported configuration shape described here.
+- Older configuration files are accepted only when they are first loaded, then converted once.
+- A supported-format configuration cannot mix in older key aliases.
 
 ## 2) Top-Level Schema
 

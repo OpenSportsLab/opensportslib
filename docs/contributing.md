@@ -1,11 +1,14 @@
 # CONTRIBUTING.md
-This guide outlines the workflow and standards for developers looking to extend or maintain the OpenSportsLib library.
+This guide explains the workflow and standards for developers who extend or
+maintain OpenSportsLib.
 
 ## AI Agent Contributions
 For AI-agent driven development, follow `AGENTS.md` in the repository root.
 
 ## 1. Development Environment Setup
-To begin contributing, set up a local development environment in "editable" mode so your changes are immediately reflected in the package.
+To contribute, create a local development environment in "editable" mode. In
+this mode, changes you make in the repository are immediately available in the
+installed package.
 
 #### Step 1: Clone the Repository
 ```bash
@@ -109,9 +112,12 @@ will reject those edits. Maintainers should follow the
 release-line preparation and stable releases.
 
 Every GitHub-linked commit author must accept the Individual CLA when prompted
-by the `CLA check`. Post the exact signing phrase configured in
-`.github/cla.yml`; see `.github/CLA.md` for the agreement. Run the supported
-test entry point before opening the PR:
+by the `CLA check`. Each listed author must post this exact comment on the PR:
+
+> I have read the OpenSportsLab Individual Contributor License Agreement and I hereby sign it.
+
+See `.github/CLA.md` for the agreement. Run the supported test entry point
+before opening the PR:
 
 ```bash
 bash scripts/run_tests.sh

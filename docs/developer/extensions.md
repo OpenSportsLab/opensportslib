@@ -1,6 +1,8 @@
 # Supported Extension Paths
 
-These are repository-development patterns, not a promise that every concrete class is a stable external API. Start from the closest implemented task and add tests for every dispatch or configuration change.
+These patterns are for contributors changing the repository. They do not make
+every concrete class a stable public API. Begin with the closest existing task,
+and add tests for every routing or configuration change.
 
 ## Add or change a configuration
 

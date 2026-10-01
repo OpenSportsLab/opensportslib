@@ -1,9 +1,9 @@
 # Release Management
 
-OpenSportsLib release metadata is managed by GitHub Actions. Contributors must
-not edit the root package version or the inference server's OpenSportsLib
-dependency pin in a pull request to `dev`; the required **Version Integrity**
-check rejects those changes.
+GitHub Actions manages OpenSportsLib release metadata. In pull requests to
+`dev`, contributors must not edit the root package version or the inference
+server's OpenSportsLib dependency pin. The required **Version Integrity** check
+rejects those changes.
 
 ## Version policy
 

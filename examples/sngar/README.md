@@ -1,7 +1,7 @@
 # SN-GAR examples
 
 This directory contains ready-to-run examples for SN-GAR tracking
-classification and video/tracking action spotting:
+classification and action spotting from video or tracking data:
 
 - `sngar_tracking_hf.yaml`: tracking classification from Hugging Face shards.
 - `sngar_tracking_local.yaml`: tracking classification from extracted Parquet clips.
@@ -10,7 +10,11 @@ classification and video/tracking action spotting:
 
 ## Tracking classification
 
-Here’s a clean path to reproduce the **tracking model with the highest reported balanced accuracy**: GIN + MaxPool + positional edges. The paper reports **77.8% balanced accuracy and 57.0% macro F1**, averaged over five runs. Its baseline config uses seed 42, so the steps below produce one run, which may differ from that average. [Paper repository](https://github.com/drishyakarki/pixels_vs_positions)
+Use these steps to reproduce the **tracking model with the highest reported
+balanced accuracy**: GIN + MaxPool + positional edges. The paper reports
+**77.8% balanced accuracy and 57.0% macro F1**, averaged over five runs. Its
+baseline configuration uses seed 42, so the steps below produce one run and may
+differ from that average. [Paper repository](https://github.com/drishyakarki/pixels_vs_positions)
 
 ### 1. Set up OpenSportsLib
 

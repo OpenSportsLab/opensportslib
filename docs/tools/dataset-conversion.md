@@ -1,9 +1,9 @@
 # Convert Tools
 
-Scripts for building OpenSportsLib (OSL) datasets from raw sources, and for
-converting OSL JSON annotations to and from a Parquet + WebDataset
-representation suited for large-scale training. For the annotation schema, see
-the OSL JSON format guide in `docs/data/osl-json-format.md`.
+These scripts build OpenSportsLib (OSL) datasets from raw source files and
+convert OSL JSON annotations to or from Parquet + WebDataset files for
+large-scale training. For the annotation format, see the OSL JSON guide in
+`docs/data/osl-json-format.md`.
 
 ## Scripts
 
@@ -20,10 +20,9 @@ Convert (OSL JSON <-> Parquet + WebDataset):
 
 ## Pipeline overview
 
-Stage 1 and stage 2 are SoccerNet-GAR-specific (they know about PFF schemas,
-event labels, and clip windowing). The conversion scripts are generic OSL
-tooling: they accept any OSL JSON manifest and do not assume a particular sport
-or task.
+Stages 1 and 2 are specific to SoccerNet-GAR: they understand PFF schemas,
+event labels, and clip windows. The conversion scripts work with any OSL JSON
+manifest and do not assume a particular sport or task.
 
 ## Build scripts
 

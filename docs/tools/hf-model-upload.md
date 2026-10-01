@@ -1,7 +1,7 @@
 # Hugging Face Model Upload
 
-OpenSportsLib provides a helper script to upload trained model artifacts to
-Hugging Face model repos.
+OpenSportsLib includes a helper script for uploading trained model files to
+Hugging Face model repositories.
 
 Script:
 
@@ -17,8 +17,8 @@ This tool supports:
 
 ## Folder upload
 
-Example: upload a Qwen3-VL LoRA adapter while ignoring checkpoint and cache
-artifacts.
+This example uploads a Qwen3-VL LoRA adapter and ignores checkpoint and cache
+files.
 
 ```bash
 python tools/upload/upload_model_hf.py folder \

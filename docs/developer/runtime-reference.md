@@ -1,8 +1,8 @@
 # Training, Inference, Evaluation, and Metrics API
 
-> **Extension point.** Task trainers, inferers, evaluators, and metric
-> functions are implementation-level contracts between a task wrapper and its
-> data/model route.
+> **Extension point.** These trainers, prediction runners, evaluators, and
+> metric functions are internal contracts between a task API and its data/model
+> implementation.
 
 ## Runtime module map
 
@@ -16,8 +16,8 @@
 | VQA metrics | `compute_vqa_metrics` | Computes answer matching and configured referee-semantic metrics. |
 
 `store_eval_files_json`, detailed classification metrics, and trainer/checkpoint
-operations write files under their supplied/configured directories. Evaluation
-functions may require ground truth in the task’s expected representation.
+operations write files to their supplied or configured directories. Evaluation
+functions may require ground truth in the format expected by the task.
 
 ## Classification runtime
 

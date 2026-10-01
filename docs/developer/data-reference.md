@@ -1,7 +1,7 @@
 # Data Extension API
 
-> **Extension point.** Dataset dispatch is task-owned. Preserve the output
-> contract expected by the matching trainer when adding modality support.
+> **Extension point.** Each task owns its dataset selection. When adding a new
+> input modality, keep the output format expected by that task's trainer.
 
 ## Routes and classes
 
@@ -14,9 +14,9 @@
 | `datasets.utils.tracking` / `utils.h5_tracking` | tracking transforms, graph helpers, and HDF5 reader/manifest helpers | Tracking and HDF5 data support. |
 | `datasets.hf_json`, `datasets.hf_tracking` | prepared-split types and `prepare_*_split` | Optional Hub-backed split staging. |
 
-Dataset classes are **internal** implementations; the dispatch path is the
-extension point. The following sections document all non-private local dataset
-classes before the optional Hugging Face integration.
+Dataset classes are **internal** implementations; the dataset-selection path is
+the supported extension point. The following sections list non-private local
+dataset classes, followed by the optional Hugging Face integration.
 
 ::: opensportslib.datasets.builder
     options:

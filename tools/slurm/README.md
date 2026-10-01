@@ -1,10 +1,11 @@
 # Tools for Running Experiments
 
-This folder provides practical helpers to run experiments, especially on SLURM clusters like Ibex.
+This folder contains helpers for running experiments on SLURM clusters such as
+Ibex.
 
 ## SLURM (Ibex) quick start
 
-Scripts are organised under `tools/slurm/`:
+The scripts are organized under `tools/slurm/`:
 
 ```
 tools/slurm/

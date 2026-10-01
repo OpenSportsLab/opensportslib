@@ -1,6 +1,7 @@
 # Dataset Download Jobs (Ibex)
 
-This folder contains SLURM `sbatch` jobs to download common OpenSportsLab datasets to:
+This folder contains SLURM `sbatch` jobs that download common OpenSportsLab
+datasets to:
 
 - `/ibex/project/c2134/opensportslab/datasets`
 
@@ -127,4 +128,3 @@ sbatch tools/slurm/datasets/download_hf_repo.sbatch \
 If the repos are gated, add your token as the 4th argument: `hf_xxx`.
 
 If your cluster requires account charging, uncomment `#SBATCH --account=...` in each script.
-

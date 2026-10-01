@@ -1,9 +1,9 @@
 # Model Upload Tools
 
-Scripts to upload OpenSportsLib model artifacts to Hugging Face model repos.
+Use these scripts to upload OpenSportsLib model files to Hugging Face model
+repositories.
 
-This complements the dataset upload tools in `tools/download/` and supports
-both:
+This complements the dataset upload tools in `tools/download/` and supports:
 
 - folder uploads with `upload_folder(...)`
 - single-file uploads with `upload_file(...)`

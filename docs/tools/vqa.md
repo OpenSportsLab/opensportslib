@@ -5,23 +5,23 @@ Canonical dataset: `/home/vorajv/dataset/OSL-XFoul`
 Canonical config: `/home/vorajv/opensportslib/opensportslib/configs/vqa/xvars.yaml`
 X-VARS reference root: `/home/vorajv/X-VARS/X-VARS`
 
-This page is the source of truth for using the OpenSportsLib `vqa-xvars`
-backend. It covers the required weights, how to download them, how to extract
-X-VARS CLIP features, how to build the feature and prediction indexes, and how
-those artifacts map into the OpenSportsLib VQA config.
+This page explains how to use the OpenSportsLib `vqa-xvars` backend. It covers
+the required weights, how to download them, how to extract X-VARS CLIP
+features, how to build feature and prediction indexes, and how those files are
+referenced from the OpenSportsLib VQA configuration.
 
 ## X-VARS setup
 
-The X-VARS-specific part is the setup:
+The X-VARS-specific setup includes:
 
 - downloading the X-VARS visual and decoder weights
 - optionally pre-extracting CLIP feature pickles
 - building `feature_index.json` and `prediction_index.json`
 
-When `feature_source: indexed_or_raw_clip` is used, X-VARS `infer()` prefers
-indexed features when available and can fall back to extracting CLIP features
-from raw video on the fly. Pre-extracted features remain the preferred path for
-speed, parity, and reproducibility.
+With `feature_source: indexed_or_raw_clip`, X-VARS `infer()` uses indexed
+features when they are available and otherwise extracts CLIP features from raw
+video while it runs. Pre-extracted features are still preferred for speed and
+reproducible results.
 
 ## Required Artifacts
 

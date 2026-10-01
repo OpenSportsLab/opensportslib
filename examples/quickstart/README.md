@@ -1,8 +1,8 @@
 # Quickstart Examples
 
-This folder contains small examples showing the intended public API of OpenSportsLib.
+This folder contains small examples of the supported OpenSportsLib Python API.
 
-These scripts are meant to be:
+Each script is designed to be:
 
 - easy to read
 - easy to adapt
