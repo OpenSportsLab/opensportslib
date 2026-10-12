@@ -1,9 +1,9 @@
 # Tools
 
-Collection of utility scripts for dataset conversion, Hugging Face transfer,
-model upload, and SLURM experiment execution.
+This folder collects utility scripts for dataset conversion, Hugging Face
+transfer, model upload, and running experiments with SLURM.
 
-Detailed usage is documented in each subfolder README.
+Each subfolder README explains how to use its scripts.
 
 ```
 tools/

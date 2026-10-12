@@ -120,16 +120,22 @@ they can pass the check.
 
 ### Maintainer CLA setup
 
-Before marking `CLA check` as required, create an issue named **CLA Signature
-Ledger**, set its issue number as `ledger_issue` in
-[`.github/cla.yml`](.github/cla.yml), and deploy the CLA workflow to the
-repository default branch so GitHub can process `issue_comment` events. In
-repository settings, protect `dev` by requiring pull requests, CI, and the
-`CLA check` from GitHub Actions. Direct pushes and bypasses should remain
-disabled except for designated repository administrators and the
-`github-actions[bot]` automation needed by the existing development-release
-version-sync workflow. Re-run a test PR after configuration to make `CLA check`
-available in the required-status-check picker.
+Before making the `CLA check` required:
+
+1. Create a GitHub issue named **CLA Signature Ledger**.
+2. Add that issue's number as `ledger_issue` in
+   [`.github/cla.yml`](.github/cla.yml).
+3. Deploy the CLA workflow to the `main` branch. This lets GitHub process
+   CLA-signing comments on pull requests.
+4. After setting up the CLA workflow, create a test pull request. Wait for the
+   `CLA check` to appear.
+5. In the `dev` branch settings, make the `CLA check` mandatory before a pull
+   request can be merged.
+6. Do not allow normal direct pushes to `dev` or allow people to skip required
+   checks. Only approved repository administrators may bypass these rules when
+   necessary.
+7. The automated `github-actions[bot]` account may skip these checks only when
+   it updates version information.
 
 ✅ PR Checklist:
 - [ ] Tests Pass: All existing logic remains functional.

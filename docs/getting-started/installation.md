@@ -1,6 +1,6 @@
 # Installation
 
-OpenSportsLib requires Python 3.12 or newer. Install the package first, then run its setup command to install a PyTorch profile for the current machine. The setup command replaces the installed Torch stack; use a dedicated environment.
+OpenSportsLib requires Python 3.12 or newer. First install the package, then run its setup command to install the PyTorch version that matches your machine. Because setup replaces the installed PyTorch packages, use a separate environment for OpenSportsLib.
 
 ## Base installation
 
@@ -12,9 +12,9 @@ pip install opensportslib
 opensportslib setup
 ```
 
-For the latest prerelease, use `pip install --pre opensportslib`. For source development, clone the repository and replace the install command with `pip install -e .`.
+Use `pip install --pre opensportslib` for the latest prerelease. If you are developing from source, clone the repository and use `pip install -e .` instead of the normal install command.
 
-`opensportslib setup` detects `nvidia-smi` when available and installs a CPU wheel when it is not. It selects among CUDA 12.6, 12.8, and 13.0 wheel profiles from the reported driver and visible GPU compute capabilities; it is not a general CUDA toolkit installer.
+When available, `opensportslib setup` checks `nvidia-smi` to identify your NVIDIA GPU. Without it, the command installs CPU packages. For supported GPUs, it chooses a CUDA 12.6, 12.8, or 13.0 package profile from the reported driver and GPU capabilities. It does not install or manage a general CUDA toolkit.
 
 ## Optional profiles
 
@@ -26,7 +26,7 @@ For the latest prerelease, use `pip install --pre opensportslib`. For source dev
 | `opensportslib setup --vqa_xvars` | Running X-VARS VQA | Replaces the Hugging Face dependency set with X-VARS pins. |
 | `opensportslib setup --vqa_qwen` | Running Qwen VQA | Replaces the Hugging Face dependency set with Qwen pins. |
 
-The X-VARS and Qwen profiles have incompatible dependency pins; use separate environments when both are needed. On CPU, compatible DALI-video configs are normalized to the OpenCV loader.
+The X-VARS and Qwen profiles require incompatible package versions, so use separate environments if you need both. On a CPU-only machine, compatible DALI video configurations automatically use the OpenCV video loader instead.
 
 ## Verify and authenticate
 
@@ -35,4 +35,4 @@ python -c "from opensportslib.apis import ClassificationModel, LocalizationModel
 opensportslib setup --help
 ```
 
-Hugging Face access is required only for gated datasets or model repositories. Authenticate with `hf auth login` before such a workflow. The separately packaged inference server is not installed by `pip install opensportslib`; see the [server guide](../server/inference-server.md).
+You only need Hugging Face access for gated datasets or model repositories. Before using one, sign in with `hf auth login`. The inference server is a separate package and is not installed by `pip install opensportslib`; see the [server guide](../server/inference-server.md) when you need remote inference.

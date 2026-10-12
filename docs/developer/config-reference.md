@@ -1,8 +1,9 @@
 # Configuration Extension API
 
-> **Extension point.** These modules define canonical configuration lifecycle.
-> Use them when adding config fields or routing behavior; do not make them a
-> dependency of an external application without accepting internal change risk.
+> **Extension point.** These modules define how supported configurations are
+> loaded and used. Use them when adding configuration fields or routing
+> behavior. External applications should not depend on them unless they can
+> accept internal changes.
 
 ## Module map
 
@@ -14,9 +15,9 @@
 | `core.config.accessors` | `get_*`, `set_*` helpers | Runtime-safe access to system, split, data, component, train, and VQA settings. |
 | `core.config.runtime_adapter` | namespace conversion/adaptation helpers | Convert canonical mappings to runtime attribute access. |
 
-`save_config()` writes a config file. `Config.from_pretrained()` and any
-Hugging Face config source use network/authentication. All other loaders read
-from the local config path supplied by the caller.
+`save_config()` writes a configuration file. `Config.from_pretrained()` and any
+Hugging Face configuration source need network access and, where required,
+authentication. All other loaders read the local path supplied by the caller.
 
 ::: opensportslib.core.config.loader
     options:

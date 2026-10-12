@@ -1,6 +1,8 @@
 # Architecture
 
-OpenSportsLib executes canonical configuration through task-specific dispatch:
+This page explains how OpenSportsLib turns a supported configuration file into
+a task-specific run. It is intended for contributors; users normally work
+through the public APIs and configuration files instead.
 
 ```text
 YAML/JSON config
@@ -11,7 +13,9 @@ YAML/JSON config
   -> metrics and OSL JSON prediction payload
 ```
 
-`Config.from_file()` composes a canonical task config from root defaults, task defaults, and the selected YAML. Legacy input is migrated at ingestion; runtime model construction accepts canonical config only.
+`Config.from_file()` combines root defaults, task defaults, and the YAML file
+you selected into one supported task configuration. Older input is converted
+when loaded; model construction accepts only the resulting supported format.
 
 ## Ownership boundaries
 

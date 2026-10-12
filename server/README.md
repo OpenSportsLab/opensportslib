@@ -1,10 +1,11 @@
 # OpenSportsLib Server
 
-For the complete API reference, including curl and OpenSportsLib examples for
-registration, unregistration, single-video, full-test-set, and per-sample
-inference, see the [Inference Server guide](../docs/server/inference-server.md).
+For the complete API reference—including curl and OpenSportsLib examples for
+registration, removal, one-video, full-test-set, and per-sample inference—see
+the [Inference Server guide](../docs/server/inference-server.md).
 
-Async FastAPI + RQ backend for serving `opensportslib` inference from the `server/` project inside the OpenSportsLib repository.
+This asynchronous FastAPI and RQ service runs `opensportslib` inference from
+the `server/` project in the OpenSportsLib repository.
 
 ## What this project does
 

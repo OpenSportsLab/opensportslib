@@ -1,11 +1,11 @@
 # Release verification tests
 
-Extensive, real-data, real-training tests for confirming that training still
-works end-to-end for the model families OpenSportsLib ships before publishing
-a release. **These are not part of the normal fast phase** and every test here
-additionally skips itself unless `RUN_OSL_RELEASE_TESTS=1` is set, so it
-never runs by accident even under a broad `pytest tests/`. Once enabled,
-missing required infrastructure or coverage is a failure, not a skip.
+These extensive tests use real data and training to confirm that each shipped
+model family still works end to end before a release. **They are not part of the
+normal fast test run.** Each test also skips itself unless
+`RUN_OSL_RELEASE_TESTS=1` is set, so a broad `pytest tests/` does not run it by
+accident. Once enabled, missing required infrastructure or coverage is a
+failure, not a skip.
 
 Do not add these to CI. Run them manually, on a machine with a real GPU, real
 disk space, and time to spare.

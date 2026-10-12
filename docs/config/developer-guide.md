@@ -1,6 +1,8 @@
 # Configuration Developer Guide
 
-Developer-facing guidance for authoring, reviewing, and extending canonical config safely.
+This page is for contributors who create, review, or extend supported
+configuration files. For choosing settings in an experiment, start with the
+[configuration guide](configuration-guide.md) instead.
 
 ## 11) Authoring Checklist
 

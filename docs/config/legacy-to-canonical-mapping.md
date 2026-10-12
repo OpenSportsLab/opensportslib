@@ -1,12 +1,14 @@
 # Legacy to Canonical Mapping
 
-This page documents migration behavior and key mapping between legacy and canonical config shapes.
+This page maps older configuration keys to the supported configuration format.
+Use it when updating an existing configuration; new configurations should use
+the [configuration guide](configuration-guide.md) directly.
 
 ## 1) Canonical Contract
 
-- Runtime consumes canonical config only.
-- Legacy config is accepted only at ingestion and migrated once.
-- Canonical payloads containing legacy aliases are rejected.
+- OpenSportsLib runs only the supported configuration shape.
+- Older configurations are accepted only when first loaded, then converted once.
+- A supported-format configuration cannot mix in older key aliases.
 
 ## 8) Validation and Rejection Rules
 
@@ -35,4 +37,3 @@ Forbidden in canonical payload (examples):
 | `MODEL.head` | `MODEL.components.*(kind=head)` |
 | `MODEL.post_proc` | `MODEL.components.*(kind=postprocessor)` |
 | `TRAIN.num_epochs` / `TRAIN.max_epochs` | `TRAIN.epochs` |
-

@@ -1,7 +1,8 @@
 # OpenSportsLib inference server
 
-The server is a FastAPI API backed by Redis and an RQ worker. It serves
-classification, localization, and VQA models through HTTP and OpenSportsLib.
+The server is a FastAPI application with Redis and an RQ worker. It lets other
+applications use classification, localization, and VQA models over HTTP. You
+only need it when model inference should run remotely.
 
 ## Start the server
 
@@ -16,9 +17,10 @@ cd server
 ./scripts/serverctl start
 ```
 
-`serverctl start` starts or reuses Redis, the API, and the worker. Docker Compose
-is available with `./scripts/serverctl docker start`. A host `video_path` must
-be visible inside the worker container; mount it read-only when using Docker.
+`serverctl start` starts, or reuses, Redis, the API, and the worker. Docker
+Compose is available through `./scripts/serverctl docker start`. When using
+Docker, a host `video_path` must also be visible in the worker container, so
+mount it read-only.
 See [server/README.md](https://github.com/OpenSportsLab/opensportslib/blob/main/server/README.md) for Docker, GPU, dependency,
 and shutdown details.
 

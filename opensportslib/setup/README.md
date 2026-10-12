@@ -2,10 +2,10 @@
 
 ## Supported path
 
-Use `opensportslib setup` after installing OpenSportsLib. It detects the
-visible GPU/driver, chooses the supported Torch wheel profile, and installs
-optional profiles when requested. It replaces the installed Torch stack, so use
-a dedicated Python 3.12+ environment.
+Run `opensportslib setup` after installing OpenSportsLib. It checks the visible
+GPU and driver, chooses a supported Torch package profile, and installs optional
+profiles when requested. It replaces the installed Torch packages, so use a
+dedicated Python 3.12+ environment.
 
 ```bash
 conda create -n opensportslib python=3.12 pip
@@ -15,7 +15,7 @@ pip install -e .
 opensportslib setup
 ```
 
-Manual `pip` commands below are diagnostic/recovery guidance. They do not
+The manual `pip` commands below are for diagnosis or recovery. They do not
 replace setup’s compute-capability validation or guarantee a supported profile.
 
 | Command | Purpose | Behavior |

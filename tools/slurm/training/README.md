@@ -1,8 +1,8 @@
 # Training SLURM Jobs
 
-Submit these Ibex jobs from the repository root. They are concrete,
-dataset-specific examples; edit their paths, account, resources, and Python
-arguments for another experiment.
+Submit these Ibex jobs from the repository root. They are specific examples for
+the listed datasets; update their paths, account, resources, and Python
+arguments for your own experiment.
 
 ## Available jobs
 
@@ -12,9 +12,9 @@ arguments for another experiment.
 | `classification_XFoul.sbatch` | Classification on OSL-XFoul | `tools/training/classification.py` |
 | `localization_SNBAS-2023.sbatch` | Localization on SoccerNet SNBAS 2023 | `tools/training/localization.py` |
 
-All three use the Ibex `batch` partition, one V100 GPU, 90G memory, six CPUs,
-and a 47:59:00 time limit. They activate the `opensportslib` Conda environment
-and write `ibex_logs/osl_<job_id>.out` and `.err`.
+All three use the Ibex `batch` partition, one V100 GPU, 90G of memory, six
+CPUs, and a 47:59:00 time limit. They activate the `opensportslib` Conda
+environment and write `ibex_logs/osl_<job_id>.out` and `.err`.
 
 ## Submit a job
 

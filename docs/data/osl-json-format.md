@@ -1,22 +1,22 @@
 # OSL JSON Format
 
-OSL JSON is the canonical annotation format used across OpenSportsLab tools.
-OpenSportsLib uses it for dataset manifests, ground-truth annotations, and
-prediction payloads returned by the high-level APIs.
+OSL JSON is the supported annotation format shared by OpenSportsLab tools.
+OpenSportsLib uses it for dataset manifests (files that list your samples),
+ground-truth annotations, and predictions returned by the public APIs.
 
 An OSL JSON file is a single JSON object with project metadata, a shared label
 schema, and a `data` array of samples. Each sample points to one or more input
 files and can carry task-specific annotations.
 
-The current OpenSportsLib implementation supports classification,
-localization, and VQA workflows. Fields for descriptions or captions may occur
-in interoperable OSL data, but OpenSportsLib does not currently dispatch a
-captioning or retrieval task pipeline.
+OpenSportsLib currently supports classification, localization, and VQA
+workflows. OSL JSON can also contain description or caption fields, but this
+package does not yet provide captioning or retrieval workflows.
 
 ## Minimal Structure
 
 The smallest useful file is a JSON object with a `data` list. For training and
-evaluation, include a root `labels` schema and task-specific sample payloads.
+evaluation, also include a root `labels` schema and the fields required by your
+task for each sample.
 
 ```json
 {

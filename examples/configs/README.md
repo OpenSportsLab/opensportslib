@@ -1,8 +1,9 @@
 # Example Configs
 
-This folder contains minimal configuration templates for OpenSportsLib.
+This folder contains small OpenSportsLib configuration templates.
 
-These examples are meant to help users and contributors understand the expected YAML structure without overloading the top level README.
+Use these examples to understand the expected YAML structure without adding all
+of that detail to the top-level README.
 
 ## Recommended contents
 
@@ -15,7 +16,7 @@ These examples are meant to help users and contributors understand the expected 
 
 ## Usage
 
-Point the OpenSportsLib Python API to one of these configs.
+Pass one of these configuration paths to the OpenSportsLib Python API.
 
 Example:
 

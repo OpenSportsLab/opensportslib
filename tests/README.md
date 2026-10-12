@@ -1,6 +1,6 @@
 # OpenSportsLib test suite
 
-The suite has one supported entry point:
+Run the test suite with this standard command:
 
 ```bash
 bash scripts/run_tests.sh
@@ -8,12 +8,12 @@ bash scripts/run_tests.sh
 
 ## Fast development suite
 
-The command provisions the default Qwen optional profile (`--pyg --dali
---vqa_qwen`) in its selected Python interpreter, then runs `unit/`, `smoke/`, and
-`integration/`. Profile setup is recorded in `setup.log`. These tests cover unit
+The command installs the default optional Qwen profile (`--pyg --dali
+--vqa_qwen`) in its selected Python interpreter, then runs `unit/`, `smoke/`,
+and `integration/`. It records setup in `setup.log`. These tests cover unit
 behavior, public APIs, configuration and data contracts, package architecture,
-optional integrations, and bounded synthetic integration workflows. Set
-`OSL_TEST_AUTO_SETUP=0` only for a pre-provisioned environment.
+optional integrations, and small synthetic end-to-end workflows. Set
+`OSL_TEST_AUTO_SETUP=0` only when the environment is already prepared.
 
 Qwen is the default VQA profile. X-VARS has incompatible Transformers pins and
 therefore requires a separate environment selected with `OSL_TEST_VQA_PROFILE=xvars`.

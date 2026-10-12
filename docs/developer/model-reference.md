@@ -1,16 +1,17 @@
 # Model Construction Extension API
 
-> **Extension point.** Builders define the model names and families reachable
-> from canonical config. Concrete modules are internal implementations.
+> **Extension point.** Builders define the model names and families available
+> from supported configuration files. Concrete model modules are internal
+> implementations.
 
 ## Dispatch rules
 
-`models.builder.build_model()` accepts canonical runtime config and dispatches
-by `TASK`. Classification selects an encoder route. Localization selects
+`models.builder.build_model()` accepts the supported runtime configuration and
+selects a model from `TASK`. Classification selects an encoder route. Localization selects
 `MODEL.metadata.family` (`RuleBased`, `E2E`, `ContextAware`, or
 `LearnablePooling`). VQA selects its configured backend
 (`xvars_videochatgpt`, `qwen_xvars_infer`, or `qwen_vl_native_infer`). An
-unsupported name raises `ValueError`; it is not dynamically imported.
+unsupported name raises `ValueError`; OpenSportsLib does not dynamically import it.
 
 | Builder | Responsibility |
 | --- | --- |

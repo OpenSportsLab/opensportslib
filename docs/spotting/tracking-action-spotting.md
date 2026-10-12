@@ -1,14 +1,14 @@
 # Action spotting from tracking data
 
-Spot the ten SN-GAR actions across a whole match from player and ball
-coordinates instead of pixels, scored with the same tight mAP as the video
-baseline.
+Use player and ball coordinates, rather than video pixels, to find the ten
+SN-GAR actions across a full match. Results use the same tight mAP metric as
+the video baseline.
 
-The design rule was: **change the input, change nothing else.** The tracking
-path reuses the library's E2E-Spot training loop, GRU head, sliding-window
-inference and mAP evaluator unmodified. Only the data layer and the encoder are
-new. That is what makes the two modalities comparable — a difference in the
-final number is a difference in the input, not in the recipe.
+The design rule is: **change the input, change nothing else.** The tracking
+workflow reuses the E2E-Spot training loop, GRU head, sliding-window
+prediction, and mAP evaluation without changes. Only the data layer and encoder
+are new. This makes the two input types comparable: a different final score
+comes from the input, not a different training recipe.
 
 | | Video baseline | Tracking |
 |---|---|---|

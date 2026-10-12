@@ -1,6 +1,7 @@
 # Training Scripts
 
-Minimal training scripts for each task. Run from the **repository root**.
+These are minimal training scripts for each task. Run them from the
+**repository root**.
 
 ## Scripts
 
@@ -12,7 +13,7 @@ Minimal training scripts for each task. Run from the **repository root**.
 
 ## Arguments
 
-`classification.py` and `localization.py` accept the same CLI arguments:
+`classification.py` and `localization.py` use the same command-line arguments:
 
 | Argument | Required | Description |
 |---|---|---|

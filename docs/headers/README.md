@@ -1,8 +1,8 @@
 # Header spotting from skeletal tracking
 
-Detect headers directly from 3-D player joints and ball tracking, with no
-trained model, and score the result against video annotations using the
-library's action-spotting mAP.
+Detect headers directly from 3-D player-joint and ball-tracking data, without a
+trained model. You can score the result against video annotations using the
+library's action-spotting mAP metric.
 
 ## Data
 
@@ -19,8 +19,8 @@ and `x/y/z` for every joint named in `head_joints`. Missing any of them raises
 rather than silently degrading, so a bad file fails immediately.
 
 
-Missing coordinates must be marked with the sentinel `-1.0`, which is what
-`invalid_value` matches; those rows are skipped.
+Mark missing coordinates with the sentinel value `-1.0`, which matches
+`invalid_value`; the detector skips those rows.
 
 ### Annotations, only for scoring
 
