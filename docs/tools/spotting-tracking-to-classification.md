@@ -119,6 +119,6 @@ source values/types, tracking-parser compatibility, bad clocks, gating and recov
 
 ## Upload the completed dataset
 
-Use [the tracking-full upload script](../../tools/upload/README.md#soccernet-gar-full-fps-tracking-dataset)
+Use [the tracking-full upload script](https://github.com/OpenSportsLab/opensportslib/blob/dev/tools/upload/README.md#soccernet-gar-full-fps-tracking-dataset)
 to publish the final manifests and clips through OSL's Parquet/WebDataset uploader.
 Run its `--check-only` mode first; it checks locally without contacting Hugging Face.

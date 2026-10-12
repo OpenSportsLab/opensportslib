@@ -137,7 +137,7 @@ For the equivalent full-rate tracking Parquet workflow, see
 ## Upload the completed videos
 
 After the full conversion finishes, use
-[the videos upload script](../../tools/upload/README.md#soccernet-gar-native-fps-videos-dataset)
+[the videos upload script](https://github.com/OpenSportsLab/opensportslib/blob/dev/tools/upload/README.md#soccernet-gar-native-fps-videos-dataset)
 to package MP4s with OSL Parquet metadata and WebDataset TAR shards on the
 `videos` branch. Start with `--check-only` for local validation without Hub access.
 
