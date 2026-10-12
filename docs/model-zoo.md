@@ -218,12 +218,11 @@ Use `Config.from_file` for this downloaded config: `Config.from_pretrained`
 remembers the repository as a weight source, whereas this algorithm has no
 weights to load.
 
-**Current server limitation:** Hugging Face registration on the inference server
-checks the legacy `TRAIN.runner` field to identify config-only algorithms. This
-repository uses `MODEL.metadata.runner`, so registration currently rejects it
-for lacking a checkpoint. Use the local Python workflow above until server
-registration supports the canonical config. This documentation does not fix
-that limitation.
+**Server loading:** Register this repository as a localization model. The server
+recognizes its canonical `MODEL.metadata.runner` and loads it with `weights=None`.
+Gated access still requires an approved Hugging Face token. Existing deployments
+must include the config-only loading fix before using this registration path;
+see [model registration](server/inference-server.md#register-models).
 
 ## OSL-loc-tennis-public
 
