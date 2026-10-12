@@ -1942,3 +1942,181 @@ def test_upload_dataset_inputs_from_json_to_hf_can_be_cancelled_before_upload(mo
         )
 
     assert calls["create_commit"] == 0
+
+
+@pytest.fixture
+def tracking_full_upload(tmp_path, monkeypatch):
+    import importlib.util
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    script = Path(__file__).resolve().parents[3] / "tools/upload/upload_sngar_tracking_full.py"
+    spec = importlib.util.spec_from_file_location("tracking_full_upload", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "COUNTS", {"train": 1, "valid": 1, "test": 1})
+    root = tmp_path / "tracking"
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "build.json").write_text(json.dumps({"status": "passed", "completed": 3, "identity": "build"}))
+    for split in module.COUNTS:
+        (root / split).mkdir(parents=True)
+        pq.write_table(pa.table({"frameNum": range(144), "tracking_valid": [True] * 144}), root / split / "clip.parquet")
+        sample = {"id": split + "_000000", "inputs": [{"type": "tracking_parquet", "path": f"{split}/clip.parquet"}],
+                  "metadata": {"conversion": {"identity": "build", "frame_interval": 1,
+                      "window_slots": 144, "output_rows": 144, "gap_policy": "pad"}}}
+        (root / f"annotations_{split}.json").write_text(json.dumps({"task": "action_classification", "data": [sample]}))
+    calls = []
+    monkeypatch.setattr(module, "dataset_repo_exists_on_hf", lambda repo: calls.append(("exists", repo)) or True)
+    monkeypatch.setattr(module, "create_dataset_branch_on_hf", lambda *args, **kw: calls.append(("branch", args)))
+    monkeypatch.setattr(module, "upload_dataset_as_parquet_to_hf", lambda *args, **kw: calls.append(("upload", args, kw)) or {})
+    return module, root, calls
+
+
+def test_tracking_full_check_is_offline(tracking_full_upload):
+    module, root, calls = tracking_full_upload
+    assert module.main(["--data-root", str(root), "--check-only"]) == 0
+    assert calls == []
+
+
+@pytest.mark.parametrize("failure", ["unfinished", "missing", "downsampled", "wrong_rows"])
+def test_tracking_full_invalid_build_never_contacts_hub(tracking_full_upload, failure):
+    module, root, calls = tracking_full_upload
+    if failure == "unfinished":
+        (root.parent / "reports/build.json").write_text('{"status": "running"}')
+    elif failure == "missing":
+        (root / "test/clip.parquet").unlink()
+    else:
+        path = root / "annotations_test.json"
+        data = json.loads(path.read_text())
+        conversion = data["data"][0]["metadata"]["conversion"]
+        conversion["frame_interval" if failure == "downsampled" else "output_rows"] = 9
+        path.write_text(json.dumps(data))
+    assert module.main(["--data-root", str(root)]) == 1
+    assert calls == []
+
+
+def test_tracking_full_routes_to_internal_sharded_uploader(tracking_full_upload):
+    module, root, calls = tracking_full_upload
+    assert module.main(["--data-root", str(root), "--shard-size", "500MB", "--splits", "valid", "test"]) == 0
+    assert calls[1] == ("branch", ("OpenSportsLab/SoccerNet-GAR", "tracking-full"))
+    uploads = calls[2:]
+    assert [call[2]["split"] for call in uploads] == ["valid", "test"]
+    for _, args, kwargs in uploads:
+        assert args[0] == "OpenSportsLab/SoccerNet-GAR"
+        assert Path(args[1]) == root / f"annotations_{kwargs['split']}.json"
+        assert kwargs["revision"] == "tracking-full"
+        assert kwargs["shard_mode"] == "size"
+        assert kwargs["shard_size"] == module.parse_shard_size("500MB")
+
+
+def test_tracking_full_stops_on_upload_failure(tracking_full_upload, monkeypatch):
+    module, root, calls = tracking_full_upload
+    attempted = []
+    def fail(*args, **kwargs):
+        attempted.append(kwargs["split"])
+        raise RuntimeError("Upload interrupted")
+    monkeypatch.setattr(module, "upload_dataset_as_parquet_to_hf", fail)
+    assert module.main(["--data-root", str(root)]) == 1
+    assert attempted == ["train"]
+
+
+@pytest.fixture
+def videos_upload(tracking_full_upload, monkeypatch):
+    import importlib.util
+    from fractions import Fraction
+    import av
+    import numpy as np
+
+    _, root, _ = tracking_full_upload
+    script = Path(__file__).resolve().parents[3] / "tools/upload/upload_sngar_videos.py"
+    spec = importlib.util.spec_from_file_location("videos_upload", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "COUNTS", {"train": 1, "valid": 1, "test": 1})
+    rate = Fraction(30000, 1001)
+    for split in module.COUNTS:
+        path = root / split / "clip.mp4"
+        with av.open(str(path), "w") as output:
+            stream = output.add_stream("libx264", rate=rate)
+            stream.width, stream.height, stream.pix_fmt = 16, 16, "yuv420p"
+            for i in range(144):
+                frame = av.VideoFrame.from_ndarray(np.zeros((16, 16, 3), dtype=np.uint8), format="rgb24")
+                frame.pts, frame.time_base = i, 1 / rate
+                for packet in stream.encode(frame):
+                    output.mux(packet)
+            for packet in stream.encode():
+                output.mux(packet)
+        manifest = root / f"annotations_{split}.json"
+        data = json.loads(manifest.read_text())
+        sample = data["data"][0]
+        sample["inputs"] = [{"type": "video", "path": f"{split}/clip.mp4", "fps": float(rate)}]
+        sample["metadata"]["conversion"] = {
+            "identity": "build", "validation": "temporal", "alignment": {"passed": True},
+            "sampled_frame_indices": list(range(90, 234, 9)),
+            "clip": {"start_frame": 90, "end_frame_exclusive": 234, "frame_count": 144,
+                     "native_rate": str(rate), "width": 16, "height": 16,
+                     "duration_seconds": float(144 / rate)},
+        }
+        manifest.write_text(json.dumps(data))
+    calls = []
+    monkeypatch.setattr(module, "dataset_repo_exists_on_hf", lambda repo: calls.append(("exists", repo)) or True)
+    monkeypatch.setattr(module, "create_dataset_branch_on_hf", lambda *args, **kw: calls.append(("branch", args)))
+    monkeypatch.setattr(module, "upload_dataset_as_parquet_to_hf", lambda *args, **kw: calls.append(("upload", args, kw)) or {})
+    return module, root, calls
+
+
+def test_videos_upload_offline_fractional_fps(videos_upload):
+    module, root, calls = videos_upload
+    assert module.main(["--data-root", str(root), "--check-only"]) == 0
+    assert calls == []
+
+
+@pytest.mark.parametrize("failure", ["unfinished", "missing", "corrupt", "alignment", "frame_count", "native_rate", "duration_seconds"])
+def test_videos_invalid_build_never_contacts_hub(videos_upload, failure, capsys):
+    module, root, calls = videos_upload
+    if failure == "unfinished":
+        (root.parent / "reports/build.json").write_text('{"status": "running"}')
+    elif failure == "missing":
+        (root / "test/clip.mp4").unlink()
+    elif failure == "corrupt":
+        (root / "test/clip.mp4").write_bytes(b"invalid mp4")
+    else:
+        manifest = root / "annotations_test.json"
+        data = json.loads(manifest.read_text())
+        conversion = data["data"][0]["metadata"]["conversion"]
+        if failure == "alignment":
+            conversion["alignment"]["passed"] = False
+        else:
+            conversion["clip"][failure] = 16
+        manifest.write_text(json.dumps(data))
+    assert module.main(["--data-root", str(root)]) == 1
+    assert calls == []
+    assert "Error:" in capsys.readouterr().err
+
+
+def test_videos_routes_to_internal_uploader(videos_upload):
+    module, root, calls = videos_upload
+    assert module.main(["--data-root", str(root), "--splits", "test", "--shard-size", "500MB"]) == 0
+    assert calls[1] == ("branch", ("OpenSportsLab/SoccerNet-GAR", "videos"))
+    assert len(calls) == 3
+    _, args, kwargs = calls[2]
+    assert args == ("OpenSportsLab/SoccerNet-GAR", str(root / "annotations_test.json"))
+    assert kwargs["revision"] == "videos"
+    assert kwargs["split"] == "test"
+    assert kwargs["shard_mode"] == "size"
+    assert kwargs["shard_size"] == module.parse_shard_size("500MB")
+
+
+def test_videos_accepts_legacy_timestamp_quantization(videos_upload):
+    module, root, calls = videos_upload
+    from fractions import Fraction
+    # Legacy provenance stores nominal FPS, slightly different from measured
+    # output FPS when the source timestamps include a one-tick correction.
+    path = root / "annotations_test.json"
+    data = json.loads(path.read_text())
+    clip = data["data"][0]["metadata"]["conversion"]["clip"]
+    clip["native_rate"] = str(Fraction(12960000, 432433))
+    path.write_text(json.dumps(data))
+    assert module.main(["--data-root", str(root), "--check-only"]) == 0
+    assert calls == []

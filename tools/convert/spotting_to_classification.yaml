@@ -1,0 +1,15 @@
+spotting_root: /home/giancos/OSLdata/PFF/SNGAR-Action-Spotting-Merged/main
+reference_root: /home/giancos/OSLdata/sngar_frames/frames
+output_root: /home/giancos/OSLdata/sngar_classification_rebuilt
+verify_hub: true
+pilot_count: 18
+frame_interval: 9
+crf: 18
+# Temporal mode creates one MP4 per reference sample; pixel differences are diagnostic.
+validation: temporal
+preset: veryfast
+workers: 2
+expected_counts:
+  train: 62159
+  valid: 12091
+  test: 13689

@@ -9,6 +9,10 @@ the OSL JSON format guide in `docs/data/osl-json-format.md`.
 
 Build (raw source -> OSL JSON):
 
+- `spotting_tracking_to_classification.py`: full-rate tracking Parquet clips matched to existing classification samples, with explicit gap handling. See [usage](../../docs/tools/spotting-tracking-to-classification.md).
+
+- `spotting_to_classification.py`: synchronized native-FPS classification MP4s, with optional exact-array reproduction. See [usage and verification contract](../../docs/tools/spotting-to-classification.md).
+
 - `build_soccernet_gar.py`: PFF FC raw data -> SoccerNet-GAR classification dataset (OSL JSON manifest of windowed action clips).
 - `build_soccernet_gar_action_spotting.py`: SoccerNet-GAR classification manifest -> SoccerNet-GAR action-spotting dataset (per-game manifest with
   event timestamps).
