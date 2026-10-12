@@ -28,7 +28,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 - **Documentation:** https://opensportslab.github.io/opensportslib/
 - **OSL JSON format:** https://opensportslab.github.io/opensportslib/data/osl-json-format/
-- **Inference server:** [server/README.md](server/README.md)
+- **Inference server:** [server/README.md](server/README.md), including checkpoint and config-only rule-model registration
 - **PyPI:** https://pypi.org/project/opensportslib/
 - **Issues:** https://github.com/OpenSportsLab/opensportslib/issues
 

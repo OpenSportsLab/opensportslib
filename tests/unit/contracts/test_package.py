@@ -47,8 +47,9 @@ def test_packaging_includes_all_yaml_presets():
     assert experiment_config_paths(), f"No task presets found under {CONFIG_ROOT}"
 
 
-def test_coverage_baseline_is_a_valid_committed_percentage():
-    raw = (REPOSITORY_ROOT / "scripts" / "coverage-baseline.txt").read_text(encoding="utf-8").strip()
+@pytest.mark.parametrize("filename", ["coverage-baseline.txt", "server-coverage-baseline.txt"])
+def test_coverage_baseline_is_a_valid_committed_percentage(filename):
+    raw = (REPOSITORY_ROOT / "scripts" / filename).read_text(encoding="utf-8").strip()
     assert raw.isdigit(), "coverage-baseline.txt must contain one integer percentage"
     assert 1 <= int(raw) <= 100
 

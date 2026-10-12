@@ -180,7 +180,11 @@ server inspects the repository and `config.yaml` automatically: supported
 checkpoint files use normal weight loading, while supported config-driven
 runners load with `weights=None`. A config-only repository that declares no
 supported weightless runner fails registration with an actionable operation
-error. This behavior is task-agnostic and does not depend on a model ID.
+error. Runner detection uses canonical `MODEL.metadata.runner` after migrating
+legacy configs; the historical `TRAIN.runner` field remains supported.
+Checkpoints ending in `.pth.tar` are recognized alongside `.pt`, `.pth`, and
+other supported checkpoint suffixes. This behavior is task-agnostic and does
+not depend on a model ID.
 
 Registration is asynchronous and returns an `operation_id`:
 

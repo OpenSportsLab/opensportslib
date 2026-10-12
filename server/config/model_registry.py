@@ -20,7 +20,7 @@ SECRET_KEY_PREFIX = "osl:model-registry:secret:"
 LOCAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 READY, REGISTERING, FAILED, UNREGISTERING = "ready", "registering", "failed", "unregistering"
 CHECKPOINT, CONFIG_ONLY = "checkpoint", "config_only"
-CHECKPOINT_SUFFIXES = (".pt", ".pth", ".bin", ".safetensors", ".ckpt", ".pkl", ".pickle")
+CHECKPOINT_SUFFIXES = (".pt", ".pth", ".pth.tar", ".bin", ".safetensors", ".ckpt", ".pkl", ".pickle")
 
 
 def utc_now() -> str:
@@ -157,14 +157,29 @@ def infer_source_mode(config_path: str | None, source: str | None) -> str:
     """Return config_only for generic rule/config-driven runners."""
     if not config_path:
         return CHECKPOINT
-    try:
-        import yaml
+    import yaml
 
-        document = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
-        runner = (((document.get("TRAIN") or {}).get("runner") or {}).get("type") or "")
-        if isinstance(runner, str) and "rule" in runner.lower():
+    from opensportslib.core.config.accessors import get_runner_type
+    from opensportslib.core.config.loader import load_raw_config
+    from opensportslib.core.config.migrate import migrate_config
+    from opensportslib.core.config.schemas.schema_canonical import is_canonical_schema
+
+    try:
+        document = load_raw_config(config_path)
+        if not isinstance(document, dict):
+            return CHECKPOINT
+        if not is_canonical_schema(document):
+            # Older server configs put the runner under TRAIN rather than MODEL.
+            # Normalize that alias before using the library's legacy migration.
+            model = document.setdefault("MODEL", {})
+            train = document.get("TRAIN") or {}
+            if isinstance(model, dict) and isinstance(train, dict):
+                if "runner" not in model and isinstance(train.get("runner"), dict):
+                    model["runner"] = train["runner"]
+        config = migrate_config(document, as_namespace=True)
+        if "rule" in get_runner_type(config).lower():
             return CONFIG_ONLY
-    except (OSError, TypeError, ValueError):
+    except (OSError, TypeError, ValueError, AttributeError, yaml.YAMLError):
         pass
     return CHECKPOINT
 

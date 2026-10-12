@@ -65,4 +65,4 @@ Pass a local checkpoint path or a Hugging Face model ID through `weights`. If no
 
 Task behavior is controlled by canonical `SYSTEM` and `TRAIN.execution` settings; use the configuration reference rather than shell launchers not provided by this repository. SLURM wrappers are documented in the [SLURM guide](../getting-started/slurm.md).
 
-For remote prediction, construct a wrapper with `remote=...` and use its normal inference methods. The server owns model loading and accepts only inference; see [inference server](../server/inference-server.md).
+For remote prediction, construct a wrapper with `remote=...` and use its normal inference methods. The server owns model loading and accepts only inference; see [inference server](../server/inference-server.md). Hugging Face registration supports canonical and legacy rule-runner configs without weights, as well as learned checkpoints including `.pth.tar` files.

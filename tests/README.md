@@ -69,13 +69,29 @@ Do not download release datasets or models during fast pytest execution.
 Every run writes a timestamped directory under `.test-reports/`, with
 `.test-reports/latest` pointing to the newest run. It contains complete logs and
 tracebacks, a Markdown diagnostic summary, failed-test IDs, JSON and JUnit reports,
-coverage XML, environment details, and a release artifact index when applicable.
+combined coverage XML, separate library/server text and XML coverage reports,
+environment details, and a release artifact index when applicable. Coverage data
+is stored inside that run directory so tests do not overwrite the root `.coverage`
+file. CI retains the summaries, JSON/JUnit results, and coverage reports for
+14 days, including failed runs.
 Release reports additionally include `release/release-metadata.jsonl`, recording
 the selected dataset/revision, materialized config, model family, checkpoint, and
 prediction locations without recording credentials.
 
-The fast run enforces `scripts/coverage-baseline.txt`. Raise that number when
-sustained coverage improves; never lower it merely to make a change pass.
+The fast run measures branch and statement coverage and enforces two independent
+gates: `scripts/coverage-baseline.txt` for `opensportslib/` (50%) and
+`scripts/server-coverage-baseline.txt` for `server/` (20%). Both must pass; a higher
+library score cannot hide missing server coverage. The combined report is for
+inspection, not the gate. See `coverage-opensportslib.txt` and
+`coverage-server.txt` in the run directory for missing lines and branch paths.
+Raise the baselines when sustained coverage improves; never lower them merely
+to make a change pass.
+
+For a CPU-only fast run on a machine with a busy GPU, set
+`CUDA_VISIBLE_DEVICES=""` when invoking the same runner. This does not replace
+GPU release verification. Keep Qwen and X-VARS in their documented separate
+dependency environments; do not remove optional-dependency skips by mixing their
+incompatible profiles.
 
 ## Contributor instructions
 
