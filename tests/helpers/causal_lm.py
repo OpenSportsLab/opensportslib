@@ -108,5 +108,3 @@ class TinyGenerateLM(torch.nn.Module):
             prefix = torch.zeros((1, inputs_embeds.shape[1]), dtype=torch.long, device=extra.device)
             return torch.cat((prefix, extra), dim=1)
         return torch.cat((input_ids, extra), dim=1)
-
-
