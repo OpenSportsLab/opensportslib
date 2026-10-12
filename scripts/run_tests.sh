@@ -208,7 +208,7 @@ else
   printf '%s\n' "Automatic optional-profile setup disabled (OSL_TEST_AUTO_SETUP=0)." >"$SETUP_LOG"
 fi
 
-COVERAGE_BASELINE="$(tr -d '[:space:]' < "$REPO_ROOT/scripts/coverage-baseline.txt")"
+export COVERAGE_FILE="$REPORT_ROOT/.coverage"
 FAST_LOG="$REPORT_ROOT/fast.log"
 FAST_JSON="$REPORT_ROOT/fast-report.json"
 FAST_JUNIT="$REPORT_ROOT/fast-junit.xml"
@@ -228,9 +228,9 @@ FAST_ARGS=(
   --log-cli-level=INFO
   --json-report --json-report-file="$FAST_JSON"
   --junitxml="$FAST_JUNIT"
-  --cov=opensportslib --cov-report=term-missing
+  --cov=opensportslib --cov=server --cov-report=term-missing
   --cov-report="xml:$REPORT_ROOT/coverage.xml"
-  --cov-fail-under="$COVERAGE_BASELINE"
+  --cov-fail-under=0
 )
 
 if [[ "$TEST_VQA_PROFILE" == "qwen" ]]; then
@@ -244,6 +244,31 @@ set +e
 "$PYTHON_BIN" -m pytest "${FAST_ARGS[@]}" 2>&1 \
   | "$PYTHON_BIN" scripts/redact_test_stream.py | tee "$FAST_LOG"
 FAST_STATUS=${PIPESTATUS[0]}
+# Keep the library and server gates independent; adding a source must not
+# dilute either baseline. Retain reports even when pytest fails.
+for coverage_component in opensportslib server; do
+  baseline_file="$REPO_ROOT/scripts/coverage-baseline.txt"
+  if [[ "$coverage_component" == "server" ]]; then
+    baseline_file="$REPO_ROOT/scripts/server-coverage-baseline.txt"
+  fi
+  coverage_baseline="$(tr -d '[:space:]' < "$baseline_file")"
+  coverage_include="$REPO_ROOT/$coverage_component/*"
+  coverage_report="$REPORT_ROOT/coverage-$coverage_component.txt"
+  "$PYTHON_BIN" -m coverage report --include="$coverage_include" \
+    --fail-under="$coverage_baseline" >"$coverage_report" 2>&1
+  coverage_status=$?
+  cat "$coverage_report" >>"$FAST_LOG"
+  if [[ "$coverage_status" -ne 0 && "$FAST_STATUS" -eq 0 ]]; then
+    FAST_STATUS="$coverage_status"
+  fi
+  "$PYTHON_BIN" -m coverage xml --include="$coverage_include" --fail-under=0 \
+    -o "$REPORT_ROOT/coverage-$coverage_component.xml" >>"$coverage_report" 2>&1
+  coverage_status=$?
+  if [[ "$coverage_status" -ne 0 && "$FAST_STATUS" -eq 0 ]]; then
+    FAST_STATUS="$coverage_status"
+  fi
+done
+
 REDACTION_STATUS=0
 "$PYTHON_BIN" scripts/redact_test_stream.py --file "$FAST_JSON" "$FAST_JUNIT" || REDACTION_STATUS=$?
 if [[ "$REDACTION_STATUS" -ne 0 && "$FAST_STATUS" -eq 0 ]]; then
@@ -255,6 +280,14 @@ fi
   --failed "$REPORT_ROOT/failed-tests.txt" --tier fast \
   --log "$FAST_LOG" --junit "$FAST_JUNIT" --exit-code "$FAST_STATUS"
 SUMMARY_STATUS=$?
+{
+  echo
+  echo "## Coverage"
+  echo
+  for coverage_component in opensportslib server; do
+    echo "- $coverage_component: $REPORT_ROOT/coverage-$coverage_component.txt"
+  done
+} >>"$REPORT_ROOT/summary.md"
 if [[ "$SUMMARY_STATUS" -ne 0 && "$FAST_STATUS" -eq 0 ]]; then
   FAST_STATUS="$SUMMARY_STATUS"
 fi

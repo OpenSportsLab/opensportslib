@@ -154,6 +154,7 @@ class _FrameCapture:
 
     def __init__(self, *_):
         self.position = 0
+        self.released = False
         self.seek_positions = []
         self.read_positions = []
         self.grab_positions = []
@@ -186,7 +187,7 @@ class _FrameCapture:
         return True
 
     def release(self):
-        pass
+        self.released = True
 
 
 def test_frame_reader_seeks_and_stops_inside_interval(monkeypatch):
@@ -404,3 +405,46 @@ def test_v2_evaluator_counts_missing_verified_interval_as_empty(tmp_path):
 
     assert "Average mAP" in result
     assert "Average mAP  54.55" in result
+
+
+@pytest.fixture
+def boundary_reader(monkeypatch):
+    class BrightCapture(_FrameCapture):
+        def read(self):
+            ok, frame = super().read()
+            if ok:
+                frame.fill(127)
+            return ok, frame
+
+    _FrameCapture.instances.clear()
+    monkeypatch.setattr(cv2, "VideoCapture", BrightCapture)
+    return FrameReader("rgb", crop_transform=None, img_transform=lambda frame: frame,
+                       same_transform=False, sample_fps=2, TARGET_HEIGHT=2, TARGET_WIDTH=2)
+
+
+@pytest.mark.parametrize("start,end,bounds,message", [
+    (2, 2, {}, "Invalid requested frame range"),
+    (3, 2, {}, "Invalid requested frame range"),
+    (0, 2, {"source_start_frame": 0}, "Both source"),
+    (0, 2, {"source_end_frame": 10}, "Both source"),
+    (0, 2, {"source_start_frame": -1, "source_end_frame": 10}, "Invalid source interval"),
+    (0, 2, {"source_start_frame": 10, "source_end_frame": 10}, "Invalid source interval"),
+    (0, 2, {"source_start_frame": 0, "source_end_frame": 101}, "Invalid source interval"),
+    (25, 27, {}, "No frames read"),
+])
+def test_frame_reader_rejects_invalid_or_empty_ranges_and_releases_capture(boundary_reader, start, end, bounds, message):
+    with pytest.raises(ValueError, match=message):
+        boundary_reader.load_frames_ocv("unused.mp4", start, end, **bounds)
+    assert _FrameCapture.instances[-1].released
+    assert not _FrameCapture.instances[-1].read_positions
+
+
+@pytest.mark.parametrize("pad", [False, True])
+def test_frame_reader_end_padding_preserves_real_samples(boundary_reader, pad):
+    frames = boundary_reader.load_frames_ocv("unused.mp4", 18, 23, pad=pad)
+    assert frames.shape == ((5 if pad else 2), 3, 2, 2)
+    assert frames[:2].count_nonzero() > 0
+    if pad:
+        assert frames[2:].count_nonzero() == 0
+    assert _FrameCapture.instances[-1].read_positions == [90, 95]
+    assert _FrameCapture.instances[-1].released

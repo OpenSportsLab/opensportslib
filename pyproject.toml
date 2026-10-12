@@ -22,7 +22,7 @@ opensportslib = "opensportslib.cli:main"
 opensportslib = [ "legacy_config/*.yaml", "configs/**/*.yaml",]
 
 [tool.coverage.run]
-source = [ "opensportslib",]
+source = [ "opensportslib", "server",]
 branch = true
 omit = [ "*/.ipynb_checkpoints/*",]
 

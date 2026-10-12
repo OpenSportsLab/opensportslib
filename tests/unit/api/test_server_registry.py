@@ -16,6 +16,7 @@ from config.model_registry import (  # noqa: E402
     resolve_local_source,
     resolve_huggingface_source,
     infer_source_mode,
+    require_api_key,
     validate_local_model_id,
 )
 
@@ -223,3 +224,91 @@ def test_hf_repository_access_failure_is_reported(tmp_path, monkeypatch):
     listing.side_effect = RuntimeError("repository access denied")
     with pytest.raises(ValueError, match="Could not access Hugging Face repository"):
         resolve_huggingface_source("example/gated", token="test-token")
+
+
+def test_default_selection_and_deletion_preserve_other_tasks():
+    registry = ModelRegistry(SimpleNamespace(redis_url="redis://unused"), FakeRedis())
+    registry.put(record("classifier"))
+    localizer = record("localizer")
+    localizer["task_type"] = "localization"
+    registry.put(localizer)
+    registry.set_default("classification", "classifier")
+    registry.set_default("localization", "localizer")
+    assert registry.resolve("classification", None)["model_id"] == "classifier"
+    assert registry.resolve("localization", None)["model_id"] == "localizer"
+    assert [item["model_id"] for item in registry.list()] == ["classifier", "localizer"]
+    registry.delete("classifier")
+    assert registry.resolve("classification", None) is None
+    assert registry.resolve("localization", None)["model_id"] == "localizer"
+    assert registry.get("classifier") is None
+
+
+@pytest.mark.parametrize("status", ["registering", "failed", "unregistering"])
+def test_only_ready_models_can_be_defaults(status):
+    registry = ModelRegistry(SimpleNamespace(redis_url="redis://unused"), FakeRedis())
+    candidate = record()
+    candidate["status"] = status
+    registry.put(candidate)
+    with pytest.raises(ValueError, match="READY"):
+        registry.set_default("classification", "model")
+    assert registry.resolve("classification", None) is None
+
+
+def test_unknown_and_wrong_task_models_cannot_be_selected_as_defaults():
+    registry = ModelRegistry(SimpleNamespace(redis_url="redis://unused"), FakeRedis())
+    with pytest.raises(KeyError):
+        registry.set_default("classification", "missing")
+    registry.put(record())
+    with pytest.raises(ValueError, match="requested task"):
+        registry.set_default("localization", "model")
+    with pytest.raises(TypeError, match="not `localization`"):
+        registry.resolve("localization", "model")
+    assert registry.resolve("classification", "missing") is None
+
+
+def test_operations_round_trip_and_secrets_can_be_removed():
+    registry = ModelRegistry(SimpleNamespace(redis_url="redis://unused", model_operation_timeout_seconds=60), FakeRedis())
+    assert registry.get_operation("missing") is None
+    operation = registry.create_operation("register", "model")
+    assert operation["status"] == "queued"
+    operation.update(status="failed", error="missing config")
+    registry.save_operation(operation)
+    assert registry.get_operation(operation["operation_id"])["error"] == "missing config"
+    registry.store_operation_secret(operation["operation_id"], "temporary")
+    registry.delete_operation_secret(operation["operation_id"])
+    assert registry.consume_operation_secret(operation["operation_id"]) is None
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer wrong", "Bearer"])
+def test_api_key_rejects_missing_or_wrong_credentials(authorization):
+    with pytest.raises(PermissionError, match="Invalid API key"):
+        require_api_key(SimpleNamespace(api_key="expected"), authorization)
+
+
+def test_api_key_accepts_valid_bearer_and_disables_unconfigured_admin():
+    require_api_key(SimpleNamespace(api_key="expected"), "Bearer expected")
+    with pytest.raises(RuntimeError, match="disabled"):
+        require_api_key(SimpleNamespace(api_key=""), "Bearer expected")
+
+
+def test_local_source_rejects_symlink_escape_and_requires_file_config(tmp_path):
+    root = tmp_path / "models"
+    root.mkdir()
+    outside = tmp_path / "outside.pt"
+    outside.write_bytes(b"checkpoint")
+    escaped = root / "escape.pt"
+    escaped.symlink_to(outside)
+    settings = SimpleNamespace(model_root=root)
+    with pytest.raises(ValueError, match="OSL_MODEL_ROOT"):
+        resolve_local_source(settings, str(escaped), None)
+    checkpoint = root / "model.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    with pytest.raises(ValueError, match="config_path is required"):
+        resolve_local_source(settings, str(checkpoint), None)
+    with pytest.raises(ValueError, match="config does not exist"):
+        resolve_local_source(settings, str(checkpoint), str(root / "missing.yaml"))
+    with pytest.raises(ValueError, match="weights do not exist"):
+        resolve_local_source(settings, str(root / "missing.pt"), None)
+    config = root / "config.yaml"
+    config.write_text("MODEL: {}")
+    assert resolve_local_source(settings, str(checkpoint), str(config)) == (checkpoint, config)
