@@ -127,7 +127,10 @@ registry.wait_for_operation(operation["operation_id"])
 Hugging Face repositories may contain checkpoints or only `config.yaml` plus a
 supported configuration-driven runner. Registration inspects the repository
 and selects the appropriate loading mode for every task; no model-ID-specific
-exception is required.
+exception is required. Rule runners are resolved from canonical
+`MODEL.metadata.runner` or migrated legacy configs, including the historical
+`TRAIN.runner` field. Config-only rule models load with `weights=None`.
+Checkpoint detection also supports `.pth.tar` files.
 
 Local paths must be below `OSL_MODEL_ROOT`. A directory must contain
 `config.yaml`; a weights file requires `config_path`. A local `model_id` may be

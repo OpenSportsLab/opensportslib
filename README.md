@@ -28,7 +28,7 @@ OpenSportsLib is designed for **researchers, ML engineers, and sports analytics 
 
 - **Documentation:** https://opensportslab.github.io/opensportslib/
 - **OSL JSON format:** https://opensportslab.github.io/opensportslib/data/osl-json-format/
-- **Inference server:** [server/README.md](server/README.md)
+- **Inference server:** [server/README.md](server/README.md), including checkpoint and config-only rule-model registration
 - **PyPI:** https://pypi.org/project/opensportslib/
 - **Issues:** https://github.com/OpenSportsLab/opensportslib/issues
 
@@ -285,3 +285,9 @@ video understanding. Core contributors affiliated with KAUST include:
 - [Jeet Vora](https://jeetv.github.io/) — Remote Research Engineer
 - [Dr. Merey Ramazanova](https://meryusha.github.io/) — Post-Doc
 - [Dr. Silvio Giancola](https://www.silviogiancola.com/) — Research Scientist
+
+For synchronized native-FPS GAR action clips and optional exact frame reproduction, see the
+[spotting-to-classification converter](docs/tools/spotting-to-classification.md).
+
+For full-rate tracking clips with the same classification sample IDs, see the
+[tracking conversion script](docs/tools/spotting-tracking-to-classification.md).

@@ -22,3 +22,19 @@ jobs:
 
       - name: Run OpenSportsLib tests
         run: bash scripts/run_tests.sh
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opensportslib-test-reports
+          path: |
+            .test-reports/latest/summary.md
+            .test-reports/latest/failed-tests.txt
+            .test-reports/latest/fast-report.json
+            .test-reports/latest/fast-junit.xml
+            .test-reports/latest/coverage*.xml
+            .test-reports/latest/coverage*.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

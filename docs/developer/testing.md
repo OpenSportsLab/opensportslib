@@ -8,6 +8,24 @@ bash scripts/run_tests.sh
 
 The command runs the fast smoke, unit, and integration suites and writes diagnostics under `.test-reports/`. Set `RUN_OSL_RELEASE_TESTS=1` only on a prepared machine for the real-data/GPU/network release suite.
 
+## Coverage and reports
+
+The fast run measures statements and branches for the library and server
+separately. The minimums are 50% for `opensportslib/` and 20% for `server/`,
+controlled by `scripts/coverage-baseline.txt` and
+`scripts/server-coverage-baseline.txt`. Each gate must pass independently.
+
+Inspect `coverage-opensportslib.txt` and `coverage-server.txt` under
+`.test-reports/latest/` for missing lines and branch paths. Matching XML reports
+and the combined `coverage.xml` are available for tooling. GitHub Actions retains
+the test summaries, JSON/JUnit results, and coverage reports for 14 days, even
+when tests fail. Coverage data stays inside the run's report directory.
+
+Prioritize tests of observable behavior: data boundaries, event matching,
+checkpoint restoration, registration state changes, and inference failures.
+Use small CPU models and mock only external boundaries. A higher coverage
+percentage does not replace real-data/GPU release verification.
+
 ## Put tests in the correct tier
 
 | Change | Test location |

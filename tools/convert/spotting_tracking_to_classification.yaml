@@ -1,0 +1,15 @@
+spotting_root: /home/giancos/OSLdata/PFF/SNGAR-Action-Spotting-Merged/main
+reference_root: /home/giancos/OSLdata/sngar/tracking
+output_root: /home/giancos/OSLdata/sngar_tracking_classification_full_fps
+# pad: 144 native frame slots, missing rows marked tracking_valid=false.
+# observed: retain only real source rows, without interpolating gaps.
+gap_policy: pad
+pilot_count: 18
+reference_frames: 16
+frame_interval: 9
+alignment_tolerance_ms: 10.0
+timestamp_tolerance_ms: 1.0
+expected_counts:
+  train: 62159
+  valid: 12091
+  test: 13689

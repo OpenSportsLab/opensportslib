@@ -219,7 +219,9 @@ and server-local sources:
 
 Hugging Face repositories can provide learned checkpoints or a supported
 configuration-only runner. The server resolves this source mode automatically;
-the registration call is the same for both types.
+the registration call is the same for both types. Canonical rule-runner configs
+(such as Skeleton header spotting) load without weights. Legacy runner configs
+and `.pth.tar` checkpoints are also supported.
 
 ```python
 from opensportslib import RemoteModelRegistry
