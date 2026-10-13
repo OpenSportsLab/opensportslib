@@ -53,31 +53,11 @@ jobs:
         run: python -m build
 
       - name: Publish to PyPI
-        run: twine upload dist/*
+        # --skip-existing keeps re-runs safe after a partial failure.
+        run: twine upload --skip-existing dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-
-      - name: Checkout latest main branch
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Commit released version to main
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python scripts/release_versions.py set-stable "$RELEASE_TAG"
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add pyproject.toml server/pyproject.toml
-          if git diff --cached --quiet; then
-            echo "main already contains release version"
-          else
-            git commit -m "fix: synchronize stable release version"
-            git push origin main
-          fi
 
       - name: Checkout latest dev branch
         uses: actions/checkout@v4
