@@ -470,6 +470,8 @@ class LocalizationDataset(Dataset):
                 dilate_len=self.data_cfg.dilate_len,
                 augmentations=_build_tracking_spotting_augmentations(self.config),
                 normalize=normalize,
+                input_type=get_runtime_modality(self.config),
+                annotation_head=get_data_params(self.config).get("annotation_head"),
             )
         elif dataset_type == "TrackingActionSpotVideo":
             encoder_params = get_component_params_by_kind(self.config, "encoder")
@@ -485,6 +487,8 @@ class LocalizationDataset(Dataset):
                 r=encoder_params.get("radius"),
                 overlap_len=getattr(cfg, "overlap_len", self.data_cfg.clip_len // 2),
                 normalize=normalize,
+                input_type=get_runtime_modality(self.config),
+                annotation_head=get_data_params(self.config).get("annotation_head"),
             )
         else:
             dataset = None
@@ -1276,17 +1280,24 @@ class _TrackingGraphWindowMixin:
         """
         return batch["frame"].to(device)
 
-    def _get_game_cache(self, video_path):
+    def _get_game_cache(self, video_path, descriptor=None):
         """lazily load (and memoize for the lifetime of this dataset
         instance/worker) a game's cached whole-match features."""
-        if video_path not in self._game_cache:
-            self._game_cache[video_path] = self._load_or_build_game_cache(video_path)
-        return self._game_cache[video_path]
+        companion_signatures = []
+        if descriptor and descriptor.get("type") == "tracking_tracab":
+            for field in ("metadata_path", "tf05_path", "tf08_path"):
+                if descriptor.get(field):
+                    stat = os.stat(descriptor[field])
+                    companion_signatures.append((field, stat.st_size, stat.st_mtime_ns))
+        key = (video_path, json.dumps(descriptor, sort_keys=True), tuple(companion_signatures))
+        if key not in self._game_cache:
+            self._game_cache[key] = self._load_or_build_game_cache(video_path, descriptor=descriptor)
+        return self._game_cache[key]
 
     def _slice_window(self, video_meta, base_idx):
         """Fetch the game cache and slice a decimated feature window +
         per-frame position lists out of it (see tracking.slice_window)."""
-        features_cache, _, positions_cache = self._get_game_cache(video_meta["video"])
+        features_cache, _, positions_cache = self._get_game_cache(video_meta["video"], video_meta.get("input"))
         return self._slice_window_fn(
             features_cache, positions_cache, base_idx, self._clip_len, video_meta["stride"]
         )
@@ -1364,12 +1375,14 @@ class TrackingActionSpotDataset(Dataset, _TrackingGraphWindowMixin):
         fg_upsample=-1,
         augmentations=None,
         normalize=True,
+        input_type="tracking_parquet",
+        annotation_head=None,
     ):
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat_tracking
 
         self._src_file = label_file
         self._labels, self.task_name = annotationstoe2eformat_tracking(
-            label_file, video_dir, extract_fps
+            label_file, video_dir, extract_fps, input_type, annotation_head
         )
         self._class_dict = _normalize_class_dict(classes)
         self._video_idxs = {x["video"]: i for i, x in enumerate(self._labels)}
@@ -1528,12 +1541,14 @@ class TrackingActionSpotVideoDataset(Dataset, _TrackingGraphWindowMixin, Dataset
         pad_len=5,
         skip_partial_end=True,
         normalize=True,
+        input_type="tracking_parquet",
+        annotation_head=None,
     ):
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat_tracking
 
         self._src_file = label_file
         self._labels, self.task_name = annotationstoe2eformat_tracking(
-            label_file, video_dir, extract_fps
+            label_file, video_dir, extract_fps, input_type, annotation_head
         )
         self._class_dict = _normalize_class_dict(classes)
         self._video_idxs = {x["path"]: i for i, x in enumerate(self._labels)}

@@ -203,7 +203,7 @@ def test_download_hf_file_rejects_unsafe_destination(tmp_path):
         )
 
 
-def test_find_missing_dataset_inputs_includes_primary_and_ball_paths(tmp_path):
+def test_find_missing_dataset_inputs_includes_primary_and_companion_paths(tmp_path):
     present_path = tmp_path / "clips" / "present.mp4"
     present_path.parent.mkdir()
     present_path.write_bytes(b"present")
@@ -219,6 +219,7 @@ def test_find_missing_dataset_inputs_includes_primary_and_ball_paths(tmp_path):
                             {
                                 "path": "tracking/joints.h5",
                                 "ball_path": "tracking/ball.h5",
+                                "metadata_path": "tracking/metadata.json",
                                 "type": "player_joints_h5",
                             },
                         ],
@@ -234,6 +235,7 @@ def test_find_missing_dataset_inputs_includes_primary_and_ball_paths(tmp_path):
     assert [(item["role"], item["path"]) for item in missing] == [
         ("primary", "tracking/joints.h5"),
         ("ball", "tracking/ball.h5"),
+        ("metadata", "tracking/metadata.json"),
     ]
     assert all(item["sample_id"] == "sample-1" for item in missing)
 
