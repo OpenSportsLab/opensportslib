@@ -178,6 +178,25 @@ units and unknown codes remain unresolved; no speed conversions are performed.
 
 ## Dataset loading and persistence
 
+Both JSON and Parquet/WebDataset Hub transfers include the original DAT and
+every referenced `metadata_path`, `tf05_path`, and `tf08_path`. Source bytes and
+manifest calibration survive a round trip unchanged. Uploads reject missing
+TRACAB files before accessing the Hub; full downloads report an error if any
+referenced TRACAB file remains absent after extraction. Optional XML feeds are
+included when referenced, without scanning for unrelated neighboring files.
+
+`download_dataset_split_from_hf(..., annotations_only=True)` intentionally
+downloads only annotations. Afterwards,
+`download_dataset_sample_inputs_from_hf(..., input_path="tracking/match.dat")`
+fetches the DAT and every companion as one input, and
+`download_dataset_missing_inputs_from_hf(...)` restores all missing references,
+including companions whose DAT already exists. Selective transfers report
+missing files or TAR member mappings in `missing_paths`/`failed_paths`.
+`find_missing_dataset_inputs(..., input_types={"tracking_tracab"})` restricts
+the local completeness check to this modality; omitting the filter checks all
+inputs. Generic JSON uploads retain their existing skip policy for missing
+files of other modalities. Parquet uploads require the whole dataset locally.
+
 Set `DATA.inputs.<name>.modality: tracking_tracab`. Local `source.format: dat`
 uses the split `annotation_path` and `source_path` (the common asset root).
 HF JSON uses `source.format: hf_json` and `source.input_type: tracking_tracab`.

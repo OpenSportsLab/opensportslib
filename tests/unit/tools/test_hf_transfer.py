@@ -2122,3 +2122,164 @@ def test_videos_accepts_legacy_timestamp_quantization(videos_upload):
     path.write_text(json.dumps(data))
     assert module.main(["--data-root", str(root), "--check-only"]) == 0
     assert calls == []
+
+
+@pytest.fixture
+def tracab_transfer(tmp_path, monkeypatch):
+    """Real local packaging with an offline Hub that copies committed bytes."""
+    from fnmatch import fnmatch
+    from types import SimpleNamespace
+    from tests.helpers.tracab import write_tracab
+
+    local_root = tmp_path / "source"
+    descriptor = write_tracab(local_root / "match files" / "tracking.dat", sidecar=True)
+    asset_keys = ("path", "metadata_path", "tf05_path", "tf08_path")
+    for key in asset_keys:
+        descriptor[key] = Path(descriptor[key]).relative_to(local_root).as_posix()
+    (local_root / "video.mp4").write_bytes(b"synthetic video asset")
+    sample = {"id": "match", "inputs": [
+        {"type": "video", "path": "video.mp4"}, descriptor,
+    ], "events": [{"head": "headers", "label": "header",
+                   "timestamp_utc": "2020-01-01 00:00:00.080000"}]}
+    document = {"labels": {"headers": ["header"]}, "data": [sample]}
+    manifest = local_root / "test.json"
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    assets = {descriptor[key]: (local_root / descriptor[key]).read_bytes()
+              for key in asset_keys}
+    assets["video.mp4"] = (local_root / "video.mp4").read_bytes()
+    remote_root = tmp_path / "remote"
+    remote_root.mkdir()
+    downloaded, commits = [], []
+    download = _copying_hf_download(remote_root, downloaded)
+
+    class FakeApi:
+        def __init__(self, **kwargs):
+            pass
+
+        def create_commit(self, **kwargs):
+            commits.append(kwargs)
+            for operation in kwargs["operations"]:
+                destination = remote_root / operation.path_in_repo
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(operation.path_or_fileobj, destination)
+            return SimpleNamespace(oid="pinned")
+
+        def repo_info(self, **kwargs):
+            return SimpleNamespace(sha="pinned")
+
+        def list_repo_files(self, *args, **kwargs):
+            return sorted(path.relative_to(remote_root).as_posix()
+                          for path in remote_root.rglob("*") if path.is_file())
+
+    def snapshot_download(**kwargs):
+        assert kwargs["revision"] == "pinned"
+        for filename in FakeApi().list_repo_files():
+            if any(fnmatch(filename, pattern) for pattern in kwargs["allow_patterns"]):
+                download(filename=filename, local_dir=kwargs["local_dir"])
+
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_hub",
+                        lambda: (FakeApi, download, snapshot_download))
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_commit_operation_add",
+                        lambda: SimpleNamespace)
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_commit_operation_delete",
+                        lambda: SimpleNamespace)
+    return SimpleNamespace(manifest=manifest, descriptor=descriptor, document=document,
+                           assets=assets, remote=remote_root, commits=commits,
+                           downloaded=downloaded)
+
+
+@pytest.mark.parametrize("source_format", ["json", "parquet"])
+@pytest.mark.parametrize("download_scope", ["full", "input", "missing"])
+def test_tracab_hf_upload_download_roundtrip(tracab_transfer, tmp_path, source_format, download_scope):
+    fixture = tracab_transfer
+    upload = (upload_dataset_inputs_from_json_to_hf if source_format == "json"
+              else upload_dataset_as_parquet_to_hf)
+    upload("OpenSportsLab/synthetic", str(fixture.manifest), split="test")
+    assert len(fixture.commits) == 1
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/synthetic", "main", "test", str(tmp_path / "download"),
+        download_format=source_format, annotations_only=download_scope != "full",
+    )
+    downloaded_json = Path(result["json_path"])
+    root = downloaded_json.parent
+    document = json.loads(downloaded_json.read_text())
+    assert document["data"] == fixture.document["data"]
+    if download_scope != "full":
+        assert all(not (root / path).exists() for path in fixture.assets)
+        assert len(find_missing_dataset_inputs(str(downloaded_json))) == 5
+        if download_scope == "input":
+            transfer = download_dataset_sample_inputs_from_hf(
+                str(downloaded_json), "match", input_path=fixture.descriptor["path"])
+            assert transfer["requested_downloaded_count"] == 4
+            assert transfer["missing_count"] == transfer["failed_count"] == 0
+        else:
+            transfer = download_dataset_missing_inputs_from_hf(str(downloaded_json))
+            assert transfer["initial_missing_count"] == 5
+            assert transfer["remaining_missing_count"] == 0
+
+    expected = dict(fixture.assets)
+    if download_scope == "input" and source_format == "json":
+        expected.pop("video.mp4")
+        assert not (root / "video.mp4").exists()
+    for path, original_bytes in expected.items():
+        assert (root / path).read_bytes() == original_bytes
+    assert not list(root.rglob("*.tar"))
+    assert not find_missing_dataset_inputs(str(downloaded_json), input_types={"tracking_tracab"})
+
+    # A missing companion must be hydrated even when the DAT is already present.
+    xml_path = fixture.descriptor["tf08_path"]
+    (root / xml_path).unlink()
+    restored = download_dataset_missing_inputs_from_hf(str(downloaded_json))
+    assert restored["remaining_missing_count"] == 0
+    assert (root / xml_path).read_bytes() == fixture.assets[xml_path]
+
+
+@pytest.mark.parametrize("source_format", ["json", "parquet"])
+@pytest.mark.parametrize("path_key", ["path", "metadata_path", "tf05_path", "tf08_path"])
+def test_tracab_upload_rejects_missing_asset_before_hub_access(
+    tracab_transfer, monkeypatch, source_format, path_key
+):
+    fixture = tracab_transfer
+    path = fixture.descriptor[path_key]
+    (fixture.manifest.parent / path).unlink()
+    monkeypatch.setattr(hf_transfer_module, "_import_hf_hub", pytest.fail)
+    upload = (upload_dataset_inputs_from_json_to_hf if source_format == "json"
+              else upload_dataset_as_parquet_to_hf)
+    with pytest.raises(MissingDatasetInputsError) as error:
+        upload("OpenSportsLab/synthetic", str(fixture.manifest), split="test")
+    assert [item["path"] for item in error.value.missing_inputs] == [path]
+    assert fixture.commits == []
+
+
+def test_tracab_full_download_rejects_missing_tar_companion(tracab_transfer, tmp_path):
+    fixture = tracab_transfer
+    upload_dataset_as_parquet_to_hf("OpenSportsLab/synthetic", str(fixture.manifest), split="test")
+    manifest = pd.read_parquet(fixture.remote / "test/shard_manifest.parquet")
+    row = manifest[manifest["file_role"] == "tf08"].iloc[0]
+    shard = fixture.remote / "test/shards" / row["shard_name"]
+    replacement = tmp_path / "incomplete.tar"
+    with tarfile.open(shard) as source, tarfile.open(replacement, "w") as target:
+        for member in source.getmembers():
+            if member.name != row["wds_member"]:
+                target.addfile(member, source.extractfile(member))
+    replacement.replace(shard)
+    with pytest.raises(FileNotFoundError, match="Incomplete tracking_tracab download.*TF08"):
+        download_dataset_split_from_hf(
+            "OpenSportsLab/synthetic", "main", "test", str(tmp_path / "download"))
+
+
+def test_tracab_selective_download_reports_missing_tar_member_mapping(tracab_transfer, tmp_path):
+    fixture = tracab_transfer
+    upload_dataset_as_parquet_to_hf("OpenSportsLab/synthetic", str(fixture.manifest), split="test")
+    manifest_path = fixture.remote / "test/shard_manifest.parquet"
+    manifest = pd.read_parquet(manifest_path)
+    manifest.loc[manifest["file_role"] == "tf08", "wds_member"] = ""
+    manifest.to_parquet(manifest_path, index=False)
+    result = download_dataset_split_from_hf(
+        "OpenSportsLab/synthetic", "main", "test", str(tmp_path / "download"),
+        annotations_only=True,
+    )
+    transfer = download_dataset_sample_inputs_from_hf(
+        result["json_path"], "match", input_path=fixture.descriptor["path"])
+    assert transfer["missing_paths"] == [fixture.descriptor["tf08_path"]]
+    assert transfer["requested_downloaded_count"] == 3
