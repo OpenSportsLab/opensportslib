@@ -130,10 +130,13 @@ def prepare_hf_json_split(config, split: str) -> PreparedHFJsonSplit:
                         f"Expected one {media_type!r} input for sample {sample.get('game_id', sample.get('id'))!r}"
                     )
                 item = dict(selected[0])
-                filename = _safe_path(str(item.get("path") or ""))
-                if not filename.startswith(f"{split}/"):
-                    raise ValueError(f"Media path {filename!r} is outside split {split!r}")
-                filenames.add(filename)
+                for key in ("path", "metadata_path", "tf05_path", "tf08_path"):
+                    if key != "path" and not item.get(key):
+                        continue
+                    filename = _safe_path(str(item.get(key) or ""))
+                    if key == "path" and not filename.startswith(f"{split}/"):
+                        raise ValueError(f"Media path {filename!r} is outside split {split!r}")
+                    filenames.add(filename)
                 sample["inputs"] = [item]
 
             def stage_media(filename: str) -> None:

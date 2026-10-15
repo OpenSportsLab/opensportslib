@@ -345,11 +345,9 @@ def extract_repo_paths_from_json(
                 path = inp.get("path")
                 if path:
                     repo_paths.append(str(path).lstrip("/"))
-                # player_joints_h5 / player_centroids_h5 inputs may carry a
-                # sidecar ball_path; download it alongside the primary input.
-                ball_path = inp.get("ball_path")
-                if ball_path:
-                    repo_paths.append(str(ball_path).lstrip("/"))
+                for key in ("ball_path", "metadata_path", "tf05_path", "tf08_path"):
+                    if inp.get(key):
+                        repo_paths.append(str(inp[key]).lstrip("/"))
 
     if not repo_paths:
         raise ValueError("No file paths found in the provided JSON (no inputs with 'path').")
@@ -1038,7 +1036,7 @@ def _sample_requested_asset_paths(
     paths: list[str] = []
     seen: set[str] = set()
     for input_item in selected_inputs:
-        for key in ("path", "ball_path"):
+        for key in ("path", "ball_path", "metadata_path", "tf05_path", "tf08_path"):
             value = str(input_item.get(key) or "").strip()
             normalized = value.replace("\\", "/")
             if value and normalized not in seen:
@@ -1405,6 +1403,9 @@ def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
             for role, raw_path in (
                 ("primary", primary_path),
                 ("ball", str(input_item.get("ball_path") or "").strip()),
+                ("metadata", str(input_item.get("metadata_path") or "").strip()),
+                ("tf05", str(input_item.get("tf05_path") or "").strip()),
+                ("tf08", str(input_item.get("tf08_path") or "").strip()),
             ):
                 if not raw_path:
                     continue
@@ -1530,12 +1531,10 @@ def _collect_local_input_upload_entries_from_json(
             path = str(inp.get("path") or "").strip()
             if path:
                 raw_paths.append(path)
-            # player_joints_h5 / player_centroids_h5 inputs may carry a sidecar
-            # ball_path pointing at a separate ball-tracking h5 file; include it
-            # alongside the primary input when present.
-            ball_path = str(inp.get("ball_path") or "").strip()
-            if ball_path:
-                raw_paths.append(ball_path)
+            for key in ("ball_path", "metadata_path", "tf05_path", "tf08_path"):
+                companion_path = str(inp.get(key) or "").strip()
+                if companion_path:
+                    raw_paths.append(companion_path)
 
             for raw_path in raw_paths:
                 local_path = raw_path if os.path.isabs(raw_path) else os.path.join(base_dir, raw_path)

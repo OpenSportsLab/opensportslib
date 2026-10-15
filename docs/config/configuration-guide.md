@@ -630,3 +630,12 @@ TRAIN:
   selection: {monitor: map, mode: max}
   checkpoint: {save_every: 2, save_best: true}
 ```
+
+
+### Native TRACAB DAT
+
+`tracking_tracab` inputs retain raw DAT bytes and reference original metadata through
+`metadata_path`; UTC period calibration and team codes remain in the manifest. Classification and localization
+support local JSON, HF JSON and indexed TAR datasets. Configure the input's
+`params.annotation_head` to select a vocabulary such as `headers`. See the
+[TRACAB input and loader contract](../tracking_tracab.md) for a complete example.

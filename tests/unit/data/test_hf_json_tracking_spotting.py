@@ -14,8 +14,8 @@ from opensportslib.core.utils.config import dict_to_namespace
 from opensportslib.datasets.builder import build_dataset
 
 
-@pytest.fixture
-def tracking_hub(tmp_path, monkeypatch):
+@pytest.fixture(params=["tracking_parquet", "tracking_tracab"])
+def tracking_hub(tmp_path, monkeypatch, request):
     remote = tmp_path / "remote"
     for split in ("train", "valid", "test"):
         relative = f"{split}/tracking_parquet/1.parquet"
@@ -27,6 +27,15 @@ def tracking_hub(tmp_path, monkeypatch):
             "homePlayers": ["[]"] * 120,
             "awayPlayers": ["[]"] * 120,
         }).to_parquet(parquet)
+        source = {"type": "tracking_parquet", "path": relative, "fps": 30.0}
+        if request.param == "tracking_tracab":
+            from tests.helpers.tracab import write_tracab
+            parquet.unlink()
+            relative = f"{split}/tracking_tracab/1.dat"
+            source = write_tracab(remote / relative, sidecar=True)
+            source["path"] = relative
+            for key in ("metadata_path", "tf05_path", "tf08_path"):
+                source[key] = str(Path(source[key]).relative_to(remote))
         manifest = {
             "version": "2.0", "task": "action_spotting",
             "labels": {"action": {"labels": ["PASS"]}},
@@ -34,7 +43,7 @@ def tracking_hub(tmp_path, monkeypatch):
                 "game_id": "1", "split": split,
                 "inputs": [
                     {"type": "video", "path": f"{split}/video/1.mp4"},
-                    {"type": "tracking_parquet", "path": relative, "fps": 30.0},
+                    source,
                 ],
                 "events": [{"head": "action", "label": "PASS", "position_ms": 500}],
             }],
@@ -60,15 +69,18 @@ def tracking_hub(tmp_path, monkeypatch):
 
     monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
     monkeypatch.setattr("huggingface_hub.hf_hub_download", download)
-    return calls
+    return calls, request.param
 
 
 def test_tracking_hf_json_builds_graph_clips_for_all_splits(tmp_path, tracking_hub):
+    calls, modality = tracking_hub
     payload = Config.from_file("examples/sngar/sngar_spotting_tracking_hf.yaml").get_config()
     payload["DATA"]["inputs"]["video"]["source"]["cache_dir"] = str(tmp_path / "cache")
     payload["DATA"]["inputs"]["video"]["sampling"]["clip_len"] = 10
     payload["DATA"]["inputs"]["video"]["sampling"]["epoch_num_frames"] = 100
     payload["DATA"]["common"]["splits"]["test"]["overlap_len"] = 0
+    payload["DATA"]["inputs"]["video"]["modality"] = modality
+    payload["DATA"]["inputs"]["video"]["source"]["input_type"] = modality
     config = dict_to_namespace(payload)
     model = LocalizationModel.__new__(LocalizationModel)
     model.config = config
@@ -76,11 +88,12 @@ def test_tracking_hf_json_builds_graph_clips_for_all_splits(tmp_path, tracking_h
     for split in ("train", "valid", "test"):
         annotation = Path(model._resolve_split_path(split))
         staged = json.loads(annotation.read_text(encoding="utf-8"))
-        assert staged["data"][0]["inputs"] == [{
-            "type": "tracking_parquet", "path": f"{split}/tracking_parquet/1.parquet", "fps": 30.0
-        }]
-        assert (annotation.parent / split / "tracking_parquet/1.parquet").is_file()
-        assert f"{split}/video/1.mp4" not in tracking_hub
+        source = staged["data"][0]["inputs"][0]
+        assert source["type"] == modality
+        assert (annotation.parent / source["path"]).is_file()
+        if modality == "tracking_tracab":
+            assert source["metadata"]["periods"][1]["period"] == 2
+        assert f"{split}/video/1.mp4" not in calls
         set_split_annotation_path(config, split, str(annotation))
 
     set_split_annotation_path(config, "valid_data_frames", config.DATA.common.splits.valid.annotation_path)
@@ -100,6 +113,6 @@ def test_tracking_hf_json_builds_graph_clips_for_all_splits(tmp_path, tracking_h
         assert len(evaluation) > 0
         assert len(evaluation[0]["graphs"]) == 10
     assert config.DATA.inputs.video.source.resolved_revision == "test-commit"
-    before = len(tracking_hub)
+    before = len(calls)
     assert Path(model._resolve_split_path("train")).is_file()
-    assert len(tracking_hub) == before
+    assert len(calls) == before
