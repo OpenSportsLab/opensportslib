@@ -26,8 +26,8 @@ from opensportslib.datasets.hf_tracking import (
 from opensportslib.tools import convert_json_to_parquet
 
 
-@pytest.fixture(params=["tracking_parquet", "tracking_tracab"])
-def hub_fixture(tmp_path, monkeypatch, request):
+@pytest.fixture
+def hub_fixture(tmp_path, monkeypatch):
     remote = tmp_path / "remote"
     local = tmp_path / "local"
     remote.mkdir()
@@ -47,19 +47,10 @@ def hub_fixture(tmp_path, monkeypatch, request):
                     "awayPlayers": [json.dumps([{"jerseyNum": 2, "x": -10, "y": -5}])] * 2,
                 }
             ).to_parquet(path)
-            descriptor = {"type": "tracking_parquet", "path": rel}
-            if request.param == "tracking_tracab":
-                from tests.helpers.tracab import write_tracab
-                path.unlink()
-                rel = f"{split}/clip_{index}.dat"
-                descriptor = write_tracab(local / rel, sidecar=True)
-                descriptor["path"] = rel
-                for key in ("metadata_path", "tf05_path", "tf08_path"):
-                    descriptor[key] = str(Path(descriptor[key]).relative_to(local))
             samples.append(
                 {
                     "id": f"{split}_{index}",
-                    "inputs": [descriptor],
+                    "inputs": [{"type": "tracking_parquet", "path": rel}],
                     "labels": {"action": {"label": label}},
                 }
             )
@@ -78,22 +69,12 @@ def hub_fixture(tmp_path, monkeypatch, request):
             shard_mode="samples",
             samples_per_shard=1,
         )
-        import shutil
-        for sample in samples:
-            for key in ("path", "metadata_path", "tf05_path", "tf08_path"):
-                if key not in sample["inputs"][0]:
-                    continue
-                rel = sample["inputs"][0][key]
-                destination = remote / rel
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(local / rel, destination)
         if split == "train":
             manifest_path = remote / split / "shard_manifest.parquet"
             manifest = pd.read_parquet(manifest_path)
             manifest["file_role"] = None  # Current SoccerNet-GAR upload omits this role.
             manifest.to_parquet(manifest_path)
         payloads[split] = annotations
-        (remote / f"{split}.json").write_text(json.dumps(payload))
 
     def fake_repo_info(self, *, repo_id, revision, repo_type):
         assert repo_type == "dataset"
@@ -125,7 +106,6 @@ def hub_fixture(tmp_path, monkeypatch, request):
     config_dict = Config.from_file("examples/sngar/sngar_tracking_hf.yaml").get_config()
     config_dict["DATA"]["inputs"]["tracking"]["source"]["cache_dir"] = str(tmp_path / "cache")
     config_dict["DATA"]["inputs"]["tracking"]["augmentations"] = {}
-    config_dict["DATA"]["inputs"]["tracking"]["modality"] = request.param
     return dict_to_namespace(config_dict), payloads, local, remote, calls
 
 
@@ -189,7 +169,7 @@ def test_hf_tracking_all_splits_and_multiworker_sampler(hub_fixture):
 def test_hf_tracking_missing_tar_member_fails_clearly(hub_fixture):
     config, payloads, local, remote, calls = hub_fixture
     data = build(config, None, split="valid")
-    data._hf_reader.members[data.samples[0]["video_paths"][0]] = (
+    data._hf_reader.members["valid/clip_0.parquet"] = (
         "shard-000000.tar", "absent.parquet"
     )
     with pytest.raises(FileNotFoundError, match="absent.parquet"):
@@ -264,50 +244,3 @@ def test_hf_tracking_keeps_all_sngar_train_shards_open(tmp_path, monkeypatch):
         reader._tar(f"shard-{i:06d}.tar")
     reader._tar("shard-000000.tar")
     assert len(opened) == 13  # The first shard was reused, not reopened.
-
-
-def test_tracking_classification_hf_json(hub_fixture):
-    config, _, _, _, _ = hub_fixture
-    config.DATA.inputs.tracking.source.format = "hf_json"
-    config.DATA.inputs.tracking.source.annotation_pattern = "{split}.json"
-    config.DATA.inputs.tracking.source.input_type = config.DATA.inputs.tracking.modality
-    model = ClassificationModel.__new__(ClassificationModel)
-    model.config, model.remote = config, None
-    annotation = model._resolve_split_path("train")
-    data = build(config, annotation, split="train")
-    assert data[0]["graphs"][0].x.shape == (23, 8)
-    assert data.samples[0]["inputs"][0]["type"] == config.DATA.inputs.tracking.modality
-
-
-def test_tracab_webdataset_localization(hub_fixture, tmp_path):
-    from opensportslib.apis.localization import LocalizationModel
-    from opensportslib.datasets.localization_dataset import TrackingActionSpotDataset
-    from opensportslib.core.config.accessors import get_split_source_path
-    config, _, _, _, _ = hub_fixture
-    if config.DATA.inputs.tracking.modality != "tracking_tracab":
-        return  # The classification Parquet fixture has no spotting timestamps.
-    model = LocalizationModel.__new__(LocalizationModel)
-    model.config = config
-    annotation = model._resolve_split_path("train")
-    source_path = get_split_source_path(config, "train")
-    data = TrackingActionSpotDataset(
-        {"A": 1, "B": 2}, annotation, source_path, 4, 25, 2,
-        input_type="tracking_tracab", normalize=False,
-    )
-    assert len(data[0]["graphs"]) == 4
-    assert data._labels[0]["input"]["metadata"]["periods"][0]["period"] == 1
-    assert not list(Path(source_path).rglob("*.parquet"))
-
-
-def test_tracab_preload_matches_onthefly(hub_fixture):
-    config, paths, local, _, _ = hub_fixture
-    if config.DATA.inputs.tracking.modality != "tracking_tracab":
-        return
-    config.DATA.inputs.tracking.source.format = "dat"
-    config.DATA.common.splits.train.source_path = str(local)
-    onthefly = TrackingDataset(config, str(paths["train"]))
-    config.DATA.inputs.tracking.params.preload_data = True
-    preloaded = TrackingDataset(config, str(paths["train"]))
-    for a, b in zip(onthefly[0]["graphs"], preloaded[0]["graphs"]):
-        torch.testing.assert_close(a.x, b.x)
-        torch.testing.assert_close(a.edge_index, b.edge_index)

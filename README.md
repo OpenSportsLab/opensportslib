@@ -160,12 +160,6 @@ and [VQA guide](docs/tools/vqa.md).
 
 OpenSportsLib provides APIs and scripts for downloading and uploading OSL datasets with Hugging Face.
 
-For `tracking_tracab`, both transfer formats include the original DAT and all
-referenced metadata JSON/TF05/TF08 XML files. Uploads reject missing tracking
-assets; full downloads validate completeness. Annotation-only downloads defer
-assets until a sample/input download or missing-file hydration is requested.
-See [TRACAB transfer behavior](docs/tracking_tracab.md#dataset-loading-and-persistence).
-
 For SN-GAR classification and action-spotting configurations, setup, caching,
 and training commands, see the [SN-GAR examples](examples/sngar/README.md).
 
@@ -297,13 +291,3 @@ For synchronized native-FPS GAR action clips and optional exact frame reproducti
 
 For full-rate tracking clips with the same classification sample IDs, see the
 [tracking conversion script](docs/tools/spotting-tracking-to-classification.md).
-
-
-### Raw TRACAB tracking
-
-`tracking_tracab` is supported by classification and localization tracking loaders
-for local OSL JSON, Hugging Face JSON and indexed WebDataset sources. Set the
-input modality to `tracking_tracab`; reference the original metadata JSON with
-`metadata_path` and retain UTC period calibration and team codes in each input. `params.annotation_head` selects a head such as
-`action` or `headers`. See [the DAT contract and loading guide](docs/tracking_tracab.md) for the
-schema, configuration, caching and backward-compatible Parquet behavior.

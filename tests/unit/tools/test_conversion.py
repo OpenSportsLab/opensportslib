@@ -1,4 +1,3 @@
-from pathlib import Path
 import json
 
 import pandas as pd
@@ -272,28 +271,3 @@ def test_parquet_to_json_rejects_legacy_schema_without_header(tmp_path):
             dataset_dir=dataset_dir,
             output_json_path=tmp_path / "reconstructed.json",
         )
-
-
-@pytest.mark.parametrize('relative', [True, False])
-def test_tracab_metadata_companion_roundtrip(tmp_path, relative):
-    from tests.helpers.tracab import write_tracab
-    descriptor = write_tracab(tmp_path / 'clips' / 'match.dat', sidecar=True)
-    descriptor['path'] = 'clips/match.dat'
-    descriptor['metadata_path'] = 'clips/match.metadata.json'
-    for key in ('tf05_path', 'tf08_path'):
-        descriptor[key] = str(Path(descriptor[key]).relative_to(tmp_path))
-    payload = {'labels': {}, 'data': [{'id': 'match', 'inputs': [descriptor]}]}
-    manifest = tmp_path / 'annotations.json'
-    manifest.write_text(json.dumps(payload))
-    archive = tmp_path / 'archive'
-    convert_json_to_parquet(manifest, tmp_path, archive, keep_relative_paths_in_parquet=relative)
-    rows = pd.read_parquet(archive / 'shard_manifest.parquet')
-    assert set(rows.file_role) == {'primary', 'metadata', 'tf05', 'tf08'}
-    stored = json.loads(pd.read_parquet(archive / 'metadata.parquet').iloc[0].sample_payload)['inputs'][0]
-    assert stored['metadata_path'] == ('clips/match.metadata.json' if relative else str(tmp_path / 'clips/match.metadata.json'))
-    output = tmp_path / 'restored'
-    convert_parquet_to_json(archive, output / 'annotations.json', extract_media=True, output_media_root=output)
-    restored = json.loads((output / 'annotations.json').read_text())
-    assert restored == payload
-    for key in ('path', 'metadata_path', 'tf05_path', 'tf08_path'):
-        assert (output / descriptor[key]).read_bytes() == (tmp_path / descriptor[key]).read_bytes()

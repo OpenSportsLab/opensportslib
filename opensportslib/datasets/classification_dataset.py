@@ -64,7 +64,7 @@ def build(config, annotations_path, processor=None, split="train"):
     """
     modality = get_data_modality(config).lower()
 
-    if modality in ("tracking", "tracking_parquet", "tracking_tracab"):
+    if modality in ("tracking", "tracking_parquet"):
         from opensportslib.datasets.hf_tracking import hf_tracking_source
 
         if hf_tracking_source(config):
@@ -133,8 +133,7 @@ class ClassificationDataset(Dataset):
             annotation_input_type = "frames_npy"
 
         self.samples, self.label_map = load_annotations(
-            annotations_path,
-            task_key=data_params.get("annotation_head"),
+            annotations_path, 
             exclude_labels=self.exclude_labels, 
             multiview=is_multiview,
             input_type=annotation_input_type,
@@ -541,7 +540,7 @@ class TrackingDataset(ClassificationDataset):
                 continue
             
             clip_path = clip_paths[0]
-            df = self._load_tracking_clip(clip_path, item["inputs"][0])
+            df = self._load_tracking_clip(clip_path)
 
             num_frames = len(df)
             all_features = np.zeros(
@@ -569,7 +568,7 @@ class TrackingDataset(ClassificationDataset):
             # regardless of transforms.
             edge_indices = []
             for t in range(num_frames):
-                edge_index = self._build_edge_index(
+                edge_index = self.build_edge_index(
                     all_features[t],
                     all_positions[t],
                     self.edge_type,
@@ -588,7 +587,7 @@ class TrackingDataset(ClassificationDataset):
         
         print(f"Loaded {len(self.processed_samples)} {self.split} samples")
     
-    def _load_tracking_clip(self, path, descriptor=None):
+    def _load_tracking_clip(self, path):
         """read a single parquet tracking clip.
         
         Args:
@@ -601,10 +600,6 @@ class TrackingDataset(ClassificationDataset):
         import pandas as pd
 
         full_path = os.path.join(self.video_path, path)
-        if descriptor and descriptor.get("type") == "tracking_tracab":
-            from opensportslib.tracking import TracabTrackingReader
-            with TracabTrackingReader(full_path, descriptor, metadata_base_dir=self.video_path) as reader:
-                return pd.DataFrame(reader.iter_uniform_rows())
         return pd.read_parquet(full_path)
     
     def __getitem__(self, idx):
@@ -692,7 +687,7 @@ class TrackingDataset(ClassificationDataset):
             raise ValueError(f"No tracking paths found for item {idx}")
         
         clip_path = clip_paths[0]
-        df = self._load_tracking_clip(clip_path, item["inputs"][0])
+        df = self._load_tracking_clip(clip_path)
         
         num_frames = len(df)
         all_features = np.zeros(
@@ -770,8 +765,8 @@ class HFTrackingDataset(TrackingDataset):
         self._hf_reader = HFTarTrackingReader(prepared)
         super().__init__(config, str(prepared.annotations_path), split)
 
-    def _load_tracking_clip(self, path, descriptor=None):
-        return self._hf_reader.read_tracking(path, descriptor)
+    def _load_tracking_clip(self, path):
+        return self._hf_reader.read_parquet(path)
 
 
 class H5TrackingDataset(ClassificationDataset):

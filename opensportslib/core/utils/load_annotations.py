@@ -12,14 +12,6 @@ from opensportslib.core.utils.config import load_json
 from collections import defaultdict
 
 
-def select_annotation_head(document, requested=None):
-    heads = document["labels"]
-    selected = requested or ("action" if "action" in heads else next(iter(heads)) if len(heads) == 1 else None)
-    if selected not in heads:
-        raise ValueError(f"Select annotation_head from {list(heads)}; got {requested!r}")
-    return selected
-
-
 LOCALIZATION_ANNOTATION_STATUSES = {"verified", "unlabeled", "excluded"}
 
 
@@ -172,7 +164,7 @@ def expand_localization_intervals(record):
 
 def load_annotations(
     annotations_path,
-    task_key=None,
+    task_key="action",
     exclude_labels=None,
     multiview=False,
     input_type="video",
@@ -182,10 +174,6 @@ def load_annotations(
 
     with open(annotations_path, "r") as f:
         data = json.load(f)
-
-    if not isinstance(data["data"], list):
-        raise TypeError("OSL data must be a list")
-    task_key = select_annotation_head(data, task_key)
 
     # this is used for data slicing experiments.
     # and doesn't affect the validation and test sets.
@@ -529,7 +517,7 @@ def annotationstoe2eformat(
     return labels_e2e, task_name_list[0]
 
 
-def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps, input_type="tracking_parquet", annotation_head=None):
+def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps):
     """
     Adapt tracking-parquet action-spotting annotations to E2E format.
 
@@ -558,7 +546,6 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps, input_
         classes use to slice windows out of the cached native features.
     """
     from opensportslib.datasets.utils.tracking import load_or_build_game_cache
-    from opensportslib.tracking.tracab import parse_utc
 
     if not isinstance(label_files, list):
         label_files = [label_files]
@@ -575,26 +562,20 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps, input_
 
         annotations = load_json(label_path)
 
-        task_name = select_annotation_head(annotations, annotation_head)
-        labels = annotations["labels"][task_name].get("labels", {})
-        task_name_list.append(task_name)
+        for task_name, task_data in annotations["labels"].items():
+            labels = task_data.get("labels", {})
+            task_name_list.append(task_name)
         classes_by_label_dir.append(labels)
 
         videos = annotations["data"]
 
         for video in tqdm.tqdm(videos):
-            candidates = [i for i in video["inputs"] if i.get("type") == input_type]
-            if len(candidates) != 1:
-                raise ValueError(f"Expected one {input_type} input for {video.get('id')!r}; found {len(candidates)}")
-            video_input = dict(candidates[0])
-            for key in ("metadata_path", "tf05_path", "tf08_path"):
-                if video_input.get(key):
-                    video_input[key] = os.path.abspath(os.path.join(video_dir, video_input[key]))
+            video_input = video["inputs"][0]
             video_path = video_input["path"]
             full_video_path = os.path.join(video_dir, video_path)
             assert os.path.isfile(full_video_path), full_video_path
 
-            _, times, _ = load_or_build_game_cache(full_video_path, descriptor=video_input)
+            _, times, _ = load_or_build_game_cache(full_video_path)
             num_frames = len(times)
 
             native_fps = video_input.get("fps")
@@ -610,18 +591,7 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps, input_
 
             events = []
             for ann in video.get("events", []):
-                if ann.get("head", task_name) != task_name:
-                    continue
-                if ann["label"] not in labels:
-                    raise ValueError(f"Event label {ann['label']!r} absent from head {task_name!r}")
-                if ann.get("timestamp_utc"):
-                    if not video_input.get("UTC_time_start"):
-                        raise ValueError("UTC events require input.UTC_time_start")
-                    position_ms = (parse_utc(ann["timestamp_utc"]) - parse_utc(video_input["UTC_time_start"])).total_seconds() * 1000
-                else:
-                    position_ms = float(ann["position_ms"])
-                if position_ms < 0 or (video_input.get("duration_ms") and position_ms >= video_input["duration_ms"]):
-                    raise ValueError(f"Event timestamp {position_ms} outside tracking timeline")
+                position_ms = float(ann["position_ms"])
                 native_idx = int(np.searchsorted(times, position_ms))
                 native_idx = min(max(native_idx, 0), num_frames - 1)
                 adj_frame = native_idx // stride
@@ -644,7 +614,6 @@ def annotationstoe2eformat_tracking(label_files, video_dirs, extract_fps, input_
             events.sort(key=lambda x: x["frame"])
 
             labels_e2e.append({
-                "input": dict(video_input),
                 "events": events,
                 "fps": sample_fps,
                 "num_frames": num_frames_after,
@@ -865,7 +834,7 @@ def check_config(cfg, split="train"):
         if get_loader_backend(cfg) == "dali":
             cfg.TRAIN.execution.repartitions = get_repartition_gpu(cfg.SYSTEM.gpu.count)
         primary_modality = get_data_modality(cfg)
-        assert primary_modality in ["rgb", "video", "tracking_parquet", "tracking_tracab"]
+        assert primary_modality in ["rgb", "video", "tracking_parquet"]
         backbone_type = get_component_name_by_kind(cfg, "encoder")
         assert backbone_type in [
             # From torchvision
@@ -931,13 +900,8 @@ def check_config(cfg, split="train"):
             and data_path.endswith(".json")
             and "labels" in load_json(data_path).keys()
         ):
-            document = load_json(data_path)
-            if primary_modality in {"tracking_parquet", "tracking_tracab"}:
-                head = select_annotation_head(document, get_data_params(cfg).get("annotation_head"))
-                classes = document["labels"][head].get("labels", {})
-            else:
-                for task_data in document["labels"].values():
-                    classes = task_data.get("labels", {})
+            for task_name, task_data in load_json(data_path)["labels"].items():
+                classes = task_data.get("labels", {})
         else:
             assert isinstance(cfg.DATA.common.classes, (list, ListConfig))
             classes = cfg.DATA.common.classes

@@ -74,7 +74,6 @@ def _is_tracking_graph_modality(modality):
     return str(modality).lower() in {
         "tracking",
         "tracking_parquet",
-        "tracking_tracab",
         "tracking_h5",
         "player_centroids_h5",
         "player_joints_h5",

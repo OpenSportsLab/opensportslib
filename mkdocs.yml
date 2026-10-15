@@ -43,7 +43,6 @@ nav:
       - HDF5 Header Spotting: headers/README.md
   - Data:
       - OSL JSON Format: data/osl-json-format.md
-      - TRACAB DAT: tracking_tracab.md
       - Dataset Conversion: tools/dataset-conversion.md
       - Hugging Face Dataset Transfer: tools/hf-dataset-transfer.md
   - Configuration:

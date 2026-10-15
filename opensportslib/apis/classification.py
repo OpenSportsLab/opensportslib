@@ -23,7 +23,6 @@ def _is_tracking_graph_modality(modality):
     return str(modality).lower() in {
         "tracking",
         "tracking_parquet",
-        "tracking_tracab",
         "tracking_h5",
         "player_centroids_h5",
         "player_joints_h5",
@@ -49,13 +48,6 @@ class ClassificationModel(BaseTaskModel):
                 return str(prepare_hf_tracking_split(self.config, split).annotations_path)
         if override is not None:
             return expand(override)
-
-        from opensportslib.datasets.hf_json import hf_json_source, prepare_hf_json_split
-        if not self.is_remote and hf_json_source(self.config):
-            from opensportslib.core.config.accessors import set_split_source_path
-            prepared = prepare_hf_json_split(self.config, split)
-            set_split_source_path(self.config, split, str(prepared.source_path))
-            return str(prepared.annotation_path)
 
         path = get_split_annotation_path(self.config, split)
         if path:

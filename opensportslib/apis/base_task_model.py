@@ -48,7 +48,7 @@ def _manifest_media_references(payload: dict[str, Any]):
         for input_obj in inputs:
             if not isinstance(input_obj, dict):
                 continue
-            for key in ("path", "ball_path", "metadata_path", "tf05_path", "tf08_path"):
+            for key in ("path", "ball_path"):
                 if isinstance(input_obj.get(key), str):
                     yield input_obj[key], lambda value, input_obj=input_obj, key=key: input_obj.__setitem__(key, value)
             values = input_obj.get("paths")

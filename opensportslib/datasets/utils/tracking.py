@@ -59,19 +59,6 @@ _AWAY_SLOT_START = 12
 # frame-level feature extraction
 # -------------------------------------------------------------------
 
-def _tracking_list(value):
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except (ValueError, TypeError):
-            return []
-    if isinstance(value, np.ndarray):
-        value = value.tolist()
-    if isinstance(value, dict):
-        value = [value]
-    return value if isinstance(value, (list, tuple)) else []
-
-
 def parse_frame(row, num_objects=NUM_OBJECTS, feature_dim=FEATURE_DIM):
     """parse a single parquet row into per-object features and positions.
 
@@ -98,9 +85,10 @@ def parse_frame(row, num_objects=NUM_OBJECTS, feature_dim=FEATURE_DIM):
     obj_idx = _BALL_SLOT
 
     # -- ball (always slot 0) --
-    ball_list = _tracking_list(row.get("balls"))
-    if ball_list:
+    ball_str = row.get("balls", "null")
+    if pd.notna(ball_str) and ball_str not in ("null", ""):
         try:
+            ball_list = json.loads(ball_str)
             if ball_list:
                 ball = ball_list[0]
                 x, y = ball.get("x"), ball.get("y")
@@ -118,9 +106,10 @@ def parse_frame(row, num_objects=NUM_OBJECTS, feature_dim=FEATURE_DIM):
     obj_idx = _HOME_SLOT_START
 
     # -- home players (slots 1-11) --
-    home_players = _tracking_list(row.get("homePlayers"))
-    if home_players:
+    home_str = row.get("homePlayers", "[]")
+    if pd.notna(home_str) and home_str not in ("null", ""):
         try:
+            home_players = json.loads(home_str)
             home_players = sorted(
                 home_players,
                 key=lambda p: int(p.get("jerseyNum", 0)),
@@ -147,9 +136,10 @@ def parse_frame(row, num_objects=NUM_OBJECTS, feature_dim=FEATURE_DIM):
         obj_idx = _HOME_SLOT_END
 
     # -- away players (slots 12-22) --
-    away_players = _tracking_list(row.get("awayPlayers"))
-    if away_players:
+    away_str = row.get("awayPlayers", "[]")
+    if pd.notna(away_str) and away_str not in ("null", ""):
         try:
+            away_players = json.loads(away_str)
             away_players = sorted(
                 away_players,
                 key=lambda p: int(p.get("jerseyNum", 0)),
@@ -715,7 +705,7 @@ def build_game_cache(parquet_path):
     return all_features, times, all_positions
 
 
-def load_or_build_game_cache(parquet_path, mmap=True, descriptor=None):
+def load_or_build_game_cache(parquet_path, mmap=True):
     """load the cached per-frame features/times/positions for a game,
     building the cache (see build_game_cache) on first access.
 
@@ -732,8 +722,6 @@ def load_or_build_game_cache(parquet_path, mmap=True, descriptor=None):
         positions: numpy.ndarray (num_frames, NUM_OBJECTS) int8 position
             codes (see _POSITION_CODES / positions_to_strings).
     """
-    if descriptor and descriptor.get("type") == "tracking_tracab":
-        return _load_tracab_cache(parquet_path, descriptor, mmap)
     cache_paths = _cache_paths(parquet_path)
     features_path, times_path, positions_path = cache_paths
 
@@ -806,43 +794,4 @@ def slice_window(features_cache, positions_cache, base_idx, clip_len, stride):
             positions[i] = positions_to_strings(positions_cache[native_idx])
 
     window = compute_deltas(window)
-    # A decimated window may skip an empty native frame. Do not infer motion
-    # across that dropout, even when both sampled endpoints are observed.
-    for i in range(1, clip_len):
-        left, right = (base_idx + i - 1) * stride, (base_idx + i) * stride
-        if 0 <= left < right < native_num_frames:
-            missing = np.any(features_cache[left:right + 1, :, 0] == MISSING_VALUE, axis=0)
-            observed = window[i, :, 0] != MISSING_VALUE
-            window[i, missing & observed, 5:7] = 0
     return window, positions
-
-
-def _load_tracab_cache(path, descriptor, mmap):
-    """Versioned feature cache; the raw DAT and manifest are never modified."""
-    import fcntl
-    import hashlib
-    from opensportslib.tracking.tracab import PARSER_VERSION, TracabTrackingReader, resolve_tracab_descriptor
-
-    descriptor = resolve_tracab_descriptor(descriptor)
-
-    stat = os.stat(path)
-    identity = json.dumps([PARSER_VERSION, stat.st_size, stat.st_mtime_ns, descriptor], sort_keys=True)
-    digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
-    prefix = f"{path}.tracab-{digest}"
-    files = _cache_paths(prefix)
-    with open(prefix + ".lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not all(os.path.isfile(p) for p in files):
-            with TracabTrackingReader(path, descriptor) as reader:
-                import math
-                count = math.ceil(reader.duration_ms * reader.fps / 1000)
-                features = np.empty((count, NUM_OBJECTS, FEATURE_DIM), dtype=np.float32)
-                positions = np.zeros((count, NUM_OBJECTS), dtype=np.int8)
-                times = np.empty(count, dtype=np.float64)
-                for index, row in enumerate(reader.iter_uniform_rows()):
-                    features[index], names = parse_frame(row)
-                    positions[index] = [_POSITION_CODES.get(name, 0) for name in names]
-                    times[index] = row["videoTimeMs"]
-                for filename, array in zip(files, (features, times, positions)):
-                    _atomic_save(filename, array)
-    return tuple(np.load(filename, mmap_mode="r" if mmap else None) for filename in files)

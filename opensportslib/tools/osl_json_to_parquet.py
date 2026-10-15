@@ -152,12 +152,11 @@ def _estimate_sample_tar_size(
         if resolved is not None:
             total += _tar_member_size(resolved.stat().st_size)
 
-        for key in ("ball_path", "metadata_path", "tf05_path", "tf08_path"):
-            companion_path = str(input_item.get(key) or "").strip()
-            if companion_path:
-                resolved = _resolve_media_path(media_root, companion_path, missing_policy=missing_policy)
-                if resolved is not None:
-                    total += _tar_member_size(resolved.stat().st_size)
+        ball_rel_path = str(input_item.get("ball_path") or "").strip()
+        if ball_rel_path:
+            ball_resolved = _resolve_media_path(media_root, ball_rel_path, missing_policy=missing_policy)
+            if ball_resolved is not None:
+                total += _tar_member_size(ball_resolved.stat().st_size)
     return total
 
 
@@ -349,40 +348,44 @@ def convert_json_to_parquet(
                         })
                         total_input_files_added += 1
 
-                    for role, path_key in (("ball", "ball_path"), ("metadata", "metadata_path"), ("tf05", "tf05_path"), ("tf08", "tf08_path")):
-                        companion_rel_path = str(input_item.get(path_key) or "").strip()
-                        if not companion_rel_path:
-                            continue
-                        companion_resolved = _resolve_media_path(media_root, companion_rel_path, missing_policy=missing_policy)
-                        if companion_resolved is None:
-                            total_missing_input_files += 1
-                            shard_manifest.append({
-                                "sample_id": sample_id,
-                                "shard_name": shard_name,
-                                "input_index": input_idx,
-                                "file_role": role,
-                                "input_type": input_type,
-                                "relative_path": companion_rel_path,
-                                "resolved_path": None,
-                                "status": "missing",
-                            })
-                            continue
-
-                        companion_ext = companion_resolved.suffix.lstrip(".").lower() or "bin"
-                        companion_arcname = f"{key}.{input_idx}.{role}.{companion_ext}"
-                        _add_file_to_tar(tar, companion_resolved, companion_arcname)
+                    # player_joints_h5 / player_centroids_h5 inputs may carry a
+                    # sidecar ball_path pointing at a separate ball-tracking h5
+                    # file; bundle it into the same shard, tagged with a distinct
+                    # arcname (".ball.") so it doesn't collide with the primary
+                    # input's tar member.
+                    ball_rel_path = str(input_item.get("ball_path") or "").strip()
+                    if not ball_rel_path:
+                        continue
+                    ball_resolved = _resolve_media_path(media_root, ball_rel_path, missing_policy=missing_policy)
+                    if ball_resolved is None:
+                        total_missing_input_files += 1
                         shard_manifest.append({
                             "sample_id": sample_id,
                             "shard_name": shard_name,
                             "input_index": input_idx,
-                            "file_role": role,
+                            "file_role": "ball",
                             "input_type": input_type,
-                            "relative_path": companion_rel_path,
-                            "resolved_path": str(companion_resolved if not keep_relative_paths_in_parquet else companion_rel_path),
-                            "status": "ok",
-                            "wds_member": companion_arcname,
+                            "relative_path": ball_rel_path,
+                            "resolved_path": None,
+                            "status": "missing",
                         })
-                        total_input_files_added += 1
+                        continue
+
+                    ball_ext = ball_resolved.suffix.lstrip(".").lower() or "bin"
+                    ball_arcname = f"{key}.{input_idx}.ball.{ball_ext}"
+                    _add_file_to_tar(tar, ball_resolved, ball_arcname)
+                    shard_manifest.append({
+                        "sample_id": sample_id,
+                        "shard_name": shard_name,
+                        "input_index": input_idx,
+                        "file_role": "ball",
+                        "input_type": input_type,
+                        "relative_path": ball_rel_path,
+                        "resolved_path": str(ball_resolved if not keep_relative_paths_in_parquet else ball_rel_path),
+                        "status": "ok",
+                        "wds_member": ball_arcname,
+                    })
+                    total_input_files_added += 1
 
     df = pd.DataFrame(parquet_rows)
 
@@ -392,15 +395,24 @@ def convert_json_to_parquet(
             ok_manifest = manifest_df[manifest_df["status"] == "ok"].copy()
             if not ok_manifest.empty:
                 ok_manifest["input_index"] = ok_manifest["input_index"].astype(int)
-                by_sample_input_paths = {}
-                by_sample_companion_paths = {}
-                for _, rec in ok_manifest.iterrows():
-                    sample_id, index = str(rec["sample_id"]), int(rec["input_index"])
-                    if rec["file_role"] == "primary":
-                        by_sample_input_paths.setdefault(sample_id, {})[index] = str(rec["resolved_path"])
-                    else:
-                        key = str(rec["file_role"]) + "_path"
-                        by_sample_companion_paths.setdefault(sample_id, {}).setdefault(index, {})[key] = str(rec["resolved_path"])
+                primary_manifest = ok_manifest[ok_manifest["file_role"] == "primary"]
+                ball_manifest = ok_manifest[ok_manifest["file_role"] == "ball"]
+
+                by_sample_input_paths: Dict[str, Dict[int, str]] = {}
+                for sample_id, sample_manifest in primary_manifest.groupby("sample_id", sort=False):
+                    sample_manifest = sample_manifest.sort_values("input_index")
+                    by_sample_input_paths[str(sample_id)] = {
+                        int(rec["input_index"]): str(rec["resolved_path"])
+                        for _, rec in sample_manifest.iterrows()
+                    }
+
+                by_sample_ball_paths: Dict[str, Dict[int, str]] = {}
+                for sample_id, sample_manifest in ball_manifest.groupby("sample_id", sort=False):
+                    sample_manifest = sample_manifest.sort_values("input_index")
+                    by_sample_ball_paths[str(sample_id)] = {
+                        int(rec["input_index"]): str(rec["resolved_path"])
+                        for _, rec in sample_manifest.iterrows()
+                    }
 
                 def _resolved_payload_for_row(row: pd.Series) -> str:
                     payload = maybe_json_loads(row.get("sample_payload"), {})
@@ -413,7 +425,7 @@ def convert_json_to_parquet(
                         return json_dumps_compact(payload_copy)
 
                     resolved_by_index = by_sample_input_paths.get(str(row.get("sample_id")), {})
-                    resolved_companions_by_index = by_sample_companion_paths.get(str(row.get("sample_id")), {})
+                    resolved_ball_by_index = by_sample_ball_paths.get(str(row.get("sample_id")), {})
                     with_path_idx = 0
                     rewritten: List[Any] = []
                     for inp in inputs_value:
@@ -425,7 +437,10 @@ def convert_json_to_parquet(
                             resolved = resolved_by_index.get(with_path_idx)
                             if resolved is not None:
                                 inp_copy["path"] = resolved
-                            inp_copy.update(resolved_companions_by_index.get(with_path_idx, {}))
+                            if inp_copy.get("ball_path"):
+                                resolved_ball = resolved_ball_by_index.get(with_path_idx)
+                                if resolved_ball is not None:
+                                    inp_copy["ball_path"] = resolved_ball
                             with_path_idx += 1
                         rewritten.append(inp_copy)
                     payload_copy["inputs"] = rewritten

@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
-from opensportslib.core.config.accessors import get_input_cfg, get_data_modality
+from opensportslib.core.config.accessors import get_input_cfg
 
 
 logger = logging.getLogger(__name__)
@@ -126,14 +126,7 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
 
     _set_resolved_revision(config, resolved)
     safe_repo = re.sub(r"[^A-Za-z0-9_.-]+", "--", repo_id)
-    media_type = str(source.get("input_type") or get_data_modality(config))
-    if media_type == "tracking":
-        media_type = "tracking_parquet"
-    if media_type not in {"tracking_parquet", "tracking_tracab"}:
-        raise ValueError(f"Unsupported tracking input type: {media_type}")
     directory = cache_dir / safe_repo / resolved / split
-    if media_type != "tracking_parquet":
-        directory = directory / media_type
     directory.mkdir(parents=True, exist_ok=True)
     annotations_path = directory / "annotations.json"
     index_path = directory / "index.json"
@@ -188,7 +181,7 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
 
             manifest = {}
             for row in rows("shard_manifest.parquet"):
-                if row.get("file_role") not in (None, "", "primary", "metadata", "tf05", "tf08") or row.get("input_type") != media_type:
+                if row.get("file_role") not in (None, "", "primary") or row.get("input_type") != "tracking_parquet":
                     continue
                 key = (str(row["sample_id"]), str(row["relative_path"]))
                 if row.get("status") == "ok" and row.get("wds_member"):
@@ -197,20 +190,17 @@ def prepare_hf_tracking_split(config, split: str) -> PreparedTrackingSplit:
             members = {}
             for sample_id, (shard_name, sample) in locations.items():
                 for input_item in sample.get("inputs", []):
-                    if input_item.get("type") != media_type:
+                    if input_item.get("type") != "tracking_parquet":
                         continue
-                    for key in ("path", "metadata_path", "tf05_path", "tf08_path"):
-                        if key != "path" and not input_item.get(key):
-                            continue
-                        path = str(input_item.get(key) or "")
-                        location = manifest.get((sample_id, path))
-                        if not path or location is None or location[0] != shard_name:
-                            raise ValueError(f"Missing tracking TAR member for {sample_id!r} ({key}): {path!r}")
-                        if path in members and members[path] != location:
-                            raise ValueError(f"Tracking path maps to multiple TAR members: {path!r}")
-                        members[path] = location
+                    path = str(input_item.get("path") or "")
+                    location = manifest.get((sample_id, path))
+                    if not path or location is None or location[0] != shard_name:
+                        raise ValueError(f"Missing tracking TAR member for {sample_id!r}: {path!r}")
+                    if path in members and members[path] != location:
+                        raise ValueError(f"Tracking path maps to multiple TAR members: {path!r}")
+                    members[path] = location
             if not members:
-                raise ValueError(f"{split} contains no {media_type} inputs")
+                raise ValueError(f"{split} contains no tracking_parquet inputs")
 
             _write_json_atomic(annotations_path, {**header, "data": samples})
             _write_json_atomic(index_path, {"members": members})
@@ -287,33 +277,10 @@ class HFTarTrackingReader:
         return tar
 
     def read_parquet(self, path: str):
-        return self.read_tracking(path)
-
-    def read_tracking(self, path: str, descriptor=None):
         import pandas as pd
 
         if path not in self.members:
             raise FileNotFoundError(f"Tracking clip is absent from Hub manifest: {path}")
-        metadata = None
-        xml_metadata = {}
-        for key in ("metadata_path", "tf05_path", "tf08_path"):
-            if not descriptor or not descriptor.get(key):
-                continue
-            metadata_path = descriptor[key]
-            if metadata_path not in self.members:
-                raise FileNotFoundError(f"Tracking metadata is absent from Hub manifest: {metadata_path}")
-            metadata_shard, metadata_member = self.members[metadata_path]
-            try:
-                from opensportslib.tracking.native import read_document
-                with self._tar(metadata_shard).extractfile(metadata_member) as stream:
-                    document = read_document(stream, format="json" if key == "metadata_path" else "xml")
-                    document.source = metadata_path
-                if key == "metadata_path":
-                    metadata = document
-                else:
-                    xml_metadata[key] = document
-            except (KeyError, ValueError, TypeError) as exc:
-                raise ValueError(f"TRACAB metadata {metadata_path}: {exc}") from exc
         shard_name, member_name = self.members[path]
         tar = self._tar(shard_name)
         try:
@@ -322,42 +289,9 @@ class HFTarTrackingReader:
             if stream is None:
                 raise KeyError(member_name)
             with stream:
-                if descriptor and descriptor.get("type") == "tracking_tracab":
-                    from opensportslib.tracking import TracabTrackingReader
-                    with TracabTrackingReader(stream, descriptor, metadata=metadata, xml_metadata=xml_metadata) as reader:
-                        return pd.DataFrame(reader.iter_uniform_rows())
                 contents = stream.read()
         except KeyError as exc:
             raise FileNotFoundError(
                 f"Tracking TAR member {member_name!r} is missing from {shard_name!r}"
             ) from exc
         return pd.read_parquet(io.BytesIO(contents))
-
-
-def stage_tracking_files(prepared):
-    """Materialize raw members once for localization's mmap feature cache."""
-    import shutil
-    from opensportslib.datasets.hf_json import _safe_path
-
-    root = prepared.annotations_path.parent / "media"
-    root.mkdir(exist_ok=True)
-    with (root / ".stage.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        reader = HFTarTrackingReader(prepared)
-        try:
-            for path, (shard, member) in reader.members.items():
-                destination = root / _safe_path(path)
-                if destination.is_file():
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
-                try:
-                    with reader._tar(shard).extractfile(member) as source, temporary.open("wb") as target:
-                        shutil.copyfileobj(source, target)
-                    os.replace(temporary, destination)
-                finally:
-                    temporary.unlink(missing_ok=True)
-        finally:
-            for tar in reader._open_tars.values():
-                tar.close()
-    return root

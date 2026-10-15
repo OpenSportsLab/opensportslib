@@ -145,11 +145,7 @@ def _torch_cuda_available() -> bool:
 
 
 def _dali_available() -> bool:
-    try:
-        return importlib.util.find_spec("nvidia.dali") is not None
-    except ModuleNotFoundError:
-        # find_spec raises when the optional parent namespace is absent.
-        return False
+    return importlib.util.find_spec("nvidia.dali") is not None
 
 
 # DALI decodes video; any other input modality (tracking parquets, features)
