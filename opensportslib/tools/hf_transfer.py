@@ -566,6 +566,8 @@ def _download_parquet_split_and_convert(
                 extract_media=True,
                 output_media_root=output_dir,
             )
+        if not annotations_only:
+            _verify_tracking_download(str(output_json_path))
         write_hf_source_metadata_to_dataset_json(
             str(output_json_path),
             repo_id=cleaned_repo_id,
@@ -772,6 +774,7 @@ def _download_json_path_from_hf(
         )
         downloaded_count += 1
 
+    _verify_tracking_download(json_path)
     result["download_kind"] = "json"
     result["downloaded_file_count"] = downloaded_count
     _emit_progress(progress_cb, "Download completed.")
@@ -1257,7 +1260,11 @@ def _download_parquet_sample_inputs(
             if not normalized or normalized in rows_by_path:
                 continue
             rows_by_path[normalized] = row
-            if normalized in requested_normalized and str(row.get("status") or "") == "ok":
+            if (
+                normalized in requested_normalized
+                and str(row.get("status") or "") == "ok"
+                and str(row.get("wds_member") or "").strip()
+            ):
                 available_requested.add(normalized)
         result["missing_paths"].extend(sorted(requested_normalized - available_requested))
         if not available_requested:
@@ -1379,8 +1386,10 @@ def _normalize_repo_path(path: str) -> str:
     return str(path or "").strip().replace("\\", "/").lstrip("/")
 
 
-def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
-    """Return referenced primary and companion inputs that are absent locally."""
+def find_missing_dataset_inputs(
+    dataset_json_path: str, *, input_types: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Return missing primary/companion files, optionally restricted by input type."""
     cleaned_json_path = Path(str(dataset_json_path or "").strip()).resolve()
     if not cleaned_json_path.is_file():
         raise ValueError(f"Dataset JSON does not exist: {cleaned_json_path}")
@@ -1398,6 +1407,8 @@ def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
         sample_id = str(sample.get("id") or "").strip()
         for input_item in sample.get("inputs", []) or []:
             if not isinstance(input_item, dict):
+                continue
+            if input_types is not None and input_item.get("type") not in input_types:
                 continue
             primary_path = str(input_item.get("path") or "").strip()
             for role, raw_path in (
@@ -1430,6 +1441,18 @@ def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
                     }
                 )
     return missing
+
+def _verify_tracking_download(dataset_json_path: str) -> None:
+    missing = find_missing_dataset_inputs(
+        dataset_json_path, input_types={"tracking_tracab"}
+    )
+    if missing:
+        paths = ", ".join(item["path"] for item in missing)
+        raise FileNotFoundError(
+            f"Incomplete tracking_tracab download: {len(missing)} referenced "
+            f"file(s) are missing locally: {paths}. Check the source dataset "
+            "contains the DAT and every referenced JSON/XML companion."
+        )
 
 
 def download_dataset_missing_inputs_from_hf(
@@ -1586,9 +1609,6 @@ def upload_dataset_inputs_from_json_to_hf(
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    HfApi, _, _ = _import_hf_hub()
-    CommitOperationAdd = _import_hf_commit_operation_add()
-
     cleaned_repo_id = str(repo_id or "").strip()
     cleaned_json_path = os.path.abspath(str(json_path or "").strip())
     if not cleaned_repo_id:
@@ -1597,6 +1617,14 @@ def upload_dataset_inputs_from_json_to_hf(
         raise ValueError("json_path is required.")
     if not os.path.isfile(cleaned_json_path):
         raise ValueError(f"JSON file does not exist: {cleaned_json_path}")
+    missing_tracking = find_missing_dataset_inputs(
+        cleaned_json_path, input_types={"tracking_tracab"}
+    )
+    if missing_tracking:
+        raise MissingDatasetInputsError(missing_tracking)
+
+    HfApi, _, _ = _import_hf_hub()
+    CommitOperationAdd = _import_hf_commit_operation_add()
     cleaned_revision = str(revision or "").strip() or "main"
 
     effective_commit_message = (commit_message or "").strip() or "Upload dataset inputs from JSON"
