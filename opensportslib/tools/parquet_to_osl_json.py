@@ -54,46 +54,48 @@ def _extract_sample_media_from_tar(
     original_paths: List[str],
     original_ball_paths: Optional[List[Optional[str]]] = None,
     overwrite: bool = False,
+    original_metadata_paths: Optional[List[Optional[str]]] = None,
+    original_xml_paths: Optional[Dict[str, List[Optional[str]]]] = None,
 ) -> int:
     """
     Extract all input files for *sample_index* from the shard, including any
-    sidecar ball-tracking files (tar members named ``<key>.<idx>.ball.<ext>``).
+    ball and metadata companions (``<key>.<idx>.<role>.<ext>``).
 
     Files are written to ``output_media_root / original_path`` (or
-    ``output_media_root / original_ball_path`` for ball members), preserving
-    the original relative path structure so that ``inputs[].path`` /
-    ``inputs[].ball_path`` values stay valid.
+    the corresponding companion path), preserving the original relative paths
+    so input ``path``, ``ball_path`` and ``metadata_path`` references stay valid.
 
     Returns the number of files extracted.
     """
     key_prefix = f"{sample_index:09d}."
     extracted = 0
-    ball_paths = original_ball_paths or []
+    companion_paths = {"ball": original_ball_paths or [], "metadata": original_metadata_paths or [], **(original_xml_paths or {})}
 
     with tarfile.open(tar_path, "r") as tar:
         members = [
             m
             for m in tar.getmembers()
-            if m.isfile() and m.name.startswith(key_prefix) and not m.name.endswith(".json")
+            if m.isfile() and m.name.startswith(key_prefix) and m.name != key_prefix + "json"
         ]
 
-        def _member_info(m: tarfile.TarInfo) -> tuple[int, bool]:
+        def _member_info(m: tarfile.TarInfo) -> tuple[int, str]:
             parts = m.name[len(key_prefix) :].split(".")
             try:
                 idx = int(parts[0])
             except ValueError:
                 idx = 0
-            is_ball = len(parts) >= 3 and parts[1] == "ball"
-            return idx, is_ball
+            role = parts[1] if len(parts) >= 3 and parts[1] in companion_paths else "primary"
+            return idx, role
 
         members.sort(key=_member_info)
 
         for member in members:
-            input_idx, is_ball = _member_info(member)
-            if is_ball:
-                if input_idx >= len(ball_paths) or not ball_paths[input_idx]:
+            input_idx, role = _member_info(member)
+            if role in companion_paths:
+                paths = companion_paths[role]
+                if input_idx >= len(paths) or not paths[input_idx]:
                     continue
-                out_path = output_media_root / ball_paths[input_idx]
+                out_path = output_media_root / paths[input_idx]
             else:
                 if input_idx >= len(original_paths):
                     continue
@@ -303,10 +305,15 @@ def convert_parquet_to_json(
             inputs = sample.get("inputs", []) if isinstance(sample, dict) else []
             original_input_paths: List[str] = []
             original_ball_paths: List[Optional[str]] = []
+            original_metadata_paths: List[Optional[str]] = []
+            original_xml_paths = {"tf05": [], "tf08": []}
             for inp in inputs:
                 if not isinstance(inp, dict) or not inp.get("path"):
                     continue
                 original_input_paths.append(str(inp["path"]))
+                original_metadata_paths.append(inp.get("metadata_path"))
+                for role in original_xml_paths:
+                    original_xml_paths[role].append(inp.get(role + "_path"))
                 ball_path = inp.get("ball_path")
                 original_ball_paths.append(str(ball_path) if ball_path else None)
             extracted_media_count += _extract_sample_media_from_tar(
@@ -315,6 +322,8 @@ def convert_parquet_to_json(
                 output_media_root=output_media_root_path,
                 original_paths=original_input_paths,
                 original_ball_paths=original_ball_paths,
+                original_metadata_paths=original_metadata_paths,
+                original_xml_paths=original_xml_paths,
                 overwrite=overwrite_media,
             )
 

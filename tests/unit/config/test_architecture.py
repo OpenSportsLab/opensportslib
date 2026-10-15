@@ -234,3 +234,13 @@ def test_migrate_config_accepts_legacy_and_returns_canonical_without_aliases():
     assert "dali" not in canonical
     assert "annotations" not in canonical["DATA"]
     assert canonical["TRAIN"]["epochs"] == 2
+
+
+def test_dali_probe_without_nvidia_namespace(monkeypatch):
+    from opensportslib.core.config.loader import _dali_available
+
+    def absent(name):
+        raise ModuleNotFoundError("No module named 'nvidia'")
+
+    monkeypatch.setattr("opensportslib.core.config.loader.importlib.util.find_spec", absent)
+    assert _dali_available() is False

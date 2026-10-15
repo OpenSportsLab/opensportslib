@@ -59,6 +59,15 @@ class LocalizationModel(BaseTaskModel):
                 set_split_source_path(self.config, "valid_data_frames", str(prepared.source_path))
             return str(prepared.annotation_path)
 
+        from opensportslib.datasets.hf_tracking import hf_tracking_source, prepare_hf_tracking_split, stage_tracking_files
+        if hf_tracking_source(self.config):
+            prepared = prepare_hf_tracking_split(self.config, split)
+            root = stage_tracking_files(prepared)
+            set_split_source_path(self.config, split, str(root))
+            if split == "valid":
+                set_split_source_path(self.config, "valid_data_frames", str(root))
+            return str(prepared.annotations_path)
+
         path = get_split_annotation_path(self.config, split)
         if path:
             return expand(path)

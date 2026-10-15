@@ -345,11 +345,9 @@ def extract_repo_paths_from_json(
                 path = inp.get("path")
                 if path:
                     repo_paths.append(str(path).lstrip("/"))
-                # player_joints_h5 / player_centroids_h5 inputs may carry a
-                # sidecar ball_path; download it alongside the primary input.
-                ball_path = inp.get("ball_path")
-                if ball_path:
-                    repo_paths.append(str(ball_path).lstrip("/"))
+                for key in ("ball_path", "metadata_path", "tf05_path", "tf08_path"):
+                    if inp.get(key):
+                        repo_paths.append(str(inp[key]).lstrip("/"))
 
     if not repo_paths:
         raise ValueError("No file paths found in the provided JSON (no inputs with 'path').")
@@ -568,6 +566,8 @@ def _download_parquet_split_and_convert(
                 extract_media=True,
                 output_media_root=output_dir,
             )
+        if not annotations_only:
+            _verify_tracking_download(str(output_json_path))
         write_hf_source_metadata_to_dataset_json(
             str(output_json_path),
             repo_id=cleaned_repo_id,
@@ -774,6 +774,7 @@ def _download_json_path_from_hf(
         )
         downloaded_count += 1
 
+    _verify_tracking_download(json_path)
     result["download_kind"] = "json"
     result["downloaded_file_count"] = downloaded_count
     _emit_progress(progress_cb, "Download completed.")
@@ -1038,7 +1039,7 @@ def _sample_requested_asset_paths(
     paths: list[str] = []
     seen: set[str] = set()
     for input_item in selected_inputs:
-        for key in ("path", "ball_path"):
+        for key in ("path", "ball_path", "metadata_path", "tf05_path", "tf08_path"):
             value = str(input_item.get(key) or "").strip()
             normalized = value.replace("\\", "/")
             if value and normalized not in seen:
@@ -1259,7 +1260,11 @@ def _download_parquet_sample_inputs(
             if not normalized or normalized in rows_by_path:
                 continue
             rows_by_path[normalized] = row
-            if normalized in requested_normalized and str(row.get("status") or "") == "ok":
+            if (
+                normalized in requested_normalized
+                and str(row.get("status") or "") == "ok"
+                and str(row.get("wds_member") or "").strip()
+            ):
                 available_requested.add(normalized)
         result["missing_paths"].extend(sorted(requested_normalized - available_requested))
         if not available_requested:
@@ -1381,8 +1386,10 @@ def _normalize_repo_path(path: str) -> str:
     return str(path or "").strip().replace("\\", "/").lstrip("/")
 
 
-def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
-    """Return referenced primary and companion inputs that are absent locally."""
+def find_missing_dataset_inputs(
+    dataset_json_path: str, *, input_types: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Return missing primary/companion files, optionally restricted by input type."""
     cleaned_json_path = Path(str(dataset_json_path or "").strip()).resolve()
     if not cleaned_json_path.is_file():
         raise ValueError(f"Dataset JSON does not exist: {cleaned_json_path}")
@@ -1401,10 +1408,15 @@ def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
         for input_item in sample.get("inputs", []) or []:
             if not isinstance(input_item, dict):
                 continue
+            if input_types is not None and input_item.get("type") not in input_types:
+                continue
             primary_path = str(input_item.get("path") or "").strip()
             for role, raw_path in (
                 ("primary", primary_path),
                 ("ball", str(input_item.get("ball_path") or "").strip()),
+                ("metadata", str(input_item.get("metadata_path") or "").strip()),
+                ("tf05", str(input_item.get("tf05_path") or "").strip()),
+                ("tf08", str(input_item.get("tf08_path") or "").strip()),
             ):
                 if not raw_path:
                     continue
@@ -1429,6 +1441,18 @@ def find_missing_dataset_inputs(dataset_json_path: str) -> list[dict[str, str]]:
                     }
                 )
     return missing
+
+def _verify_tracking_download(dataset_json_path: str) -> None:
+    missing = find_missing_dataset_inputs(
+        dataset_json_path, input_types={"tracking_tracab"}
+    )
+    if missing:
+        paths = ", ".join(item["path"] for item in missing)
+        raise FileNotFoundError(
+            f"Incomplete tracking_tracab download: {len(missing)} referenced "
+            f"file(s) are missing locally: {paths}. Check the source dataset "
+            "contains the DAT and every referenced JSON/XML companion."
+        )
 
 
 def download_dataset_missing_inputs_from_hf(
@@ -1530,12 +1554,10 @@ def _collect_local_input_upload_entries_from_json(
             path = str(inp.get("path") or "").strip()
             if path:
                 raw_paths.append(path)
-            # player_joints_h5 / player_centroids_h5 inputs may carry a sidecar
-            # ball_path pointing at a separate ball-tracking h5 file; include it
-            # alongside the primary input when present.
-            ball_path = str(inp.get("ball_path") or "").strip()
-            if ball_path:
-                raw_paths.append(ball_path)
+            for key in ("ball_path", "metadata_path", "tf05_path", "tf08_path"):
+                companion_path = str(inp.get(key) or "").strip()
+                if companion_path:
+                    raw_paths.append(companion_path)
 
             for raw_path in raw_paths:
                 local_path = raw_path if os.path.isabs(raw_path) else os.path.join(base_dir, raw_path)
@@ -1587,9 +1609,6 @@ def upload_dataset_inputs_from_json_to_hf(
     progress_cb: ProgressCallback | None = None,
     is_cancelled: CancelCheck | None = None,
 ) -> dict[str, Any]:
-    HfApi, _, _ = _import_hf_hub()
-    CommitOperationAdd = _import_hf_commit_operation_add()
-
     cleaned_repo_id = str(repo_id or "").strip()
     cleaned_json_path = os.path.abspath(str(json_path or "").strip())
     if not cleaned_repo_id:
@@ -1598,6 +1617,14 @@ def upload_dataset_inputs_from_json_to_hf(
         raise ValueError("json_path is required.")
     if not os.path.isfile(cleaned_json_path):
         raise ValueError(f"JSON file does not exist: {cleaned_json_path}")
+    missing_tracking = find_missing_dataset_inputs(
+        cleaned_json_path, input_types={"tracking_tracab"}
+    )
+    if missing_tracking:
+        raise MissingDatasetInputsError(missing_tracking)
+
+    HfApi, _, _ = _import_hf_hub()
+    CommitOperationAdd = _import_hf_commit_operation_add()
     cleaned_revision = str(revision or "").strip() or "main"
 
     effective_commit_message = (commit_message or "").strip() or "Upload dataset inputs from JSON"

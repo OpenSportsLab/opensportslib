@@ -54,3 +54,26 @@ def test_submit_session_inference_sends_session_without_media(monkeypatch):
     assert captured["path"] == "/predict"
     assert captured["fields"]["session_id"] == "session-0"
     assert captured["files"] == {}
+
+
+def test_manifest_upload_bundles_tracab_metadata_without_rewriting_source(tmp_path):
+    import copy
+    import json
+    import zipfile
+    from tests.helpers.tracab import write_tracab
+
+    descriptor = write_tracab(tmp_path / 'match.dat', sidecar=True)
+    descriptor['path'] = 'match.dat'
+    descriptor['metadata_path'] = 'match.metadata.json'
+    for key in ('tf05_path', 'tf08_path'):
+        descriptor[key] = str(Path(descriptor[key]).relative_to(tmp_path))
+    payload = {'data': [{'id': 'match', 'inputs': [descriptor]}]}
+    before = copy.deepcopy(payload)
+    manifest, archive = BaseTaskModel._stage_manifest_payload(None, payload, tmp_path, tmp_path / 'upload')
+    assert payload == before
+    staged = json.loads(manifest.read_text())['data'][0]['inputs'][0]
+    assert staged['metadata'] == descriptor['metadata']
+    with zipfile.ZipFile(archive) as bundle:
+        assert len(bundle.namelist()) == 4
+        for key in ('path', 'metadata_path', 'tf05_path', 'tf08_path'):
+            assert bundle.read(staged[key]) == (tmp_path / descriptor[key]).read_bytes()
