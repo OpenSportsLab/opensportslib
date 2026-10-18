@@ -9,6 +9,7 @@ from opensportslib.core.config.accessors import (
     get_component_params_by_kind,
     get_data_params,
     get_data_sampling,
+    get_data_modality,
 )
 from opensportslib.core.utils.config_normalize import normalize_builder_cfg
 
@@ -27,7 +28,7 @@ class TrackingModel(nn.Module):
         sampling = get_data_sampling(config)
         params = get_data_params(config)
         objects_cfg = params.get("objects", {}) if isinstance(params, dict) else {}
-        feature_dim = int(objects_cfg.get("feature_dim", 8))
+        feature_dim = int(objects_cfg.get("feature_dim", 73 if get_data_modality(config) == "skeleton_graph" else 8))
         self.num_frames = sampling.get("num_frames")
 
         def _component_cfg(kind):
@@ -73,7 +74,10 @@ class TrackingModel(nn.Module):
         seq_len = batch['seq_len']
         
         # single forward through backbone for all B*T graphs
-        graph_emb = self.backbone(x, edge_index, batch_idx)  # (B*T, H)
+        if batch.get("node_mask") is None:
+            graph_emb = self.backbone(x, edge_index, batch_idx)
+        else:
+            graph_emb = self.backbone(x, edge_index, batch_idx, batch["node_mask"], batch_size * seq_len)  # (B*T, H)
         
         # reshape to (B, T, H)
         x = graph_emb.view(batch_size, seq_len, -1)

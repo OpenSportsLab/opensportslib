@@ -17,6 +17,7 @@ from opensportslib.core.config.accessors import (
     get_data_augmentations,
     get_data_classes,
     get_data_params,
+    get_data_modality,
     get_runtime_modality,
     get_data_sampling,
     get_data_transform,
@@ -245,6 +246,10 @@ class LocalizationDataset(Dataset):
         annotation_path = getattr(cfg, "annotation_path", getattr(cfg, "path", None))
         source_path = getattr(cfg, "source_path", getattr(cfg, "video_path", None))
 
+        if get_data_modality(self.config) == "skeleton_graph":
+            from opensportslib.datasets.skeleton import SkeletonSpottingDataset
+            return SkeletonSpottingDataset(self.config, annotation_path, source_path,
+                                           self.split, cfg.overlap_len)
         if dataset_type == "SoccerNetClips" or dataset_type == "SoccerNetGames":
             if dataset_split is None:
                 dataset = SoccerNetGameClips(

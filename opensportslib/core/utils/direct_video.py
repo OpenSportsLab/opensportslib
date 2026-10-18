@@ -14,7 +14,10 @@ from opensportslib.core.config.accessors import get_data_classes, get_data_modal
 
 def validate_direct_video_config(config) -> None:
     modality = str(get_data_modality(config)).lower()
-    if modality != "video":
+    from opensportslib.preprocessing.config import is_skeleton_config
+    from opensportslib.core.config.accessors import get_input_cfg
+    skeleton_video = is_skeleton_config(config) and get_input_cfg(config).get("modality") == "video"
+    if modality != "video" and not skeleton_video:
         raise ValueError(
             f"Direct video inference requires a video-based config; configured modality is {modality!r}. "
             "Use infer(test_set=...) for feature, frame, or tracking inputs."

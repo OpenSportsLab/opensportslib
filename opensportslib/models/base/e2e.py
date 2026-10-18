@@ -73,7 +73,7 @@ class E2EModel(BaseRGBModel):
                 # notion, needs input_dim instead (see GraphSequenceEncoder).
                 from opensportslib.datasets.utils.tracking import FEATURE_DIM
 
-                default_args = {"input_dim": FEATURE_DIM}
+                default_args = {"input_dim": getattr(backbone, "input_dim", FEATURE_DIM)}
             else:
                 is_rgb = modality == "rgb"
                 in_channels = {"flow": 2, "bw": 1, "rgb": 3}[modality]
@@ -91,6 +91,17 @@ class E2EModel(BaseRGBModel):
 
         def forward(self, x):
             im_feat = self.backbone(x)
+            if hasattr(x, "time_mask") and x.time_mask is not None:
+                # Run the bidirectional temporal head only on real timesteps;
+                # right padding must not affect backward recurrent states.
+                lengths = x.time_mask.sum(1).tolist()
+                outputs = []
+                for row, length in enumerate(lengths):
+                    if length < 1:
+                        raise ValueError("Spotting windows require a valid timestep")
+                    pred = self.head(im_feat[row:row+1, :length])
+                    outputs.append(torch.nn.functional.pad(pred, (0, 0, 0, im_feat.shape[1]-length)))
+                return torch.cat(outputs, dim=-3 if outputs[0].ndim == 4 else 0)
             return self.head(im_feat)
 
         def print_stats(self):
@@ -124,6 +135,10 @@ class E2EModel(BaseRGBModel):
         # self.device = torch.device('cuda:{}'.format(0))
         self.device = device
         self._multi_gpu = multi_gpu
+        if backbone.type == "graph_conv_seq":
+            from opensportslib.core.config.accessors import get_data_params, get_data_modality
+            default_dim = 73 if get_data_modality(cfg) == "skeleton_graph" else 8
+            backbone.input_dim = get_data_params(cfg).get("objects", {}).get("feature_dim", default_dim)
         self._model = E2EModel.Impl(num_classes, backbone, head, clip_len, modality)
         self._model.print_stats()
         logging.info("Build criterion")
@@ -228,6 +243,7 @@ class E2EModel(BaseRGBModel):
                     frame = loader.dataset.load_frame_gpu(batch, self.device)
                     label = batch["label"].to(self.device)
 
+                time_mask = batch.get("time_mask")
                 label = (
                     label.flatten()
                     if len(label.shape) == 2
@@ -246,9 +262,12 @@ class E2EModel(BaseRGBModel):
                     # label=label.to(self.device)
 
                     for i in range(pred.shape[0]):
-                        loss += self.criterion(
-                            pred[i].reshape(-1, self._num_classes), label, **ce_kwargs
-                        )
+                        stage = pred[i].reshape(-1, self._num_classes)
+                        target = label
+                        if time_mask is not None:
+                            mask = time_mask.to(self.device).flatten().bool()
+                            stage, target = stage[mask], target[mask]
+                        loss += self.criterion(stage, target, **ce_kwargs)
                         # loss += F.cross_entropy(
                         #     pred[i].reshape(-1, self._num_classes), label,
                         #     **ce_kwargs)

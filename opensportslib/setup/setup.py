@@ -292,7 +292,46 @@ def verify():
     else:
         print("Running on CPU")
 
-def setup(dali=False, pyg=False, pyg_extensions=False, vqa_xvars=False, vqa_qwen=False):
+def install_pose():
+    """Opt-in profile; preserve the current Torch/OpenCV installations."""
+    import torch
+    python = sys.executable
+    cuda = torch.version.cuda
+    if not cuda or cuda.split('.')[0] not in {'12', '13'}:
+        raise RuntimeError('Pose setup requires an existing CUDA 12/13 PyTorch installation')
+    # cuDNN major versions must match the ONNX Runtime wheel.
+    if not torch.backends.cudnn.version() or torch.backends.cudnn.version() < 90000:
+        raise RuntimeError('Pose setup requires cuDNN 9; see the pose installation guide')
+    from importlib import metadata
+    try:
+        metadata.version('onnxruntime')
+    except metadata.PackageNotFoundError:
+        pass
+    else:
+        raise RuntimeError('Remove CPU onnxruntime before pose setup; CPU/GPU distributions share a module')
+    version = '1.20.2' if cuda.split('.')[0] == '12' else '1.31.0'
+    if cuda.split('.')[0] == '12' and platform.machine().lower() in {'aarch64','arm64'}:
+        try:
+            import onnxruntime as ort
+            available = 'CUDAExecutionProvider' in ort.get_available_providers()
+        except ImportError:
+            available = False
+        if not available:
+            raise RuntimeError('CUDA 12 ARM64 requires a platform-supplied ONNX Runtime CUDA wheel; '
+                               'install it first, then rerun setup --pose')
+        subprocess.check_call([python, '-m', 'pip', 'install', 'scipy>=1.13,<2'])
+    else:
+        subprocess.check_call([python, '-m', 'pip', 'install',
+                               f'onnxruntime-gpu=={version}', 'scipy>=1.13,<2'])
+    # RTMLib declares CPU ORT and two cv2 distributions. The low-level tools
+    # need only existing cv2/numpy/tqdm plus the selected GPU ORT package.
+    subprocess.check_call([python, '-m', 'pip', 'install', '--no-deps', 'rtmlib==0.0.16'])
+
+
+def setup(dali=False, pyg=False, pyg_extensions=False, vqa_xvars=False, vqa_qwen=False, pose=False):
+    if pose and not any((dali, pyg, pyg_extensions, vqa_xvars, vqa_qwen)):
+        install_pose()
+        return
     if pyg_extensions and not pyg:
         raise ValueError("--pyg_extensions requires --pyg")
     if pyg_extensions:
@@ -303,6 +342,8 @@ def setup(dali=False, pyg=False, pyg_extensions=False, vqa_xvars=False, vqa_qwen
         install_xvars_dependencies(XVARS_DEPENDENCY_PINS)
     if vqa_qwen:
         install_xvars_dependencies(QWEN_DEPENDENCY_PINS)
+    if pose:
+        install_pose()
     verify()
 
 
@@ -313,6 +354,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--pose", action="store_true")
     parser.add_argument("--dali", action="store_true")
     parser.add_argument("--pyg", action="store_true")
     parser.add_argument("--pyg_extensions", action="store_true")
@@ -327,4 +369,5 @@ if __name__ == "__main__":
         pyg_extensions=args.pyg_extensions,
         vqa_xvars=args.vqa_xvars,
         vqa_qwen=args.vqa_qwen,
+        pose=args.pose,
     )

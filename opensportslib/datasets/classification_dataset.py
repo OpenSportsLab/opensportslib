@@ -64,6 +64,9 @@ def build(config, annotations_path, processor=None, split="train"):
     """
     modality = get_data_modality(config).lower()
 
+    if modality == "skeleton_graph":
+        from opensportslib.datasets.skeleton import SkeletonClassificationDataset
+        return SkeletonClassificationDataset(config, annotations_path, split)
     if modality in ("tracking", "tracking_parquet", "tracking_tracab"):
         from opensportslib.datasets.hf_tracking import hf_tracking_source
 
@@ -123,7 +126,9 @@ class ClassificationDataset(Dataset):
             max_games = slicing_cfg.get("training_matches")
 
         annotation_input_type = str(get_data_modality(config)).lower()
-        if annotation_input_type == "tracking":
+        if annotation_input_type == "skeleton_graph":
+            annotation_input_type = "skeleton_cache"
+        elif annotation_input_type == "tracking":
             annotation_input_type = "tracking_parquet"
         elif annotation_input_type == "tracking_h5":
             annotation_input_type = get_data_params(config).get(

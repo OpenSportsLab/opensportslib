@@ -72,6 +72,7 @@ def _is_frames_npy_modality(config, modality=None):
 
 def _is_tracking_graph_modality(modality):
     return str(modality).lower() in {
+        "skeleton_graph",
         "tracking",
         "tracking_parquet",
         "tracking_tracab",
@@ -642,6 +643,8 @@ class MVTrainerClassification(BaseTrainerClassification):
             a tuple (logits, labels) on self.device.
         """
         mvclips = batch["pixel_values"].to(self.device).float()
+        if "node_mask" in batch:
+            tracking_batch["node_mask"] = batch["node_mask"].to(self.device)
         labels = batch.get("labels", None)
         if labels is not None:
             labels = labels.to(self.device)

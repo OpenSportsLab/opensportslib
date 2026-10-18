@@ -639,3 +639,14 @@ TRAIN:
 support local JSON, HF JSON and indexed TAR datasets. Configure the input's
 `params.annotation_head` to select a vocabulary such as `headers`. See the
 [TRACAB input and loader contract](../tracking_tracab.md) for a complete example.
+
+## Frozen skeleton preprocessing
+
+Set `DATA.inputs.video.representation: skeleton_graph`, with source modality
+`video` or `skeleton_cache`. Set `params.objects.feature_dim: 73`, configure
+`params.preprocessing.type: video_to_skeleton`, and use `graph_conv` for
+classification or `graph_conv_seq` for E2E spotting. Skeleton GIN uses
+`normalization: layernorm`; existing soccer defaults remain unchanged.
+See the [tennis examples](../../examples/tennis) and
+[preprocessing guide](../preprocessing/video-to-skeleton.md) for cache identity,
+optional `setup --pose`, masks, and window/NMS delay.

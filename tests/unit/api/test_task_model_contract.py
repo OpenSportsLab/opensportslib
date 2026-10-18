@@ -1041,3 +1041,53 @@ def test_vqa_qwen_test_set_infer_preserves_prediction_shape(vqa_config_path, tmp
     assert out["data"][0]["id"] == "action_0"
     assert out["data"][0]["question"] == "What happened?"
     assert out["data"][0]["answer_text"] == "qwen-dataset-answer"
+
+
+def test_skeleton_public_inference_and_metrics_remain_in_memory(tmp_path, monkeypatch):
+    import json
+    import numpy as np
+    from opensportslib.core.config.editable import Config
+    from opensportslib.preprocessing import SkeletonFrame
+    from opensportslib.preprocessing.cache import write_cache
+
+    frames=[]
+    for index in range(7):
+        f=SkeletonFrame.empty(2,timestamp=index/25,sample_time=index/25,frame_index=index,
+                              pts=index,time_base=(1,25),shot_id=0,image_size=(100,80))
+        f.player_valid[0]=True;f.track_ids[0]=0;f.boxes[0]=[10,10,30,60]
+        f.joints[0]=20;f.joint_valid[0]=True;f.confidence[0]=1
+        frames.append(f)
+    write_cache(tmp_path/'pose',frames,{'source_video_path':'original.mp4'},3)
+    for task,api_type in [('classification',ClassificationModel),('localization',LocalizationModel)]:
+        payload=Config.from_file(f'examples/tennis/{task}_skeleton.yaml').get_config()
+        payload['SYSTEM']['device']='cpu'
+        payload['SYSTEM']['paths']={k:str(tmp_path/task/k) for k in ('save_dir','work_dir','log_dir')}
+        payload['DATA']['common']['classes']=['swing','serve']
+        for split in payload['DATA']['common']['splits'].values():
+            split['source_path']=str(tmp_path);split['overlap_len']=2
+        sampling=payload['DATA']['inputs']['video']['sampling']
+        sampling.update(num_frames=4,clip_len=4)
+        payload['MODEL']['components']['tracking_encoder']['params']['num_layers']=1
+        if task=='classification':payload['MODEL']['components']['task_head']['params']['num_classes']=2
+        record={'id':'clip','inputs':[{'type':'skeleton_cache','path':'pose'}]}
+        if task=='classification':record['labels']={'action':{'label':'swing'}}
+        else:record['events']=[{'label':'swing','position_ms':80}]
+        path=tmp_path/f'{task}.json'
+        path.write_text(json.dumps({'labels':{'action':{'labels':['swing','serve']}},'data':[record]}))
+        api=api_type(config=Config(payload))
+        before={p for p in tmp_path.rglob('*') if p.is_file()}
+        result=api.infer(test_set=str(path),use_wandb=False)
+        assert result['data']
+        assert before=={p for p in tmp_path.rglob('*') if p.is_file()}
+        metrics=api.evaluate(test_set=str(path),predictions=result,use_wandb=False)
+        assert isinstance(metrics,dict)
+        if task=='localization':
+            assert result['data'][0]['inputs'][0]['path']=='original.mp4'
+            monkeypatch.setattr('opensportslib.preprocessing.session.iter_skeletons',lambda *a,**kw:iter(frames))
+            batches=list(api.infer_stream('original.mp4'))
+            assert [e for b in batches for e in b['data'][0]['events']]==result['data'][0]['events']
+        else:
+            monkeypatch.setattr('opensportslib.apis._skeleton.classification_frames',lambda *a,**kw:frames[:4])
+            direct=api.infer(video_path='stroke.mp4',use_wandb=False)
+            assert direct['data'][0]['id']=='stroke'
+        assert before=={p for p in tmp_path.rglob('*') if p.is_file()}

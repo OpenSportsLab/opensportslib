@@ -60,6 +60,31 @@ def _validate_canonical(cfg: dict[str, Any]) -> None:
                     f"IO.{section}.{public_name} references unknown component {component_id}"
                 )
 
+    for input_cfg in cfg.get("DATA", {}).get("inputs", {}).values():
+        if input_cfg.get("representation") == "skeleton_graph":
+            from opensportslib.preprocessing.config import validate_preprocessing
+            settings = dict(input_cfg.get("params", {}).get("preprocessing", {}))
+            settings["sample_fps"] = input_cfg.get("sampling", {}).get("extract_fps", 25)
+            validate_preprocessing(settings)
+            if input_cfg.get("modality") not in {"video", "skeleton_cache"}:
+                raise ValueError("skeleton_graph source modality must be video or skeleton_cache")
+            if input_cfg.get("params", {}).get("objects", {}).get("feature_dim", 73) != 73:
+                raise ValueError("COCO-17 player features require feature_dim=73")
+            encoder = next((c for c in components.values() if c.get("kind") == "encoder"), {})
+            if encoder.get("source", {}).get("name") not in {"graph_conv", "graph_conv_seq"}:
+                raise ValueError("skeleton_graph requires a graph encoder")
+            sampling = input_cfg.get("sampling", {})
+            length = sampling.get("clip_len", sampling.get("num_frames", 64))
+            if not isinstance(length, int) or length < 1:
+                raise ValueError("Skeleton window length must be a positive integer")
+            for split in cfg.get("DATA", {}).get("common", {}).get("splits", {}).values():
+                if (split.get("nms_window") or 0) < 0:
+                    raise ValueError("Skeleton nms_window must be nonnegative")
+                if not 0 <= split.get("overlap_len", length//2) < length:
+                    raise ValueError("Skeleton overlap_len must be less than clip_len")
+            if cfg.get("MODEL", {}).get("policies", {}).get("test_time_adaptation", {}).get("enabled"):
+                raise ValueError("Test-time adaptation is not supported for skeleton preprocessing")
+
     task = str(cfg.get("TASK", "")).lower()
     if task == "vqa":
         data_inputs = cfg.get("DATA", {}).get("inputs", {})

@@ -318,6 +318,8 @@ def get_input_cfg(cfg: Any, input_name: str | None = None) -> dict[str, Any]:
 
 def get_data_modality(cfg: Any) -> str:
     input_cfg = get_input_cfg(cfg)
+    if input_cfg.get("representation") == "skeleton_graph":
+        return "skeleton_graph"
     modality = input_cfg.get("modality") or input_cfg.get("representation") or "video"
     return str(modality)
 

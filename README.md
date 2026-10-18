@@ -307,3 +307,10 @@ input modality to `tracking_tracab`; reference the original metadata JSON with
 `metadata_path` and retain UTC period calibration and team codes in each input. `params.annotation_head` selects a head such as
 `action` or `headers`. See [the DAT contract and loading guide](docs/tracking_tracab.md) for the
 schema, configuration, caching and backward-compatible Parquet behavior.
+
+### Video-to-skeleton action inputs
+
+Frozen optional RTMLib preprocessing can feed player skeletons into the existing
+graph classification and spotting models. See the [video-to-skeleton guide](docs/preprocessing/video-to-skeleton.md)
+and the [tennis examples](examples/tennis). GPU throughput and public-tennis quality
+are not yet validated.
