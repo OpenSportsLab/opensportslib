@@ -21,7 +21,6 @@ from opensportslib.core.utils.config import expand, resolve_inference_class_meta
 
 def _is_tracking_graph_modality(modality):
     return str(modality).lower() in {
-        "skeleton_graph",
         "tracking",
         "tracking_parquet",
         "tracking_tracab",
@@ -165,10 +164,7 @@ class ClassificationModel(BaseTaskModel):
                     world_size=world_size,
                 )
                 if rank == 0 and return_queue is not None:
-                    if world_size > 1:
-                        return_queue.put(getattr(trainer, "predictions_path", None))
-                    else:
-                        return_queue.put(getattr(trainer, "predictions_payload", None))
+                    return_queue.put(getattr(trainer, "predictions_payload", None))
         finally:
             if rank == 0 and use_wandb and getattr(wandb, "run", None) is not None:
                 try:
@@ -349,10 +345,6 @@ class ClassificationModel(BaseTaskModel):
             raise ValueError("`remote_mode` is available only when `remote` is configured.")
         del kwargs
 
-        from opensportslib.preprocessing.config import is_skeleton_config
-        if is_skeleton_config(self.config):
-            return self._infer_skeleton(video_path, test_set, weights)
-
         if video_path is not None:
             from opensportslib.core.utils.direct_video import direct_video_manifest
             from opensportslib.core.utils.config import resolve_config_omega
@@ -384,84 +376,48 @@ class ClassificationModel(BaseTaskModel):
         use_ddp = use_ddp and world_size > 1
 
         ctx = mp.get_context("spawn")
-        queue = ctx.Queue()
+        manager = ctx.Manager() if use_ddp else None
+        queue = manager.Queue() if manager is not None else ctx.Queue()
 
-        if use_ddp:
-            mp.spawn(
-                ClassificationModel._worker_ddp,
-                args=(
-                    world_size,
-                    "infer",
-                    self.config_path,
-                    self.config,
-                    queue,
-                    None,
-                    None,
-                    test_set,
-                    effective_weights,
-                    use_wandb,
-                ),
-                nprocs=world_size,
-            )
-        else:
-            ClassificationModel._worker_ddp(
-                rank=0,
-                world_size=1,
-                mode="infer",
-                config_path=self.config_path,
-                config=self.config,
-                return_queue=queue,
-                test_set=test_set,
-                weights=effective_weights,
-                use_wandb=use_wandb,
-            )
+        try:
+            if use_ddp:
+                mp.spawn(
+                    ClassificationModel._worker_ddp,
+                    args=(
+                        world_size,
+                        "infer",
+                        self.config_path,
+                        self.config,
+                        queue,
+                        None,
+                        None,
+                        test_set,
+                        effective_weights,
+                        use_wandb,
+                    ),
+                    nprocs=world_size,
+                )
+            else:
+                ClassificationModel._worker_ddp(
+                    rank=0,
+                    world_size=1,
+                    mode="infer",
+                    config_path=self.config_path,
+                    config=self.config,
+                    return_queue=queue,
+                    test_set=test_set,
+                    weights=effective_weights,
+                    use_wandb=use_wandb,
+                )
 
-        predictions = queue.get()
+            predictions = queue.get()
+        finally:
+            if manager is not None:
+                manager.shutdown()
         if use_ddp and isinstance(predictions, str):
             with open(predictions, encoding="utf-8") as f:
                 predictions = json.load(f)
         return predictions
-
-    def _infer_skeleton(self, video_path, test_set, weights):
-        """Use the standard TrackingModel on frozen video/cache observations."""
-        import torch
-        from pathlib import Path
-        from datetime import date
-        from opensportslib.models.builder import build_model
-        from opensportslib.core.utils.config import resolve_config_omega, select_device
-        from opensportslib.core.config.accessors import get_data_sampling, get_data_classes
-        from opensportslib.core.utils.data import tracking_collate_fn
-        from opensportslib.preprocessing.records import frame_graph
-        from opensportslib.preprocessing.config import preprocessing_config
-        from opensportslib.apis._skeleton import classification_frames, manifest_sources
-
-        self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
-        self.config = resolve_inference_class_metadata(self.config)
-        effective_weights = weights or self.last_loaded_weights
-        if effective_weights and (self.model is None or self.last_loaded_weights != effective_weights):
-            self.load_weights(effective_weights)
-        device = select_device(self.config.SYSTEM)
-        if self.model is None:
-            self.model, self.processor = build_model(self.config, device)
-        self.model.to(device).eval()
-        settings = preprocessing_config(self.config)
-        count = int(get_data_sampling(self.config).get('num_frames', 64))
-        classes = get_data_classes(self.config)
-        sources = [(Path(video_path).stem, Path(video_path), False)] if video_path else manifest_sources(
-            self.config, self._resolve_split_path('test', test_set))
-        results = []
-        for identity, path, cached in sources:
-            frames = classification_frames(path, settings, count, cached)
-            batch = tracking_collate_fn([dict(id=identity, seq_len=count,
-                                               graphs=[frame_graph(f) for f in frames])])
-            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            with torch.inference_mode():
-                scores = torch.softmax(self.model(batch), dim=-1)[0]
-            index = int(scores.argmax())
-            results.append({'id': identity, 'labels': {'action': {
-                'label': classes[index], 'confidence': float(scores[index])}}})
-        return {'version': '2.0', 'task': 'action_classification', 'date': str(date.today()),
-                'metadata': {'type': 'predictions'}, 'data': results}
 
     @config_operation
     def evaluate(
@@ -495,12 +451,6 @@ class ClassificationModel(BaseTaskModel):
             )
 
         self.trainer = self.trainer or Trainer_Classification(self.config)
-        from opensportslib.preprocessing.config import is_skeleton_config
-        if is_skeleton_config(self.config):
-            from opensportslib.core.config.accessors import get_data_classes
-            classes = dict(enumerate(get_data_classes(self.config)))
-            return self.trainer.evaluate(pred_path=predictions, gt_path=test_set,
-                                         class_names=classes, exclude_labels=[])
         test_data = build_dataset(self.config, test_set, None, split="test")
         metrics = self.trainer.evaluate(
             pred_path=predictions,

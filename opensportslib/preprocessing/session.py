@@ -31,7 +31,7 @@ class SkeletonSession:
         self.closed = False
         self.finished = False
 
-    def push(self, image, *, timestamp, frame_index, pts, time_base):
+    def push(self, image, *, timestamp, frame_index, pts, time_base, sampled=False, sample_time=None):
         import cv2
         if self.closed or self.finished:
             raise RuntimeError('Skeleton session is finished or closed')
@@ -48,9 +48,10 @@ class SkeletonSession:
             self.shot_id += 1
             self.selector.reset()
             self.association.reset()
-        if timestamp + 1e-9 < self.next_time:
+        if not sampled and timestamp + 1e-9 < self.next_time:
             return []
-        sample_time = math.floor((timestamp+1e-9)*self.fps)/self.fps
+        if sample_time is None:
+            sample_time = timestamp if sampled else math.floor((timestamp+1e-9)*self.fps)/self.fps
         self.next_time = sample_time + 1/self.fps
         top_down = hasattr(self.backend, 'detect') and not getattr(self.backend, 'one_stage', False)
         if top_down:

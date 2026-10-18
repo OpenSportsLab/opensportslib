@@ -515,7 +515,7 @@ def infer_and_process_predictions_e2e(
     ):
         if batch_size > 1:
             # Batched by dataloader
-            _, batch_pred_scores = model.predict(clip["frame"])
+            _, batch_pred_scores = model.predict(clip if "video_meta" in clip else clip["frame"])
             for i in range(clip["frame"].shape[0]):
                 video = clip["video"][i]
                 scores, support = pred_dict[video]
@@ -537,7 +537,7 @@ def infer_and_process_predictions_e2e(
 
             start = clip["start"][0].item()
             # start=start-1
-            _, pred_scores = model.predict(clip["frame"][0])
+            _, pred_scores = model.predict(clip if "video_meta" in clip else clip["frame"][0])
             if start < 0:
                 pred_scores = pred_scores[:, -start:, :]
                 start = 0

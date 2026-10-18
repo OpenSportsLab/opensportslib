@@ -437,8 +437,10 @@ schema, configuration, caching and backward-compatible Parquet behavior.
 ## Skeleton video inputs
 
 `ClassificationModel.infer(video_path=...)` accepts a stroke clip with a
-`skeleton_graph` config. `LocalizationModel.infer_stream(video_path=...)` yields
+`video/raw` config with `MODEL.components.pose_tracking`. `LocalizationModel.infer_stream(video_path=...)` yields
 finalized OSL event batches from shot-local bidirectional windows; close the
-iterator when stopping early. Cached training uses `skeleton_cache` inputs.
+iterator when stopping early. Training keeps ordinary video inputs, supports
+multiview classification, and optionally caches exact clip extraction inside the
+model. `warm-cache` explicitly prepares caches; old skeleton dataset types are removed.
 Inference returns predictions in memory; use `save_predictions(...)` explicitly.
 See the [extraction, caching, timing, and installation guide](../../docs/preprocessing/video-to-skeleton.md).

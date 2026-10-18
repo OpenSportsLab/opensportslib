@@ -1,13 +1,28 @@
 """Shared preprocessing configuration without importing inference runtimes."""
-from opensportslib.core.config.accessors import get_input_cfg, get_data_params, get_data_sampling
+from opensportslib.core.config.accessors import get_component_by_kind, get_data_sampling
 
 
-def is_skeleton_config(config):
-    return get_input_cfg(config).get('representation') == 'skeleton_graph'
+def pose_component(config):
+    if isinstance(config, dict):
+        components = config.get('MODEL', {}).get('components', {})
+        component = next((c for c in components.values() if c.get('kind') == 'preprocessor'), None)
+    else:
+        component = get_component_by_kind(config, 'preprocessor')
+    if component and component.get('source', {}).get('name') == 'pose_tracking':
+        return component
+    return None
+
+
+def requires_raw_video(config):
+    """Input capability lookup; does not import torch or a pose runtime."""
+    return pose_component(config) is not None
 
 
 def preprocessing_config(config):
-    cfg = dict(get_data_params(config).get('preprocessing', {}))
+    component = pose_component(config)
+    if component is None:
+        raise ValueError('Define MODEL.components.pose_tracking with kind=preprocessor')
+    cfg = dict(component.get('params', {}))
     cfg['sample_fps'] = float(get_data_sampling(config).get('extract_fps', 25))
     return cfg
 
@@ -29,5 +44,9 @@ def validate_preprocessing(cfg):
     if cfg.get('selection', 'tennis_conservative') not in {'tennis_conservative', 'all_people'}:
         raise ValueError('Unknown player selection policy')
     mode = cfg.get('cache', {}).get('mode', 'off')
-    if mode not in {'off', 'read'}:
-        raise ValueError('Inference cache mode must be off or read; use extract() to write')
+    if mode is False:  # YAML 1.1 treats an unquoted `off` as boolean false.
+        cfg['cache']['mode'] = mode = 'off'
+    if mode not in {'off', 'read', 'read_write'}:
+        raise ValueError('Cache mode must be off, read or read_write; use extract to warm caches')
+    if mode != 'off' and not cfg.get('cache', {}).get('path'):
+        raise ValueError('Enabled clip caching requires cache.path')

@@ -310,7 +310,8 @@ schema, configuration, caching and backward-compatible Parquet behavior.
 
 ### Video-to-skeleton action inputs
 
-Frozen optional RTMLib preprocessing can feed player skeletons into the existing
-graph classification and spotting models. See the [video-to-skeleton guide](docs/preprocessing/video-to-skeleton.md)
+A frozen optional RTMLib component inside `MODEL` converts ordinary video-loader
+batches into player graphs for classification and spotting. Training supports
+live clip extraction, optional exact-clip caching and multiview classification. See the [video-to-skeleton guide](docs/preprocessing/video-to-skeleton.md)
 and the [tennis examples](examples/tennis). GPU throughput and public-tennis quality
 are not yet validated.

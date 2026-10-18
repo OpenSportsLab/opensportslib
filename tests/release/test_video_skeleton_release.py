@@ -14,7 +14,12 @@ from tests.release._release_common import (
 pytestmark = [pytest.mark.release, pytest.mark.gpu, pytest.mark.network, pytest.mark.pretrained]
 
 
-def test_public_tennis_video_skeleton_gpu():
+@pytest.mark.parametrize('task,decoder,multiview', [
+    ('classification','opencv',False), ('classification','dali',False),
+    ('classification','opencv',True), ('classification','dali',True),
+    ('localization','opencv',False), ('localization','dali',False),
+])
+def test_public_tennis_video_skeleton_gpu(task,decoder,multiview):
     require_release_enabled()
     if os.environ.get('OSL_RELEASE_POSE') != '1':
         pytest.skip('Pose release verification is additionally opt-in with OSL_RELEASE_POSE=1')
@@ -35,8 +40,10 @@ def test_public_tennis_video_skeleton_gpu():
     from opensportslib.preprocessing.config import preprocessing_config
     from opensportslib.preprocessing import extract, iter_skeletons, SkeletonCache, player_features
     from opensportslib.preprocessing.benchmark import benchmark
-    config = dict_to_namespace(Config.from_file(os.environ.get(
-        'OSL_RELEASE_POSE_CONFIG','examples/tennis/localization_skeleton.yaml')).get_config())
+    payload = Config.from_file(os.environ.get(
+        'OSL_RELEASE_POSE_'+task.upper()+'_CONFIG', f'examples/tennis/{task}_skeleton.yaml')).get_config()
+    payload['DATA']['common']['runtime']['loader_backend']=decoder
+    config=dict_to_namespace(payload)
     settings = preprocessing_config(config)
     output = OUTPUT_DIR/'video-skeleton'/uuid.uuid4().hex
     output.mkdir(parents=True)
@@ -50,8 +57,10 @@ def test_public_tennis_video_skeleton_gpu():
             np.testing.assert_array_equal(player_features(live),player_features(cached))
             assert live.timestamp==cached.timestamp and live.shot_id==cached.shot_id
             np.testing.assert_array_equal(live.track_ids,cached.track_ids)
-        report=benchmark(config,video,output/f'{index}-benchmark.json',repeats=2)
+        report=benchmark(config,video,output/f'{index}-benchmark.json',repeats=2,
+                         view_paths=[video] if multiview else None)
         assert all(run['source_fps_processed']>0 for run in report['runs'])
         assert not any(run['memory_sampling_error'] for run in report['runs'])
         record_release_metadata('pose_benchmark',video=entry['path'],cases=entry['cases'],
+                                task=task,decoder=decoder,multiview=multiview,
                                 provenance=report['provenance'],report=str(output/f'{index}-benchmark.json'))

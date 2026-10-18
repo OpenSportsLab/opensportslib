@@ -1,4 +1,4 @@
-# Video inference; training annotations reference explicitly extracted skeleton_cache directories.
+# Ordinary video annotations; frozen pose/tracking is part of MODEL.
 TASK: localization
 VERSION: 2
 SYSTEM:
@@ -26,7 +26,7 @@ DATA:
       loader_backend: opencv
     splits:
       train:
-        type: SkeletonSpotting
+        type: VideoGameWithOpencv
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/train.json
         dataloader:
@@ -39,7 +39,7 @@ DATA:
         nms_window: 2
         results: tennis
       valid:
-        type: SkeletonSpotting
+        type: VideoGameWithOpencv
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/valid.json
         dataloader:
@@ -52,7 +52,7 @@ DATA:
         nms_window: 2
         results: tennis
       test:
-        type: SkeletonSpotting
+        type: VideoGameWithOpencvVideo
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/test.json
         dataloader:
@@ -65,7 +65,7 @@ DATA:
         nms_window: 2
         results: tennis
       valid_data_frames:
-        type: SkeletonSpotting
+        type: VideoGameWithOpencvVideo
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/valid.json
         dataloader:
@@ -80,34 +80,21 @@ DATA:
   inputs:
     video:
       modality: video
-      representation: skeleton_graph
+      representation: raw
       source:
         format: video
       sampling:
         extract_fps: 25
         clip_len: 64
         epoch_num_frames: 64000
+        input_fps: 25
       params:
-        preprocessing:
-          type: video_to_skeleton
-          backend: rtmlib
-          detector: yolox_m
-          pose: rtmpose_s
-          device: cuda:0
-          max_players: 2
-          max_candidates: 8
-          selection: tennis_conservative
-          track_retention_seconds: 0.5
-          cache:
-            mode: 'off'
-        objects:
-          num_objects: 2
-          feature_dim: 73
         mixup: false
         dilate_len: 0
+        view_type: single
 MODEL:
   schema_version: 3
-  task: classification
+  task: localization
   runtime:
     dtype: fp32
     device: auto
@@ -121,6 +108,23 @@ MODEL:
     map_location: null
     format: auto
   components:
+    pose_tracking:
+      kind: preprocessor
+      source:
+        provider: opensportslib
+        registry: preprocessor
+        name: pose_tracking
+      params:
+        type: video_to_skeleton
+        backend: rtmlib
+        detector: yolox_m
+        pose: rtmpose_s
+        max_players: 2
+        max_candidates: 8
+        selection: tennis_conservative
+        track_retention_seconds: 0.5
+        cache:
+          mode: 'off'
     tracking_encoder:
       kind: encoder
       source:
@@ -146,6 +150,8 @@ MODEL:
         type: gru
       overrides: {}
   topology:
+  - from: pose_tracking
+    to: tracking_encoder
   - from: tracking_encoder
     to: task_head
   policies: {}
@@ -186,7 +192,7 @@ TRAIN:
     save_best: true
 IO:
   inputs:
-    video: tracking_encoder
+    video: pose_tracking
     label: task_head
   outputs:
     logits: task_head

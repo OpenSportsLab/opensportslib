@@ -121,3 +121,43 @@ class SkeletonCache:
     def __iter__(self):
         for index in range(len(self)):
             yield self[index]
+
+
+def warm_clip_cache(config, destination, split='train', max_clips=None):
+    """Explicit cache writes; annotations continue to reference source videos.
+
+    Random spotting windows are a seeded sample, not exhaustive coverage. A
+    read-only training run rejects any request that was not warmed exactly.
+    """
+    import random
+    import torch
+    from opensportslib.core.config.accessors import get_split_annotation_path, get_system_seed
+    from opensportslib.core.utils.config import select_device
+    from opensportslib.datasets.builder import build_dataset
+    from opensportslib.datasets.video_raw import build_video_loader
+    from opensportslib.models.preprocessors import PoseTracking
+    from .config import preprocessing_config
+    if max_clips is not None and max_clips < 1:
+        raise ValueError('max_clips must be positive')
+    seed=get_system_seed(config)
+    random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
+    dataset=build_dataset(config,get_split_annotation_path(config,split),split=split)
+    if config.TASK.lower()=='localization':
+        wrapper=dataset
+        dataset=wrapper.building_dataset(wrapper.cfg,gpu=0,default_args=wrapper.default_args)
+    if hasattr(dataset, 'loader'):
+        dataset=dataset.dataset
+    loader=build_video_loader(dataset,batch_size=1,num_workers=0,shuffle=False)
+    settings=preprocessing_config(config)
+    settings['cache']={'mode':'read_write','path':str(destination)}
+    frontend=PoseTracking(settings).to(select_device(config.SYSTEM))
+    count=0
+    try:
+        for batch in loader:
+            frontend(batch)
+            count+=len(batch['video_meta'])
+            if max_clips is not None and count>=max_clips:
+                break
+    finally:
+        frontend.close()
+    return count

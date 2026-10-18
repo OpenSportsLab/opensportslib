@@ -70,8 +70,8 @@ For remote prediction, construct a wrapper with `remote=...` and use its normal 
 ## Frozen skeleton action inputs
 
 The existing graph classification and E2E spotting models also accept frozen
-video-to-skeleton preprocessing. Training uses explicitly extracted caches;
-inference can extract directly from a video. Windowed streaming retains
+model-owned video-to-skeleton preprocessing with ordinary video annotations/loaders.
+Training extracts clips live with optional exact-clip caching; inference can extract directly from a video. Windowed streaming retains
 bidirectional lookahead and returns finalized event batches. See the
 [video-to-skeleton guide](../preprocessing/video-to-skeleton.md) for installation,
 examples, limitations, and the public-tennis benchmark procedure.

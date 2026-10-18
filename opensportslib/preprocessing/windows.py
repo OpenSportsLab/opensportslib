@@ -74,4 +74,5 @@ def sequence_batch(window):
     import torch
     batch = _flatten_graphs_to_batch([[frame_graph(f) for f in window.frames]])
     batch.time_mask = torch.as_tensor(window.valid[None])
+    batch.shot_ids = torch.tensor([[f.shot_id for f in window.frames]])
     return batch

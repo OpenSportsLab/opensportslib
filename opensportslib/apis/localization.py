@@ -141,10 +141,6 @@ class LocalizationModel(BaseTaskModel):
             dataloader.pin_memory = False
 
     def _adapt_hf_backend_for_device(self, weights: str | None) -> None:
-        from opensportslib.preprocessing.config import is_skeleton_config
-        if is_skeleton_config(self.config):
-            set_loader_backend(self.config, "opencv")
-            return
         if not self._is_hf_repo_weights(weights):
             return
 
@@ -443,7 +439,7 @@ class LocalizationModel(BaseTaskModel):
         logging.info(f"Total Execution Time is {time.time()-start} seconds")
         return self.best_checkpoint
 
-    def _prepare_skeleton_model(self, weights=None):
+    def _prepare_streaming_model(self, weights=None):
         from opensportslib.core.utils.config import resolve_config_omega, select_device
         from opensportslib.models.builder import build_model
         self.config = self._effective_config(resolve_config_omega(self.config, weights=weights))
@@ -461,19 +457,19 @@ class LocalizationModel(BaseTaskModel):
         This uses completed bidirectional windows, not causal prediction.
         Closing the iterator releases the per-video extraction session.
         """
-        from opensportslib.preprocessing.config import is_skeleton_config, preprocessing_config
-        from opensportslib.preprocessing.session import iter_skeletons
-        from opensportslib.apis._skeleton import spotting_events
+        from opensportslib.preprocessing.config import requires_raw_video
+        from opensportslib.apis._streaming import spotting_events
         from opensportslib.metrics.localization_metric import build_snpro_prediction_json
         from opensportslib.core.config.accessors import get_data_sampling
-        if self.is_remote or not is_skeleton_config(self.config):
-            raise ValueError('infer_stream requires a local skeleton_graph spotting config')
-        model = self._prepare_skeleton_model(weights)
+        if self.is_remote or not requires_raw_video(self.config):
+            raise ValueError('infer_stream requires a local pose_tracking spotting model')
+        model = self._prepare_streaming_model(weights)
         config = self.config
-        fps = float(get_data_sampling(config).get('extract_fps', 25))
+        from opensportslib.datasets.video_raw import effective_fps
+        fps = effective_fps(video_path, float(get_data_sampling(config).get('extract_fps', 25)))
 
         def stream():
-            events = spotting_events(model, config, iter_skeletons(video_path, preprocessing_config(config)))
+            events = spotting_events(model, config, model.preprocessor.iter_video(video_path, config), fps=fps)
             try:
                 for batch in events:
                     yield build_snpro_prediction_json([{'video': str(video_path), 'fps': fps, 'events': batch}],
@@ -482,23 +478,26 @@ class LocalizationModel(BaseTaskModel):
                 events.close()
         return stream()
 
-    def _infer_skeleton(self, video_path, test_set, weights):
+    def _infer_streaming(self, video_path, test_set, weights):
         from pathlib import Path
-        from opensportslib.apis._skeleton import manifest_sources, frames_for_source, spotting_events, source_video_name
-        from opensportslib.preprocessing.config import preprocessing_config
+        from opensportslib.apis._streaming import manifest_sources, spotting_events
         from opensportslib.core.config.accessors import get_data_sampling
         from opensportslib.metrics.localization_metric import build_snpro_prediction_json
-        model = self._prepare_skeleton_model(weights)
-        settings = preprocessing_config(self.config)
+        model = self._prepare_streaming_model(weights)
         fps = float(get_data_sampling(self.config).get('extract_fps', 25))
-        sources = [(Path(video_path).stem, Path(video_path), False)] if video_path else manifest_sources(
+        sources = [(Path(video_path).stem, Path(video_path), {'start_time_ms':0,'end_time_ms':None,'output_path':str(video_path)})] if video_path else manifest_sources(
             self.config, self._resolve_split_path('test', test_set))
         predictions = []
-        for identity, path, cached in sources:
+        for identity, path, segment in sources:
+            from opensportslib.datasets.video_raw import effective_fps
+            rate = effective_fps(path, fps)
+            observations = model.preprocessor.iter_video(path, self.config,
+                start_time_ms=segment['start_time_ms'], end_time_ms=segment['end_time_ms'])
             events = []
-            for batch in spotting_events(model, self.config, frames_for_source(path, settings, cached)):
+            for batch in spotting_events(model, self.config, observations, fps=rate,
+                                         offset_seconds=segment['start_time_ms']/1000):
                 events.extend(batch)
-            predictions.append({'video': source_video_name(path, cached), 'fps': fps, 'events': events})
+            predictions.append({'video': segment['output_path'], 'fps': rate, 'events': events})
         return build_snpro_prediction_json(predictions, split='test')
 
     @config_operation
@@ -572,9 +571,9 @@ class LocalizationModel(BaseTaskModel):
             return self.wait_for_remote_result(job["job_id"])["result"]["predictions"]
         if remote_mode_provided:
             raise ValueError("`remote_mode` is available only when `remote` is configured.")
-        from opensportslib.preprocessing.config import is_skeleton_config
-        if is_skeleton_config(self.config):
-            return self._infer_skeleton(video_path, test_set, weights)
+        from opensportslib.preprocessing.config import requires_raw_video
+        if requires_raw_video(self.config):
+            return self._infer_streaming(video_path, test_set, weights)
         if video_path is not None:
             from opensportslib.core.utils.direct_video import direct_video_manifest
             from opensportslib.core.utils.config import resolve_config_omega
@@ -679,9 +678,9 @@ class LocalizationModel(BaseTaskModel):
 
         del kwargs
 
-        from opensportslib.preprocessing.config import is_skeleton_config
-        if is_skeleton_config(self.config):
-            from opensportslib.apis._skeleton import evaluate_spotting
+        from opensportslib.preprocessing.config import requires_raw_video
+        if requires_raw_video(self.config):
+            from opensportslib.apis._streaming import evaluate_spotting
             test_set = self._resolve_split_path("test", test_set)
             if predictions is None:
                 predictions = self.infer(test_set=test_set, weights=weights, use_wandb=use_wandb)

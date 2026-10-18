@@ -64,8 +64,9 @@ class E2EModel(BaseRGBModel):
             clip_len (int): the length of the clip.
         """
 
-        def __init__(self, num_classes, backbone, head, clip_len, modality):
+        def __init__(self, num_classes, backbone, head, clip_len, modality, preprocessor=None):
             super().__init__()
+            self.preprocessor = preprocessor
 
             default_args = None
             if backbone.type == "graph_conv_seq":
@@ -90,18 +91,24 @@ class E2EModel(BaseRGBModel):
             self.head = build_head(head)
 
         def forward(self, x):
+            if self.preprocessor is not None and isinstance(x, dict):
+                x = self.preprocessor(x)
             im_feat = self.backbone(x)
             if hasattr(x, "time_mask") and x.time_mask is not None:
-                # Run the bidirectional temporal head only on real timesteps;
-                # right padding must not affect backward recurrent states.
-                lengths = x.time_mask.sum(1).tolist()
+                from opensportslib.models.preprocessors import temporal_segments
                 outputs = []
-                for row, length in enumerate(lengths):
-                    if length < 1:
-                        raise ValueError("Spotting windows require a valid timestep")
-                    pred = self.head(im_feat[row:row+1, :length])
-                    outputs.append(torch.nn.functional.pad(pred, (0, 0, 0, im_feat.shape[1]-length)))
-                return torch.cat(outputs, dim=-3 if outputs[0].ndim == 4 else 0)
+                shots = getattr(x, 'shot_ids', None)
+                for row in range(len(im_feat)):
+                    parts = []
+                    for start, stop in temporal_segments(x.time_mask[row], shots[row] if shots is not None else None):
+                        pred = self.head(im_feat[row:row+1, start:stop])
+                        parts.append(torch.nn.functional.pad(pred, (0, 0, start, im_feat.shape[1]-stop)))
+                    if parts:
+                        outputs.append(sum(parts))
+                    else:
+                        pred = self.head(im_feat[row:row+1, :1])*0
+                        outputs.append(torch.nn.functional.pad(pred, (0, 0, 0, im_feat.shape[1]-1)))
+                return torch.cat(outputs, dim=1 if outputs[0].ndim == 4 else 0)
             return self.head(im_feat)
 
         def print_stats(self):
@@ -135,11 +142,15 @@ class E2EModel(BaseRGBModel):
         # self.device = torch.device('cuda:{}'.format(0))
         self.device = device
         self._multi_gpu = multi_gpu
+        from opensportslib.models.preprocessors import build_preprocessor
+        preprocessor = build_preprocessor(cfg)
+        if preprocessor is not None and multi_gpu:
+            raise ValueError('pose_tracking needs one model per GPU process; disable legacy E2E DataParallel multi_gpu')
         if backbone.type == "graph_conv_seq":
-            from opensportslib.core.config.accessors import get_data_params, get_data_modality
-            default_dim = 73 if get_data_modality(cfg) == "skeleton_graph" else 8
-            backbone.input_dim = get_data_params(cfg).get("objects", {}).get("feature_dim", default_dim)
-        self._model = E2EModel.Impl(num_classes, backbone, head, clip_len, modality)
+            from opensportslib.core.config.accessors import get_data_params
+            backbone.input_dim = (preprocessor.output_spec['feature_dim'] if preprocessor is not None
+                else get_data_params(cfg).get("objects", {}).get("feature_dim", 8))
+        self._model = E2EModel.Impl(num_classes, backbone, head, clip_len, modality, preprocessor)
         self._model.print_stats()
         logging.info("Build criterion")
         self.criterion = build_criterion(cfg.TRAIN.criterion)
@@ -156,6 +167,11 @@ class E2EModel(BaseRGBModel):
         self._multi_gpu = multi_gpu
         self._num_classes = num_classes
         self._test_time_adapter = None
+
+    @property
+    def preprocessor(self):
+        model = self._model.module if hasattr(self._model, 'module') else self._model
+        return model.preprocessor
 
     def configure_test_time_adaptation(self, adaptation_cfg=None):
         """Attach a fresh test-time adaptation tool to the loaded source model.
@@ -237,13 +253,15 @@ class E2EModel(BaseRGBModel):
         with torch.no_grad() if optimizer is None else nullcontext():
             for batch_idx, batch in enumerate(tqdm(loader)):
                 if dali:
-                    frame = batch["frame"].to(self.device)
+                    frame = batch["frame"] if "video_meta" in batch else batch["frame"].to(self.device)
                     label = batch["label"].to(self.device)
                 else:
                     frame = loader.dataset.load_frame_gpu(batch, self.device)
                     label = batch["label"].to(self.device)
 
                 time_mask = batch.get("time_mask")
+                if 'video_meta' in batch:
+                    frame = {**batch, 'frame': frame}
                 label = (
                     label.flatten()
                     if len(label.shape) == 2
@@ -267,7 +285,7 @@ class E2EModel(BaseRGBModel):
                         if time_mask is not None:
                             mask = time_mask.to(self.device).flatten().bool()
                             stage, target = stage[mask], target[mask]
-                        loss += self.criterion(stage, target, **ce_kwargs)
+                        loss += self.criterion(stage, target, **ce_kwargs) if len(target) else stage.sum()*0
                         # loss += F.cross_entropy(
                         #     pred[i].reshape(-1, self._num_classes), label,
                         #     **ce_kwargs)
@@ -305,7 +323,9 @@ class E2EModel(BaseRGBModel):
         except ImportError:
             _PyGData = None
 
-        if _PyGData is not None and isinstance(seq, _PyGData):
+        if isinstance(seq, dict) and 'video_meta' in seq:
+            pass  # The frontend transfers one image at a time to its runtime.
+        elif _PyGData is not None and isinstance(seq, _PyGData):
             # tracking graph batch (Batch is a subclass of Data): no
             # tensor-shape reasoning applies, just move it to device.
             seq = seq.to(self.device)

@@ -8,32 +8,18 @@ import numpy as np
 from opensportslib.core.config.accessors import (
     get_data_sampling, get_data_classes, get_split_cfg,
 )
-from opensportslib.preprocessing.session import iter_skeletons
-from opensportslib.preprocessing.cache import SkeletonCache
 from opensportslib.preprocessing.windows import iter_windows, RollingScores, sequence_batch
-from opensportslib.preprocessing.sampling import classification_frames
-
-
-def frames_for_source(path, settings, cached=False):
-    return iter(SkeletonCache(path)) if cached else iter_skeletons(path, settings)
-
-
-def source_video_name(path, cached):
-    if cached:
-        return SkeletonCache(path).manifest['identity'].get('source_video_path', str(path))
-    return str(path)
 
 
 def manifest_sources(config, annotation_path):
-    """Resolve exactly one video/cache per OSL action record."""
+    """Resolve video sources from ordinary action annotations."""
     root = Path(getattr(get_split_cfg(config, 'test'), 'source_path', '.') or '.')
     document = json.loads(Path(annotation_path).read_text())
+    from opensportslib.core.utils.load_annotations import expand_localization_intervals
     for record in document['data']:
-        sources = [i for i in record.get('inputs', []) if i.get('type') in {'video', 'skeleton_cache'}]
-        if len(sources) != 1:
-            raise ValueError('Skeleton action inference requires one video or skeleton_cache per record')
-        item = sources[0]
-        yield record.get('id', Path(item['path']).stem), root / item['path'], item['type'] == 'skeleton_cache'
+        for segment in expand_localization_intervals(record):
+            segment['output_path'] = str(root / segment['logical_path'])
+            yield segment['id'], root / segment['source_path'], segment
 
 
 class EventFinalizer:
@@ -42,31 +28,35 @@ class EventFinalizer:
     Keep raw neighboring scores even when their own event was suppressed.
     This matches non_maximum_supression rather than greedy peak removal.
     """
-    def __init__(self, classes, fps, radius=0, threshold=.01, observer=None):
+    def __init__(self, classes, fps, radius=0, threshold=.01, observer=None, offset_seconds=0.):
         self.observer = observer
+        self.offset_seconds = offset_seconds
         self.classes, self.fps = classes, fps
         self.radius, self.threshold = int(radius), threshold
         self.pending, self.history = deque(), deque()
 
+    def _index(self, frame):
+        return int((frame.timestamp-self.offset_seconds)*self.fps+1e-7)
+
     def push(self, frame, scores):
         self.pending.append((frame, scores))
-        current = int(frame.timestamp*self.fps)
-        while self.pending and current >= int(self.pending[0][0].timestamp*self.fps)+self.radius:
+        current = self._index(frame)
+        while self.pending and current >= self._index(self.pending[0][0])+self.radius:
             yield from self._pop()
 
     def _pop(self):
         from opensportslib.metrics.localization_metric import frame_score_events
         frame, scores = self.pending.popleft()
-        index = int(frame.timestamp*self.fps)
-        while self.history and int(self.history[0][0].timestamp*self.fps) < index-self.radius:
+        index = self._index(frame)
+        while self.history and self._index(self.history[0][0]) < index-self.radius:
             self.history.popleft()
         neighbors = list(self.history) + list(self.pending)
         row = np.asarray(scores).copy()
         for other, other_scores in neighbors:
-            other_index = int(other.timestamp*self.fps)
+            other_index = self._index(other)
             if other_index != index and abs(other_index-index) <= self.radius:
                 row[np.asarray(other_scores) > scores] = -np.inf
-        events = frame_score_events(row, self.classes, int(frame.timestamp*1000), index, self.threshold)
+        events = frame_score_events(row, self.classes, int((frame.timestamp-self.offset_seconds)*1000+1e-7), index, self.threshold)
         self.history.append((frame, scores))
         if self.observer is not None:
             self.observer(frame, scores)
@@ -78,16 +68,16 @@ class EventFinalizer:
         self.history.clear()
 
 
-def spotting_events(model, config, frames, observer=None):
+def spotting_events(model, config, frames, observer=None, *, fps=None, offset_seconds=0.):
     """Yield finalized event batches; retain O(window + suppression radius)."""
     sampling = get_data_sampling(config)
     length = int(sampling.get('clip_len', 64))
     split = get_split_cfg(config, 'test')
     overlap = int(getattr(split, 'overlap_len', length//2))
-    fps = float(sampling.get('extract_fps', 25))
+    fps = float(fps if fps is not None else sampling.get('extract_fps', 25))
     rolling = RollingScores()
     finalizer = EventFinalizer(get_data_classes(config), fps,
-                               getattr(split, 'nms_window', 0) or 0, observer=observer)
+                               getattr(split, 'nms_window', 0) or 0, observer=observer, offset_seconds=offset_seconds)
     shot = None
 
     def finalized(rows):
@@ -137,17 +127,22 @@ def evaluate_spotting(config, annotation_path, predictions):
     sources = list(manifest_sources(config, annotation_path))
     truth = []
     expected = {}
-    for record, (identity, path, cached) in zip(document['data'], sources):
+    for identity, path, segment in sources:
+        if segment['annotation_status'] != 'verified':
+            continue
         events = [dict(label=e['label'], frame=int(float(e['position_ms'])*fps/1000))
-                  for e in record.get('events', [])]
-        name = source_video_name(path, cached)
+                  for e in segment['events']]
+        name = segment['output_path']
         truth.append({'path': name, 'events': events})
         expected[name] = {e['frame']: classes[e['label']] for e in events}
     pred = []
     f1 = ForegroundF1()
     for record in predictions['data']:
         path = record['inputs'][0]['path']
-        events = record['events']
+        if path not in expected:
+            continue
+        # A common evaluation clock supports videos with different effective FPS.
+        events = [{**e, 'frame': int(float(e['position_ms'])*fps/1000)} for e in record['events']]
         pred.append({'video': path, 'events': events})
         # Existing event JSON can contain multiple classes at a frame; choose
         # the strongest emitted event for exact-frame foreground F1.

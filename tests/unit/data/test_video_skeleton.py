@@ -167,37 +167,6 @@ def test_configuration_errors_and_optional_runtime_isolation():
         with pytest.raises(ValueError,match=match):validate_preprocessing(cfg)
 
 
-def test_cached_spotting_dataset_labels_padding_and_collation(tmp_path):
-    import torch
-    from opensportslib.core.config.editable import Config
-    from opensportslib.core.config.runtime_adapter import dict_to_namespace
-    from opensportslib.datasets.skeleton import SkeletonSpottingDataset
-    frames=list(observations(9,shot_at=5))
-    write_cache(tmp_path/'pose',frames,{'settings':{'sample_fps':25}},3)
-    path=tmp_path/'labels.json'
-    path.write_text(json.dumps({'data':[{'id':'match','inputs':[{'type':'skeleton_cache','path':'pose'}],
-                                      'events':[{'label':'swing','position_ms':80}]}]}))
-    payload=Config.from_file('examples/tennis/localization_skeleton.yaml').get_config()
-    payload['DATA']['common']['classes']=['swing']
-    payload['DATA']['inputs']['video']['sampling']['clip_len']=4
-    config=dict_to_namespace(payload)
-    dataset=SkeletonSpottingDataset(config,path,tmp_path,'train',2)
-    assert dataset.get_labels('match')[2]==1
-    assert len(dataset)==3
-    tail=dataset[1]
-    assert tail['time_mask'].tolist()==[True,True,True,False]
-    batch=dataset.collate_fn([tail])
-    assert batch['time_mask'].tolist()==[[True,True,True,False]]
-    assert batch['frame'].num_graphs==4
-    assert batch['frame'].node_mask.dtype==torch.bool
-    test=SkeletonSpottingDataset(config,path,tmp_path,'test',2)
-    result=test.collate_fn([test[1]])
-    assert result['frame'][0].time_mask.sum()==3
-    payload['DATA']['inputs']['video']['sampling']['extract_fps']=20
-    with pytest.raises(ValueError,match='sample rate'):
-        SkeletonSpottingDataset(dict_to_namespace(payload),path,tmp_path,'test',2)
-
-
 def test_top_down_filters_court_people_before_pose_and_candidate_limit():
     import cv2
     image=np.zeros((180,320,3),np.uint8)
@@ -239,3 +208,172 @@ def test_weight_checksum_and_no_detection_backend_contract(tmp_path):
     backend.pose=unexpected_pose
     boxes,joints,scores=backend.predict(np.zeros((80,100,3),np.uint8))
     assert boxes.shape==(0,4) and joints.shape==(0,17,2) and scores.shape==(0,17)
+
+
+def test_raw_clip_sampling_geometry_padding_and_multiview_collation(tmp_path):
+    import torch
+    from tests.helpers.video_pose import write_video
+    from opensportslib.datasets.video_raw import read_raw_clip, uniform_indices, video_collate
+    path = write_video(tmp_path/'clip.mp4', 3)
+    assert uniform_indices(0, 3, 5) == [0, 1, 1, 2, 2]
+    frames, meta = read_raw_clip(path, [-1, 0, 1, 1, 2, -1], resize={'width':50,'height':40})
+    assert frames.dtype == torch.uint8 and frames.shape == (6,3,40,50)
+    assert [f['valid'] for f in meta['frames']] == [False,True,True,True,True,False]
+    assert meta['frames'][1]['image_size'] == [100,80]
+    assert meta['frames'][2]['timestamp'] == meta['frames'][3]['timestamp']
+    larger, other = read_raw_clip(path, [0, 2])
+    batch = video_collate([{'pixel_values':[frames, larger], 'video_meta':[meta, other], 'id':'a'},
+                           {'pixel_values':[larger], 'video_meta':[other], 'id':'b'}])
+    assert batch['pixel_values'].shape == (2,2,3,6,80,100)
+    assert batch['view_mask'].tolist() == [[True,True],[True,False]]
+    assert not batch['time_mask'][0,0,0]
+
+
+def test_model_frontend_repeats_padding_cuts_sessions_and_resize(tmp_path):
+    import torch
+    from tests.helpers.video_pose import write_video, inject_backend
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.preprocessors import PoseTracking
+    path = write_video(tmp_path/'clip.mp4', 8, cut=4)
+    frames, meta = read_raw_clip(path, [-1,0,1,1,2,3,4,5,6,7], resize={'width':50,'height':40})
+    frontend=PoseTracking({'selection':'all_people'})
+    backend=inject_backend(frontend)
+    rows=frontend.observations(frames,meta)
+    assert backend.calls==8
+    assert rows[0].frame_index==-1 and not rows[0].player_valid.any()
+    assert rows[2].track_ids.tolist()==rows[3].track_ids.tolist()
+    np.testing.assert_array_equal(rows[1].boxes[0],[20,20,60,120])
+    assert rows[-1].image_size.tolist()==[100,80]
+    assert rows[5].shot_id==0 and rows[6].shot_id==1
+    session=frontend.open_session()
+    try:
+        chunked=[]
+        for a,b in [(0,3),(3,6),(6,10)]:
+            chunked.extend(session.push(frames[a:b],{**meta,'frames':meta['frames'][a:b]}))
+        for a,b in zip(rows,chunked):
+            np.testing.assert_array_equal(player_features(a),player_features(b))
+            np.testing.assert_array_equal(a.track_ids,b.track_ids)
+        assert len(session.recent)<=8
+        session.finish()
+        with pytest.raises(RuntimeError,match='finished'):
+            session.push(frames,meta)
+    finally:session.close()
+    with pytest.raises(RuntimeError,match='closed'):session.push(frames,meta)
+    frontend.train()
+    assert not frontend.training and not list(frontend.parameters()) and not frontend.state_dict()
+
+
+def test_exact_clip_cache_matches_live_without_runtime_or_state_leakage(tmp_path):
+    from tests.helpers.video_pose import write_video, inject_backend
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.preprocessors import PoseTracking
+    path=write_video(tmp_path/'clip.mp4',5)
+    settings={'selection':'all_people','cache':{'mode':'read_write','path':str(tmp_path/'cache')},
+              'artifacts':{'yolox_m':{'sha256':'detector-test','path':str(tmp_path/'unavailable-detector.onnx')},
+                           'rtmpose_s':{'sha256':'pose-test','path':str(tmp_path/'unavailable-pose.onnx')}}}
+    frontend=PoseTracking(settings);backend=inject_backend(frontend)
+    frames,meta=read_raw_clip(path,[0,1,2])
+    live=frontend.observations(frames,meta)
+    assert backend.calls==3
+    cached=frontend.observations(frames,meta)
+    assert backend.calls==3
+    reader=PoseTracking({**settings,'cache':{'mode':'read','path':str(tmp_path/'cache')}})
+    cached=reader.observations(frames,meta)
+    assert not reader._backends
+    for a,b in zip(live,cached):np.testing.assert_array_equal(player_features(a),player_features(b))
+    frames,meta=read_raw_clip(path,[1,2,3])
+    with pytest.raises(FileNotFoundError,match='Exact-clip'):reader.observations(frames,meta)
+    assert frontend.observations(frames,meta)[0].track_ids[0]==0
+    assert len(list((tmp_path/'cache').iterdir()))==2
+
+
+def test_pose_config_contract_and_legacy_migration():
+    from opensportslib.core.config.editable import Config
+    from opensportslib.core.config.validate import validate_config
+    from opensportslib.preprocessing.config import requires_raw_video
+    for task in ['classification','localization']:
+        for suffix in ['', '_dali']:
+            payload=Config.from_file(f'examples/tennis/{task}_skeleton{suffix}.yaml').get_config()
+            validate_config(payload)
+            assert requires_raw_video(payload)
+            assert payload['DATA']['inputs']['video']['representation']=='raw'
+        payload['DATA']['inputs']['video']['representation']='skeleton_graph'
+        with pytest.raises(ValueError,match='BREAKING CHANGE'):validate_config(payload)
+
+
+def test_dali_adapter_preserves_sampler_requests_and_labels(tmp_path,monkeypatch):
+    import torch
+    from tests.helpers.video_pose import pose_config
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.datasets.classification_dataset import VideoDataset
+    from opensportslib.datasets.video_raw import build_video_loader, read_raw_clip
+    payload=pose_config('classification',tmp_path)
+    payload['DATA']['common']['runtime']['loader_backend']='dali'
+    dataset=VideoDataset(dict_to_namespace(payload),str(tmp_path/'labels.json'),None)
+    calls=[]
+    def fake_decode(path,indices,clocks,info,device_id):
+        calls.append(indices)
+        frames,_=read_raw_clip(path,indices)
+        return {i: f.permute(1,2,0).numpy() for i,f in zip(indices,frames)}
+    monkeypatch.setattr('opensportslib.datasets.video_dali.decode_selected',fake_decode)
+    sampler=torch.utils.data.WeightedRandomSampler([1.],3,replacement=True)
+    loader=build_video_loader(dataset,batch_size=2,sampler=sampler,num_workers=4,drop_last=False)
+    batches=list(loader)
+    assert loader.sampler is sampler and loader.num_workers==0
+    assert [len(b['id']) for b in batches]==[2,1] and len(calls)==3
+    assert all(b['labels'].tolist()==[0]*len(b['id']) for b in batches)
+
+
+def test_irregular_source_timestamps_are_preserved(tmp_path):
+    from tests.helpers.video_pose import write_video
+    from opensportslib.datasets.video_raw import read_raw_clip
+    path=write_video(tmp_path/'vfr.mp4',4,frame_indices=[0,1,3,6])
+    _,meta=read_raw_clip(path,[0,1,2,3])
+    np.testing.assert_allclose([f['timestamp'] for f in meta['frames']],[0,.04,.12,.24],atol=1e-6)
+    assert len({tuple(f['time_base']) for f in meta['frames']})==1
+
+
+def test_stream_chunk_sizes_and_early_close_preserve_session_contract(tmp_path,monkeypatch):
+    from tests.helpers.video_pose import pose_config,write_video,inject_backend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.models.preprocessors import PoseTracking
+    from opensportslib.datasets.video_raw import read_raw_clip
+    config=dict_to_namespace(pose_config('localization',tmp_path))
+    path=write_video(tmp_path/'clip.mp4',9,cut=4)
+    frontend=PoseTracking({'selection':'all_people'})
+    inject_backend(frontend)
+    frames,meta=read_raw_clip(path,list(range(9)))
+    expected=frontend.observations(frames,meta)
+    for size in (1,2,4,7):
+        config.DATA.inputs.video.sampling.clip_len=size
+        actual=list(frontend.iter_video(path,config))
+        assert len(actual)==9
+        for a,b in zip(expected,actual):
+            np.testing.assert_array_equal(player_features(a),player_features(b))
+            np.testing.assert_array_equal(a.track_ids,b.track_ids)
+            assert (a.timestamp,a.pts,a.shot_id)==(b.timestamp,b.pts,b.shot_id)
+    sessions=[]
+    original=frontend.open_session
+    def capture():
+        session=original();sessions.append(session);return session
+    monkeypatch.setattr(frontend,'open_session',capture)
+    one=frontend.iter_video(path,config);two=frontend.iter_video(path,config)
+    assert next(one).track_ids[0]==next(two).track_ids[0]==0
+    one.close();two.close()
+    assert all(s.closed and not s.recent for s in sessions)
+
+
+def test_cache_warming_uses_existing_video_loader(tmp_path,monkeypatch):
+    from tests.helpers.video_pose import pose_config,PoseBackend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.preprocessing.cache import warm_clip_cache
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend',PoseBackend)
+    config=dict_to_namespace(pose_config('classification',tmp_path))
+    cache=tmp_path/'warmed'
+    assert warm_clip_cache(config,cache,max_clips=1)==1
+    entries=list(cache.iterdir())
+    assert len(entries)==1
+    reader=SkeletonCache(entries[0])
+    assert reader.manifest['identity']['reset_policy']=='independent_clip_v1'
+    assert len(reader)==4
+    assert json.loads((tmp_path/'labels.json').read_text())['data'][0]['inputs'][0]['type']=='video'

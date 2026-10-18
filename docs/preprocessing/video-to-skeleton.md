@@ -72,70 +72,146 @@ train, replace weights, or edit configuration on a model with an active iterator
 Each video receives independent association/window state. Predictions contain
 class events; actor IDs remain in skeleton caches/overlays.
 
-Classification uses timestamp-uniform sampling and two bounded-memory decode
-passes to obtain exact clip endpoints. Pose extraction occurs only on the second
-pass. Spotting uses one decode pass, 25 sampled frames/s, 64-frame windows, and
-32-frame overlap. Each shot tail is padded but masked from temporal computation
-and training loss. No window crosses a detected camera cut. Cuts immediately flush old-shot
-scores and shot-local NMS context.
+Classification samples the configured number of frames uniformly over the source
+clip (respecting configured start/end bounds). Each view has independent tracking
+state; the model averages per-view clip embeddings before classification. Training
+keeps the existing loader's view-selection policy. Spotting keeps the existing
+video loader's random/event-focused training windows and evaluation windows.
 
-The GRU is **bidirectional**. Window completion, overlap finalization, and
-symmetric NMS all introduce lookahead. A 64-sample window at 25 Hz spans about
-2.56 seconds; this is not a fixed event latency. Sparse timestamps and scheduling
-also affect finalization. Benchmark lookahead separately from wall-clock work.
-Fully causal spotting requires a different temporal contract and is deferred.
+The loaders return unnormalized, uncropped uint8 RGB with exact source frame
+indices, PTS/time base, timestamps, geometry and padding masks under `video_meta`.
+The non-DALI raw path uses PyAV inside the existing video dataset interface for
+source timestamps; ordinary RGB decoding/transforms retain their existing behavior.
+Only selected images are retained. Deterministic resize is inverted before graph
+features are built. Spatial/view/time padding never becomes an observation.
+Image augmentation, normalization and mixup before pose are rejected explicitly.
+Repeated frames in short uniform samples reuse observations without advancing tracks.
 
-## Explicit extraction, cache, and training
+Training resets association for each sampled clip/view. Continuous inference uses
+an explicit model-owned session across decoded chunks, resetting at cuts or video
+boundaries. Detection sees the loader-selected frames; it cannot detect cuts in
+frames the loader discarded. The two reset policies intentionally have different
+initialization context and must not share cache entries.
+
+Spotting uses 64-frame windows with 32-frame overlap by default. The existing
+integer-stride sampling policy determines the effective sample rate, which can
+differ from requested `extract_fps`. Each shot tail is masked, and temporal heads
+run separately on valid shot segments, including clips with left padding. Cuts
+flush old-shot scores and NMS context. The GRU is **bidirectional**: window
+completion, overlap finalization and symmetric NMS introduce lookahead. A
+64-sample window at 25 Hz spans about 2.56 seconds; actual event latency also
+includes finalization policy and processing time. This is delayed spotting.
+
+## Model configuration and training
+
+Keep `DATA.inputs.video.modality: video`, `representation: raw`, and ordinary
+video annotations. Define frozen extraction under the model:
+
+```yaml
+MODEL:
+  components:
+    pose_tracking:
+      kind: preprocessor
+      source: {provider: opensportslib, registry: preprocessor, name: pose_tracking}
+      params:
+        backend: rtmlib
+        detector: yolox_m
+        pose: rtmpose_s
+        max_players: 2
+        selection: tennis_conservative
+        cache: {mode: off}
+  # Add pose_tracking -> tracking_encoder before the existing topology.
+IO:
+  inputs: {video: pose_tracking, label: task_head}
+```
+
+The frontend declares its raw input requirements and 73-feature graph output.
+It has no optimizer parameters and stays frozen under `model.train()`. Action
+checkpoints contain graph/neck/head weights; pose artifacts remain external.
+Runtime sessions are created lazily in the model process, never in workers.
+
+Use `VideoDataset` through the existing classification builder. For spotting,
+use `VideoGameWithOpencv` for train/valid and `VideoGameWithOpencvVideo` for
+full-video evaluation. Set split source/annotation paths and class names, then:
+
+```python
+from opensportslib.apis import ClassificationModel, LocalizationModel
+
+classifier = ClassificationModel(config="examples/tennis/classification_skeleton.yaml")
+classifier.train(use_wandb=False)
+spotter = LocalizationModel(config="examples/tennis/localization_skeleton.yaml")
+spotter.train(use_wandb=False)
+```
+
+Annotations retain `inputs: [{type: video, path: clip.mp4}]`. Classification
+records use `labels.action.label`; spotting records use `events` with `position_ms`.
+For multiview classification, set `params.view_type: multi` and supply the same
+video view records accepted by the existing loader. Player identities do not
+associate across views.
+
+The `_dali.yaml` tennis examples enable both tasks with optional DALI 2.2+.
+The inspected CUDA 12 profile is `nvidia-dali-cuda120==2.2.0`; install the matching
+DALI distribution for the host CUDA version and verify it in the release tier.
+Classification supports one frontend per DDP rank. The legacy E2E DataParallel
+mode is rejected for pose models; use one GPU for each spotting model process.
+The internal adapter consumes the existing torch sampler, including weighting,
+distributed sharding and drop-last behavior. GPU decoding runs in the training
+process with bounded request readers and no decoder pool. Training rebuilds
+readers per request; chronological streaming keeps one reader for the video.
+A sequential PyAV clock pass preserves original PTS/time bases for DALI; these costs are included in benchmarks. It is not a promised
+speed improvement. RTMLib needs host arrays, so GPU-decoded frames transfer back
+to the host individually. The DALI path supports CFR only and rejects unsupported
+sampling/clocks rather than silently changing backend. Non-DALI supports VFR.
+
+## Exact-clip caches and explicit extraction
+
+The frontend supports `cache.mode: off` (default), `read`, and `read_write`, with
+`cache.path` naming a cache root. `read_write` explicitly opts into immutable
+cache publication during training/inference; `read` fails on a missing exact
+request. With pinned artifact SHA-256 values, reading a hit needs no RTMLib/ORT
+runtime or CUDA frontend. Action weights do not invalidate extraction caches.
+
+Warm caches explicitly through the existing configured video loaders:
+
+```bash
+python -m opensportslib.preprocessing warm-cache \
+  --config examples/tennis/classification_skeleton.yaml \
+  --split train --output data/tennis/clip-cache
+python -m opensportslib.preprocessing warm-cache \
+  --config examples/tennis/localization_skeleton.yaml \
+  --split train --max-clips 100 --output data/tennis/clip-cache
+```
+
+Warm-up enumerates classification samples and seeds a sample of the existing
+random spotting windows. Random windows in later epochs can miss this set;
+use `read_write` to grow the cache explicitly, or `read` only with reproducible,
+fully warmed requests. Annotations always continue to reference video files.
+Logical intervals use the existing interval expansion and event-rebasing rules;
+streaming resets at interval boundaries.
+
+Continuous pre-extraction remains useful for visualization and diagnostics:
 
 ```bash
 python -m opensportslib.preprocessing extract \
   --config examples/tennis/localization_skeleton.yaml \
-  --video match.mp4 --output data/tennis/cache/match
+  --video match.mp4 --output data/tennis/continuous/match
 python -m opensportslib.preprocessing overlay \
-  --video match.mp4 --cache data/tennis/cache/match --output skeleton-review.mp4
+  --video match.mp4 --cache data/tennis/continuous/match --output review.mp4
 ```
 
-Python users can call `extract(video_path, destination, settings)` or use
-`SkeletonSession.push/finish/close` with incoming BGR frames, increasing timestamps,
-source PTS, and time base. Only the explicit extraction operation writes skeleton
-caches. Inference may download missing **model weights** into its model directory;
-it does not write skeleton or prediction files.
+These continuous caches cannot substitute for independent training clips. The
+model's streaming session bypasses clip caching to preserve its prior state.
+Ordinary inference with caching off writes neither observations nor predictions;
+use `save_predictions` explicitly. Missing model weights can still be downloaded.
 
-Training annotations reference extracted directories:
-
-```json
-{
-  "version": "2.0",
-  "labels": {"action": {"type": "single_label", "labels": ["swing"]}},
-  "data": [{
-    "id": "match_01",
-    "inputs": [{"type": "skeleton_cache", "path": "cache/match_01"}],
-    "events": [{"head": "action", "label": "swing", "position_ms": 1200}]
-  }]
-}
-```
-
-For classification, use a stroke cache per record and replace `events` with
-`"labels": {"action": {"label": "swing"}}`. Source paths are relative to the
-split's configured `source_path`. Set `DATA.inputs.video.modality: skeleton_cache`
-for cached experiments; keep `representation: skeleton_graph`. Train and evaluate
-with the existing `train()`/`evaluate()` APIs. Shuffle cached windows, never live
-association sessions. GPU extraction is not performed inside DataLoader workers.
-No soccer coordinate normalization, team flips, graph mixup, or RGB augmentation
-is applied. The initial spotting dataset enumerates shot-local overlapping windows
-rather than soccer's foreground-resampled epoch schedule.
-
-For direct-video inference using a known cache, set preprocessing `cache` to
-`{mode: read, path: /absolute/cache/directory}`. The source video hash and exact
-extraction settings must match. Cached manifest inputs skip frontend construction.
-Do not change extraction sample rate without rebuilding caches. Use the same
-class order and sample rate for training and inference.
-
-Classification evaluation uses OSL's existing classification metrics. Skeleton
-spotting evaluation uses existing `compute_mAPs_E2E` with 0–4 second tolerances
-and existing `ForegroundF1` on the strongest emitted event at each frame
-(`event_foreground_f1`). That event metric differs from raw, pre-NMS frame F1;
-training validation still reports the existing dense frame metric.
+**BREAKING CHANGE — experimental skeleton dataset/config migration:** remove
+`SkeletonClassification`/`SkeletonSpotting` split types, `skeleton_cache` training
+inputs and `representation: skeleton_graph`. Move `params.preprocessing` into
+`MODEL.components.pose_tracking.params`, add the topology edge and IO mapping,
+remove `params.objects` for this route, and use ordinary video inputs/types.
+Old continuous caches are not reused as exact-clip caches; rebuild them with
+`warm-cache` or opt into `read_write`. Existing RGB and soccer tracking configs
+retain their contracts.
 
 ## Representation and identity
 
@@ -144,8 +220,9 @@ A canonical observation contains `[P,17,2]` float32 image-pixel joints,
 validity, track IDs, shot ID, image dimensions, near/far roles, source frame/PTS/time
 base, video-relative timestamp, and sampling-grid timestamp. Timestamps are
 relative to the first decoded presentation timestamp; original PTS are retained.
-The sampler emits at most one observation per decoded frame and skips unavailable
-grid points; it never fabricates intermediate poses. Missing/non-monotonic PTS
+Continuous sampling emits at most one observation per decoded frame. Clip
+sampling may repeat a source observation, without re-running pose or advancing
+association. Neither path fabricates intermediate poses. Missing/non-monotonic PTS
 raise errors. Gaps over one second reset shot state. No joint interpolation is used.
 
 Each player node has 73 float32 features: normalized box center/size, ordered
@@ -178,20 +255,23 @@ caches publish by directory rename; failures remove temporary data. Existing
 caches are not overwritten and incomplete runs restart from the beginning.
 
 Identity includes source-video SHA-256, schema/sampler/selector/tracker versions,
-extraction settings, and resolved model checksums/runtime versions. Action-model
-weights and augmentations are excluded. New extraction settings produce new caches.
+extraction settings, selected indices/times, resize geometry, decoder profile,
+clip-reset policy and resolved model checksums. Action-model weights are excluded.
+New extraction settings or clip requests produce different cache entries.
 The cache stores observations, not augmented tensors or graph objects.
 
 Named model presets contain versioned upstream artifact URLs. The resolved ONNX
 SHA-256 is recorded at initialization. Pin deployments using:
 
 ```yaml
-params:
-  preprocessing:
-    artifacts:
-      rtmpose_s:
-        path: /models/rtmpose-s.onnx
-        sha256: YOUR_VERIFIED_SHA256
+MODEL:
+  components:
+    pose_tracking:
+      params:
+        artifacts:
+          rtmpose_s:
+            path: /models/rtmpose-s.onnx
+            sha256: YOUR_VERIFIED_SHA256
 ```
 
 RTMLib/MMPose/YOLOX publish Apache-2.0 code licenses. The
@@ -210,6 +290,12 @@ python -m opensportslib.preprocessing benchmark \
   --config examples/tennis/localization_skeleton.yaml \
   --video public-tennis.mp4 --output benchmark-s.json --repeats 3
 ```
+
+Repeat with `classification_skeleton.yaml` for classification; add
+`--view second-camera.mp4` for multiview. Repeat with the `_dali.yaml` examples
+and all candidate pose presets. First-result timing is clip completion for
+classification and first emitted event batch for spotting. Classification's
+model-forward stage includes frontend work; pose stage timings overlap it.
 
 Set the action checkpoint in `MODEL.load.checkpoint_path`. Without a checkpoint,
 the report measures randomly initialized action computation and establishes no
@@ -231,7 +317,7 @@ identity and visible joints on a small review subset to measure selection errors
 ID switches/fragmentation, reacquisition, and joint error. Automatic counters are
 not ground-truth quality measurements.
 
-For action evaluation, pre-extract once, train the existing action models, and
+For action evaluation, train the existing action models with optional clip caching and
 report classification accuracy/balanced accuracy/macro-F1 and spotting mAP/F1
 per class. Include bounce classes where present and report them separately;
 body-only inputs may not identify ball bounces well. Compare cache/live inputs

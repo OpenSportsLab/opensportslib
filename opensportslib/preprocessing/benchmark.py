@@ -45,18 +45,18 @@ class MemorySampler:
         self.stop.set();self.thread.join(timeout=6)
 
 
-def benchmark(config, video_path, output_path, repeats=3):
+def benchmark(config, video_path, output_path, repeats=3, view_paths=None):
     import torch
     from opensportslib.models.builder import build_model
     from opensportslib.core.config.accessors import get_data_sampling
     from opensportslib.preprocessing.config import preprocessing_config
-    from .backend import RTMLibBackend
-    from .session import iter_skeletons, decode_video
+    from .session import decode_video
     from .cache import file_sha256
-    from opensportslib.apis._skeleton import spotting_events
+    from opensportslib.apis._streaming import spotting_events
     from opensportslib.apis.localization import LocalizationModel
-    if str(config.TASK).lower() != 'localization':
-        raise ValueError('Full-pipeline benchmark requires a skeleton localization config')
+    classification = str(config.TASK).lower() == 'classification'
+    if view_paths and not classification:
+        raise ValueError('Additional views are supported for classification only')
     if repeats < 1:
         raise ValueError('repeats must be positive')
     if Path(output_path).exists():
@@ -65,17 +65,24 @@ def benchmark(config, video_path, output_path, repeats=3):
     if settings.get('cache',{}).get('mode','off') != 'off':
         raise ValueError('Benchmark live extraction with cache.mode=off')
     started = perf_counter()
-    backend = RTMLibBackend(settings)
-    device = settings.get('device','cuda:0')
-    model = build_model(config,device)
+    from opensportslib.core.utils.config import select_device
+    device = select_device(config.SYSTEM)
+    built = build_model(config,device)
+    model = built[0].to(device).eval() if classification else built
+    frontend = model.preprocessor
+    backend = frontend.backend
     # Optional action checkpoint uses OSL's established checkpoint loader.
     checkpoint = getattr(config.MODEL.load,'checkpoint_path',None)
     if checkpoint:
         from opensportslib.core.config.editable import Config
         from opensportslib.core.config.runtime_adapter import namespace_to_plain_dict
-        api = LocalizationModel(config=Config(namespace_to_plain_dict(config)))
+        from opensportslib.apis.classification import ClassificationModel
+        api = (ClassificationModel if classification else LocalizationModel)(config=Config(namespace_to_plain_dict(config)))
         api.load_weights(checkpoint)
         model = api.model
+        frontend.close()
+        frontend = model.preprocessor
+        backend = frontend.backend
     startup = perf_counter()-started
     model_seconds = [0.]
     class TimedModel:
@@ -85,8 +92,12 @@ def benchmark(config, video_path, output_path, repeats=3):
             model_seconds[0]+=perf_counter()-before
             return result
     source_count=0;source_duration=0.;shape=None
+    probe_started=perf_counter()
     for image,timestamp,*_ in decode_video(video_path):
         source_count+=1;source_duration=timestamp;shape=image.shape[:2]
+    video_probe_seconds=perf_counter()-probe_started
+    from opensportslib.datasets.video_raw import effective_fps
+    rate=effective_fps(video_path, float(get_data_sampling(config).get('extract_fps',25)))
     runs=[]
     try:
         # Explicit warmup, then measured runs with fresh per-video state.
@@ -95,7 +106,7 @@ def benchmark(config, video_path, output_path, repeats=3):
             observations=[0];quality={'player_observations':0,'valid_joints':0,'view_samples':0,'id_changes':0,'shots':0}
             previous_ids={};previous_shot=[None]
             def frames():
-                for frame in iter_skeletons(video_path,settings,backend):
+                for frame in frontend.iter_video(video_path,config):
                     arrivals[frame.timestamp]=perf_counter();latest[0]=frame.timestamp
                     observations[0]+=1
                     quality['player_observations']+=int(frame.player_valid.sum())
@@ -122,10 +133,38 @@ def benchmark(config, video_path, output_path, repeats=3):
             before=perf_counter();first_result=None;events=0
             timings_before=dict(backend.timings);model_seconds[0]=0.
             with MemorySampler(str(device).split(':')[-1]) as memory:
-                for batch in spotting_events(TimedModel(),config,frames(),observer=observer):
-                    if first_result is None:first_result=perf_counter()-before
-                    events+=len(batch)
+                if classification:
+                    from opensportslib.core.utils.direct_video import build_direct_video_manifest
+                    from opensportslib.datasets.classification_dataset import VideoDataset
+                    from opensportslib.datasets.video_raw import build_video_loader
+                    from opensportslib.core.config.runtime_adapter import namespace_to_plain_dict, dict_to_namespace
+                    from tempfile import TemporaryDirectory
+                    document=build_direct_video_manifest(config,video_path,'classification')
+                    document['data'][0]['inputs'].extend({'type':'video','path':str(Path(p).resolve())} for p in (view_paths or []))
+                    local=dict_to_namespace(namespace_to_plain_dict(config))
+                    local.DATA.inputs.video.params.view_type='multi' if view_paths else 'single'
+                    local.DATA.common.splits.test.source_path=''
+                    with TemporaryDirectory(prefix='osl-benchmark-') as directory:
+                        request=Path(directory)/'clips.json'
+                        request.write_text(json.dumps(document))
+                        dataset=VideoDataset(local,str(request),None,split='test')
+                        loader=build_video_loader(dataset,batch_size=1,num_workers=0)
+                        for batch in loader:
+                            torch.cuda.synchronize(device)
+                            stage=perf_counter()
+                            with torch.no_grad():model(batch)
+                            torch.cuda.synchronize(device)
+                            model_seconds[0]+=perf_counter()-stage
+                            observations[0]+=sum(sum(f['valid'] for f in m['frames']) for row in batch['video_meta'] for m in row)
+                    first_result=perf_counter()-before
+                else:
+                    for batch in spotting_events(TimedModel(),config,frames(),observer=observer,fps=rate):
+                        if first_result is None:first_result=perf_counter()-before
+                        events+=len(batch)
             elapsed=perf_counter()-before
+            if not run:
+                warmup_seconds=elapsed
+                cold_first_result_seconds=startup+video_probe_seconds+(first_result or elapsed)
             if run:
                 runs.append({'seconds':elapsed,'source_frames':source_count,'sampled_frames':observations[0],
                     'source_fps_processed':source_count/elapsed,'sample_fps_processed':observations[0]/elapsed,
@@ -133,16 +172,20 @@ def benchmark(config, video_path, output_path, repeats=3):
                     'window_and_nms_lookahead_seconds_p50_p95':np.percentile(delay,[50,95]).tolist() if delay else [],
                     'post_extraction_finalization_seconds_p50_p95':np.percentile(processing,[50,95]).tolist() if processing else [],
                     'process_rss_peak_bytes':memory.rss,'device_used_peak_bytes':memory.gpu,'memory_sampling_error':memory.error,
-                    'stage_seconds':{**{k:backend.timings[k]-timings_before[k] for k in backend.timings},'graph_action':model_seconds[0]},
+                    'stage_seconds':{**{k:backend.timings[k]-timings_before[k] for k in backend.timings},('model_forward_including_frontend' if classification else 'graph_action'):model_seconds[0],
+                        'other_decode_selection_tracking_window_seconds':max(0., elapsed-model_seconds[0]-(0. if classification else sum(backend.timings[k]-timings_before[k] for k in backend.timings)))},
                     'quality_counters_not_ground_truth_metrics':quality})
     finally:
-        backend.close()
+        frontend.close()
     hardware=subprocess.run(['nvidia-smi','--query-gpu=name,driver_version,memory.total','--format=csv'],capture_output=True,text=True,check=True).stdout
     report={'video':str(video_path),'video_sha256':file_sha256(video_path),'shape':shape,'duration_seconds':source_duration,
             'hardware':hardware,'cpu':platform.processor(),'python':platform.python_version(),
             'cuda':torch.version.cuda,'cudnn':torch.backends.cudnn.version(),'torch':torch.__version__,
+            'task':config.TASK,'view_paths':list(view_paths or []),'decoder':getattr(config.DATA.common.runtime,'loader_backend','opencv'),
             'action_checkpoint':checkpoint, 'action_weights_trained':bool(checkpoint),
-            'provenance':backend.provenance,'settings':settings,'startup_seconds':startup,'runs':runs,
+            'provenance':backend.provenance,'settings':settings,'startup_seconds':startup,
+            'video_probe_seconds':video_probe_seconds,'warmup_seconds':warmup_seconds,
+            'cold_first_result_seconds':cold_first_result_seconds,'effective_sample_fps':rate,'runs':runs,
             'notes':['Device memory includes other processes; use an isolated GPU.',
                      'Sampled peaks at 100ms intervals are lower bounds on instantaneous peaks.',
                      'Finalization measurements start after pose extraction; lookahead is reported separately.',

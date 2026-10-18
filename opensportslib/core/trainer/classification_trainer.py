@@ -72,7 +72,6 @@ def _is_frames_npy_modality(config, modality=None):
 
 def _is_tracking_graph_modality(modality):
     return str(modality).lower() in {
-        "skeleton_graph",
         "tracking",
         "tracking_parquet",
         "tracking_tracab",
@@ -408,7 +407,7 @@ class BaseTrainerClassification:
                     **{f"test/{k}": v for k, v in test_metrics.items()},
                 })
 
-            if detailed_results:
+            if detailed_results and getattr(self, 'persist_results', True):
                 from opensportslib.metrics.classification_metric import (
                     compute_detailed_classification_metrics
                 )
@@ -458,7 +457,8 @@ class BaseTrainerClassification:
 
         # -------- Create epoch folder --------
         epoch_dir = os.path.join(self.save_dir, str(epoch))
-        os.makedirs(epoch_dir, exist_ok=True)
+        if getattr(self, 'persist_results', True):
+            os.makedirs(epoch_dir, exist_ok=True)
         save_path = os.path.join(
             epoch_dir, f"predictions_{set_name}_epoch_{epoch}.json"
         )
@@ -577,11 +577,12 @@ class BaseTrainerClassification:
                 })
 
             logging.info(f"RESULTS Length: {len(results)}")
-            logging.info(f"Predictions are stored at : {save_path}")
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(submission, f, indent=2)
+            if getattr(self, 'persist_results', True):
+                logging.info(f"Predictions are stored at : {save_path}")
+                with open(save_path, "w", encoding="utf-8") as f:
+                    json.dump(submission, f, indent=2)
             self.predictions_payload = submission
-            self.predictions_path = save_path
+            self.predictions_path = save_path if getattr(self, 'persist_results', True) else None
 
         return all_logits, all_labels, avg_loss, metrics
 
@@ -642,9 +643,7 @@ class MVTrainerClassification(BaseTrainerClassification):
         Returns:
             a tuple (logits, labels) on self.device.
         """
-        mvclips = batch["pixel_values"].to(self.device).float()
-        if "node_mask" in batch:
-            tracking_batch["node_mask"] = batch["node_mask"].to(self.device)
+        mvclips = batch if "video_meta" in batch else batch["pixel_values"].to(self.device).float()
         labels = batch.get("labels", None)
         if labels is not None:
             labels = labels.to(self.device)
@@ -694,6 +693,8 @@ class TrackingTrainerClassification(BaseTrainerClassification):
         if labels is not None:
             labels = labels.to(self.device)
         
+        if "node_mask" in batch:
+            tracking_batch["node_mask"] = batch["node_mask"].to(self.device)
         logits = self.model(tracking_batch)
         
         return logits, labels
@@ -940,7 +941,9 @@ class Trainer_Classification:
         if train_mp_context is not None:
             train_mp_context = mp.get_context(train_mp_context)
 
-        train_loader = DataLoader(
+        from opensportslib.datasets.video_raw import build_video_loader
+        loader_factory = build_video_loader if getattr(train_dataset, 'raw_video', False) else DataLoader
+        train_loader = loader_factory(
             train_dataset,
             batch_size=train_dataloader_cfg.batch_size,
             shuffle=(train_sampler is None and shuffle),
@@ -966,7 +969,7 @@ class Trainer_Classification:
         if valid_mp_context is not None:
             valid_mp_context = mp.get_context(valid_mp_context)
             
-        val_loader = DataLoader(
+        val_loader = loader_factory(
             val_dataset,
             batch_size=valid_dataloader_cfg.batch_size,
             shuffle=False,
@@ -1147,7 +1150,9 @@ class Trainer_Classification:
             collate_fn = tracking_collate_fn if is_tracking_modality else None
             test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
 
-            test_loader = DataLoader(
+            from opensportslib.datasets.video_raw import build_video_loader
+            loader_factory = build_video_loader if getattr(test_dataset, 'raw_video', False) else DataLoader
+            test_loader = loader_factory(
                 test_dataset, 
 
                 batch_size=test_dataloader_cfg.batch_size, 
@@ -1190,6 +1195,7 @@ class Trainer_Classification:
                 revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
                 config=self.config,
             )
+            self.test_trainer.persist_results = False
             self.test_trainer.test(
                 detailed_results=get_train_execution(self.config).get("detailed_results", False)
             )

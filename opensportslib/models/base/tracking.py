@@ -25,10 +25,13 @@ class TrackingModel(nn.Module):
         print("Building TrackingModel")
         
         self.device = device
+        from opensportslib.models.preprocessors import build_preprocessor
+        self.preprocessor = build_preprocessor(config)
         sampling = get_data_sampling(config)
         params = get_data_params(config)
         objects_cfg = params.get("objects", {}) if isinstance(params, dict) else {}
-        feature_dim = int(objects_cfg.get("feature_dim", 73 if get_data_modality(config) == "skeleton_graph" else 8))
+        feature_dim = (self.preprocessor.output_spec['feature_dim'] if self.preprocessor is not None
+                       else int(objects_cfg.get("feature_dim", 8)))
         self.num_frames = sampling.get("num_frames")
 
         def _component_cfg(kind):
@@ -67,6 +70,25 @@ class TrackingModel(nn.Module):
         Returns:
             logits: (B, num_classes)
         """
+        if self.preprocessor is not None and 'video_meta' in batch:
+            graphs = self.preprocessor(batch)
+            embeddings = self.backbone(graphs.x, graphs.edge_index, graphs.batch,
+                graphs.node_mask, graphs.num_graphs).view(-1, graphs.seq_len, self.backbone.feat_dim)
+            from opensportslib.models.preprocessors import temporal_segments
+            per_view = []
+            for row in range(len(embeddings)):
+                segments = list(temporal_segments(graphs.time_mask[row], graphs.shot_ids[row]))
+                if segments:
+                    features = [self.neck(embeddings[row:row+1, a:b])*(b-a) for a, b in segments]
+                    per_view.append(sum(features)/sum(b-a for a, b in segments))
+                else:
+                    per_view.append(embeddings.new_zeros(1, self.neck.feat_dim))
+            per_view = torch.cat(per_view)
+            owners = torch.tensor(graphs.view_owners, device=per_view.device)
+            pooled = per_view.new_zeros(graphs.video_batch_size, per_view.shape[-1])
+            pooled.index_add_(0, owners, per_view)
+            counts = torch.bincount(owners, minlength=graphs.video_batch_size).clamp_min(1)
+            return self.head(pooled/counts[:, None])
         x = batch['x']
         edge_index = batch['edge_index']
         batch_idx = batch['batch']

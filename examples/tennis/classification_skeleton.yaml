@@ -1,4 +1,4 @@
-# Video inference; training annotations reference explicitly extracted skeleton_cache directories.
+# Ordinary video annotations; frozen pose/tracking is part of MODEL.
 TASK: classification
 VERSION: 2
 SYSTEM:
@@ -26,7 +26,7 @@ DATA:
       loader_backend: opencv
     splits:
       train:
-        type: SkeletonClassification
+        type: annotations_train.json
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/train.json
         dataloader:
@@ -35,7 +35,7 @@ DATA:
           num_workers: 0
           pin_memory: false
       valid:
-        type: SkeletonClassification
+        type: annotations_valid.json
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/valid.json
         dataloader:
@@ -44,7 +44,7 @@ DATA:
           shuffle: false
           pin_memory: false
       test:
-        type: SkeletonClassification
+        type: annotations_test.json
         source_path: ${DATA.common.data_root}
         annotation_path: ${DATA.common.data_root}/test.json
         dataloader:
@@ -55,30 +55,17 @@ DATA:
   inputs:
     video:
       modality: video
-      representation: skeleton_graph
+      representation: raw
       source:
         format: video
       sampling:
         extract_fps: 25
         num_frames: 64
+        input_fps: 25
       params:
-        preprocessing:
-          type: video_to_skeleton
-          backend: rtmlib
-          detector: yolox_m
-          pose: rtmpose_s
-          device: cuda:0
-          max_players: 2
-          max_candidates: 8
-          selection: tennis_conservative
-          track_retention_seconds: 0.5
-          cache:
-            mode: 'off'
-        objects:
-          num_objects: 2
-          feature_dim: 73
         mixup: false
         dilate_len: 0
+        view_type: single
 MODEL:
   schema_version: 3
   task: classification
@@ -95,6 +82,23 @@ MODEL:
     map_location: null
     format: auto
   components:
+    pose_tracking:
+      kind: preprocessor
+      source:
+        provider: opensportslib
+        registry: preprocessor
+        name: pose_tracking
+      params:
+        type: video_to_skeleton
+        backend: rtmlib
+        detector: yolox_m
+        pose: rtmpose_s
+        max_players: 2
+        max_candidates: 8
+        selection: tennis_conservative
+        track_retention_seconds: 0.5
+        cache:
+          mode: 'off'
     tracking_encoder:
       kind: encoder
       source:
@@ -136,6 +140,8 @@ MODEL:
         num_classes: 4
       overrides: {}
   topology:
+  - from: pose_tracking
+    to: tracking_encoder
   - from: tracking_encoder
     to: tracking_adapter
   - from: tracking_adapter
@@ -175,7 +181,7 @@ TRAIN:
     save_every: 20
 IO:
   inputs:
-    video: tracking_encoder
+    video: pose_tracking
     label: task_head
   outputs:
     logits: task_head

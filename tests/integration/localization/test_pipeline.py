@@ -35,7 +35,7 @@ def test_skeleton_spotting_stream_cache_model_equivalence(tmp_path):
     from opensportslib.preprocessing import SkeletonFrame, SkeletonCache
     from opensportslib.preprocessing.cache import write_cache
     from opensportslib.preprocessing.windows import iter_windows, sequence_batch
-    from opensportslib.apis._skeleton import spotting_events, EventFinalizer
+    from opensportslib.apis._streaming import spotting_events, EventFinalizer
     from opensportslib.metrics.localization_metric import non_maximum_supression, frame_score_events
 
     frames=[]
@@ -80,36 +80,77 @@ def test_skeleton_spotting_stream_cache_model_equivalence(tmp_path):
     assert got==expected
 
 
-def test_cached_skeleton_dataset_wrapper_and_masked_training(tmp_path):
-    import json
+def test_video_frontend_spotting_wrapper_and_masked_training(tmp_path,monkeypatch):
     import math
     import torch
-    from opensportslib.core.config.editable import Config
+    from tests.helpers.video_pose import pose_config,PoseBackend
     from opensportslib.core.config.runtime_adapter import dict_to_namespace
     from opensportslib.datasets.builder import build_dataset
     from opensportslib.models.builder import build_model
-    from opensportslib.preprocessing import SkeletonFrame
-    from opensportslib.preprocessing.cache import write_cache
-
-    frames=[SkeletonFrame.empty(2,timestamp=i/25,sample_time=i/25,frame_index=i,
-             pts=i,time_base=(1,25),shot_id=0,image_size=(100,80)) for i in range(3)]
-    write_cache(tmp_path/'pose',frames,{'settings':{'sample_fps':25}})
-    annotations=tmp_path/'train.json'
-    annotations.write_text(json.dumps({'labels':{'action':{'labels':['swing']}},'data':[
-        {'id':'match','inputs':[{'type':'skeleton_cache','path':'pose'}],
-         'events':[{'label':'swing','position_ms':40}]}]}))
-    payload=Config.from_file('examples/tennis/localization_skeleton.yaml').get_config()
-    payload['SYSTEM']['device']='cpu';payload['DATA']['common']['classes']=['swing']
-    payload['DATA']['inputs']['video']['sampling']['clip_len']=4
-    payload['DATA']['common']['splits']['train'].update(annotation_path=str(annotations),source_path=str(tmp_path),overlap_len=2)
-    payload['MODEL']['components']['tracking_encoder']['params']['num_layers']=1
-    config=dict_to_namespace(payload)
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend',PoseBackend)
+    config=dict_to_namespace(pose_config('localization',tmp_path,count=3))
     wrapper=build_dataset(config,split='train')
     dataset=wrapper.building_dataset(wrapper.cfg,gpu=0,default_args=wrapper.default_args)
+    assert type(dataset).__name__=='ActionSpotDataset'
     loader=wrapper.building_dataloader(dataset,wrapper.cfg.dataloader,gpu=0,dali=False)
     model=build_model(config,'cpu')
     output_bias=model._model.head._pred_fine._fc_out._fc_out.bias
     before=output_bias.detach().clone()
+    graph_weight=model._model.backbone.encoder.node_encoder.weight
+    graph_before=graph_weight.detach().clone()
     loss=model.epoch(loader,False,optimizer=torch.optim.SGD(model._model.parameters(),lr=.01),fg_weight=1)
     assert math.isfinite(loss)
     assert not torch.equal(before,output_bias.detach())
+    assert not torch.equal(graph_before,graph_weight.detach())
+
+
+def test_pose_head_isolates_cuts_and_both_sides_of_padding(tmp_path):
+    import torch
+    from tests.helpers.video_pose import pose_config,write_video,inject_backend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.builder import build_model
+    from opensportslib.models.preprocessors import graph_sequences
+    config=dict_to_namespace(pose_config('localization',tmp_path,count=4))
+    write_video(tmp_path/'clip.mp4',4,cut=2)
+    model=build_model(config,'cpu')
+    inject_backend(model.preprocessor)
+    frames,meta=read_raw_clip(tmp_path/'clip.mp4',[-1,0,1,2,3,-1])
+    rows=model.preprocessor.observations(frames,meta)
+    batch=graph_sequences([rows],'cpu')
+    model._model.eval()
+    with torch.no_grad():
+        before=model._model(batch)
+        batch.x[6:10]=1000
+        batch.x[:2]=1000
+        batch.x[10:]=1000
+        after=model._model(batch)
+    torch.testing.assert_close(before[:,1:3],after[:,1:3],atol=1e-5,rtol=1e-4)
+    assert not before[:,0].any() and not before[:,-1].any()
+
+
+def test_dali_spotting_route_uses_video_dataset_and_raw_metadata(tmp_path,monkeypatch):
+    from tests.helpers.video_pose import pose_config,PoseBackend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.datasets.builder import build_dataset
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.builder import build_model
+    payload=pose_config('localization',tmp_path)
+    payload['DATA']['common']['runtime']['loader_backend']='dali'
+    for split in payload['DATA']['common']['splits'].values():
+        split['type']=split['type'].replace('Opencv','Dali')
+    config=dict_to_namespace(payload)
+    def fake_decode(path,indices,clocks,info,device_id):
+        frames,_=read_raw_clip(path,indices)
+        return {i:f.permute(1,2,0).numpy() for i,f in zip(indices,frames)}
+    monkeypatch.setattr('opensportslib.datasets.video_dali.decode_selected',fake_decode)
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend',PoseBackend)
+    wrapper=build_dataset(config,split='train')
+    dataset=wrapper.building_dataset(wrapper.cfg,gpu=0,default_args=wrapper.default_args)
+    assert type(dataset.dataset).__name__=='ActionSpotDataset'
+    loader=wrapper.building_dataloader(dataset,wrapper.cfg.dataloader,gpu=0,dali=True)
+    batch=next(iter(loader))
+    model=build_model(config,'cpu')
+    _,probabilities=model.predict(batch,use_amp=False)
+    assert probabilities.shape==(1,4,3)
+    assert loader.num_workers==0 and batch['video_meta']
