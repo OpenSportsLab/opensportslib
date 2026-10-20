@@ -9,6 +9,22 @@ YOLOX-tiny, and one-stage RTMO-s are selectable benchmark alternatives. These
 are candidate presets, **not GPU-validated production defaults**. No throughput,
 quality, or real-time claim has been established for public tennis or ShotQuality.
 
+## Inspect trained predictions and the actual poses
+
+After classification or localization training completes, use
+[`tools/inference/inspect_video.py`](../../tools/inference/inspect_video.py) to
+process one video with its saved checkpoint/configuration. It explicitly saves
+`predictions.json`, `poses.jsonl`, `run.json` and `annotated.mp4`. Captured boxes,
+COCO-17 joints, confidence, masks, IDs and 73-feature player vectors come from
+the same model preprocessing pass, including exact-cache hits. Rendering does
+not repeat extraction.
+
+Classification displays one label for the supplied clip. Localization displays
+timestamped events from delayed bidirectional windows. Poses are drawn only at
+sampled source frames, while the output retains all source frames and PTS spacing.
+See the [single-video inspection guide](../../tools/inference/README.md) for both
+commands, output schemas, display thresholds and timing details.
+
 ## Optional installation
 
 Install OSL and its optional PyG support first. In an existing CUDA 12/13 PyTorch
@@ -149,6 +165,13 @@ For multiview classification, set `params.view_type: multi` and supply the same
 video view records accepted by the existing loader. Player identities do not
 associate across views.
 
+For the local tennis spotting data, use the
+[stroke-clip converter and training launcher](../tools/tennis-classification.md)
+to produce four-class classification manifests. It makes clips of up to one
+second around serves/swings, holds out whole validation matches, and retains the
+original test split. `tools/train/train_tennis_skeleton.py` then runs the existing
+classifier with online pose extraction; conversion itself does not train models.
+
 The `_dali.yaml` tennis examples enable both tasks with optional DALI 2.2+.
 The inspected CUDA 12 profile is `nvidia-dali-cuda120==2.2.0`; install the matching
 DALI distribution for the host CUDA version and verify it in the release tier.
@@ -162,6 +185,67 @@ A sequential PyAV clock pass preserves original PTS/time bases for DALI; these c
 speed improvement. RTMLib needs host arrays, so GPU-decoded frames transfer back
 to the host individually. The DALI path supports CFR only and rejects unsupported
 sampling/clocks rather than silently changing backend. Non-DALI supports VFR.
+
+### Public tennis localization training
+
+The localization examples use the dataset
+[`OpenSportsLab/OSL-loc-tennis-public`](https://huggingface.co/datasets/OpenSportsLab/OSL-loc-tennis-public)
+on its `swing-data` branch. This branch contains OSL Parquet metadata and
+WebDataset TAR shards for `train`, `validation`, and `test`. The examples match
+the local annotations from commit `f1cc2de012aa317883d3dc371953d268f2a2c86b`:
+head `tennis_action`, with `far_court_bounce`, `far_court_serve`,
+`far_court_swing`, `near_court_bounce`, `near_court_serve`, and
+`near_court_swing`. The spotting head adds a seventh background output. When
+using a different dataset revision, check `DATA.common.classes` against the
+manifest's `labels` block.
+
+From the repository root, download and unpack the splits using the existing
+OSL downloader:
+
+```bash
+conda activate osl
+opensportslib setup --pyg
+opensportslib setup --pose
+
+for split in train validation test; do
+  python tools/download/download_osl_hf.py \
+    --repo-id OpenSportsLab/OSL-loc-tennis-public \
+    --revision swing-data --split "$split" --format parquet \
+    --output-dir ./data/tennis-localization
+done
+
+python tools/train/train_config.py localization \
+  examples/tennis/localization_skeleton.yaml
+```
+
+The downloader reconstructs ordinary video annotations and extracts the videos.
+For example, training reads
+`data/tennis-localization/swing-data/train/train.json`, with video paths resolved
+under `data/tennis-localization/swing-data/train/`. OSL's logical `valid` and
+`valid_data_frames` splits both use the downloaded `validation` directory. The
+downloader records the resolved Hub commit in each JSON manifest.
+
+For DALI, additionally install `opensportslib setup --dali`, then use
+`examples/tennis/localization_skeleton_dali.yaml` in the training command.
+Both configs run 100 epochs by default. For a one-epoch setup check, set
+`TRAIN.epochs: 1`,
+`TRAIN.scheduler: {type: StepLR, step_size: 1, gamma: 1.0}`,
+`TRAIN.execution.criterion_valid: loss`, and
+`DATA.inputs.video.sampling.epoch_num_frames: 1024`. A training batch size of
+one reduces raw-frame memory. Final evaluation still processes the full
+validation split.
+
+Both examples select checkpoints by sampled validation loss
+(`TRAIN.execution.criterion_valid: loss`). Full spotting mAP evaluation runs once
+after training, using the best validation-loss checkpoint. To evaluate mAP during
+training instead, set `criterion_valid: map`; `valid_map_every: 10` then evaluates
+at displayed epochs 1, 11, 21, and so on, because the trainer uses zero-based
+epoch indices. Final evaluation still runs after training. Automatic convergence
+detection and early stopping are not implemented in this trainer.
+
+This selects the dataset only. The graph encoder and spotting head train from
+scratch with frozen detector/pose weights; the separately hosted RGB model
+checkpoint with the same Hub name is not loaded by these configs.
 
 ## Exact-clip caches and explicit extraction
 

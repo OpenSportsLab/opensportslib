@@ -1,5 +1,6 @@
 """Frozen model-owned video frontend, with explicit per-video session state."""
 from dataclasses import replace
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 import os
@@ -34,6 +35,7 @@ class PoseTracking(nn.Module):
         from opensportslib.preprocessing.config import validate_preprocessing
         validate_preprocessing(self.settings)
         self._backends = {}
+        self._observers = {}
         self.register_buffer('_device_anchor', torch.empty(0), persistent=False)
         self.train(False)
 
@@ -56,6 +58,28 @@ class PoseTracking(nn.Module):
 
     def open_session(self):
         return PoseVideoSession(self)
+
+    @contextmanager
+    def observe(self, callback):
+        """Inspect actual source-space observations, including exact-cache hits.
+
+        ``callback(records, video_meta)`` runs synchronously before graph
+        conversion. Records are borrowed: callbacks must not mutate them.
+        Handles clip forwards and explicit video sessions; no persistence is
+        enabled unless a caller installs an observer that writes records.
+        """
+        if not callable(callback):
+            raise TypeError('Observation callback must be callable')
+        token = object()
+        self._observers[token] = callback
+        try:
+            yield self
+        finally:
+            del self._observers[token]
+
+    def _notify_observers(self, rows, meta):
+        for callback in tuple(self._observers.values()):
+            callback(rows, meta)
 
     def iter_video(self, path, config, *, start_time_ms=0, end_time_ms=None):
         """Chronological inference through the ordinary spotting video reader."""
@@ -116,7 +140,9 @@ class PoseTracking(nn.Module):
             identity = self._identity(meta)
             destination = Path(cache['path'])/identity_digest(identity)
             if destination.exists():
-                return list(SkeletonCache(destination, identity))
+                rows = list(SkeletonCache(destination, identity))
+                self._notify_observers(rows, meta)
+                return rows
             if mode == 'read':
                 raise FileNotFoundError(f'Exact-clip skeleton cache missing: {destination}')
         session = self.open_session()
@@ -200,6 +226,7 @@ class PoseVideoSession:
         limit = max(1, 2*len(meta['frames']))
         while len(self.recent) > limit:
             self.recent.pop(next(iter(self.recent)))
+        self.frontend._notify_observers(output, meta)
         return output
 
     def finish(self):

@@ -287,6 +287,88 @@ def test_exact_clip_cache_matches_live_without_runtime_or_state_leakage(tmp_path
     assert len(list((tmp_path/'cache').iterdir()))==2
 
 
+def test_pose_observer_exports_live_and_cache_hits_without_leaking_context(tmp_path):
+    from tests.helpers.video_pose import write_video, inject_backend
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.preprocessors import PoseTracking
+    from opensportslib.preprocessing.diagnostics import PoseTraceWriter
+    path = write_video(tmp_path / 'clip.mp4', 3)
+    frontend = PoseTracking({'selection': 'all_people', 'cache': {'mode': 'read_write', 'path': str(tmp_path / 'cache')}})
+    backend = inject_backend(frontend)
+    frames, meta = read_raw_clip(path, [-1, 0, 0, 2])
+    captured = []
+    with PoseTraceWriter(tmp_path / 'poses.jsonl') as trace, frontend.observe(trace):
+        live = frontend.observations(frames, meta)
+        cached = frontend.observations(frames, meta)
+        with pytest.raises(RuntimeError, match='observer scope'):
+            with frontend.observe(lambda rows, metadata: captured.append(rows)):
+                raise RuntimeError('observer scope')
+        assert trace.requests == 2 and trace.observations == 8
+    assert backend.calls == 2 and captured == []
+    # Closed diagnostic observers are not invoked by later forwards.
+    frontend.observations(frames, meta)
+    exported = [json.loads(line) for line in (tmp_path / 'poses.jsonl').read_text().splitlines()]
+    assert len(exported) == 8 and [row['request_index'] for row in exported] == [0] * 4 + [1] * 4
+    for row, frame in zip(exported, live + cached):
+        np.testing.assert_array_equal(row['player_features'], player_features(frame))
+        assert row['skeleton']['frame_index'] == frame.frame_index
+    other = PoseTracking({'selection': 'all_people'})
+    inject_backend(other)
+    with frontend.observe(lambda rows, metadata: captured.append(rows)):
+        other.observations(frames, meta)
+    assert captured == []
+
+
+def test_prediction_overlay_preserves_vfr_unsampled_frames_and_masks(tmp_path, monkeypatch):
+    import av
+    import cv2
+    from tests.helpers.video_pose import write_video, inject_backend
+    from opensportslib.datasets.video_raw import read_raw_clip
+    from opensportslib.models.preprocessors import PoseTracking
+    from opensportslib.preprocessing.diagnostics import PoseTraceWriter
+    from opensportslib.preprocessing.visualization import render_prediction_overlay
+    path = write_video(tmp_path / 'vfr.mp4', 4, frame_indices=[3, 4, 6, 9])
+    frontend = PoseTracking({'selection': 'all_people'})
+    backend = inject_backend(frontend)
+    trace_path = tmp_path / 'poses.jsonl'
+    with PoseTraceWriter(trace_path) as trace, frontend.observe(trace):
+        frontend.observations(*read_raw_clip(path, [0]))
+        backend.absent = True
+        frontend.observations(*read_raw_clip(path, [2]))
+    boxes = []
+    original = cv2.rectangle
+    def record_box(image, start, end, *args, **kwargs):
+        boxes.append((start, end))
+        return original(image, start, end, *args, **kwargs)
+    monkeypatch.setattr(cv2, 'rectangle', record_box)
+    predictions = {'task': 'action_classification', 'data': [{'labels': {'action': {'label': 'swing', 'confidence': .9}}}]}
+    output = tmp_path / 'annotated.mp4'
+    result = render_prediction_overlay(path, trace_path, predictions, output)
+    assert result['source_frames'] == 4 and result['sampled_source_frames'] == 2
+    assert boxes == [((10, 10), (30, 60))]
+    with av.open(str(path)) as movie:
+        decoded = list(movie.decode(video=0))
+        source = [float(frame.pts * frame.time_base) for frame in decoded]
+        source_durations = [float(frame.duration * frame.time_base) for frame in decoded]
+        source_duration = float(movie.streams.video[0].duration * movie.streams.video[0].time_base)
+    with av.open(str(output)) as movie:
+        decoded = list(movie.decode(video=0))
+        rendered = [float(frame.pts * frame.time_base) for frame in decoded]
+        rendered_durations = [float(frame.duration * frame.time_base) for frame in decoded]
+        rendered_duration = float(movie.streams.video[0].duration * movie.streams.video[0].time_base)
+    np.testing.assert_allclose(rendered, np.array(source) - source[0], atol=1e-6)
+    np.testing.assert_allclose(rendered_durations, source_durations, atol=1e-6)
+    assert abs(rendered_duration - source_duration) < 1e-6
+    with pytest.raises(FileExistsError):
+        render_prediction_overlay(path, trace_path, predictions, output)
+    rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
+    rows[0]['skeleton']['pts'] += 1
+    trace_path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+    with pytest.raises(ValueError, match='timestamp mismatch'):
+        render_prediction_overlay(path, trace_path, predictions, tmp_path / 'bad.mp4')
+    assert not (tmp_path / 'bad.mp4').exists() and not (tmp_path / 'bad.part.mp4').exists()
+
+
 def test_pose_config_contract_and_legacy_migration():
     from opensportslib.core.config.editable import Config
     from opensportslib.core.config.validate import validate_config

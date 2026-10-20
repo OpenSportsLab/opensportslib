@@ -16,6 +16,271 @@ _SPEC = importlib.util.spec_from_file_location(
 conversion = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(conversion)
 
+_TENNIS_SPEC = importlib.util.spec_from_file_location(
+    "tennis_conversion", Path(__file__).parents[3] / "tools/convert/tennis_to_classification.py"
+)
+tennis = importlib.util.module_from_spec(_TENNIS_SPEC)
+_TENNIS_SPEC.loader.exec_module(tennis)
+
+
+@pytest.fixture
+def tennis_source_dataset(tmp_path):
+    import os
+
+    movie = tmp_path / "tennis.mp4"
+    rate, tb = Fraction(30000, 1001), Fraction(1, 90000)
+    with av.open(str(movie), "w") as output:
+        encoder = output.add_stream("libx264", rate=rate)
+        encoder.width, encoder.height = 64, 48
+        encoder.pix_fmt = "yuv420p"
+        encoder.time_base = encoder.codec_context.time_base = tb
+        for index in range(48):
+            frame = av.VideoFrame.from_ndarray(np.full((48, 64, 3), index * 3, np.uint8), format="rgb24")
+            frame.pts, frame.time_base = 90000 + index * 3003, tb
+            for packet in encoder.encode(frame):
+                output.mux(packet)
+        for packet in encoder.encode():
+            output.mux(packet)
+    root = tmp_path / "tennis-localization"
+    for split, names in (("train", ("a", "b")), ("validation", ("a", "b")), ("test", ("t",))):
+        directory = root / split
+        directory.mkdir(parents=True)
+        records = []
+        for name in names:
+            filename = f"{split}_{name}.mp4"
+            os.link(movie, directory / filename)
+            records.append({"id": f"{split}_{name}", "metadata": {"base_video": name},
+                            "inputs": [{"type": "video", "path": filename}],
+                            "events": [{"head": "tennis_action", "label": label, "position_ms": position}
+                                       for label, position in zip(tennis.CLASSES, (0, 400, 800, 1500))]
+                                      + [{"head": "tennis_action", "label": "far_court_bounce", "position_ms": 200}]})
+        tennis.write_json(directory / f"{split}.json", {"task": "action_spotting",
+                          "labels": {"tennis_action": {"labels": [*tennis.CLASSES, "far_court_bounce"]}}, "data": records})
+    return root
+
+
+def test_tennis_event_clips_preserve_timestamps_labels_and_match_splits(tennis_source_dataset, tmp_path):
+    from opensportslib.core.utils.load_annotations import load_annotations
+
+    output = tmp_path / "classification"
+    report = tennis.build(tennis_source_dataset, output)
+    assert report["status"] == "complete" and report["expected_clips"] == 20
+    assert report["split_counts"] == {"train": 8, "valid": 8, "test": 4}
+    assert not set(report["matches"]["train"]) & set(report["matches"]["valid"])
+    assert not set(report["matches"]["test"]) & (set(report["matches"]["train"]) | set(report["matches"]["valid"]))
+    for split in ("train", "valid", "test"):
+        document = json.loads((output / f"{split}.json").read_text())
+        assert document["labels"]["action"]["labels"] == list(tennis.CLASSES)
+        loaded, labels = load_annotations(output / f"{split}.json", task_key="action")
+        assert len(loaded) == report["split_counts"][split] and len(labels) == 4
+        for sample in document["data"]:
+            metadata = sample["metadata"]["conversion"]
+            assert metadata["source_start_pts"] >= 90000
+            assert Fraction(metadata["source_fps"]) == Fraction(30000, 1001)
+            assert 0 <= metadata["event_offset_ms"] < metadata["duration_seconds"] * 1000
+            assert metadata["duration_seconds"] <= 1.001
+            assert metadata["width"] == 64 and metadata["height"] == 48
+            with av.open(str(output / sample["inputs"][0]["path"])) as movie:
+                times = [float(frame.pts * frame.time_base) for frame in movie.decode(video=0)]
+                assert times[0] == 0 and len(times) == metadata["frame_count"]
+                np.testing.assert_allclose(np.diff(times), float(Fraction(1001, 30000)), atol=2e-5, rtol=0)
+            for other in (0, .4, .8, 1.5):
+                if other != metadata["event_position_ms"] / 1000:
+                    assert not metadata["source_start_seconds"] <= other < metadata["source_end_seconds"]
+
+
+def test_tennis_conversion_resume_repairs_only_corrupt_clips(tennis_source_dataset, tmp_path):
+    output = tmp_path / "classification"
+    first = tennis.build(tennis_source_dataset, output)
+    paths = sorted((output / "clips").glob("*/*.mp4"))
+    mtimes = {path: path.stat().st_mtime_ns for path in paths}
+    resumed = tennis.build(tennis_source_dataset, output)
+    assert resumed["encoded_clips"] == 0 and resumed["reused_clips"] == first["expected_clips"]
+    assert all(path.stat().st_mtime_ns == mtimes[path] for path in paths)
+    paths[0].write_bytes(b"interrupted/corrupt video")
+    repaired = tennis.build(tennis_source_dataset, output)
+    assert repaired["encoded_clips"] == 1 and repaired["reused_clips"] == len(paths) - 1
+    assert all(path.stat().st_mtime_ns == mtimes[path] for path in paths[1:])
+    with pytest.raises(ValueError, match="another conversion"):
+        tennis.build(tennis_source_dataset, output, before_seconds=.25)
+
+
+def test_tennis_conversion_rejects_missing_media_and_invalid_targets(tennis_source_dataset, tmp_path):
+    jobs, _ = tennis.load_sources(tennis_source_dataset)
+    job = jobs[0]
+    info = tennis.probe(job["source"])
+    bad = copy.deepcopy(job)
+    bad["events"][-1]["time"] = info["duration"] + 1
+    with pytest.raises(ValueError, match="outside video"):
+        tennis.plan_windows(bad, info, .5, .5, True)
+    with pytest.raises(ValueError, match="separate"):
+        tennis.build(tennis_source_dataset, tennis_source_dataset / "output")
+    Path(job["source"]).unlink()
+    with pytest.raises(ValueError, match="missing video"):
+        tennis.load_sources(tennis_source_dataset)
+
+
+def test_tennis_conversion_reports_explicitly_excluded_out_of_video_events(tennis_source_dataset, tmp_path):
+    manifest = tennis_source_dataset / "test" / "test.json"
+    document = json.loads(manifest.read_text())
+    truncated = copy.deepcopy(document["data"][0])
+    truncated["id"] = "truncated_source"
+    truncated["events"] = [{"head": "tennis_action", "label": label, "position_ms": position}
+                           for label, position in zip(tennis.CLASSES[:3], (2000, 2500, 3000))]
+    document["data"].append(truncated)
+    tennis.write_json(manifest, document)
+    with pytest.raises(ValueError, match="outside video"):
+        tennis.build(tennis_source_dataset, tmp_path / "strict")
+    output = tmp_path / "classification"
+    report = tennis.build(tennis_source_dataset, output, invalid_events="skip")
+    assert report["status"] == "complete"
+    assert report["requested_events"] == 23 and report["expected_clips"] == 20
+    assert report["excluded_events"] == 3 and report["split_counts"]["test"] == 4
+    excluded = json.loads((output / "reports" / "excluded_events.json").read_text())
+    assert [event["event"]["position_ms"] for event in excluded] == [2000, 2500, 3000]
+    assert all(event["source_record_id"] == "truncated_source"
+               and event["reason"] == "event_outside_decoded_video"
+               and event["event"]["position_ms"] > event["source_duration_seconds"] * 1000
+               and len(event["source_video_sha256"]) == 64 for event in excluded)
+    resumed = tennis.build(tennis_source_dataset, output, invalid_events="skip")
+    assert resumed["encoded_clips"] == 0 and resumed["reused_clips"] == 20
+    assert resumed["excluded_events"] == 3
+
+
+def test_tennis_training_launcher_validates_converted_data_without_pose(tennis_source_dataset, tmp_path):
+    output = tmp_path / "classification"
+    tennis.build(tennis_source_dataset, output)
+    spec = importlib.util.spec_from_file_location(
+        "tennis_training", Path(__file__).parents[3] / "tools/train/train_tennis_skeleton.py"
+    )
+    training = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(training)
+    config = training.training_config(output, epochs=1, cache_dir=tmp_path / "pose-cache").get_config()
+    assert config["DATA"]["common"]["classes"] == list(tennis.CLASSES)
+    assert config["MODEL"]["components"]["task_head"]["params"]["num_classes"] == 4
+    assert config["DATA"]["common"]["splits"]["train"]["annotation_path"] == str(output / "train.json")
+    assert config["TRAIN"]["epochs"] == 1 and not config["TRAIN"]["sampling"]["use_weighted_sampler"]
+    assert not (tmp_path / "pose-cache").exists()
+    document = json.loads((output / "valid.json").read_text())
+    document["labels"]["action"]["labels"].reverse()
+    tennis.write_json(output / "valid.json", document)
+    with pytest.raises(ValueError, match="vocabulary"):
+        training.training_config(output)
+
+
+@pytest.fixture
+def tennis_publisher(tennis_source_dataset, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import opensportslib.tools.hf_transfer as transfer
+
+    root = tmp_path / "classification"
+    tennis.build(tennis_source_dataset, root)
+    spec = importlib.util.spec_from_file_location(
+        "tennis_publisher", Path(__file__).parents[3] / "tools/upload/upload_tennis_classification.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    calls, failures = [], set()
+
+    class FakeApi:
+        def __init__(self, **kwargs):
+            pass
+
+        def create_repo(self, repo_id, **kwargs):
+            calls.append(("repo", repo_id))
+            return repo_id
+
+        def list_repo_files(self, *args, **kwargs):
+            return [path.relative_to(remote).as_posix() for path in remote.rglob("*") if path.is_file()]
+
+        def create_commit(self, *, operations, **kwargs):
+            names = [operation.path_in_repo for operation in operations]
+            calls.append(("commit", names))
+            if any(name.split("/")[0] in failures for name in names):
+                raise RuntimeError("Upload interrupted")
+            for operation in operations:
+                path = remote / operation.path_in_repo
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(Path(operation.path_or_fileobj).read_bytes())
+            return SimpleNamespace(oid=f"commit-{len(calls)}")
+
+    monkeypatch.setattr(module, "HfApi", FakeApi)
+    monkeypatch.setattr(transfer, "_import_hf_hub", lambda: (FakeApi, None, None))
+    return module, root, remote, calls, failures
+
+
+def test_tennis_publish_check_only_is_offline_and_renders_card(tennis_publisher):
+    import yaml
+
+    module, root, remote, calls, _ = tennis_publisher
+    assert module.main(["--data-root", str(root), "--check-only"]) == 0
+    assert calls == [] and not list(remote.iterdir())
+    readme = (root / "README.md").read_text()
+    header = yaml.safe_load(readme.split("---", 2)[1])
+    assert header["license"] == "agpl-3.0"
+    assert header["configs"][0]["data_files"][1] == {"split": "validation", "path": "valid/metadata.parquet"}
+    assert "20 short broadcast-video clips" in readme and "**0 selected events**" in readme
+    assert "| 0 | `far_court_serve` | 2 | 2 | 1 |" in readme
+
+
+@pytest.mark.parametrize("failure", ["unfinished", "missing", "corrupt", "receipt", "exclusions"])
+def test_tennis_publish_invalid_release_never_contacts_hub(tennis_publisher, failure):
+    module, root, _, calls, _ = tennis_publisher
+    if failure == "unfinished":
+        report = json.loads((root / "reports/build.json").read_text())
+        report["status"] = "running"
+        tennis.write_json(root / "reports/build.json", report)
+    elif failure == "exclusions":
+        tennis.write_json(root / "reports/excluded_events.json", [{"unexpected": "event"}])
+    elif failure == "receipt":
+        path = next((root / "receipts").glob("*.json"))
+        receipt = json.loads(path.read_text())
+        receipt["output_sha256"] = "changed"
+        tennis.write_json(path, receipt)
+    else:
+        path = next((root / "clips").glob("*/*.mp4"))
+        if failure == "missing":
+            path.unlink()
+        else:
+            path.write_bytes(b"corrupt MP4")
+    assert module.main(["--data-root", str(root)]) == 1
+    assert calls == []
+
+
+def test_tennis_publish_uses_real_osl_shards_then_publishes_card(tennis_publisher):
+    from opensportslib.tools import convert_parquet_to_json
+
+    module, root, remote, calls, _ = tennis_publisher
+    assert module.main(["--data-root", str(root), "--shard-size", "100KB"]) == 0
+    assert calls[0] == ("repo", module.REPO_ID)
+    assert [call[1][0].split("/")[0] for call in calls[1:]] == ["train", "valid", "test", "README.md"]
+    assert (remote / "README.md").read_text() == (root / "README.md").read_text()
+    report = json.loads((remote / "reports/conversion.json").read_text())
+    assert report["source_commit"] == module.SOURCE_COMMIT and "source_root" not in report
+    assert len((remote / "checksums.sha256").read_text().splitlines()) == 20
+    assert not list(remote.rglob("receipts"))
+    for split in module.SPLITS:
+        output = root.parent / "roundtrip" / split
+        output.mkdir(parents=True)
+        manifest = output / f"{split}.json"
+        convert_parquet_to_json(remote / split, manifest, extract_media=True, output_media_root=output)
+        original = json.loads((root / f"{split}.json").read_text())
+        restored = json.loads(manifest.read_text())
+        assert restored["data"] == original["data"]
+        for sample in restored["data"]:
+            path = sample["inputs"][0]["path"]
+            assert tennis.digest(output / path) == tennis.digest(root / path)
+
+
+def test_tennis_publish_failure_does_not_publish_readme(tennis_publisher):
+    module, root, remote, calls, failures = tennis_publisher
+    failures.add("valid")
+    assert module.main(["--data-root", str(root)]) == 1
+    assert [call[1][0].split("/")[0] for call in calls[1:]] == ["train", "valid"]
+    assert not (remote / "README.md").exists() and not (remote / "test").exists()
+
 
 @pytest.fixture
 def source_dataset(tmp_path):

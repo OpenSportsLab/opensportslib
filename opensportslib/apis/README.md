@@ -444,3 +444,9 @@ multiview classification, and optionally caches exact clip extraction inside the
 model. `warm-cache` explicitly prepares caches; old skeleton dataset types are removed.
 Inference returns predictions in memory; use `save_predictions(...)` explicitly.
 See the [extraction, caching, timing, and installation guide](../../docs/preprocessing/video-to-skeleton.md).
+For an explicit pose trace and annotated prediction video from a trained
+checkpoint, use the [single-video inspection script](../../tools/inference/README.md).
+An already loaded `model.preprocessor.observe(callback)` context receives the
+actual `(records, video_meta)` before graph conversion, including cache hits and
+continuous sessions. Callbacks must not mutate records; the observer is removed
+on context exit. Ordinary inference gains no implicit persistence.

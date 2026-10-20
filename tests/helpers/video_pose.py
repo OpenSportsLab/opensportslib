@@ -74,3 +74,14 @@ def inject_backend(frontend, backend=None):
     backend = backend or PoseBackend()
     frontend._backends[(os.getpid(), str(frontend._device_anchor.device))] = backend
     return backend
+
+
+def inspection_tool():
+    """Load the shared single-video CLI for owning task integration tests."""
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        'inspect_video', Path(__file__).parents[2] / 'tools/inference/inspect_video.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

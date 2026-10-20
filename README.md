@@ -315,3 +315,6 @@ batches into player graphs for classification and spotting. Training supports
 live clip extraction, optional exact-clip caching and multiview classification. See the [video-to-skeleton guide](docs/preprocessing/video-to-skeleton.md)
 and the [tennis examples](examples/tennis). GPU throughput and public-tennis quality
 are not yet validated.
+For a trained checkpoint, the [single-video inspection script](tools/inference/README.md)
+exports the actual boxes/poses and renders them with classification or spotting
+predictions on a new video.

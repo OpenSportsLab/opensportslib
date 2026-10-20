@@ -58,9 +58,10 @@ def test_skeleton_spotting_stream_cache_model_equivalence(tmp_path):
     live=list(spotting_events(model,config,iter(frames)))
     cached=list(spotting_events(model,config,iter(SkeletonCache(tmp_path/'pose'))))
     assert live==cached
+    num_outputs=len(payload['DATA']['common']['classes'])+1
     for window in iter_windows(frames,4,2):
         _, a=model.predict(sequence_batch(window),use_amp=False)
-        assert a.shape==(1,4,5)
+        assert a.shape==(1,4,num_outputs)
         assert np.isfinite(a).all()
     # Temporal padding cannot influence bidirectional states.
     short=list(iter_windows(frames[:2],4,2))[0]
@@ -154,3 +155,42 @@ def test_dali_spotting_route_uses_video_dataset_and_raw_metadata(tmp_path,monkey
     _,probabilities=model.predict(batch,use_amp=False)
     assert probabilities.shape==(1,4,3)
     assert loader.num_workers==0 and batch['video_meta']
+
+
+def test_localization_video_inspection_preserves_cuts_timing_and_predictions(tmp_path, monkeypatch):
+    import av
+    import json
+    import numpy as np
+    import torch
+    import yaml
+    from tests.helpers.video_pose import pose_config, PoseBackend, write_video, inspection_tool
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.models.builder import build_model
+    from opensportslib.apis.localization import LocalizationModel
+
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend', PoseBackend)
+    payload = pose_config('localization', tmp_path, count=7)
+    write_video(tmp_path / 'clip.mp4', 7, cut=4)
+    model = build_model(dict_to_namespace(payload), 'cpu')
+    checkpoint = tmp_path / 'weights.pt'
+    torch.save({'model_state_dict': model._model.state_dict()}, checkpoint)
+    (tmp_path / 'config.yaml').write_text(yaml.safe_dump(payload))
+    output = tmp_path / 'inspection'
+    tool = inspection_tool()
+    report = tool.run('localization', tmp_path / 'clip.mp4', checkpoint, output, device='cpu')
+    assert report['status'] == 'complete' and report['observations'] == 7
+    rows = [json.loads(line)['skeleton'] for line in (output / 'poses.jsonl').read_text().splitlines()]
+    assert [row['frame_index'] for row in rows] == list(range(7))
+    assert [row['shot_id'] for row in rows] == [0] * 4 + [1] * 3
+    assert rows[4]['track_ids'][0] != rows[3]['track_ids'][0]
+    assert report['render']['source_frames'] == report['render']['sampled_source_frames'] == 7
+    with av.open(str(tmp_path / 'clip.mp4')) as movie:
+        source = [float(frame.pts * frame.time_base) for frame in movie.decode(video=0)]
+    with av.open(str(output / 'annotated.mp4')) as movie:
+        actual = [float(frame.pts * frame.time_base) for frame in movie.decode(video=0)]
+    np.testing.assert_allclose(actual, np.array(source) - source[0], atol=1e-6)
+    predictions = json.loads((output / 'predictions.json').read_text())
+    # Export/overlay leaves the established spotting event contract unchanged.
+    api = LocalizationModel(config=str(tmp_path / 'config.yaml'), weights=str(checkpoint))
+    expected = api.infer(video_path=str(tmp_path / 'clip.mp4'), use_wandb=False)
+    assert predictions == expected

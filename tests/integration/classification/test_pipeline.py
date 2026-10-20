@@ -85,3 +85,48 @@ def test_multiview_pose_averages_embeddings_before_classification(tmp_path):
         model(multi)
     finally:handle.remove()
     torch.testing.assert_close(embeddings[1],embeddings[0].mean(0,keepdim=True))
+
+
+def test_classification_video_inspection_exports_used_poses_and_checkpoint_prediction(tmp_path, monkeypatch):
+    import av
+    import json
+    import numpy as np
+    import torch
+    import yaml
+    from tests.helpers.video_pose import pose_config, PoseBackend, inspection_tool
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.models.builder import build_model
+    from opensportslib.preprocessing.diagnostics import trace_frames
+
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend', PoseBackend)
+    payload = pose_config('classification', tmp_path, count=2)
+    payload['MODEL']['components']['task_head']['params']['dropout'] = 0.
+    config = dict_to_namespace(payload)
+    model, _ = build_model(config, 'cpu')
+    # A deterministic checkpoint makes label/order/loading mistakes observable.
+    with torch.no_grad():
+        for parameter in model.head.parameters():
+            parameter.zero_()
+        model.head.classifier[-1].bias.copy_(torch.tensor([-2., 2.]))
+    checkpoint = tmp_path / 'weights.pt'
+    torch.save({'model_state_dict': model.state_dict()}, checkpoint)
+    (tmp_path / 'config.yaml').write_text(yaml.safe_dump(payload))
+    tool = inspection_tool()
+    output = tmp_path / 'inspection'
+    report = tool.run('classification', tmp_path / 'clip.mp4', checkpoint, output, device='cpu')
+    assert report['status'] == 'complete' and report['observations'] == 4
+    assert report['render']['source_frames'] == report['render']['sampled_source_frames'] == 2
+    predictions = json.loads((output / 'predictions.json').read_text())
+    label = predictions['data'][0]['labels']['action']
+    assert label['label'] == 'serve' and abs(label['confidence'] - .98201379) < 1e-6
+    rows = [json.loads(line) for line in (output / 'poses.jsonl').read_text().splitlines()]
+    assert [row['skeleton']['frame_index'] for row in rows] == [0, 0, 1, 1]
+    assert all(np.shape(row['player_features']) == (2, 73) for row in rows)
+    # Export preserves repeated graph inputs, while drawing de-duplicates frames.
+    assert len(list(trace_frames(output / 'poses.jsonl', tmp_path / 'clip.mp4'))) == 2
+    with av.open(str(output / 'annotated.mp4')) as movie:
+        frames = list(movie.decode(video=0))
+        assert len(frames) == 2 and frames[0].pts == 0
+    assert not list(output.glob('*.part.mp4'))
+    assert tool.main(['--task', 'classification', '--video', str(tmp_path / 'clip.mp4'),
+                      '--weights', str(checkpoint), '--output-dir', str(output)]) == 1

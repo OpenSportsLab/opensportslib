@@ -27,6 +27,10 @@ Split arguments override the corresponding configured annotation path for that c
 
 ### Classification
 
+For tennis stroke classification with online frozen skeleton extraction and the
+existing graph classifier, see the
+[dataset conversion and training launcher](../tools/tennis-classification.md).
+
 Use `ClassificationModel` with `opensportslib/configs/classification/video.yaml`, `sngar_frames.yaml`, or `sngar_tracking.yaml` as the starting point matching your input modality. The script route is:
 
 ```bash
@@ -44,6 +48,15 @@ python tools/training/localization.py --config /path/to/localization.yaml \
 ```
 
 See [tracking action spotting](../spotting/tracking-action-spotting.md) and the [headers guide](../headers/README.md) for specialist routes.
+
+For public tennis with model-owned pose/tracking, the localization examples use
+[`OpenSportsLab/OSL-loc-tennis-public`](https://huggingface.co/datasets/OpenSportsLab/OSL-loc-tennis-public)
+at revision `swing-data`, configured for the local `tennis_action` annotations:
+six classes covering near/far court bounces, serves, and swings. Both examples
+select checkpoints by validation loss and run full spotting evaluation after
+training. Follow the
+[download and training commands](../preprocessing/video-to-skeleton.md#public-tennis-localization-training)
+for the OpenCV or DALI example.
 
 ### VQA
 
@@ -75,3 +88,7 @@ Training extracts clips live with optional exact-clip caching; inference can ext
 bidirectional lookahead and returns finalized event batches. See the
 [video-to-skeleton guide](../preprocessing/video-to-skeleton.md) for installation,
 examples, limitations, and the public-tennis benchmark procedure.
+After training, the [single-video inspection script](../../tools/inference/README.md)
+exports actual model boxes/poses and overlays them with clip classifications or
+timestamped localization events. It uses the checkpoint's saved configuration
+and explicitly writes predictions, a pose trace and an annotated MP4.

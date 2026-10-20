@@ -7,6 +7,9 @@ Detailed usage is documented in each subfolder README.
 
 ```
 tools/
+├── inference/                                # single-video model diagnostics
+│   ├── README.md
+│   └── inspect_video.py
 ├── convert/                                  # dataset builders, OSL JSON ↔ Parquet + WebDataset
 │   ├── README.md
 │   ├── build_sngar_spotting.py               # raw source → SN-GAR spotting pair
@@ -20,7 +23,7 @@ tools/
 │   ├── download_osl_hf.py
 │   ├── push_sngar_spotting.py
 │   └── upload_osl_hf.py
-├── upload/                                   # Hugging Face model upload helpers
+├── upload/                                   # Hugging Face dataset/model upload helpers
 │   ├── README.md
 │   └── upload_model_hf.py
 └── slurm/                                    # SLURM job scripts
@@ -46,9 +49,10 @@ tools/
 
 ## Folder guides
 
+- See [tools/inference/README.md](inference/README.md) for actual pose exports and annotated classification/localization videos.
 - See [docs/data/osl-json-format.md](../docs/data/osl-json-format.md) for the OSL JSON schema used by dataset tools.
 - See [tools/convert/README.md](convert/README.md) for conversion scripts and examples.
 - See [tools/download/README.md](download/README.md) for HuggingFace download/upload scripts.
 - See [docs/tools/sngar-spotting.md](../docs/tools/sngar-spotting.md) for the SN-GAR action-spotting dataset build and release.
-- See [tools/upload/README.md](upload/README.md) for Hugging Face model upload scripts.
+- See [tools/upload/README.md](upload/README.md) for Hugging Face dataset and model upload scripts.
 - See [tools/slurm/README.md](slurm/README.md) for Ibex SLURM workflows (`salloc`, `srun`, `sbatch`).

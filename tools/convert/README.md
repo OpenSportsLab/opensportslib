@@ -9,6 +9,8 @@ the OSL JSON format guide in `docs/data/osl-json-format.md`.
 
 Build (raw source -> OSL JSON):
 
+- `tennis_to_classification.py`: short, timestamp-aligned serve/swing MP4s from local tennis spotting annotations, with match-separated classification manifests. See [conversion and training](../../docs/tools/tennis-classification.md).
+
 - `spotting_tracking_to_classification.py`: full-rate tracking Parquet clips matched to existing classification samples, with explicit gap handling. See [usage](../../docs/tools/spotting-tracking-to-classification.md).
 
 - `spotting_to_classification.py`: synchronized native-FPS classification MP4s, with optional exact-array reproduction. See [usage and verification contract](../../docs/tools/spotting-to-classification.md).

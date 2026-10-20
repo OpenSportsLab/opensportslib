@@ -15,8 +15,8 @@ SYSTEM:
     seed: 42
 DATA:
   common:
-    dataset_name: tennis-skeleton
-    data_root: ./data/tennis
+    dataset_name: tennis-strokes
+    data_root: ./data/tennis-classification
     classes:
     - far_court_serve
     - far_court_swing
@@ -170,7 +170,8 @@ TRAIN:
     enabled: true
     detailed_results: true
   sampling:
-    use_weighted_sampler: true
+    # Sample generated stroke clips without replacement.
+    use_weighted_sampler: false
     use_weighted_loss: false
     samples_per_class: 4000
   selection:
