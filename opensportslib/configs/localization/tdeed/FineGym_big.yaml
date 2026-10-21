@@ -1,0 +1,157 @@
+TASK: localization
+VERSION: 2
+SYSTEM:
+  device: cuda
+  gpu:
+    count: 1
+  paths:
+    save_dir: outputs/tdeed
+  reproducibility:
+    seed: 1
+    use_seed: true
+DATA:
+  common:
+    dataset_name: finegym
+    data_root: data/spotting-cleanup/FineGym/prepared
+    classes:
+    - BB_dismounts_end
+    - BB_dismounts_start
+    - BB_flight_handspring_end
+    - BB_flight_handspring_start
+    - BB_flight_salto_end
+    - BB_flight_salto_start
+    - BB_leap_jump_hop_end
+    - BB_leap_jump_hop_start
+    - BB_turns_end
+    - BB_turns_start
+    - FX_back_salto_end
+    - FX_back_salto_start
+    - FX_front_salto_end
+    - FX_front_salto_start
+    - FX_leap_jump_hop_end
+    - FX_leap_jump_hop_start
+    - FX_side_salto_end
+    - FX_side_salto_start
+    - FX_turns_end
+    - FX_turns_start
+    - UB_circles_end
+    - UB_circles_start
+    - UB_dismounts_end
+    - UB_dismounts_start
+    - UB_fligh_same_bar_end
+    - UB_fligh_same_bar_start
+    - UB_transition_flight_end
+    - UB_transition_flight_start
+    - VT_0
+    - VT_1
+    - VT_2
+    - VT_3
+    splits:
+      train:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/train.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+      valid:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/valid.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 0
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+      test:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/test.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+        repo_id: OpenSportsLab/OSL-loc-gymnastics
+        revision: main
+      sampling:
+        clip_len: 100
+        stride: 1
+        epoch_num_frames: 500000
+      transform:
+        resize:
+          height: 224
+          width: 224
+      params:
+        mixup: true
+        dilate_len: 0
+MODEL:
+  metadata:
+    family: TDEED
+    runner:
+      type: runner_tdeed
+    reference_commit: d953b4de8a2ad941c565e1683c5b07255cbe644e
+    reference_config: FineGym_big.json
+    reference_config_sha256: bc270f2a15d97ad6b90e7dedcf30cb8b800264d37c8813335eb5c5a4d90ca473
+    recipe: released-code
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny008_gsf
+      params:
+        feature_arch: rny008_gsf
+        modality: rgb
+        pretrained: true
+        crop_dim: 224
+        pretrained_model_id: timm/regnety_008.pycls_in1k
+        pretrained_revision: ad27a8e42099466890afc4dbcc24cce1340776b9
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: ed_sgp_mixer
+      params:
+        temporal_arch: ed_sgp_mixer
+        radi_displacement: 0
+        n_layers: 3
+        sgp_ks: 9
+        sgp_r: 4
+  topology:
+  - from: video_encoder
+    to: task_head
+IO:
+  inputs:
+    video: video_encoder
+  outputs:
+    logits: task_head
+TRAIN:
+  trainer:
+    type: trainer_tdeed
+  epochs: 100
+  optimizer:
+    type: AdamW
+    lr: 0.0008
+    weight_decay: 0.01
+  scheduler:
+    type: reference_chained
+    warm_up_epochs: 6
+  execution:
+    enabled: true
+    acc_grad_iter: 1
+    start_valid_epoch: 80
+  selection:
+    monitor: valid_map
+    mode: max
+    test_flip: true
+    postprocessing: soft_nms
+    nms_window: 1
+    soft_nms_window: 3

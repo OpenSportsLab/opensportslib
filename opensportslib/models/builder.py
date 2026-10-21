@@ -68,6 +68,10 @@ def build_model_canonical(config, device):
         runner = get_runner_type(config)
         normalized_family = str(model_family or "").strip().lower()
 
+        if normalized_family == "tdeed":
+            from opensportslib.models.base.tdeed import build_tdeed
+            return build_tdeed(config, device)
+
         if normalized_family == "rulebased":
             from opensportslib.models.base.rule_based import build_rule_based_model
             return build_rule_based_model(config)
@@ -112,7 +116,7 @@ def build_model_canonical(config, device):
 
         raise ValueError(
             f"Unsupported localization model family: {model_family!r}. "
-            "Expected one of: E2E, ContextAware, LearnablePooling."
+            "Expected one of: E2E, TDEED, ContextAware, LearnablePooling."
         )
     if task == "vqa":
         backend = get_vqa_backend(config)

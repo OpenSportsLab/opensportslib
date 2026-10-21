@@ -485,6 +485,7 @@ class Trainer_e2e(Trainer):
         )
         self.model._model, _, _, _, epoch, _ = load_checkpoint(model=self.model._model,
                                         path=best_checkpoint_path,
+                                        device=next(self.model._model.parameters()).device,
                                         key_remap_fn=localization_remap)
         logging.info(f"Loaded best model from epoch {self.best_epoch}")
 

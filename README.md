@@ -1,5 +1,9 @@
 # OpenSportsLib
 
+T-DEED localization training, evaluation and local experiment recipes are available.
+See the [T-DEED reproduction guide](docs/tni/tdeed.md) for validation, resumable
+runs and current reproduction gaps.
+
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.

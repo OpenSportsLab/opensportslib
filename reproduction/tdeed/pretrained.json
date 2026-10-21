@@ -1,0 +1,24 @@
+{
+  "regnety_002.pycls_in1k": {
+    "repo": "timm/regnety_002.pycls_in1k",
+    "revision": "3c4d5882de76610654d238ecd8f265519505aa51",
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "config.json",
+      "model.safetensors",
+      "pytorch_model.bin"
+    ]
+  },
+  "regnety_008.pycls_in1k": {
+    "repo": "timm/regnety_008.pycls_in1k",
+    "revision": "ad27a8e42099466890afc4dbcc24cce1340776b9",
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "config.json",
+      "model.safetensors",
+      "pytorch_model.bin"
+    ]
+  }
+}

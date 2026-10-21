@@ -1,0 +1,144 @@
+{
+  "source": "https://arturxe2.github.io/files/TDEED_Revisited.pdf",
+  "tables": [
+    "1",
+    "2",
+    "4",
+    "7"
+  ],
+  "scale": "percent",
+  "PES_tolerances_frames": [
+    1,
+    2
+  ],
+  "SNAS_metrics": [
+    "tight",
+    "loose"
+  ],
+  "targets": {
+    "fs_comp": {
+      "small": [
+        85.15,
+        91.7
+      ],
+      "big": [
+        84.77,
+        92.86
+      ]
+    },
+    "fs_perf": {
+      "small": [
+        86.79,
+        96.05
+      ],
+      "big": [
+        88.17,
+        95.87
+      ]
+    },
+    "finediving": {
+      "small": [
+        71.48,
+        87.62
+      ],
+      "big": [
+        73.23,
+        88.88
+      ]
+    },
+    "tennis": {
+      "small": [
+        97.03,
+        97.92
+      ],
+      "big": [
+        97.45,
+        97.97
+      ]
+    },
+    "finegym": {
+      "small": [
+        55.97,
+        68.55
+      ],
+      "big": [
+        56.64,
+        69.77
+      ]
+    },
+    "FG-Start": {
+      "small": [
+        68.06,
+        81.0
+      ],
+      "big": [
+        68.68,
+        82.05
+      ]
+    },
+    "soccernet": {
+      "small": [
+        61.52,
+        71.99
+      ],
+      "big": [
+        63.42,
+        74.97
+      ]
+    },
+    "soccernetball": {
+      "BAS_only": 51.43,
+      "BAS_AS": 58.91,
+      "private_challenge_ensemble": 73.39
+    }
+  },
+  "acceptance": "No numerical equivalence has been established. Store per-seed results and their mean, report signed gaps; never mark a run reproduced solely because training completed.",
+  "ablation_delta1_percent": {
+    "fs_comp_plain_transformer": 69.68,
+    "finediving_plain_transformer": 59.84,
+    "fs_comp_plain_gru": 72.04,
+    "finediving_plain_gru": 59.09,
+    "fs_comp_plain_sgp": 73.14,
+    "finediving_plain_sgp": 60.07,
+    "fs_comp_skip_none": 74.29,
+    "finediving_skip_none": 63.01,
+    "fs_comp_skip_sum": 73.27,
+    "finediving_skip_sum": 60.14,
+    "fs_comp_skip_concat": 76.78,
+    "finediving_skip_concat": 61.9,
+    "fs_comp_sgp_mixer_sum": 76.88,
+    "finediving_sgp_mixer_sum": 61.34,
+    "fs_comp_sgp_mixer_concat": 77.96,
+    "finediving_sgp_mixer_concat": 63.67,
+    "fs_comp_dilation_0": 74.74,
+    "finediving_dilation_0": 63.67,
+    "fs_comp_dilation_1": 77.96,
+    "finediving_dilation_1": 61.97,
+    "fs_comp_displacement_1": 78.2,
+    "finediving_displacement_1": 67.49,
+    "fs_comp_displacement_2": 77.12,
+    "finediving_displacement_2": 68.31,
+    "fs_comp_tridet_pyramid": 68.31,
+    "finediving_tridet_pyramid": 64.28,
+    "fs_comp_gsm_all": 81.0,
+    "finediving_gsm_all": 67.95,
+    "fs_comp_gsm_half": 81.05,
+    "finediving_gsm_half": 67.47,
+    "fs_comp_gsf_all": 80.43,
+    "finediving_gsf_all": 67.87,
+    "fs_comp_gsf_half": 81.25,
+    "finediving_gsf_half": 68.4,
+    "fs_comp_length_25": 71.02,
+    "finediving_length_25": 66.61,
+    "fs_comp_length_50": 76.87,
+    "finediving_length_50": 64.84,
+    "fs_comp_length_100": 81.25,
+    "finediving_length_100": 68.4,
+    "fs_comp_length_200": 79.19,
+    "finediving_length_200": 65.29,
+    "fs_comp_nms": 83.79,
+    "finediving_nms": 71.1,
+    "fs_comp_soft_nms": 85.15,
+    "finediving_soft_nms": 71.48
+  }
+}

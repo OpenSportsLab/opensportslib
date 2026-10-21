@@ -226,6 +226,13 @@ class LocalizationModel(BaseTaskModel):
         weights: str | None = None,
         **kwargs,
     ) -> None:
+        if str(get_model_family(self.config)).lower() == "tdeed":
+            from opensportslib.core.trainer.tdeed_trainer import ensure_model
+            if weights is None:
+                raise ValueError("`weights` must be provided to load_weights().")
+            ensure_model(self, weights)
+            self.best_checkpoint = str(weights)
+            return
         from opensportslib.models.builder import build_model
         from opensportslib.core.utils.config import is_local_path, select_device
         from opensportslib.core.utils.checkpoint import (
@@ -319,6 +326,11 @@ class LocalizationModel(BaseTaskModel):
         use_wandb=True,
         **kwargs,
     ):
+        if str(get_model_family(self.config)).lower() == "tdeed":
+            from opensportslib.core.trainer.tdeed_trainer import train
+            if kwargs:
+                raise TypeError(f"Unsupported T-DEED training options: {', '.join(kwargs)}")
+            return train(self, train_set, valid_set, weights)
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_trainer
@@ -586,6 +598,11 @@ class LocalizationModel(BaseTaskModel):
                     weights=weights,
                     use_wandb=use_wandb,
                 )
+        if str(get_model_family(self.config)).lower() == "tdeed":
+            from opensportslib.core.trainer.tdeed_trainer import infer
+            if kwargs:
+                raise TypeError(f"Unsupported T-DEED inference options: {', '.join(kwargs)}")
+            return infer(self, test_set, weights)
         from opensportslib.datasets.builder import build_dataset
         from opensportslib.models.builder import build_model
         from opensportslib.core.trainer.localization_trainer import build_inferer
@@ -667,6 +684,11 @@ class LocalizationModel(BaseTaskModel):
         use_wandb=True,
         **kwargs,
     ):
+        if str(get_model_family(self.config)).lower() == "tdeed":
+            from opensportslib.core.trainer.tdeed_trainer import evaluate
+            if kwargs:
+                raise TypeError(f"Unsupported T-DEED evaluation options: {', '.join(kwargs)}")
+            return evaluate(self, test_set, weights, predictions)
         from opensportslib.core.trainer.localization_trainer import build_evaluator
         from opensportslib.core.utils.config import resolve_config_omega
         from opensportslib.core.utils.load_annotations import (

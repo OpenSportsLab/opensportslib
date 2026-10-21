@@ -1,5 +1,11 @@
 # OpenSportsLib APIs
 
+`LocalizationModel` supports `MODEL.metadata.family: TDEED` through the existing
+`train`, `infer`, `evaluate` and explicit `save_predictions` methods. See the
+[T-DEED guide](../../docs/tni/tdeed.md) for raw RGB inputs, displacement targets,
+checkpoint compatibility and experiment recipes. Its evaluation reports raw,
+NMS and Soft-NMS metrics separately; supplied predictions are scored directly.
+
 ## Configuration From Hugging Face
 
 The public `Config` class composes bundled configuration layers and keeps

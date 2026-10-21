@@ -1,4 +1,6 @@
 include README.md
 include LICENSE
 recursive-include opensportslib/config *.yaml
+recursive-include opensportslib/configs *.yaml
+recursive-include opensportslib/models/utils/impl/tdeed LICENSE*
 prune server

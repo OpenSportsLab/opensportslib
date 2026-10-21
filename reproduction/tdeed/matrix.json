@@ -1,0 +1,1486 @@
+{
+  "reference_commit": "d953b4de8a2ad941c565e1683c5b07255cbe644e",
+  "experiments": [
+    {
+      "id": "FineDiving_small",
+      "config": "opensportslib/configs/localization/tdeed/FineDiving_small.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FineDiving_big",
+      "config": "opensportslib/configs/localization/tdeed/FineDiving_big.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingComp_big",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingComp_big.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingComp_small",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingComp_small.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingComp_small_paper",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingComp_small_paper.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "paper-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "extended-paper architecture",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingPerf_big",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingPerf_big.yaml",
+      "dataset": "fs_perf",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingPerf_small",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingPerf_small.yaml",
+      "dataset": "fs_perf",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FigureSkatingPerf_small_paper",
+      "config": "opensportslib/configs/localization/tdeed/FigureSkatingPerf_small_paper.yaml",
+      "dataset": "fs_perf",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "paper-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "extended-paper architecture",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FineGym_big",
+      "config": "opensportslib/configs/localization/tdeed/FineGym_big.yaml",
+      "dataset": "finegym",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "FineGym_small",
+      "config": "opensportslib/configs/localization/tdeed/FineGym_small.yaml",
+      "dataset": "finegym",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNetBall_challenge1",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNetBall_challenge1.yaml",
+      "dataset": "soccernetball",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "7",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNetBall_challenge1_bas_only",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNetBall_challenge1_bas_only.yaml",
+      "dataset": "soccernetball",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "bas-ablation",
+      "paper_table": "7",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNetBall_challenge2",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNetBall_challenge2.yaml",
+      "dataset": "soccernetball",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "7",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNetBall_challenge2_bas_only",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNetBall_challenge2_bas_only.yaml",
+      "dataset": "soccernetball",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "bas-ablation",
+      "paper_table": "7",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNet_big",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNet_big.yaml",
+      "dataset": "soccernet",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "2",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "SoccerNet_small",
+      "config": "opensportslib/configs/localization/tdeed/SoccerNet_small.yaml",
+      "dataset": "soccernet",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "2",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "Tennis_big",
+      "config": "opensportslib/configs/localization/tdeed/Tennis_big.yaml",
+      "dataset": "tennis",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "Tennis_small",
+      "config": "opensportslib/configs/localization/tdeed/Tennis_small.yaml",
+      "dataset": "tennis",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "released-main",
+      "paper_table": "1",
+      "status": "not_run",
+      "recipe_scope": "released-code",
+      "paper_recipe_exact": false
+    },
+    {
+      "id": "finediving_dilation_0",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_0.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_dilation_1",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_1.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_displacement_1",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_1.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_displacement_2",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_2.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_gsf_all",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_all.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_gsf_half",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_half.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_gsm_all",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_all.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_gsm_half",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_half.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_length_100",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_100.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_length_200",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_200.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_length_25",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_25.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_length_50",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_50.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_nms",
+      "config": "opensportslib/configs/localization/tdeed/finediving_nms.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "evaluate_from": "FineDiving_small",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_plain_gru",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_gru.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_plain_sgp",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_sgp.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_plain_transformer",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_transformer.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_sgp_mixer_concat",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_concat.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_sgp_mixer_sum",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_sum.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_skip_concat",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_concat.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_skip_none",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_none.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_skip_sum",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_sum.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "finediving_soft_nms",
+      "config": "opensportslib/configs/localization/tdeed/finediving_soft_nms.yaml",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "evaluate_from": "FineDiving_small",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_dilation_0",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_0.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_dilation_1",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_1.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_displacement_1",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_1.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_displacement_2",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_2.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_gsf_all",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_all.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_gsf_half",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_half.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_gsm_all",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_all.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_gsm_half",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_half.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_length_100",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_100.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_length_200",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_200.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_length_25",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_25.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_length_50",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_50.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_nms",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_nms.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "evaluate_from": "FigureSkatingComp_small_paper",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_plain_gru",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_gru.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_plain_sgp",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_sgp.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_plain_transformer",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_transformer.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_concat",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_concat.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_sum",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_sum.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_skip_concat",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_concat.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_skip_none",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_none.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_skip_sum",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_sum.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "5",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "recipe_scope": "controlled-ablation"
+    },
+    {
+      "id": "fs_comp_soft_nms",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_soft_nms.yaml",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "group": "controlled-ablation",
+      "paper_table": "6",
+      "status": "not_run",
+      "paper_recipe_exact": false,
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "evaluate_from": "FigureSkatingComp_small_paper",
+      "recipe_scope": "controlled-ablation"
+    }
+  ],
+  "additional_paper_experiments": [
+    {
+      "id": "fs_comp_plain_transformer",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_transformer.yaml"
+    },
+    {
+      "id": "fs_comp_plain_gru",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_gru.yaml"
+    },
+    {
+      "id": "fs_comp_plain_sgp",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_sgp.yaml"
+    },
+    {
+      "id": "fs_comp_skip_none",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_none.yaml"
+    },
+    {
+      "id": "fs_comp_skip_sum",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_sum.yaml"
+    },
+    {
+      "id": "fs_comp_skip_concat",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_concat.yaml"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_sum",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_sum.yaml"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_concat",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_concat.yaml"
+    },
+    {
+      "id": "finediving_plain_transformer",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_transformer.yaml"
+    },
+    {
+      "id": "finediving_plain_gru",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_gru.yaml"
+    },
+    {
+      "id": "finediving_plain_sgp",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_sgp.yaml"
+    },
+    {
+      "id": "finediving_skip_none",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_none.yaml"
+    },
+    {
+      "id": "finediving_skip_sum",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_sum.yaml"
+    },
+    {
+      "id": "finediving_skip_concat",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_concat.yaml"
+    },
+    {
+      "id": "finediving_sgp_mixer_sum",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_sum.yaml"
+    },
+    {
+      "id": "finediving_sgp_mixer_concat",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_concat.yaml"
+    },
+    {
+      "id": "fs_comp_dilation_0",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_0.yaml"
+    },
+    {
+      "id": "fs_comp_dilation_1",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_1.yaml"
+    },
+    {
+      "id": "fs_comp_displacement_1",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_1.yaml"
+    },
+    {
+      "id": "fs_comp_displacement_2",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_2.yaml"
+    },
+    {
+      "id": "fs_comp_tridet_pyramid",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "unreleased_search_recipe",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications."
+    },
+    {
+      "id": "fs_comp_gsm_all",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_all.yaml"
+    },
+    {
+      "id": "fs_comp_gsm_half",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_half.yaml"
+    },
+    {
+      "id": "fs_comp_gsf_all",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_all.yaml"
+    },
+    {
+      "id": "fs_comp_gsf_half",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_half.yaml"
+    },
+    {
+      "id": "fs_comp_length_25",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_25.yaml"
+    },
+    {
+      "id": "fs_comp_length_50",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_50.yaml"
+    },
+    {
+      "id": "fs_comp_length_100",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_100.yaml"
+    },
+    {
+      "id": "fs_comp_length_200",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_200.yaml"
+    },
+    {
+      "id": "fs_comp_nms",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_nms.yaml"
+    },
+    {
+      "id": "fs_comp_soft_nms",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_soft_nms.yaml"
+    },
+    {
+      "id": "finediving_dilation_0",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_0.yaml"
+    },
+    {
+      "id": "finediving_dilation_1",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_1.yaml"
+    },
+    {
+      "id": "finediving_displacement_1",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_1.yaml"
+    },
+    {
+      "id": "finediving_displacement_2",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_2.yaml"
+    },
+    {
+      "id": "finediving_tridet_pyramid",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "unreleased_search_recipe",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications."
+    },
+    {
+      "id": "finediving_gsm_all",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_all.yaml"
+    },
+    {
+      "id": "finediving_gsm_half",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_half.yaml"
+    },
+    {
+      "id": "finediving_gsf_all",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_all.yaml"
+    },
+    {
+      "id": "finediving_gsf_half",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_half.yaml"
+    },
+    {
+      "id": "finediving_length_25",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_25.yaml"
+    },
+    {
+      "id": "finediving_length_50",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_50.yaml"
+    },
+    {
+      "id": "finediving_length_100",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_100.yaml"
+    },
+    {
+      "id": "finediving_length_200",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_200.yaml"
+    },
+    {
+      "id": "finediving_nms",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_nms.yaml"
+    },
+    {
+      "id": "finediving_soft_nms",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_soft_nms.yaml"
+    },
+    {
+      "id": "SNBAS_challenge_a_ensemble",
+      "paper_table": "4",
+      "status": "private_evaluation",
+      "reason": "Requires challenge train+valid+test training protocol, exact ensemble, and private challenge labels/server; no leaderboard submission is authorized."
+    },
+    {
+      "id": "SNBAS_challenge_b_c",
+      "paper_table": "4",
+      "status": "private_evaluation",
+      "reason": "Released candidates and held-out test evaluation do not reproduce private challenge scores."
+    }
+  ],
+  "complete": false
+}

@@ -1,0 +1,129 @@
+TASK: localization
+VERSION: 2
+SYSTEM:
+  device: cuda
+  gpu:
+    count: 1
+  paths:
+    save_dir: outputs/tdeed
+  reproducibility:
+    seed: 1
+    use_seed: true
+DATA:
+  common:
+    dataset_name: fs_comp
+    data_root: data/spotting-cleanup/FigureSkating/release
+    classes:
+    - jump_landing
+    - jump_takeoff
+    - spin_landing
+    - spin_takeoff
+    splits:
+      train:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/fs_comp_train.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+      valid:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/fs_comp_valid.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 0
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+      test:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/fs_comp_test.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 8
+          num_workers: 4
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+        repo_id: OpenSportsLab/OSL-loc-FigureSkating
+        revision: 36d1b7ee71da879b2129d6c30f409aaed7b688b9
+      sampling:
+        clip_len: 100
+        stride: 1
+        epoch_num_frames: 500000
+      transform:
+        resize:
+          height: 224
+          width: 398
+      params:
+        mixup: true
+        dilate_len: 1
+MODEL:
+  metadata:
+    family: TDEED
+    runner:
+      type: runner_tdeed
+    reference_commit: d953b4de8a2ad941c565e1683c5b07255cbe644e
+    reference_config: FigureSkatingComp_small.json
+    reference_config_sha256: 73365b04f83bdeb86297d658a3c475556143863e266e6129319315021322a80f
+    recipe: controlled-ablation; search-selected paper recipe unavailable
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny002_gsf
+      params:
+        feature_arch: rny002_plain
+        modality: rgb
+        pretrained: true
+        crop_dim: 224
+        pretrained_model_id: timm/regnety_002.pycls_in1k
+        pretrained_revision: 3c4d5882de76610654d238ecd8f265519505aa51
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: ed_sgp_mixer
+      params:
+        temporal_arch: ed_sgp_mixer
+        radi_displacement: 0
+        n_layers: 3
+        sgp_ks: 5
+        sgp_r: 2
+  topology:
+  - from: video_encoder
+    to: task_head
+IO:
+  inputs:
+    video: video_encoder
+  outputs:
+    logits: task_head
+TRAIN:
+  trainer:
+    type: trainer_tdeed
+  epochs: 50
+  optimizer:
+    type: AdamW
+    lr: 0.0008
+    weight_decay: 0.01
+  scheduler:
+    type: reference_chained
+    warm_up_epochs: 3
+  execution:
+    enabled: true
+    acc_grad_iter: 1
+    start_valid_epoch: 30
+  selection:
+    monitor: valid_map
+    mode: max
+    test_flip: true
+    postprocessing: soft_nms
+    nms_window: 1
+    soft_nms_window: 3

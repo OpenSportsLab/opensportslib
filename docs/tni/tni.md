@@ -1,5 +1,9 @@
 # Training, Inference, and Evaluation
 
+For the T-DEED localization family, see [development and reproduction](tdeed.md):
+canonical YAML recipes, frame-indexed data, deterministic checkpoints, evaluation
+protocols and the local experiment campaign.
+
 This page covers the common lifecycle for the three implemented task wrappers. It uses real Python APIs; the `tools/training/` scripts provide equivalent command-line entry points.
 
 ## Before running

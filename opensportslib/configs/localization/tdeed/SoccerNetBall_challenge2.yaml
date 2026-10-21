@@ -1,0 +1,166 @@
+TASK: localization
+VERSION: 2
+SYSTEM:
+  device: cuda
+  gpu:
+    count: 1
+  paths:
+    save_dir: outputs/tdeed
+  reproducibility:
+    seed: 1
+    use_seed: true
+DATA:
+  common:
+    dataset_name: soccernetball
+    data_root: data/spotting-cleanup/SNBAS
+    classes:
+    - PASS
+    - DRIVE
+    - HEADER
+    - HIGH PASS
+    - OUT
+    - CROSS
+    - THROW IN
+    - SHOT
+    - BALL PLAYER BLOCK
+    - PLAYER SUCCESSFUL TACKLE
+    - FREE KICK
+    - GOAL
+    splits:
+      train:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/train.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 2
+          num_workers: 4
+      valid:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/valid.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 0
+        dataloader:
+          batch_size: 2
+          num_workers: 4
+      test:
+        type: TDEEDVideo
+        annotation_path: ${DATA.common.data_root}/test.json
+        source_path: ${DATA.common.data_root}
+        overlap_len: 75
+        dataloader:
+          batch_size: 2
+          num_workers: 4
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+        repo_id: OpenSportsLab/OSL-SNBAS
+        revision: e8859094c746ce2075f6a398e7f8de18939abcad
+      sampling:
+        clip_len: 100
+        stride: 2
+        epoch_num_frames: 500000
+      transform:
+        resize:
+          height: 448
+          width: 796
+      params:
+        mixup: true
+        dilate_len: 0
+MODEL:
+  metadata:
+    family: TDEED
+    runner:
+      type: runner_tdeed
+    reference_commit: d953b4de8a2ad941c565e1683c5b07255cbe644e
+    reference_config: SoccerNetBall_challenge2.json
+    reference_config_sha256: 2c037be4d3781828de14534c8bc2a8cc72a6a93ddd8131de3e5212a2430468da
+    recipe: released-code
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny008_gsf
+      params:
+        feature_arch: rny008_gsf
+        modality: rgb
+        pretrained: true
+        crop_dim: null
+        pretrained_model_id: timm/regnety_008.pycls_in1k
+        pretrained_revision: ad27a8e42099466890afc4dbcc24cce1340776b9
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: ed_sgp_mixer
+      params:
+        temporal_arch: ed_sgp_mixer
+        radi_displacement: 4
+        n_layers: 2
+        sgp_ks: 9
+        sgp_r: 4
+        auxiliary_num_classes: 17
+  topology:
+  - from: video_encoder
+    to: task_head
+IO:
+  inputs:
+    video: video_encoder
+  outputs:
+    logits: task_head
+TRAIN:
+  trainer:
+    type: trainer_tdeed
+  epochs: 35
+  optimizer:
+    type: AdamW
+    lr: 0.0008
+    weight_decay: 0.01
+  scheduler:
+    type: reference_chained
+    warm_up_epochs: 3
+  execution:
+    enabled: true
+    acc_grad_iter: 1
+    start_valid_epoch: 20
+  selection:
+    monitor: valid_map
+    mode: max
+    test_flip: false
+    postprocessing: soft_nms
+    nms_window: 6
+    soft_nms_window: 12
+  sampling:
+    auxiliary:
+      classes:
+      - Penalty
+      - Kick-off
+      - Goal
+      - Substitution
+      - Offside
+      - Shots on target
+      - Shots off target
+      - Clearance
+      - Ball out of play
+      - Throw-in
+      - Foul
+      - Indirect free-kick
+      - Direct free-kick
+      - Corner
+      - Yellow card
+      - Red card
+      - Yellow->red card
+      stride: 2
+      splits:
+        train:
+          annotation_path: data/spotting-cleanup/SoccerNet448/train.json
+          source_path: data/spotting-cleanup/SoccerNet448
+        valid:
+          annotation_path: data/spotting-cleanup/SoccerNet448/valid.json
+          source_path: data/spotting-cleanup/SoccerNet448
