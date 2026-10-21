@@ -64,3 +64,33 @@ def test_direct_video_manifest_rejects_non_video_configs():
     )
     with pytest.raises(ValueError, match="video-based config"):
         validate_direct_video_config(config)
+
+
+def test_pose_artifact_checksums_reuse_unchanged_files_and_reject_changed_weights(tmp_path, monkeypatch):
+    import hashlib
+    import os
+    from opensportslib.preprocessing import backend
+
+    model = tmp_path / 'pose.onnx'
+    model.write_bytes(b'original frozen weights')
+    expected = hashlib.sha256(model.read_bytes()).hexdigest()
+    calls = []
+    digest = backend.file_sha256
+
+    def read(path):
+        calls.append(path)
+        return digest(path)
+
+    monkeypatch.setattr(backend, 'file_sha256', read)
+    settings = {'artifacts': {'rtmpose_s': {'path': str(model), 'sha256': expected}}}
+    for _ in range(3):
+        assert backend.resolve_artifact('rtmpose_s', settings)[2]['sha256'] == expected
+    assert len(calls) == 1
+    before = model.stat()
+    model.write_bytes(b'modified frozen weights')
+    # Packaging tools can preserve size/mtime while replacing weight contents.
+    os.utime(model, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert model.stat().st_mtime_ns == before.st_mtime_ns
+    with pytest.raises(ValueError, match='Weight checksum mismatch'):
+        backend.resolve_artifact('rtmpose_s', settings)
+    assert len(calls) == 2

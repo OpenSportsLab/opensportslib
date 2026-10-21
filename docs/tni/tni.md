@@ -92,3 +92,15 @@ After training, the [single-video inspection script](../../tools/inference/READM
 exports actual model boxes/poses and overlays them with clip classifications or
 timestamped localization events. It uses the checkpoint's saved configuration
 and explicitly writes predictions, a pose trace and an annotated MP4.
+
+For Dallas broadcasts, see the [binary classification pilot](../preprocessing/tennis-dallas.md):
+three training games, one validation game, one test game, timestamp-preserving
+swing/background clips, and paired RGB/graph training scripts.
+The guide includes retraining until validation plateaus. Native classification
+trainers honor `TRAIN.selection.patience` and `min_delta`, retaining the strict best
+checkpoint while stopping on insufficient validation improvement. The epoch cap,
+validation curve and stopping reason are recorded in `training_summary.json`.
+For action spotting, use `tools/train/train_tennis_dallas_spotting_until_convergence.sh`.
+It uses the original broadcast annotations, RegNetY-GSM/GRU versus pose/GIN/GRU,
+fixed OpenCV validation windows (`TRAIN.execution.validation_seed`), and E2E
+validation stopping (`TRAIN.selection.patience`/`min_delta`).

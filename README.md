@@ -153,6 +153,15 @@ For localization, VQA, and additional end-to-end examples, see the
 [API guide](opensportslib/apis/README.md), [quickstart scripts](examples/quickstart/),
 and [VQA guide](docs/tools/vqa.md).
 
+For match-disjoint Dallas tennis data and paired video/skeleton classifiers, see
+the [Dallas pilot guide](docs/preprocessing/tennis-dallas.md). Frame-array classifiers
+accept mixed precision through `TRAIN.execution.use_amp`.
+The guide also includes a script to retrain both models until validation plateaus.
+Native classification trainers honor `TRAIN.selection.patience` and `min_delta`
+for early stopping and keep the best validation checkpoint.
+The same guide provides paired Dallas video/graph action-spotting training with
+fixed validation windows and E2E early stopping.
+
 
 ---
 

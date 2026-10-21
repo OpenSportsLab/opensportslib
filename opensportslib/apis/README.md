@@ -450,3 +450,22 @@ An already loaded `model.preprocessor.observe(callback)` context receives the
 actual `(records, video_meta)` before graph conversion, including cache hits and
 continuous sessions. Callbacks must not mutate records; the observer is removed
 on context exit. Ordinary inference gains no implicit persistence.
+
+The [Dallas pilot](../../docs/preprocessing/tennis-dallas.md) trains this graph
+classifier and an RGB VideoMAEv2 baseline on the same match-disjoint clips.
+For frame-array classification, configure AMP and mixup through
+`TRAIN.execution.use_amp` and `TRAIN.execution.mixup_alpha`; legacy `TRAIN`
+fields remain accepted. VideoMAEv2 selective unfreezing reaches the nested
+encoder blocks in OpenGVLab's published model layout.
+Native classification trainers use `TRAIN.selection.patience` (zero disables
+validation early stopping) and `TRAIN.selection.min_delta` (default zero, absolute
+metric units). They save the strict best validation checkpoint independently of
+the stopping threshold and write `training_summary.json` alongside the checkpoint
+directories. The guide includes a paired training script with an epoch cap and
+validation-based stopping; test evaluation follows checkpoint selection.
+The Dallas guide also provides video/graph action-spotting scripts using
+`LocalizationModel`. E2E spotting honors `TRAIN.selection.patience` and `min_delta`
+(both default zero); in mAP mode only scheduled measurements consume patience.
+Set `TRAIN.execution.validation_seed` for fixed OpenCV validation windows. E2E
+inference accepts `DATA.common.splits.test.results: null` to return predictions
+without writing prediction files; `save_predictions(...)` remains explicit.

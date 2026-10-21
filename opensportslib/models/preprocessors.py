@@ -156,7 +156,7 @@ class PoseTracking(nn.Module):
             except OSError as exc:
                 # Another rank may have atomically published the same request.
                 import errno
-                if exc.errno not in (errno.EEXIST, errno.ENOTEMPTY):
+                if not isinstance(exc, FileExistsError) and exc.errno not in (errno.EEXIST, errno.ENOTEMPTY):
                     raise
                 SkeletonCache(destination, identity)
         return rows

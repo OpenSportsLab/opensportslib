@@ -263,7 +263,8 @@ class LocalizationDataset(Dataset):
             else:
                 length = self.data_cfg.epoch_num_frames//self.data_cfg.clip_len
                 dataset = ActionSpotDataset(**shared, dataset_len=max(1, length if default_args.get('train') else length//4),
-                    is_eval=not default_args.get('train', False), dilate_len=self.data_cfg.dilate_len)
+                    is_eval=not default_args.get('train', False), dilate_len=self.data_cfg.dilate_len,
+                    sampling_seed=get_train_execution(self.config).get('validation_seed') if not default_args.get('train') else None)
             if raw_dali:
                 dataset = build_video_loader(dataset, batch_size=cfg.dataloader.batch_size,
                     shuffle=bool(getattr(cfg.dataloader, 'shuffle', False)), num_workers=0)
@@ -371,6 +372,7 @@ class LocalizationDataset(Dataset):
                 TARGET_HEIGHT=self.data_cfg.target_height,
                 TARGET_WIDTH=self.data_cfg.target_width,
                 preserve_aspect_ratio=self.data_cfg.preserve_aspect_ratio,
+                sampling_seed=get_train_execution(self.config).get("validation_seed") if not default_args["train"] else None,
             )
         elif dataset_type == "VideoGameWithOpencvVideo":
             dataset = ActionSpotVideoDataset(
@@ -842,6 +844,7 @@ class ActionSpotDataset(Dataset):
         raw_video=False,
         raw_decoder='opencv',
         raw_resize=None,
+        sampling_seed=None,
     ):
         import random
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat
@@ -871,6 +874,7 @@ class ActionSpotDataset(Dataset):
         self._pad_len = pad_len
         assert pad_len >= 0
         self._is_eval = is_eval
+        self._sampling_seed = sampling_seed
 
         # Label modifications
         self._dilate_len = dilate_len
@@ -1027,7 +1031,19 @@ class ActionSpotDataset(Dataset):
             "label": labels,
         }
 
-    def __getitem__(self, unused):
+    def __getitem__(self, index):
+        # Stable validation requests avoid comparing losses on different random
+        # windows every epoch. Restore the caller's RNG so training is unaffected.
+        if self._sampling_seed is not None:
+            state = random.getstate()
+            random.seed(self._sampling_seed + index)
+            try:
+                return self._get_item()
+            finally:
+                random.setstate(state)
+        return self._get_item()
+
+    def _get_item(self):
         """Get a training sample based on one video without mixup, two otherwise."""
         ret = self._get_one()
 

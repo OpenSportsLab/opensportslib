@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from opensportslib.apis.localization import LocalizationModel
 from tests.helpers.pipeline_stubs import install_localization_pipeline_stub
@@ -103,6 +104,56 @@ def test_video_frontend_spotting_wrapper_and_masked_training(tmp_path,monkeypatc
     assert math.isfinite(loss)
     assert not torch.equal(before,output_bias.detach())
     assert not torch.equal(graph_before,graph_weight.detach())
+
+
+@pytest.mark.parametrize("route", ["video", "skeleton"])
+def test_native_spotting_trains_selects_and_predicts_with_validation_stopping(tmp_path, monkeypatch, route):
+    import json
+    import torch
+    import yaml
+    from tests.helpers.video_pose import pose_config, PoseBackend
+
+    monkeypatch.setenv("OSL_PRETRAINED_WEIGHTS", "0")
+    monkeypatch.setenv("WANDB_MODE", "disabled")
+    monkeypatch.setattr("opensportslib.preprocessing.backend.RTMLibBackend", PoseBackend)
+    payload = pose_config("localization", tmp_path, count=7)
+    payload["DATA"]["inputs"]["video"]["sampling"]["epoch_num_frames"] = 16
+    payload["TRAIN"]["epochs"] = 1
+    payload["TRAIN"]["execution"].update(criterion_valid="loss", validation_seed=42)
+    payload["TRAIN"]["selection"].update(patience=10, min_delta=1e-4)
+    payload["TRAIN"]["scheduler"].update(num_epochs=1, warm_up_epochs=0)
+    if route == "video":
+        components = payload["MODEL"]["components"]
+        components.pop("pose_tracking")
+        components.pop("tracking_encoder")
+        components["video_encoder"] = {"kind": "encoder", "source": {
+            "provider": "opensportslib", "registry": "backbone", "name": "rny002_gsm"}, "params": {}}
+        payload["MODEL"]["topology"] = [{"from": "video_encoder", "to": "task_head"}]
+        payload["IO"]["inputs"]["video"] = "video_encoder"
+        payload["DATA"]["inputs"]["video"]["transform"] = {
+            "resize": {"height": 32, "width": 40},
+            "normalization": {"mean": [.485, .456, .406], "std": [.229, .224, .225]}}
+    for spec in payload["DATA"]["common"]["splits"].values():
+        spec["results"] = None
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload))
+    threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        api = LocalizationModel(config=str(config_path))
+        checkpoint = api.train(use_wandb=False)
+        selected = torch.load(checkpoint, weights_only=False, map_location="cpu")
+        assert selected["epoch"] == 0 and selected["optimizer_state_dict"]["state"]
+        summary = json.loads((Path(checkpoint).parent / "training_summary.json").read_text())
+        assert summary["epochs_completed"] == summary["selected_epoch"] == 1
+        assert summary["stop_reason"] == "max_epochs"
+        api.load_weights(checkpoint)
+        existing = set(tmp_path.rglob("*.json"))
+        predictions = api.infer(weights=checkpoint, use_wandb=False)
+        assert predictions["task"] == "localization" and len(predictions["data"]) == 1
+        assert set(tmp_path.rglob("*.json")) == existing
+    finally:
+        torch.set_num_threads(threads)
 
 
 def test_pose_head_isolates_cuts_and_both_sides_of_padding(tmp_path):

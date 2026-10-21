@@ -4,6 +4,7 @@ Network/model-cache access happens only when constructing this backend.
 Training from skeleton caches never constructs it.
 """
 from pathlib import Path
+from functools import lru_cache
 import importlib.metadata
 import os
 import tempfile
@@ -22,6 +23,12 @@ MODEL_ARTIFACTS = {
     'rtmpose_m': ('rtmposev1/onnx_sdk/rtmpose-m_simcc-body7_pt-body7_420e-256x192-e48f03d0_20230504.zip', (192, 256)),
     'rtmo_s': ('rtmo/onnx_sdk/rtmo-s_8xb32-600e_body7-640x640-dac2bf74_20231211.zip', (640, 640)),
 }
+
+
+@lru_cache(maxsize=16)
+def _artifact_sha256(path, size, modified_ns, changed_ns):
+    """Avoid re-reading frozen weights per cached clip; file changes invalidate."""
+    return file_sha256(path)
 
 
 def resolve_artifact(name, cfg):
@@ -49,7 +56,9 @@ def resolve_artifact(name, cfg):
                         import shutil
                         shutil.copyfileobj(source, target)
                 os.replace(Path(directory) / 'model.onnx', path)
-    digest = file_sha256(path)
+    path = path.resolve()
+    stat = path.stat()
+    digest = _artifact_sha256(str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
     if override.get('sha256') and digest != override['sha256']:
         raise ValueError(f'Weight checksum mismatch for {name}')
     return str(path), size, {

@@ -25,6 +25,33 @@ def test_public_config_api_is_canonical_first():
     assert hasattr(config_module, "migrate_config")
 
 
+def test_videomaev2_finetuning_unfreezes_published_nested_encoder(monkeypatch):
+    from types import SimpleNamespace
+    import torch
+    from opensportslib.models.backbones.builder import VideoBackbone
+
+    class PublishedLayout(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = torch.nn.Module()
+            self.model.blocks = torch.nn.ModuleList([torch.nn.Linear(2, 2) for _ in range(3)])
+
+        def extract_features(self, pixel_values):
+            value = pixel_values.mean((2, 3, 4))[:, :2]
+            for block in self.model.blocks:
+                value = block(value)
+            return value
+
+    monkeypatch.setattr(VideoBackbone, "_build_model", lambda *args: PublishedLayout())
+    backbone = VideoBackbone(SimpleNamespace(type="videomae2", pretrained_model="offline",
+                              hidden_dim=2, freeze=True, unfreeze_last_n_layers=1))
+    backbone.train()
+    backbone(torch.ones(1, 2, 2, 2, 3)).sum().backward()
+    blocks = backbone.model.model.blocks
+    assert all(parameter.grad is None and not parameter.requires_grad for block in blocks[:-1] for parameter in block.parameters())
+    assert all(parameter.grad is not None and parameter.requires_grad for parameter in blocks[-1].parameters())
+
+
 def test_runtime_adapter_and_schema_detectors_preserve_canonical_payloads():
     canonical = {
         "MODEL": {"components": {"video_encoder": {}}, "topology": []},

@@ -621,6 +621,9 @@ class VideoBackbone(nn.Module):
                 return list(self.model.encoder.layer)
             elif hasattr(self.model, "blocks"):
                 return list(self.model.blocks)
+            elif hasattr(self.model, "model") and hasattr(self.model.model, "blocks"):
+                # The published OpenGVLab HF model wraps VisionTransformer.
+                return list(self.model.model.blocks)
             return []
 
     def _apply_freeze(self, cfg):

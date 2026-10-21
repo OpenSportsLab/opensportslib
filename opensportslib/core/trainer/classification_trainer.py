@@ -113,6 +113,7 @@ class BaseTrainerClassification:
         patience: early-stopping patience (0=disabled).
         monitor: metric name to monitor for checkpointing.
         mode: "max" or "min" depending on the monitored metric.
+        min_delta: absolute improvement required to reset early-stopping patience.
     """
     
     def __init__(
@@ -136,7 +137,14 @@ class BaseTrainerClassification:
         mode="max",
         revert_on_lr_reduction=False,
         config=None,
+        min_delta=0.0,
     ):
+        if not isinstance(patience, int) or patience < 0:
+            raise ValueError("Early-stopping patience must be a nonnegative integer")
+        if not np.isfinite(min_delta) or min_delta < 0:
+            raise ValueError("Early-stopping min_delta must be finite and nonnegative")
+        if mode not in {"min", "max"}:
+            raise ValueError("Checkpoint selection mode must be min or max")
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
@@ -154,6 +162,7 @@ class BaseTrainerClassification:
         self.device = device
         self.top_k = top_k
         self.patience = patience
+        self.min_delta = float(min_delta)
 
         self.monitor = monitor
         self.mode = mode
@@ -248,7 +257,12 @@ class BaseTrainerClassification:
         monitor = self.monitor
         mode = self.mode
         best_metric = -float("inf") if mode == "max" else float("inf")
+        convergence_best = best_metric
+        bad_epochs = 0
         best_path = None
+        self.history = []
+        self.epochs_completed = epoch_start
+        self.stop_reason = "max_epochs"
 
         for epoch in range(epoch_start, self.max_epochs):
             logging.info(f"\nEpoch {epoch+1}/{self.max_epochs}")
@@ -299,32 +313,6 @@ class BaseTrainerClassification:
 
             current_lr = self.optimizer.param_groups[0]["lr"]
 
-            # early stopping: mirror pixels_vs_positions behavior
-            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                min_lr = self.scheduler.min_lrs[0]
-                if current_lr <= 2 * min_lr:
-                    if self.rank == 0:
-                        logging.info(
-                            f"Early stopping at epoch {epoch+1}: "
-                            f"lr {current_lr:.2e} <= 2 * min_lr {min_lr:.2e}"
-                        )
-                    break
-
-            # When ReduceLROnPlateau drops the LR, revert weights to
-            # the best checkpoint so training continues from the
-            # strongest point rather than from a potentially overfit
-            # state. This mirrors the pixels_vs_positions recipe.
-            if (
-                self.revert_on_lr_reduction
-                and current_lr != prev_lr
-                and self._best_model_state is not None
-            ):
-                self.model.load_state_dict(self._best_model_state)
-                print(
-                    f"LR reduced from {prev_lr:.2e} to {current_lr:.2e} "
-                    f"-- reverted to best model"
-                )
-
             if self.rank == 0:
                 # ---------------- W&B LOG ----------------
                 if wandb.run is not None:
@@ -349,6 +337,9 @@ class BaseTrainerClassification:
                 )
                 dist.broadcast(current_tensor, src=0)
                 current = current_tensor.item()
+            current = float(current)
+            if not np.isfinite(current):
+                raise ValueError(f"Validation monitor {monitor!r} is not finite at epoch {epoch+1}")
 
             is_better = current > best_metric if mode == "max" else current < best_metric
 
@@ -370,8 +361,51 @@ class BaseTrainerClassification:
                         artifact = wandb.Artifact("model-checkpoint", type="model")
                         artifact.add_file(best_path)
                         wandb.log_artifact(artifact)
-            
+
+            # Save every strict best, even when its improvement is too small to
+            # restart the convergence counter. Compare against the last
+            # significant improvement so several small gains can accumulate.
+            significant = (current > convergence_best + self.min_delta if mode == "max"
+                           else current < convergence_best - self.min_delta)
+            if significant:
+                convergence_best = current
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
+            self.epochs_completed = epoch + 1
+            self.history.append({"epoch": epoch + 1, "train_loss": float(train_loss),
+                                 "validation_loss": float(val_loss), "monitor_value": current,
+                                 "lr": current_lr, "epochs_without_improvement": bad_epochs})
+
+            # Checkpoint the evaluated weights before either stopping or
+            # reverting them following an LR reduction.
+            if self.patience and bad_epochs >= self.patience:
+                self.stop_reason = "validation_plateau"
+                logging.info(
+                    "Early stopping at epoch %s: %s has not improved by more than %g for %s epochs",
+                    epoch + 1, monitor, self.min_delta, self.patience,
+                )
+                break
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                min_lr = self.scheduler.min_lrs[0]
+                if current_lr <= 2 * min_lr:
+                    self.stop_reason = "minimum_learning_rate"
+                    logging.info("Early stopping at epoch %s: lr %.2e <= 2 * min_lr %.2e",
+                                 epoch + 1, current_lr, min_lr)
+                    break
+
+            if (self.revert_on_lr_reduction and current_lr < prev_lr
+                    and self._best_model_state is not None):
+                self.model.load_state_dict(self._best_model_state)
+                logging.info("LR reduced from %.2e to %.2e; reverted to best model", prev_lr, current_lr)
+
         if self.rank == 0:
+            summary = {"epochs_completed": self.epochs_completed, "stop_reason": self.stop_reason,
+                       "monitor": monitor, "mode": mode, "patience": self.patience,
+                       "min_delta": self.min_delta, "best_metric": self.best_metric,
+                       "best_checkpoint": self.best_checkpoint_path, "history": self.history}
+            with open(os.path.join(self.save_dir, "training_summary.json"), "w") as stream:
+                json.dump(summary, stream, indent=2)
             logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
             logging.info("Training finished.")
 
@@ -703,8 +737,8 @@ class FramesTrainerClassification(BaseTrainerClassification):
     """forward pass for frames_npy video classification.
 
     supports optional mixed-precision training (AMP) and mixup
-    augmentation, controlled via config.TRAIN.use_amp and
-    config.TRAIN.mixup_alpha respectively.
+    augmentation, controlled via TRAIN.execution.use_amp and
+    TRAIN.execution.mixup_alpha respectively (legacy fields remain accepted).
 
     expects batches with pixel_values of shape (B, T, H, W, C)
     and integer labels of shape (B,).
@@ -713,8 +747,9 @@ class FramesTrainerClassification(BaseTrainerClassification):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         cfg = self.config
-        self.use_amp = getattr(cfg.TRAIN, "use_amp", False) if cfg else False
-        self.mixup_alpha = getattr(cfg.TRAIN, "mixup_alpha", 0.0) if cfg else 0.0
+        execution = get_train_execution(cfg) if cfg else {}
+        self.use_amp = execution.get("use_amp", getattr(cfg.TRAIN, "use_amp", False) if cfg else False)
+        self.mixup_alpha = execution.get("mixup_alpha", getattr(cfg.TRAIN, "mixup_alpha", 0.0) if cfg else 0.0)
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
     def _forward_batch(self, batch):
@@ -1008,6 +1043,7 @@ class Trainer_Classification:
             device=self.device,
             top_k=2,
             patience=train_selection.get("patience", 0),
+            min_delta=train_selection.get("min_delta", 0.0),
             monitor=train_selection.get("monitor", "balanced_accuracy"),
             mode=train_selection.get("mode", "max"),
             revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),

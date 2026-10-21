@@ -164,6 +164,15 @@ def test_video_train_loader_respects_explicit_context(monkeypatch):
     assert (dataloader_calls[1]["multiprocessing_context"].get_start_method() == "forkserver")
 
 
+def test_classification_dispatches_validation_stopping_settings(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(_FakeTrainer, "__init__", lambda self, **kwargs: captured.update(kwargs))
+    config = _make_config()
+    config.TRAIN.selection = {"monitor": "loss", "mode": "min", "patience": 12, "min_delta": .002}
+    _run_train(monkeypatch, config)
+    assert captured["patience"] == 12 and captured["min_delta"] == .002
+
+
 @pytest.fixture
 def cpu_trainer(tmp_path, monkeypatch):
     from opensportslib.core.loss.builder import build_criterion
@@ -188,6 +197,67 @@ def cpu_trainer(tmp_path, monkeypatch):
         save_dir=str(tmp_path), model_name="tiny", max_epochs=2, device="cpu",
         monitor="loss", mode="min",
     )
+
+
+@pytest.mark.parametrize("mode,values,patience,min_delta,completed,best_epoch,reason", [
+    ("min", [1., .8, .8, .9, .7], 2, 0., 4, 2, "validation_plateau"),
+    ("max", [.1, .5, .49, .49, .8], 2, 0., 4, 2, "validation_plateau"),
+    ("min", [1., .96, .92, .88, .87, .86, .85, .1], 3, .1, 7, 7, "validation_plateau"),
+    ("min", [1., 1., 1., 1.], 0, 0., 4, 1, "max_epochs"),
+])
+def test_validation_plateau_stops_and_keeps_strict_best_checkpoint(
+        cpu_trainer, monkeypatch, mode, values, patience, min_delta, completed, best_epoch, reason):
+    import json
+    from pathlib import Path
+
+    trainer = cpu_trainer
+    trainer.mode, trainer.monitor = mode, "loss" if mode == "min" else "balanced_accuracy"
+    trainer.patience, trainer.min_delta, trainer.max_epochs = patience, min_delta, len(values)
+    seen = []
+
+    def scripted_epoch(loader, epoch, *, train, **kwargs):
+        if train:
+            seen.append(epoch)
+            with torch.no_grad():
+                trainer.model.weight.fill_(epoch)
+            trainer.optimizer.step()
+        return [], [], values[epoch-1], {"balanced_accuracy": values[epoch-1]}
+
+    monkeypatch.setattr(trainer, "_run_epoch", scripted_epoch)
+    trainer.train()
+    assert seen == list(range(1, completed+1))
+    checkpoint = torch.load(trainer.best_checkpoint_path, weights_only=False)
+    assert checkpoint["epoch"] == best_epoch
+    assert checkpoint["best_metric"] == values[best_epoch-1]
+    torch.testing.assert_close(checkpoint["state_dict"]["weight"], torch.full_like(trainer.model.weight, best_epoch))
+    summary = json.loads((Path(trainer.save_dir) / "training_summary.json").read_text())
+    assert summary["epochs_completed"] == completed and summary["stop_reason"] == reason
+    assert len(summary["history"]) == completed
+    assert summary["min_delta"] == min_delta and summary["patience"] == patience
+
+
+@pytest.mark.parametrize("min_lr,completed", [(0., 3), (.025, 2)])
+def test_lr_reduction_and_minimum_lr_save_the_evaluated_best_weights(cpu_trainer, monkeypatch, min_lr, completed):
+    trainer = cpu_trainer
+    trainer.max_epochs, trainer.monitor, trainer.mode = 3, "balanced_accuracy", "max"
+    trainer.revert_on_lr_reduction = True
+    trainer.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        trainer.optimizer, mode="min", patience=0, factor=.5, min_lr=min_lr)
+
+    def scripted_epoch(loader, epoch, *, train, **kwargs):
+        if train:
+            with torch.no_grad():
+                trainer.model.weight.fill_(epoch)
+            trainer.optimizer.step()
+        return [], [], 1., {"balanced_accuracy": epoch / 10}
+
+    monkeypatch.setattr(trainer, "_run_epoch", scripted_epoch)
+    trainer.train()
+    assert trainer.epochs_completed == completed
+    assert trainer.stop_reason == ("minimum_learning_rate" if min_lr else "max_epochs")
+    checkpoint = torch.load(trainer.best_checkpoint_path, weights_only=False)
+    assert checkpoint["epoch"] == completed
+    torch.testing.assert_close(checkpoint["state_dict"]["weight"], torch.full_like(trainer.model.weight, completed))
 
 
 @pytest.mark.parametrize("weighted", [False, True])
@@ -251,3 +321,23 @@ def test_empty_evaluation_returns_empty_predictions(cpu_trainer):
     assert len(logits) == len(labels) == 0
     assert loss == 0 and scores == {}
     assert cpu_trainer.predictions_payload["data"] == []
+
+
+@pytest.mark.parametrize("canonical", [True, False])
+def test_frames_trainer_resolves_amp_and_mixup_configuration(cpu_trainer, monkeypatch, canonical):
+    from types import SimpleNamespace
+
+    captured = []
+    monkeypatch.setattr(torch.amp, "GradScaler", lambda *args, **kwargs: captured.append(kwargs["enabled"]))
+    train = {"use_amp": not canonical, "mixup_alpha": .7}
+    if canonical:
+        train["execution"] = SimpleNamespace(use_amp=True, mixup_alpha=.2)
+    config = SimpleNamespace(TRAIN=SimpleNamespace(**train))
+    base = cpu_trainer
+    trainer = classification_trainer.FramesTrainerClassification(
+        train_loader=base.train_loader, val_loader=base.val_loader, test_loader=base.test_loader,
+        model=base.model, optimizer=base.optimizer, scheduler=base.scheduler,
+        criterion=base.criterion, class_weights=None, class_names=base.class_names,
+        save_dir=base.save_dir, model_name="frames", device="cpu", config=config)
+    assert trainer.use_amp is True and captured == [True]
+    assert trainer.mixup_alpha == pytest.approx(.2 if canonical else .7)

@@ -5,6 +5,16 @@ model upload, and SLURM experiment execution.
 
 Detailed usage is documented in each subfolder README.
 
+The [Dallas tennis pilot](../docs/preprocessing/tennis-dallas.md) documents
+`convert/dallas_to_classification.py`, `upload/upload_tennis_dallas.py`, and
+`train/train_tennis_dallas.py` for match-disjoint localization/classification data
+and paired video/graph experiments. Run
+`bash tools/train/train_tennis_dallas_until_convergence.sh` to retrain both with
+validation-based early stopping and reuse the pilot caches.
+For paired video/graph action spotting from the original broadcast manifests,
+run `bash tools/train/train_tennis_dallas_spotting_until_convergence.sh`.
+Set `CONFIG_ONLY=1` to validate the data and inspect generated configurations.
+
 ```
 tools/
 ├── inference/                                # single-video model diagnostics

@@ -63,6 +63,36 @@ def test_video_frontend_classification_real_graph_model(tmp_path,monkeypatch):
     assert torch.isfinite(model(batch)).all()
 
 
+def test_pose_cache_accepts_another_atomic_writer_without_errno(tmp_path, monkeypatch):
+    import torch
+    from tests.helpers.video_pose import pose_config, PoseBackend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.datasets.builder import build_dataset
+    from opensportslib.datasets.video_raw import build_video_loader
+    from opensportslib.models.builder import build_model
+    from opensportslib.preprocessing import cache
+
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend', PoseBackend)
+    payload = pose_config('classification', tmp_path)
+    payload['MODEL']['components']['pose_tracking']['params']['cache'] = {
+        'mode': 'read_write', 'path': str(tmp_path / 'cache')}
+    config = dict_to_namespace(payload)
+    dataset = build_dataset(config, str(tmp_path / 'labels.json'), split='train')
+    batch = next(iter(build_video_loader(dataset, batch_size=1, num_workers=0)))
+    model, _ = build_model(config, 'cpu')
+    model.eval()
+    publish = cache.write_cache
+
+    def another_writer(destination, rows, identity):
+        publish(destination, rows, identity)
+        raise FileExistsError(destination)  # The cache API's existence check has no errno.
+
+    monkeypatch.setattr(cache, 'write_cache', another_writer)
+    first = model(batch).detach()
+    torch.testing.assert_close(first, model(batch), atol=1e-5, rtol=1e-4)
+    assert model.preprocessor.backend.calls == 4
+
+
 def test_multiview_pose_averages_embeddings_before_classification(tmp_path):
     import torch
     from tests.helpers.video_pose import pose_config, write_video, inject_backend
