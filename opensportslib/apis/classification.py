@@ -164,10 +164,7 @@ class ClassificationModel(BaseTaskModel):
                     world_size=world_size,
                 )
                 if rank == 0 and return_queue is not None:
-                    if world_size > 1:
-                        return_queue.put(getattr(trainer, "predictions_path", None))
-                    else:
-                        return_queue.put(getattr(trainer, "predictions_payload", None))
+                    return_queue.put(getattr(trainer, "predictions_payload", None))
         finally:
             if rank == 0 and use_wandb and getattr(wandb, "run", None) is not None:
                 try:
@@ -379,39 +376,44 @@ class ClassificationModel(BaseTaskModel):
         use_ddp = use_ddp and world_size > 1
 
         ctx = mp.get_context("spawn")
-        queue = ctx.Queue()
+        manager = ctx.Manager() if use_ddp else None
+        queue = manager.Queue() if manager is not None else ctx.Queue()
 
-        if use_ddp:
-            mp.spawn(
-                ClassificationModel._worker_ddp,
-                args=(
-                    world_size,
-                    "infer",
-                    self.config_path,
-                    self.config,
-                    queue,
-                    None,
-                    None,
-                    test_set,
-                    effective_weights,
-                    use_wandb,
-                ),
-                nprocs=world_size,
-            )
-        else:
-            ClassificationModel._worker_ddp(
-                rank=0,
-                world_size=1,
-                mode="infer",
-                config_path=self.config_path,
-                config=self.config,
-                return_queue=queue,
-                test_set=test_set,
-                weights=effective_weights,
-                use_wandb=use_wandb,
-            )
+        try:
+            if use_ddp:
+                mp.spawn(
+                    ClassificationModel._worker_ddp,
+                    args=(
+                        world_size,
+                        "infer",
+                        self.config_path,
+                        self.config,
+                        queue,
+                        None,
+                        None,
+                        test_set,
+                        effective_weights,
+                        use_wandb,
+                    ),
+                    nprocs=world_size,
+                )
+            else:
+                ClassificationModel._worker_ddp(
+                    rank=0,
+                    world_size=1,
+                    mode="infer",
+                    config_path=self.config_path,
+                    config=self.config,
+                    return_queue=queue,
+                    test_set=test_set,
+                    weights=effective_weights,
+                    use_wandb=use_wandb,
+                )
 
-        predictions = queue.get()
+            predictions = queue.get()
+        finally:
+            if manager is not None:
+                manager.shutdown()
         if use_ddp and isinstance(predictions, str):
             with open(predictions, encoding="utf-8") as f:
                 predictions = json.load(f)

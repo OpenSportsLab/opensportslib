@@ -5,8 +5,24 @@ model upload, and SLURM experiment execution.
 
 Detailed usage is documented in each subfolder README.
 
+The [Dallas tennis pilot](../docs/preprocessing/tennis-dallas.md) documents
+`convert/dallas_to_classification.py`, `upload/upload_tennis_dallas.py`, and
+`train/train_tennis_dallas.py` for match-disjoint localization/classification data
+and paired video/graph experiments. Run
+`bash tools/train/train_tennis_dallas_until_convergence.sh` to retrain both with
+validation-based early stopping and reuse the pilot caches.
+For paired video/graph action spotting from the original broadcast manifests,
+run `bash tools/train/train_tennis_dallas_spotting_until_convergence.sh`.
+Set `CONFIG_ONLY=1` to validate the data and inspect generated configurations.
+Spotting defaults to repeated fixed windows with `read_write` skeleton caching.
+Set `TRAINING_SAMPLING=random` to draw fresh windows, and
+`SKELETON_CACHE_MODE=off` to disable the cache.
+
 ```
 tools/
+├── inference/                                # single-video model diagnostics
+│   ├── README.md
+│   └── inspect_video.py
 ├── convert/                                  # dataset builders, OSL JSON ↔ Parquet + WebDataset
 │   ├── README.md
 │   ├── build_sngar_spotting.py               # raw source → SN-GAR spotting pair
@@ -20,7 +36,7 @@ tools/
 │   ├── download_osl_hf.py
 │   ├── push_sngar_spotting.py
 │   └── upload_osl_hf.py
-├── upload/                                   # Hugging Face model upload helpers
+├── upload/                                   # Hugging Face dataset/model upload helpers
 │   ├── README.md
 │   └── upload_model_hf.py
 └── slurm/                                    # SLURM job scripts
@@ -46,9 +62,10 @@ tools/
 
 ## Folder guides
 
+- See [tools/inference/README.md](inference/README.md) for actual pose exports and annotated classification/localization videos.
 - See [docs/data/osl-json-format.md](../docs/data/osl-json-format.md) for the OSL JSON schema used by dataset tools.
 - See [tools/convert/README.md](convert/README.md) for conversion scripts and examples.
 - See [tools/download/README.md](download/README.md) for HuggingFace download/upload scripts.
 - See [docs/tools/sngar-spotting.md](../docs/tools/sngar-spotting.md) for the SN-GAR action-spotting dataset build and release.
-- See [tools/upload/README.md](upload/README.md) for Hugging Face model upload scripts.
+- See [tools/upload/README.md](upload/README.md) for Hugging Face dataset and model upload scripts.
 - See [tools/slurm/README.md](slurm/README.md) for Ibex SLURM workflows (`salloc`, `srun`, `sbatch`).

@@ -1,0 +1,204 @@
+# Optional DALI 2.2+ raw video decoding; one GPU process per loader.
+# Dataset: OpenSportsLab/OSL-loc-tennis-public, revision swing-data.
+# Download splits as described in docs/preprocessing/video-to-skeleton.md.
+TASK: localization
+VERSION: 2
+SYSTEM:
+  paths:
+    log_dir: ./logs/tennis
+    save_dir: ./checkpoints/tennis
+    work_dir: ./outputs/tennis
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+DATA:
+  common:
+    dataset_name: OSL-loc-tennis-public
+    data_root: ./data/tennis-localization/swing-data
+    classes:
+    - far_court_bounce
+    - far_court_serve
+    - far_court_swing
+    - near_court_bounce
+    - near_court_serve
+    - near_court_swing
+    runtime:
+      loader_backend: dali
+    splits:
+      train:
+        type: VideoGameWithDali
+        source_path: ${DATA.common.data_root}/train
+        annotation_path: ${DATA.common.data_root}/train/train.json
+        dataloader:
+          batch_size: 4
+          shuffle: true
+          num_workers: 0
+          pin_memory: false
+        overlap_len: 32
+        metric: tight
+        nms_window: 2
+        results: tennis
+      valid:
+        type: VideoGameWithDali
+        source_path: ${DATA.common.data_root}/validation
+        annotation_path: ${DATA.common.data_root}/validation/validation.json
+        dataloader:
+          batch_size: 1
+          num_workers: 0
+          shuffle: false
+          pin_memory: false
+        overlap_len: 32
+        metric: tight
+        nms_window: 2
+        results: tennis
+      test:
+        type: VideoGameWithDaliVideo
+        source_path: ${DATA.common.data_root}/test
+        annotation_path: ${DATA.common.data_root}/test/test.json
+        dataloader:
+          batch_size: 1
+          num_workers: 0
+          shuffle: false
+          pin_memory: false
+        overlap_len: 32
+        metric: tight
+        nms_window: 2
+        results: tennis
+      valid_data_frames:
+        type: VideoGameWithDaliVideo
+        source_path: ${DATA.common.data_root}/validation
+        annotation_path: ${DATA.common.data_root}/validation/validation.json
+        dataloader:
+          batch_size: 1
+          num_workers: 0
+          shuffle: false
+          pin_memory: false
+        overlap_len: 32
+        metric: tight
+        nms_window: 2
+        results: tennis
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+      sampling:
+        extract_fps: 25
+        clip_len: 64
+        epoch_num_frames: 64000
+        input_fps: 25
+      params:
+        mixup: false
+        dilate_len: 0
+        view_type: single
+MODEL:
+  schema_version: 3
+  task: localization
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+    multi_gpu: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    pose_tracking:
+      kind: preprocessor
+      source:
+        provider: opensportslib
+        registry: preprocessor
+        name: pose_tracking
+      params:
+        type: video_to_skeleton
+        backend: rtmlib
+        detector: yolox_m
+        pose: rtmpose_s
+        max_players: 2
+        max_candidates: 8
+        selection: tennis_conservative
+        track_retention_seconds: 0.5
+        cache:
+          mode: 'off'
+    tracking_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: graph_conv_seq
+      params:
+        type: graph_conv_seq
+        encoder: gin
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+        edge_type: full
+        normalization: layernorm
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+      params:
+        type: gru
+      overrides: {}
+  topology:
+  - from: pose_tracking
+    to: tracking_encoder
+  - from: tracking_encoder
+    to: task_head
+  policies: {}
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
+TRAIN:
+  trainer:
+    type: trainer_e2e
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.001
+  scheduler:
+    type: ChainedSchedulerE2E
+    num_epochs: ${TRAIN.epochs}
+    warm_up_epochs: 5
+    acc_grad_iter: 1
+  execution:
+    enabled: true
+    multi_gpu: false
+    acc_grad_iter: 1
+    base_num_valid_epochs: 1
+    start_valid_epoch: 0
+    # Used only when criterion_valid is map.
+    valid_map_every: 10
+    # Select by validation loss; full spotting evaluation runs after training.
+    criterion_valid: loss
+  sampling:
+    use_weighted_sampler: true
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: valid_loss
+    mode: min
+  checkpoint:
+    save_best: true
+IO:
+  inputs:
+    video: pose_tracking
+    label: task_head
+  outputs:
+    logits: task_head

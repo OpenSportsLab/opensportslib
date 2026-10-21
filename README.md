@@ -153,6 +153,17 @@ For localization, VQA, and additional end-to-end examples, see the
 [API guide](opensportslib/apis/README.md), [quickstart scripts](examples/quickstart/),
 and [VQA guide](docs/tools/vqa.md).
 
+For match-disjoint Dallas tennis data and paired video/skeleton classifiers, see
+the [Dallas pilot guide](docs/preprocessing/tennis-dallas.md). Frame-array classifiers
+accept mixed precision through `TRAIN.execution.use_amp`.
+The guide also includes a script to retrain both models until validation plateaus.
+Native classification trainers honor `TRAIN.selection.patience` and `min_delta`
+for early stopping and keep the best validation checkpoint.
+The same guide provides paired Dallas video/graph action-spotting training with
+fixed validation windows and E2E early stopping.
+Its spotting launcher defaults to fixed training windows and reusable skeleton
+caches; random-window sampling remains selectable.
+
 
 ---
 
@@ -307,3 +318,14 @@ input modality to `tracking_tracab`; reference the original metadata JSON with
 `metadata_path` and retain UTC period calibration and team codes in each input. `params.annotation_head` selects a head such as
 `action` or `headers`. See [the DAT contract and loading guide](docs/tracking_tracab.md) for the
 schema, configuration, caching and backward-compatible Parquet behavior.
+
+### Video-to-skeleton action inputs
+
+A frozen optional RTMLib component inside `MODEL` converts ordinary video-loader
+batches into player graphs for classification and spotting. Training supports
+live clip extraction, optional exact-clip caching and multiview classification. See the [video-to-skeleton guide](docs/preprocessing/video-to-skeleton.md)
+and the [tennis examples](examples/tennis). GPU throughput and public-tennis quality
+are not yet validated.
+For a trained checkpoint, the [single-video inspection script](tools/inference/README.md)
+exports the actual boxes/poses and renders them with classification or spotting
+predictions on a new video.

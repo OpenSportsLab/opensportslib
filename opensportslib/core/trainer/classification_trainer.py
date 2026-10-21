@@ -113,6 +113,7 @@ class BaseTrainerClassification:
         patience: early-stopping patience (0=disabled).
         monitor: metric name to monitor for checkpointing.
         mode: "max" or "min" depending on the monitored metric.
+        min_delta: absolute improvement required to reset early-stopping patience.
     """
     
     def __init__(
@@ -136,7 +137,14 @@ class BaseTrainerClassification:
         mode="max",
         revert_on_lr_reduction=False,
         config=None,
+        min_delta=0.0,
     ):
+        if not isinstance(patience, int) or patience < 0:
+            raise ValueError("Early-stopping patience must be a nonnegative integer")
+        if not np.isfinite(min_delta) or min_delta < 0:
+            raise ValueError("Early-stopping min_delta must be finite and nonnegative")
+        if mode not in {"min", "max"}:
+            raise ValueError("Checkpoint selection mode must be min or max")
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
@@ -154,6 +162,7 @@ class BaseTrainerClassification:
         self.device = device
         self.top_k = top_k
         self.patience = patience
+        self.min_delta = float(min_delta)
 
         self.monitor = monitor
         self.mode = mode
@@ -248,7 +257,12 @@ class BaseTrainerClassification:
         monitor = self.monitor
         mode = self.mode
         best_metric = -float("inf") if mode == "max" else float("inf")
+        convergence_best = best_metric
+        bad_epochs = 0
         best_path = None
+        self.history = []
+        self.epochs_completed = epoch_start
+        self.stop_reason = "max_epochs"
 
         for epoch in range(epoch_start, self.max_epochs):
             logging.info(f"\nEpoch {epoch+1}/{self.max_epochs}")
@@ -299,32 +313,6 @@ class BaseTrainerClassification:
 
             current_lr = self.optimizer.param_groups[0]["lr"]
 
-            # early stopping: mirror pixels_vs_positions behavior
-            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                min_lr = self.scheduler.min_lrs[0]
-                if current_lr <= 2 * min_lr:
-                    if self.rank == 0:
-                        logging.info(
-                            f"Early stopping at epoch {epoch+1}: "
-                            f"lr {current_lr:.2e} <= 2 * min_lr {min_lr:.2e}"
-                        )
-                    break
-
-            # When ReduceLROnPlateau drops the LR, revert weights to
-            # the best checkpoint so training continues from the
-            # strongest point rather than from a potentially overfit
-            # state. This mirrors the pixels_vs_positions recipe.
-            if (
-                self.revert_on_lr_reduction
-                and current_lr != prev_lr
-                and self._best_model_state is not None
-            ):
-                self.model.load_state_dict(self._best_model_state)
-                print(
-                    f"LR reduced from {prev_lr:.2e} to {current_lr:.2e} "
-                    f"-- reverted to best model"
-                )
-
             if self.rank == 0:
                 # ---------------- W&B LOG ----------------
                 if wandb.run is not None:
@@ -349,6 +337,9 @@ class BaseTrainerClassification:
                 )
                 dist.broadcast(current_tensor, src=0)
                 current = current_tensor.item()
+            current = float(current)
+            if not np.isfinite(current):
+                raise ValueError(f"Validation monitor {monitor!r} is not finite at epoch {epoch+1}")
 
             is_better = current > best_metric if mode == "max" else current < best_metric
 
@@ -370,8 +361,51 @@ class BaseTrainerClassification:
                         artifact = wandb.Artifact("model-checkpoint", type="model")
                         artifact.add_file(best_path)
                         wandb.log_artifact(artifact)
-            
+
+            # Save every strict best, even when its improvement is too small to
+            # restart the convergence counter. Compare against the last
+            # significant improvement so several small gains can accumulate.
+            significant = (current > convergence_best + self.min_delta if mode == "max"
+                           else current < convergence_best - self.min_delta)
+            if significant:
+                convergence_best = current
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
+            self.epochs_completed = epoch + 1
+            self.history.append({"epoch": epoch + 1, "train_loss": float(train_loss),
+                                 "validation_loss": float(val_loss), "monitor_value": current,
+                                 "lr": current_lr, "epochs_without_improvement": bad_epochs})
+
+            # Checkpoint the evaluated weights before either stopping or
+            # reverting them following an LR reduction.
+            if self.patience and bad_epochs >= self.patience:
+                self.stop_reason = "validation_plateau"
+                logging.info(
+                    "Early stopping at epoch %s: %s has not improved by more than %g for %s epochs",
+                    epoch + 1, monitor, self.min_delta, self.patience,
+                )
+                break
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                min_lr = self.scheduler.min_lrs[0]
+                if current_lr <= 2 * min_lr:
+                    self.stop_reason = "minimum_learning_rate"
+                    logging.info("Early stopping at epoch %s: lr %.2e <= 2 * min_lr %.2e",
+                                 epoch + 1, current_lr, min_lr)
+                    break
+
+            if (self.revert_on_lr_reduction and current_lr < prev_lr
+                    and self._best_model_state is not None):
+                self.model.load_state_dict(self._best_model_state)
+                logging.info("LR reduced from %.2e to %.2e; reverted to best model", prev_lr, current_lr)
+
         if self.rank == 0:
+            summary = {"epochs_completed": self.epochs_completed, "stop_reason": self.stop_reason,
+                       "monitor": monitor, "mode": mode, "patience": self.patience,
+                       "min_delta": self.min_delta, "best_metric": self.best_metric,
+                       "best_checkpoint": self.best_checkpoint_path, "history": self.history}
+            with open(os.path.join(self.save_dir, "training_summary.json"), "w") as stream:
+                json.dump(summary, stream, indent=2)
             logging.info(f"Best checkpoint : {self.best_checkpoint_path}")
             logging.info("Training finished.")
 
@@ -407,7 +441,7 @@ class BaseTrainerClassification:
                     **{f"test/{k}": v for k, v in test_metrics.items()},
                 })
 
-            if detailed_results:
+            if detailed_results and getattr(self, 'persist_results', True):
                 from opensportslib.metrics.classification_metric import (
                     compute_detailed_classification_metrics
                 )
@@ -457,7 +491,8 @@ class BaseTrainerClassification:
 
         # -------- Create epoch folder --------
         epoch_dir = os.path.join(self.save_dir, str(epoch))
-        os.makedirs(epoch_dir, exist_ok=True)
+        if getattr(self, 'persist_results', True):
+            os.makedirs(epoch_dir, exist_ok=True)
         save_path = os.path.join(
             epoch_dir, f"predictions_{set_name}_epoch_{epoch}.json"
         )
@@ -576,11 +611,12 @@ class BaseTrainerClassification:
                 })
 
             logging.info(f"RESULTS Length: {len(results)}")
-            logging.info(f"Predictions are stored at : {save_path}")
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(submission, f, indent=2)
+            if getattr(self, 'persist_results', True):
+                logging.info(f"Predictions are stored at : {save_path}")
+                with open(save_path, "w", encoding="utf-8") as f:
+                    json.dump(submission, f, indent=2)
             self.predictions_payload = submission
-            self.predictions_path = save_path
+            self.predictions_path = save_path if getattr(self, 'persist_results', True) else None
 
         return all_logits, all_labels, avg_loss, metrics
 
@@ -641,7 +677,7 @@ class MVTrainerClassification(BaseTrainerClassification):
         Returns:
             a tuple (logits, labels) on self.device.
         """
-        mvclips = batch["pixel_values"].to(self.device).float()
+        mvclips = batch if "video_meta" in batch else batch["pixel_values"].to(self.device).float()
         labels = batch.get("labels", None)
         if labels is not None:
             labels = labels.to(self.device)
@@ -691,6 +727,8 @@ class TrackingTrainerClassification(BaseTrainerClassification):
         if labels is not None:
             labels = labels.to(self.device)
         
+        if "node_mask" in batch:
+            tracking_batch["node_mask"] = batch["node_mask"].to(self.device)
         logits = self.model(tracking_batch)
         
         return logits, labels
@@ -699,8 +737,8 @@ class FramesTrainerClassification(BaseTrainerClassification):
     """forward pass for frames_npy video classification.
 
     supports optional mixed-precision training (AMP) and mixup
-    augmentation, controlled via config.TRAIN.use_amp and
-    config.TRAIN.mixup_alpha respectively.
+    augmentation, controlled via TRAIN.execution.use_amp and
+    TRAIN.execution.mixup_alpha respectively (legacy fields remain accepted).
 
     expects batches with pixel_values of shape (B, T, H, W, C)
     and integer labels of shape (B,).
@@ -709,8 +747,9 @@ class FramesTrainerClassification(BaseTrainerClassification):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         cfg = self.config
-        self.use_amp = getattr(cfg.TRAIN, "use_amp", False) if cfg else False
-        self.mixup_alpha = getattr(cfg.TRAIN, "mixup_alpha", 0.0) if cfg else 0.0
+        execution = get_train_execution(cfg) if cfg else {}
+        self.use_amp = execution.get("use_amp", getattr(cfg.TRAIN, "use_amp", False) if cfg else False)
+        self.mixup_alpha = execution.get("mixup_alpha", getattr(cfg.TRAIN, "mixup_alpha", 0.0) if cfg else 0.0)
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
     def _forward_batch(self, batch):
@@ -937,7 +976,9 @@ class Trainer_Classification:
         if train_mp_context is not None:
             train_mp_context = mp.get_context(train_mp_context)
 
-        train_loader = DataLoader(
+        from opensportslib.datasets.video_raw import build_video_loader
+        loader_factory = build_video_loader if getattr(train_dataset, 'raw_video', False) else DataLoader
+        train_loader = loader_factory(
             train_dataset,
             batch_size=train_dataloader_cfg.batch_size,
             shuffle=(train_sampler is None and shuffle),
@@ -963,7 +1004,7 @@ class Trainer_Classification:
         if valid_mp_context is not None:
             valid_mp_context = mp.get_context(valid_mp_context)
             
-        val_loader = DataLoader(
+        val_loader = loader_factory(
             val_dataset,
             batch_size=valid_dataloader_cfg.batch_size,
             shuffle=False,
@@ -1002,6 +1043,7 @@ class Trainer_Classification:
             device=self.device,
             top_k=2,
             patience=train_selection.get("patience", 0),
+            min_delta=train_selection.get("min_delta", 0.0),
             monitor=train_selection.get("monitor", "balanced_accuracy"),
             mode=train_selection.get("mode", "max"),
             revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
@@ -1144,7 +1186,9 @@ class Trainer_Classification:
             collate_fn = tracking_collate_fn if is_tracking_modality else None
             test_dataloader_cfg = get_split_dataloader_cfg(self.config, "test")
 
-            test_loader = DataLoader(
+            from opensportslib.datasets.video_raw import build_video_loader
+            loader_factory = build_video_loader if getattr(test_dataset, 'raw_video', False) else DataLoader
+            test_loader = loader_factory(
                 test_dataset, 
 
                 batch_size=test_dataloader_cfg.batch_size, 
@@ -1187,6 +1231,7 @@ class Trainer_Classification:
                 revert_on_lr_reduction=(is_tracking_modality or is_frames_modality),
                 config=self.config,
             )
+            self.test_trainer.persist_results = False
             self.test_trainer.test(
                 detailed_results=get_train_execution(self.config).get("detailed_results", False)
             )

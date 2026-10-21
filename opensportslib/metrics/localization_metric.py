@@ -445,27 +445,10 @@ def process_frame_predictions(
                     }
                 )
 
-            for j in classes_inv:
-                if dali:
-                    tmp = i + 1
-                else:
-                    tmp = i
-                if scores[tmp, j] >= high_recall_score_threshold:
-                    # if scores[i, j] >= high_recall_score_threshold:
-                    position_ms, eval_frame = _locate(video, tmp)
-                    seconds = int((position_ms // 1000) % 60)
-                    minutes = int((position_ms // 1000) // 60)
-                    events_high_recall.append(
-                        {
-                            "label": classes_inv[j],
-                            "position": position_ms,
-                            "gameTime": f"{minutes:02.0f}:{seconds:02.0f}",
-                            "frame": eval_frame,
-                            # 'frame': i,
-                            "confidence": scores[tmp, j].item(),
-                            # 'score': scores[i, j].item()
-                        }
-                    )
+            tmp = i + 1 if dali else i
+            position_ms, eval_frame = _locate(video, tmp)
+            events_high_recall.extend(frame_score_events(
+                scores[tmp], classes, position_ms, eval_frame, high_recall_score_threshold))
         pred_events.append({"video": video, "events": events, "fps": fps_dict[video]})
         pred_events_high_recall.append(
             {"video": video, "events": events_high_recall, "fps": fps_dict[video]}
@@ -532,7 +515,7 @@ def infer_and_process_predictions_e2e(
     ):
         if batch_size > 1:
             # Batched by dataloader
-            _, batch_pred_scores = model.predict(clip["frame"])
+            _, batch_pred_scores = model.predict(clip if "video_meta" in clip else clip["frame"])
             for i in range(clip["frame"].shape[0]):
                 video = clip["video"][i]
                 scores, support = pred_dict[video]
@@ -554,10 +537,13 @@ def infer_and_process_predictions_e2e(
 
             start = clip["start"][0].item()
             # start=start-1
-            _, pred_scores = model.predict(clip["frame"][0])
+            _, pred_scores = model.predict(clip if "video_meta" in clip else clip["frame"][0])
             if start < 0:
                 pred_scores = pred_scores[:, -start:, :]
                 start = 0
+            time_mask = getattr(clip["frame"][0], "time_mask", None)
+            if time_mask is not None:
+                pred_scores = pred_scores[:, :int(time_mask.sum()), :]
             end = start + pred_scores.shape[1]
             if end >= scores.shape[0]:
                 end = scores.shape[0]
@@ -1555,3 +1541,17 @@ def compute_performances_mAP(
     return result
 
 np.seterr(divide="ignore", invalid="ignore")
+
+
+def frame_score_events(scores, classes, position_ms, eval_frame, threshold=.01):
+    """Format one timestamped E2E score row using the existing event contract.
+
+    Shared by whole-video postprocessing and bounded streaming. Class zero
+    remains background and is never emitted.
+    """
+    classes = _normalize_classes_map(classes)
+    minutes, seconds = int(position_ms//60000), int(position_ms//1000 % 60)
+    return [dict(label=label, position=int(position_ms),
+                 gameTime=f'{minutes:02d}:{seconds:02d}', frame=int(eval_frame),
+                 confidence=float(scores[index]))
+            for label, index in classes.items() if scores[index] >= threshold]

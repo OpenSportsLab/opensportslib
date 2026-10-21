@@ -316,3 +316,10 @@ Run `opensportslib setup --pyg --pyg_extensions` so wheel availability is
 validated first. On platforms without matching binary extensions, retain
 `torch-geometric` from `opensportslib setup --pyg` and install extensions only
 when the selected model genuinely needs them.
+
+## Optional frozen pose runtime
+
+`opensportslib setup --pose` preserves an existing CUDA 12/13, cuDNN 9 Torch
+installation and installs the optional RTMLib/ONNX GPU profile. See the
+[pose installation notes](../../docs/preprocessing/video-to-skeleton.md#optional-installation)
+before mixing it with other ONNX/OpenCV environments.

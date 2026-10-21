@@ -24,6 +24,7 @@ IMPORT_ALIASES = {
 OPTIONAL_IMPORTS = {
     "cupy", "fsspec", "matplotlib", "nvidia", "peft", "PIL", "safetensors",
     "torch_geometric", "trl", "yaml", "yaml_compat",
+    "rtmlib", "onnxruntime", "scipy",  # optional setup --pose profile
 }
 # These imports are currently supplied transitively by declared runtime
 # dependencies. Keep the list explicit so a new undeclared import still fails;

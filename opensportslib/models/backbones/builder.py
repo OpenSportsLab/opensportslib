@@ -80,6 +80,7 @@ def build_backbone(cfg, default_args=None):
             num_layers=cfg.num_layers,
             conv_type=cfg.encoder,
             dropout=cfg.dropout,
+            normalization=getattr(cfg, "normalization", "batchnorm"),
         )
     elif cfg.type == "graph_conv_seq":
         backbone = GraphSequenceEncoder(
@@ -88,6 +89,7 @@ def build_backbone(cfg, default_args=None):
             num_layers=cfg.num_layers,
             conv_type=cfg.encoder,
             dropout=cfg.dropout,
+            normalization=getattr(cfg, "normalization", "batchnorm"),
         )
     elif cfg.type == "PreExtactedFeatures":
         backbone = PreExtactedFeatures(
@@ -370,12 +372,15 @@ class TorchvisionVideoExtractFeatures(nn.Module):
 
 
 class GraphEncoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1, normalization='batchnorm'):
         super().__init__()
 
         pyg_nn = _import_pyg_nn()
         DeepGCNLayer = pyg_nn.DeepGCNLayer
         self.conv_type = conv_type
+        if normalization not in {"batchnorm", "layernorm"}:
+            raise ValueError("Graph normalization must be batchnorm or layernorm")
+        self.normalization = normalization
         self.feat_dim = hidden_dim
 
         # initial projection for node features
@@ -440,10 +445,10 @@ class GraphEncoder(nn.Module):
             return GINConv(
                 nn=nn.Sequential(
                     nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    (nn.LayerNorm(hidden_dim) if self.normalization == "layernorm" else nn.BatchNorm1d(hidden_dim)),
                     nn.ReLU(),
                     nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    (nn.LayerNorm(hidden_dim) if self.normalization == "layernorm" else nn.BatchNorm1d(hidden_dim)),
                     nn.ReLU(),
                 ),
                 train_eps=True, eps=0.0
@@ -461,10 +466,22 @@ class GraphEncoder(nn.Module):
         else:
             raise ValueError(f"Unknown conv type: {conv_type}")
             
-    def forward(self, x, edge_index, batch):
+    def forward(self, x, edge_index, batch, node_mask=None, num_graphs=None):
         pyg_nn = _import_pyg_nn()
         global_mean_pool = pyg_nn.global_mean_pool
         
+        if num_graphs is None:
+            num_graphs = int(batch.max().item()) + 1 if batch.numel() else 0
+        if node_mask is not None:
+            node_mask = node_mask.bool()
+            remap = torch.full((len(x),), -1, dtype=torch.long, device=x.device)
+            remap[node_mask] = torch.arange(int(node_mask.sum()), device=x.device)
+            keep_edges = node_mask[edge_index[0]] & node_mask[edge_index[1]]
+            edge_index = remap[edge_index[:, keep_edges]]
+            x, batch = x[node_mask], batch[node_mask]
+        if not len(x):
+            # Keep empty batches differentiable when training on absent players.
+            return x.new_zeros((num_graphs, self.feat_dim)) + sum(p.sum()*0 for p in self.parameters())
         x = self.node_encoder(x)
 
         for layer in self.gcn_layers:
@@ -472,7 +489,7 @@ class GraphEncoder(nn.Module):
                 edge_index = self._compute_edge_dynamic(x, batch)
             x = layer(x, edge_index)
 
-        graph_embedding = global_mean_pool(x, batch)
+        graph_embedding = global_mean_pool(x, batch, size=num_graphs)
         return graph_embedding
 
     def _compute_edge_dynamic(self, x, batch, k=8):
@@ -498,9 +515,9 @@ class GraphSequenceEncoder(nn.Module):
     E2EModel.Impl reads from all its other backbones.
     """
 
-    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, num_layers, conv_type='gin', dropout=0.1, normalization='batchnorm'):
         super().__init__()
-        self.encoder = GraphEncoder(input_dim, hidden_dim, num_layers, conv_type, dropout)
+        self.encoder = GraphEncoder(input_dim, hidden_dim, num_layers, conv_type, dropout, normalization)
         self._feat_dim = hidden_dim
 
     def forward(self, data):
@@ -512,7 +529,10 @@ class GraphSequenceEncoder(nn.Module):
         Returns:
             (B, T, hidden_dim) per-frame embeddings.
         """
-        graph_emb = self.encoder(data.x, data.edge_index, data.batch)  # (B*T, H)
+        if getattr(data, "node_mask", None) is None:
+            graph_emb = self.encoder(data.x, data.edge_index, data.batch)
+        else:
+            graph_emb = self.encoder(data.x, data.edge_index, data.batch, data.node_mask, data.num_graphs)  # (B*T, H)
         seq_len = data.seq_len
         batch_size = graph_emb.size(0) // seq_len
         return graph_emb.view(batch_size, seq_len, -1)
@@ -601,6 +621,9 @@ class VideoBackbone(nn.Module):
                 return list(self.model.encoder.layer)
             elif hasattr(self.model, "blocks"):
                 return list(self.model.blocks)
+            elif hasattr(self.model, "model") and hasattr(self.model.model, "blocks"):
+                # The published OpenGVLab HF model wraps VisionTransformer.
+                return list(self.model.model.blocks)
             return []
 
     def _apply_freeze(self, cfg):

@@ -176,3 +176,18 @@ If a release adds a new backbone, head, or task:
    going from an empty placeholder to a real upload, or `OSL-cls-UEFA-fouls`'s
    label schema), fix the conversion helper called out in that test file's
    module docstring — each one names the exact function to look at first.
+
+### Frozen video pose pilot
+
+The optional real-weight pose check runs through the same test entry point. Set
+`RUN_OSL_RELEASE_TESTS=1 OSL_RELEASE_POSE=1` and
+`OSL_RELEASE_POSE_MANIFEST=/absolute/public-pilot.json`, then run
+`bash scripts/run_tests.sh` in the installed pose/GPU environment. An enabled pose
+check fails on missing CUDA, dependencies, artifacts, or pilot inputs.
+The manifest contains `repo_id`, a 40-character dataset `revision`, a `rights`
+statement, and `videos: [{path, cases}]`. Cases must collectively cover
+`far_player`, `fast_swing`, `occlusion`, `camera_cut`, and `extra_people`.
+Downloads/provenance use the shared release helpers. Set `OSL_RELEASE_POSE_CONFIG`
+to a tennis skeleton spotting config to benchmark another frontend or a trained
+action checkpoint. Reports and caches are retained in release outputs.
+See the [pilot protocol](../../docs/preprocessing/video-to-skeleton.md#public-tennis-benchmark-and-release-acceptance).

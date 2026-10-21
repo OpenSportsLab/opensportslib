@@ -27,6 +27,10 @@ Split arguments override the corresponding configured annotation path for that c
 
 ### Classification
 
+For tennis stroke classification with online frozen skeleton extraction and the
+existing graph classifier, see the
+[dataset conversion and training launcher](../tools/tennis-classification.md).
+
 Use `ClassificationModel` with `opensportslib/configs/classification/video.yaml`, `sngar_frames.yaml`, or `sngar_tracking.yaml` as the starting point matching your input modality. The script route is:
 
 ```bash
@@ -44,6 +48,15 @@ python tools/training/localization.py --config /path/to/localization.yaml \
 ```
 
 See [tracking action spotting](../spotting/tracking-action-spotting.md) and the [headers guide](../headers/README.md) for specialist routes.
+
+For public tennis with model-owned pose/tracking, the localization examples use
+[`OpenSportsLab/OSL-loc-tennis-public`](https://huggingface.co/datasets/OpenSportsLab/OSL-loc-tennis-public)
+at revision `swing-data`, configured for the local `tennis_action` annotations:
+six classes covering near/far court bounces, serves, and swings. Both examples
+select checkpoints by validation loss and run full spotting evaluation after
+training. Follow the
+[download and training commands](../preprocessing/video-to-skeleton.md#public-tennis-localization-training)
+for the OpenCV or DALI example.
 
 ### VQA
 
@@ -66,3 +79,32 @@ Pass a local checkpoint path or a Hugging Face model ID through `weights`. If no
 Task behavior is controlled by canonical `SYSTEM` and `TRAIN.execution` settings; use the configuration reference rather than shell launchers not provided by this repository. SLURM wrappers are documented in the [SLURM guide](../getting-started/slurm.md).
 
 For remote prediction, construct a wrapper with `remote=...` and use its normal inference methods. The server owns model loading and accepts only inference; see [inference server](../server/inference-server.md). Hugging Face registration supports canonical and legacy rule-runner configs without weights, as well as learned checkpoints including `.pth.tar` files.
+
+## Frozen skeleton action inputs
+
+The existing graph classification and E2E spotting models also accept frozen
+model-owned video-to-skeleton preprocessing with ordinary video annotations/loaders.
+Training extracts clips live with optional exact-clip caching; inference can extract directly from a video. Windowed streaming retains
+bidirectional lookahead and returns finalized event batches. See the
+[video-to-skeleton guide](../preprocessing/video-to-skeleton.md) for installation,
+examples, limitations, and the public-tennis benchmark procedure.
+After training, the [single-video inspection script](../../tools/inference/README.md)
+exports actual model boxes/poses and overlays them with clip classifications or
+timestamped localization events. It uses the checkpoint's saved configuration
+and explicitly writes predictions, a pose trace and an annotated MP4.
+
+For Dallas broadcasts, see the [binary classification pilot](../preprocessing/tennis-dallas.md):
+three training games, one validation game, one test game, timestamp-preserving
+swing/background clips, and paired RGB/graph training scripts.
+The guide includes retraining until validation plateaus. Native classification
+trainers honor `TRAIN.selection.patience` and `min_delta`, retaining the strict best
+checkpoint while stopping on insufficient validation improvement. The epoch cap,
+validation curve and stopping reason are recorded in `training_summary.json`.
+For action spotting, use `tools/train/train_tennis_dallas_spotting_until_convergence.sh`.
+It uses the original broadcast annotations, RegNetY-GSM/GRU versus pose/GIN/GRU,
+fixed OpenCV validation windows (`TRAIN.execution.validation_seed`), and E2E
+validation stopping (`TRAIN.selection.patience`/`min_delta`).
+The spotting launcher repeats fixed training windows and reuses skeleton caches
+by default. Set `TRAINING_SAMPLING=random` for fresh windows; Python exposes
+`--training-sampling`, `--sampling-seed` and `--cache-mode`. The dataset-level
+fixed-pool setting is `TRAIN.execution.training_seed`.

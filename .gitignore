@@ -47,3 +47,6 @@ release/
 # write checkpoints/logs here -- never commit it.
 .release_test_cache/
 .test-reports/
+
+
+data/

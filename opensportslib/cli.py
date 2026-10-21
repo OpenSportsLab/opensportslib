@@ -9,6 +9,7 @@ from opensportslib.setup.setup import setup
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="opensportslib")
     parser.add_argument("command", choices=["setup"])
+    parser.add_argument("--pose", action="store_true")
     parser.add_argument("--pyg", action="store_true")
     parser.add_argument("--pyg_extensions", action="store_true")
     parser.add_argument("--dali", action="store_true")
@@ -26,6 +27,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         # Preserve the established setup() call contract unless the new,
         # opt-in extension install was explicitly requested.
+        if args.pose:
+            setup_kwargs["pose"] = True
         if args.pyg_extensions:
             setup_kwargs["pyg_extensions"] = True
         setup(**setup_kwargs)

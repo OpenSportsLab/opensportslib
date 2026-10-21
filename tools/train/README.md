@@ -1,4 +1,19 @@
-# Five sequential training runs
+# Training launchers
+
+For tennis skeleton/graph classification, first create the stroke clips with
+`tools/convert/tennis_to_classification.py`, then run:
+
+```bash
+python tools/train/train_tennis_skeleton.py --check-only
+python tools/train/train_tennis_skeleton.py --epochs 20 --batch-size 2
+```
+
+The launcher keeps pose extraction inside the existing classification model and
+does not start training during conversion. See the
+[tennis conversion and training guide](../../docs/tools/tennis-classification.md)
+for source paths, match splits, optional exact-clip caching and DALI.
+
+## Five sequential training runs
 
 The [Bash script](weekend_train.sh) contains one section per algorithm and
 dataset. It runs the full configurations in this order: GAR tracking GIN,

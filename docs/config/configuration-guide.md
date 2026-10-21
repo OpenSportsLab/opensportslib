@@ -639,3 +639,25 @@ TRAIN:
 support local JSON, HF JSON and indexed TAR datasets. Configure the input's
 `params.annotation_head` to select a vocabulary such as `headers`. See the
 [TRACAB input and loader contract](../tracking_tracab.md) for a complete example.
+
+## Frozen skeleton preprocessing
+
+Keep `DATA.inputs.video` as `modality: video`, `representation: raw`. Declare
+`MODEL.components.pose_tracking` with `kind: preprocessor`, provider/registry/name
+`opensportslib`/`preprocessor`/`pose_tracking`, and place detector/pose/tracking/cache
+parameters there. Connect `IO.inputs.video` to it, followed by the existing graph
+encoder. The model derives its 73-feature input width; no `DATA.params.objects`
+is required. Use `graph_conv` plus the temporal neck for classification, or
+`graph_conv_seq` plus the temporal head for E2E spotting. Skeleton GIN uses
+`normalization: layernorm`; soccer defaults remain unchanged.
+
+Use ordinary video dataset types and annotations. The frontend requests uint8 RGB
+and metadata from the loaders; normalization, image augmentation and mixup are
+incompatible. Both tasks support OpenCV and optional DALI 2.2+; multiview
+classification averages per-view embeddings. Cache policies are `off`, `read`,
+and explicit `read_write`; cache paths are roots of exact-clip entries.
+
+**BREAKING CHANGE:** experimental `SkeletonClassification`/`SkeletonSpotting`,
+`skeleton_graph` input representation and `skeleton_cache` training annotations
+are removed. See the [migration and preprocessing guide](../preprocessing/video-to-skeleton.md)
+and [complete tennis examples](../../examples/tennis).

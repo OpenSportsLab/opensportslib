@@ -17,6 +17,7 @@ from opensportslib.core.config.accessors import (
     get_data_augmentations,
     get_data_classes,
     get_data_params,
+    get_data_modality,
     get_runtime_modality,
     get_data_sampling,
     get_data_transform,
@@ -245,6 +246,30 @@ class LocalizationDataset(Dataset):
         annotation_path = getattr(cfg, "annotation_path", getattr(cfg, "path", None))
         source_path = getattr(cfg, "source_path", getattr(cfg, "video_path", None))
 
+        from opensportslib.preprocessing.config import requires_raw_video
+        if requires_raw_video(self.config) and dataset_type in {
+            'VideoGameWithOpencv', 'VideoGameWithOpencvVideo', 'VideoGameWithDali', 'VideoGameWithDaliVideo'
+        }:
+            from opensportslib.datasets.video_raw import build_video_loader
+            raw_dali = 'Dali' in dataset_type
+            evaluation = dataset_type.endswith('Video')
+            shared = dict(classes=default_args['classes'], label_file=annotation_path,
+                video_dir=source_path, modality='rgb', clip_len=self.data_cfg.clip_len,
+                input_fps=self.data_cfg.input_fps, extract_fps=self.data_cfg.extract_fps,
+                raw_video=True, raw_decoder='dali' if raw_dali else 'opencv',
+                raw_resize=get_data_transform(self.config).get('resize'))
+            if evaluation:
+                dataset = ActionSpotVideoDataset(**shared, overlap_len=getattr(cfg, 'overlap_len', self.data_cfg.clip_len//2))
+            else:
+                length = self.data_cfg.epoch_num_frames//self.data_cfg.clip_len
+                dataset = ActionSpotDataset(**shared, dataset_len=max(1, length if default_args.get('train') else length//4),
+                    is_eval=not default_args.get('train', False), dilate_len=self.data_cfg.dilate_len,
+                    sampling_seed=get_train_execution(self.config).get(
+                        'training_seed' if default_args.get('train') else 'validation_seed'))
+            if raw_dali:
+                dataset = build_video_loader(dataset, batch_size=cfg.dataloader.batch_size,
+                    shuffle=bool(getattr(cfg.dataloader, 'shuffle', False)), num_workers=0)
+            return dataset
         if dataset_type == "SoccerNetClips" or dataset_type == "SoccerNetGames":
             if dataset_split is None:
                 dataset = SoccerNetGameClips(
@@ -348,6 +373,8 @@ class LocalizationDataset(Dataset):
                 TARGET_HEIGHT=self.data_cfg.target_height,
                 TARGET_WIDTH=self.data_cfg.target_width,
                 preserve_aspect_ratio=self.data_cfg.preserve_aspect_ratio,
+                sampling_seed=get_train_execution(self.config).get(
+                    "training_seed" if default_args["train"] else "validation_seed"),
             )
         elif dataset_type == "VideoGameWithOpencvVideo":
             dataset = ActionSpotVideoDataset(
@@ -512,7 +539,9 @@ class LocalizationDataset(Dataset):
             return dataset
         if getattr(dataset, "rule_based_no_dataloader", False):
             return None
-        dataloader = torch.utils.data.DataLoader(
+        from opensportslib.datasets.video_raw import build_video_loader
+        loader_factory = build_video_loader if getattr(dataset, 'raw_video', False) else torch.utils.data.DataLoader
+        dataloader = loader_factory(
             dataset,
             batch_size=cfg.batch_size,
             shuffle=cfg.shuffle,
@@ -814,11 +843,19 @@ class ActionSpotDataset(Dataset):
         TARGET_HEIGHT=224,
         TARGET_WIDTH=398,
         preserve_aspect_ratio=False,
+        raw_video=False,
+        raw_decoder='opencv',
+        raw_resize=None,
+        sampling_seed=None,
     ):
         import random
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat
         from opensportslib.core.utils.video_processing import _get_deferred_rgb_transform, _get_img_transforms
 
+        self.raw_video, self.raw_decoder, self.raw_resize = raw_video, raw_decoder, raw_resize
+        if raw_video:
+            from opensportslib.datasets.video_raw import video_collate
+            self.collate_fn = video_collate
         self._src_file = label_file
         self._labels, self.task_name = annotationstoe2eformat(
             label_file, video_dir, input_fps, extract_fps, False
@@ -839,6 +876,7 @@ class ActionSpotDataset(Dataset):
         self._pad_len = pad_len
         assert pad_len >= 0
         self._is_eval = is_eval
+        self._sampling_seed = sampling_seed
 
         # Label modifications
         self._dilate_len = dilate_len
@@ -860,7 +898,7 @@ class ActionSpotDataset(Dataset):
         self.TARGET_WIDTH = TARGET_WIDTH
         # Try to do defer the latter half of the transforms to the GPU
         self._gpu_transform = None
-        if not is_eval and same_transform:
+        if not raw_video and not is_eval and same_transform:
             if modality == "rgb":
                 print("=> Deferring some RGB transforms to the GPU!")
                 self._gpu_transform = _get_deferred_rgb_transform(self.IMAGENET_MEAN, self.IMAGENET_STD)
@@ -895,6 +933,8 @@ class ActionSpotDataset(Dataset):
             device: The device on which to load the frames.
         """
         from opensportslib.core.utils.video_processing import _load_frame_deferred
+        if self.raw_video:
+            return batch["frame"]
         if self._gpu_transform is None:
             frame = batch["frame"].to(device)
         else:
@@ -950,6 +990,11 @@ class ActionSpotDataset(Dataset):
         else:
             video_meta, base_idx = self._sample_uniform()
 
+        if self.raw_video:
+            # Very short videos and the legacy pad range can otherwise yield
+            # an entirely padded training example with no supervised timestep.
+            base_idx = min(video_meta['num_frames']-1, max(1-self._clip_len, base_idx))
+
         labels = np.zeros(self._clip_len, np.int64)
         for event in video_meta["events"]:
             event_frame = event["frame"]
@@ -966,6 +1011,13 @@ class ActionSpotDataset(Dataset):
                     min(self._clip_len, label_idx + self._dilate_len + 1),
                 ):
                     labels[i] = label
+        if self.raw_video:
+            from opensportslib.datasets.video_raw import read_spotting_clip
+            frames, metadata = read_spotting_clip(video_meta['video'], base_idx, self._clip_len,
+                self._frame_reader._sample_fps, source_start=video_meta.get('source_start_frame'),
+                source_end=video_meta.get('source_end_frame'), resize=self.raw_resize, decoder=self.raw_decoder)
+            return {'frame': frames, 'video_meta': metadata, 'label': labels,
+                    'contains_event': int(np.sum(labels) > 0)}
         frames = self._frame_reader.load_frames_ocv(
             video_meta["video"],
             base_idx,
@@ -981,7 +1033,19 @@ class ActionSpotDataset(Dataset):
             "label": labels,
         }
 
-    def __getitem__(self, unused):
+    def __getitem__(self, index):
+        # Stable window requests allow exact-clip cache reuse and comparable
+        # validation losses. Restore the caller's RNG for subsequent samples.
+        if self._sampling_seed is not None:
+            state = random.getstate()
+            random.seed(self._sampling_seed + index)
+            try:
+                return self._get_item()
+            finally:
+                random.setstate(state)
+        return self._get_item()
+
+    def _get_item(self):
         """Get a training sample based on one video without mixup, two otherwise."""
         ret = self._get_one()
 
@@ -1132,10 +1196,17 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
         TARGET_HEIGHT=224,
         TARGET_WIDTH=398,
         preserve_aspect_ratio=False,
+        raw_video=False,
+        raw_decoder='opencv',
+        raw_resize=None,
     ):
         from opensportslib.core.utils.load_annotations import annotationstoe2eformat, construct_labels
         from opensportslib.core.utils.video_processing import _get_img_transforms
     
+        self.raw_video, self.raw_decoder, self.raw_resize = raw_video, raw_decoder, raw_resize
+        if raw_video:
+            from opensportslib.datasets.video_raw import video_collate
+            self.collate_fn = video_collate
         self._src_file = label_file
         if label_file.endswith(".json"):
             self._labels, self.task_name = annotationstoe2eformat(
@@ -1221,6 +1292,12 @@ class ActionSpotVideoDataset(Dataset, DatasetVideoSharedMethods):
             source_start_frame,
             source_end_frame,
         ) = self._clips[idx]
+        if self.raw_video:
+            from opensportslib.datasets.video_raw import read_spotting_clip
+            frames, metadata = read_spotting_clip(video_name, start, self._clip_len,
+                self._frame_reader._sample_fps, source_start=source_start_frame,
+                source_end=source_end_frame, resize=self.raw_resize, decoder=self.raw_decoder)
+            return {'video': video_path, 'start': start, 'frame': frames, 'video_meta': metadata}
         frames = self._frame_reader.load_frames_ocv(
             video_name,
             start,

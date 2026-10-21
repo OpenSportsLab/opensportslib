@@ -295,6 +295,13 @@ class VideoDataset(ClassificationDataset):
         super().__init__(config, annotations_path, processor, split=split)
 
         self.processor = processor
+        from opensportslib.preprocessing.config import requires_raw_video
+        self.raw_video = requires_raw_video(config)
+        from opensportslib.core.config.accessors import get_loader_backend
+        self.raw_decoder = get_loader_backend(config)
+        if self.raw_video:
+            from opensportslib.datasets.video_raw import video_collate
+            self.collate_fn = video_collate
         self.view_type = get_data_params(config).get("view_type", "single")
         sampling_cfg = get_data_sampling(config)
         self.num_frames = sampling_cfg.get("num_frames")
@@ -370,6 +377,29 @@ class VideoDataset(ClassificationDataset):
     
         selected_paths = self._select_views(video_paths)
         
+        if self.raw_video:
+            from opensportslib.datasets.video_raw import read_raw_clip, probe_video, uniform_indices
+            sampling = get_data_sampling(self.config)
+            views, metadata = [], []
+            for path in selected_paths:
+                source = os.path.join(self.video_path, path)
+                info = probe_video(source)
+                start = int(sampling.get('start_frame') or 0)
+                end = sampling.get('end_frame')
+                end = info['count'] if end is None or end < 0 else min(int(end), info['count'])
+                indices = uniform_indices(start, end, self.num_frames)
+                frames, meta = read_raw_clip(source, indices,
+                    resize=get_data_transform(self.config).get('resize'), decoder=self.raw_decoder)
+                times = np.linspace(meta['frames'][0]['timestamp'], meta['frames'][-1]['timestamp'], self.num_frames)
+                for frame_meta, sample_time in zip(meta['frames'], times):
+                    frame_meta['sample_time'] = float(sample_time)
+                views.append(frames)
+                metadata.append(meta)
+            out = {'pixel_values': views, 'video_meta': metadata, 'id': sample_id}
+            if label is not None:
+                out['labels'] = label
+            return out
+
         # --- Load and process frames for selected clips ---
         if get_component_provider_by_kind(self.config, "encoder") == "huggingface":
             path = selected_paths[0]

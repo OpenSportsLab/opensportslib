@@ -1041,3 +1041,46 @@ def test_vqa_qwen_test_set_infer_preserves_prediction_shape(vqa_config_path, tmp
     assert out["data"][0]["id"] == "action_0"
     assert out["data"][0]["question"] == "What happened?"
     assert out["data"][0]["answer_text"] == "qwen-dataset-answer"
+
+
+def test_model_owned_pose_public_inference_and_metrics_remain_in_memory(tmp_path,monkeypatch):
+    from opensportslib.core.config.editable import Config
+    from tests.helpers.video_pose import pose_config,PoseBackend
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend',PoseBackend)
+    for task,api_type in [('classification',ClassificationModel),('localization',LocalizationModel)]:
+        directory=tmp_path/task
+        directory.mkdir()
+        payload=pose_config(task,directory)
+        api=api_type(config=Config(payload))
+        before={p for p in directory.rglob('*') if p.is_file()}
+        path=str(directory/'labels.json')
+        result=api.infer(test_set=path,use_wandb=False)
+        assert result['data']
+        assert before=={p for p in directory.rglob('*') if p.is_file()}
+        metrics=api.evaluate(test_set=path,predictions=result,use_wandb=False)
+        assert isinstance(metrics,dict)
+        if task=='localization':
+            batches=list(api.infer_stream(str(directory/'clip.mp4')))
+            assert [e for b in batches for e in b['data'][0]['events']]==result['data'][0]['events']
+        else:
+            direct=api.infer(video_path=str(directory/'clip.mp4'),use_wandb=False)
+            assert direct['data'][0]['id']=='clip'
+        assert before=={p for p in directory.rglob('*') if p.is_file()}
+
+
+def test_pose_streaming_preserves_logical_video_intervals(tmp_path,monkeypatch):
+    import json
+    from opensportslib.core.config.editable import Config
+    from tests.helpers.video_pose import pose_config,PoseBackend
+    monkeypatch.setattr('opensportslib.preprocessing.backend.RTMLibBackend',PoseBackend)
+    payload=pose_config('localization',tmp_path)
+    path=tmp_path/'labels.json'
+    document=json.loads(path.read_text())
+    document['data'][0]['metadata']={'intervals':[{'start_time_ms':40,'end_time_ms':200,'period':'rally'}]}
+    path.write_text(json.dumps(document))
+    api=LocalizationModel(config=Config(payload))
+    prediction=api.infer(test_set=str(path),use_wandb=False)
+    record=prediction['data'][0]
+    assert 'interval-01-rally' in record['inputs'][0]['path']
+    assert record['events'] and all(0<=e['position_ms']<160 for e in record['events'])
+    assert isinstance(api.evaluate(test_set=str(path),predictions=prediction,use_wandb=False),dict)

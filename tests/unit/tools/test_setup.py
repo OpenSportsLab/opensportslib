@@ -257,3 +257,26 @@ def test_setup_skips_vqa_dependency_install_when_flags_are_false(monkeypatch):
     setup_lib.setup(dali=True, pyg=False, vqa_xvars=False, vqa_qwen=False)
 
     assert calls == ["torch:False", "extras:True:False:False", "verify"]
+
+
+def test_pose_setup_preserves_existing_torch_and_avoids_cpu_ort(monkeypatch):
+    import torch
+    calls=[]
+    monkeypatch.setattr(setup_lib.platform,'machine',lambda:'x86_64')
+    monkeypatch.setattr(torch.version,'cuda','12.8')
+    monkeypatch.setattr(torch.backends.cudnn,'version',lambda:90100)
+    monkeypatch.setattr(setup_lib.subprocess,'check_call',lambda cmd:calls.append(cmd))
+    monkeypatch.setattr(setup_lib,'install_torch',lambda **kwargs:pytest.fail('Pose-only setup must preserve Torch'))
+    setup_lib.setup(pose=True)
+    assert len(calls)==2
+    assert 'onnxruntime-gpu==1.20.2' in calls[0]
+    assert '--no-deps' in calls[1] and 'rtmlib==0.0.16' in calls[1]
+    assert all('onnxruntime' not in command for command in calls)
+
+
+def test_cli_pose_setup_is_explicit(monkeypatch):
+    from opensportslib import cli
+    calls=[]
+    monkeypatch.setattr(cli,'setup',lambda **kwargs:calls.append(kwargs))
+    assert cli.main(['setup','--pose'])==0
+    assert calls[0]['pose'] is True

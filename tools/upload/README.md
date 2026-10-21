@@ -1,6 +1,50 @@
-# Model Upload Tools
+# Upload Tools
 
-Scripts to upload OpenSportsLib model artifacts to Hugging Face model repos.
+Scripts to upload OpenSportsLib datasets and model artifacts to Hugging Face.
+
+## Tennis stroke classification dataset
+
+`upload_tennis_classification.py` publishes the generated four-class tennis
+dataset to `OpenSportsLab/OSL-cls-tennis-public` (default revision `main`). It
+uses OSL's `upload_dataset_as_parquet_to_hf` for all three splits, then publishes
+the README, conversion provenance, exclusions and MP4 checksums in a final commit.
+
+```bash
+conda activate osl
+
+# Validate every local clip/receipt and generate data/tennis-classification/README.md.
+# This command does not contact the Hub.
+python tools/upload/upload_tennis_classification.py --check-only
+
+# Authenticate with write access to the OpenSportsLab dataset repository.
+hf auth login
+
+# Upload train, valid and test using Parquet metadata and WebDataset TAR shards,
+# followed by the dataset card and provenance reports.
+python tools/upload/upload_tennis_classification.py
+```
+
+Use `--data-root` for a different local conversion root, `--revision` for another
+branch, or `--shard-size 250MB` for smaller TAR shards. Authentication uses the
+existing Hugging Face login or `HF_TOKEN`; tokens are not stored in the script.
+The target dataset repository is created if needed.
+
+The README is generated from the validated manifests, build report and exclusion
+report using [this template](tennis_classification_README.md). It documents labels,
+counts, match splits, clip timing, original resolution, exclusions, source
+revision/license declaration, storage format, and download/training examples.
+`--check-only` lets you review the rendered local README before publishing.
+Local receipts, pose caches and model checkpoints are not uploaded.
+
+Any failed split upload stops the run before the documentation commit. Rerunning
+the command validates every split again and replaces generated Parquet/shard
+files using the existing OSL uploader; it removes obsolete shards only within
+the selected split folders. The three splits and documentation use separate
+commits, so a failed upload can leave a partial remote release. Keep local data
+unchanged while publishing and rerun to complete it.
+
+See the [tennis conversion and training guide](../../docs/tools/tennis-classification.md)
+for building the source clips.
 
 This complements the dataset upload tools in `tools/download/` and supports
 both:

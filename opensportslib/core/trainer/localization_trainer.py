@@ -36,6 +36,7 @@ from opensportslib.core.config.accessors import (
     get_system_path,
     get_train_epochs,
     get_train_execution,
+    get_train_selection,
     get_loader_backend,
 )
 from opensportslib.core.optimizer.builder import build_optimizer
@@ -241,7 +242,14 @@ class Trainer_e2e(Trainer):
         self.losses = []
         self.best_epoch = 0
         execution = get_train_execution(args)
-        self.best_criterion_valid = 0 if execution.get("criterion_valid") == "map" else float("inf")
+        self.best_criterion_valid = -float("inf") if execution.get("criterion_valid") == "map" else float("inf")
+        selection = get_train_selection(args)
+        self.patience = selection.get("patience", 0)
+        self.min_delta = selection.get("min_delta", 0.0)
+        if not isinstance(self.patience, int) or self.patience < 0:
+            raise ValueError("Early-stopping patience must be a nonnegative integer")
+        if not math.isfinite(self.min_delta) or self.min_delta < 0:
+            raise ValueError("Early-stopping min_delta must be finite and nonnegative")
 
         self.num_epochs = get_train_epochs(args)
         self.epoch = start_epoch
@@ -256,6 +264,10 @@ class Trainer_e2e(Trainer):
         self.start_valid_epoch = execution.get("start_valid_epoch")
         self.criterion_valid = execution.get("criterion_valid")
         self.valid_map_every = execution.get("valid_map_every")
+        if self.criterion_valid not in {"loss", "map"}:
+            raise ValueError("E2E criterion_valid must be loss or map")
+        if self.criterion_valid == "map" and (not self.valid_map_every or self.valid_map_every < 1):
+            raise ValueError("valid_map_every must be positive for mAP selection")
         #self.save_dir = work_dir
         self.dali = dali
 
@@ -326,6 +338,10 @@ class Trainer_e2e(Trainer):
             
     def train(self, train_loader, valid_loader, classes):
         """Training loop with checkpoint management."""
+        convergence_best = self.best_criterion_valid
+        bad_checks = 0
+        self.epochs_completed = self.epoch
+        self.stop_reason = "max_epochs"
         if self.criterion_valid == "map":
             data_obj_valid = build_dataset(self.config, split="valid_data_frames")
             dataset_Valid_Frames =  data_obj_valid.building_dataset(
@@ -356,13 +372,10 @@ class Trainer_e2e(Trainer):
 
             valid_mAP = 0
             is_best = False
+            current = None
 
             if self.criterion_valid == "loss":
-                if valid_loss < self.best_criterion_valid:
-                    self.best_criterion_valid = valid_loss
-                    self.best_epoch = epoch
-                    is_best = True
-                    print("New best epoch!")
+                current = float(valid_loss)
             elif self.criterion_valid == "map":
                 if epoch >= self.start_valid_epoch and epoch % self.valid_map_every == 0:
                     pred_file = None
@@ -380,13 +393,26 @@ class Trainer_e2e(Trainer):
                         pred_file,
                         dataloader_params=self.cfg_valid_data_frames.dataloader,
                     )
-                    if valid_mAP > self.best_criterion_valid:
-                        self.best_criterion_valid = valid_mAP
-                        self.best_epoch = epoch
-                        is_best = True
-                        print("New best epoch!")
-            else:
-                print("Unknown criterion:", self.criterion_valid)
+                    current = float(valid_mAP)
+
+            # Only real validation measurements consume patience. In mAP mode
+            # the unmeasured epochs between full-video evaluations do not count.
+            if current is not None:
+                if not math.isfinite(current):
+                    raise ValueError(f"Validation {self.criterion_valid} is not finite at epoch {epoch+1}")
+                maximize = self.criterion_valid == "map"
+                is_best = (current > self.best_criterion_valid if maximize
+                           else current < self.best_criterion_valid)
+                if is_best:
+                    self.best_criterion_valid = current
+                    self.best_epoch = epoch
+                    logging.info("New best epoch: %s", epoch + 1)
+                significant = (current > convergence_best + self.min_delta if maximize
+                               else current < convergence_best - self.min_delta)
+                if significant:
+                    convergence_best, bad_checks = current, 0
+                else:
+                    bad_checks += 1
 
             self.losses.append(
                 {
@@ -394,6 +420,7 @@ class Trainer_e2e(Trainer):
                     "train": train_loss,
                     "valid": valid_loss,
                     "valid_mAP": valid_mAP,
+                    "validation_measured": current is not None,
                 }
             )
 
@@ -411,7 +438,7 @@ class Trainer_e2e(Trainer):
                 # Logging a placeholder 0 on the other epochs drew a sawtooth
                 # collapsing to zero between real measurements; omit the key
                 # instead so the chart connects the points that exist.
-                if valid_mAP:
+                if self.criterion_valid == "map" and current is not None:
                     payload["valid/mAP"] = valid_mAP
                 wandb.log(payload)
 
@@ -424,7 +451,21 @@ class Trainer_e2e(Trainer):
                 )
                 self.save_checkpoint(epoch, is_best)
 
+            self.epochs_completed = epoch + 1
+            if current is not None and self.patience and bad_checks >= self.patience:
+                self.stop_reason = "validation_plateau"
+                logging.info("Early stopping at epoch %s: validation %s did not improve by more than %g for %s checks",
+                             epoch + 1, self.criterion_valid, self.min_delta, self.patience)
+                break
+
         logging.info(f"Training completed. Best epoch: {self.best_epoch}")
+        store_json(os.path.join(self.save_dir, "training_summary.json"), {
+            "epochs_completed": self.epochs_completed, "stop_reason": self.stop_reason,
+            "selected_epoch": self.best_epoch + 1, "best_metric": self.best_criterion_valid,
+            "monitor": "validation_mAP" if self.criterion_valid == "map" else "validation_loss",
+            "patience": self.patience, "min_delta": self.min_delta,
+            "history": [{**row, "epoch": row["epoch"] + 1} for row in self.losses],
+        }, pretty=True)
 
         if self.dali:
             train_loader.delete()
@@ -631,7 +672,7 @@ class Inferer:
         pred_file = None
         work_dir = get_system_path(cfg, "work_dir")
         cfg_testset = get_split_cfg(cfg, "test")
-        if work_dir is not None:
+        if work_dir is not None and getattr(cfg_testset, "results", None):
             pred_file = os.path.join(work_dir, cfg_testset.results)
 
         predictions = infer_and_process_predictions_e2e(

@@ -1,0 +1,188 @@
+# Optional DALI 2.2+ raw video decoding; one GPU process per loader.
+TASK: classification
+VERSION: 2
+SYSTEM:
+  paths:
+    log_dir: ./logs/tennis
+    save_dir: ./checkpoints/tennis
+    work_dir: ./outputs/tennis
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+DATA:
+  common:
+    dataset_name: tennis-strokes
+    data_root: ./data/tennis-classification
+    classes:
+    - far_court_serve
+    - far_court_swing
+    - near_court_serve
+    - near_court_swing
+    runtime:
+      loader_backend: dali
+    splits:
+      train:
+        type: annotations_train.json
+        source_path: ${DATA.common.data_root}
+        annotation_path: ${DATA.common.data_root}/train.json
+        dataloader:
+          batch_size: 4
+          shuffle: true
+          num_workers: 0
+          pin_memory: false
+      valid:
+        type: annotations_valid.json
+        source_path: ${DATA.common.data_root}
+        annotation_path: ${DATA.common.data_root}/valid.json
+        dataloader:
+          batch_size: 1
+          num_workers: 0
+          shuffle: false
+          pin_memory: false
+      test:
+        type: annotations_test.json
+        source_path: ${DATA.common.data_root}
+        annotation_path: ${DATA.common.data_root}/test.json
+        dataloader:
+          batch_size: 1
+          num_workers: 0
+          shuffle: false
+          pin_memory: false
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+      sampling:
+        extract_fps: 25
+        num_frames: 64
+        input_fps: 25
+      params:
+        mixup: false
+        dilate_len: 0
+        view_type: single
+MODEL:
+  schema_version: 3
+  task: classification
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+    multi_gpu: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  components:
+    pose_tracking:
+      kind: preprocessor
+      source:
+        provider: opensportslib
+        registry: preprocessor
+        name: pose_tracking
+      params:
+        type: video_to_skeleton
+        backend: rtmlib
+        detector: yolox_m
+        pose: rtmpose_s
+        max_players: 2
+        max_candidates: 8
+        selection: tennis_conservative
+        track_retention_seconds: 0.5
+        cache:
+          mode: 'off'
+    tracking_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: graph_conv
+      params:
+        type: graph_conv
+        encoder: gin
+        hidden_dim: 64
+        num_layers: 20
+        dropout: 0.1
+        edge_type: full
+        normalization: layernorm
+      overrides: {}
+    tracking_adapter:
+      kind: adapter
+      source:
+        provider: opensportslib
+        registry: neck
+        name: TemporalAggregation
+      params:
+        type: TemporalAggregation
+        agr_type: maxpool
+        hidden_dim: 64
+        dropout: 0.1
+        use_position_encoding: true
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: TrackingClassifier
+      params:
+        type: TrackingClassifier
+        hidden_dim: 64
+        dropout: 0.1
+        num_classes: 4
+      overrides: {}
+  topology:
+  - from: pose_tracking
+    to: tracking_encoder
+  - from: tracking_encoder
+    to: tracking_adapter
+  - from: tracking_adapter
+    to: task_head
+  policies: {}
+  metadata:
+    family: custom
+    runner: {}
+    legacy_type: custom
+TRAIN:
+  trainer:
+    type: classification
+  epochs: 100
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: Adam
+    lr: 0.001
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    patience: 10
+    factor: 0.1
+    min_lr: 1.0e-08
+  execution:
+    enabled: true
+    detailed_results: true
+  sampling:
+    # Sample generated stroke clips without replacement.
+    use_weighted_sampler: false
+    use_weighted_loss: false
+    samples_per_class: 4000
+  selection:
+    monitor: loss
+    mode: min
+    patience: 10
+  checkpoint:
+    save_every: 20
+IO:
+  inputs:
+    video: pose_tracking
+    label: task_head
+  outputs:
+    logits: task_head

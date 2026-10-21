@@ -433,3 +433,43 @@ input modality to `tracking_tracab`; reference the original metadata JSON with
 `metadata_path` and retain UTC period calibration and team codes in each input. `params.annotation_head` selects a head such as
 `action` or `headers`. See [the DAT contract and loading guide](../../docs/tracking_tracab.md) for the
 schema, configuration, caching and backward-compatible Parquet behavior.
+
+## Skeleton video inputs
+
+`ClassificationModel.infer(video_path=...)` accepts a stroke clip with a
+`video/raw` config with `MODEL.components.pose_tracking`. `LocalizationModel.infer_stream(video_path=...)` yields
+finalized OSL event batches from shot-local bidirectional windows; close the
+iterator when stopping early. Training keeps ordinary video inputs, supports
+multiview classification, and optionally caches exact clip extraction inside the
+model. `warm-cache` explicitly prepares caches; old skeleton dataset types are removed.
+Inference returns predictions in memory; use `save_predictions(...)` explicitly.
+See the [extraction, caching, timing, and installation guide](../../docs/preprocessing/video-to-skeleton.md).
+For an explicit pose trace and annotated prediction video from a trained
+checkpoint, use the [single-video inspection script](../../tools/inference/README.md).
+An already loaded `model.preprocessor.observe(callback)` context receives the
+actual `(records, video_meta)` before graph conversion, including cache hits and
+continuous sessions. Callbacks must not mutate records; the observer is removed
+on context exit. Ordinary inference gains no implicit persistence.
+
+The [Dallas pilot](../../docs/preprocessing/tennis-dallas.md) trains this graph
+classifier and an RGB VideoMAEv2 baseline on the same match-disjoint clips.
+For frame-array classification, configure AMP and mixup through
+`TRAIN.execution.use_amp` and `TRAIN.execution.mixup_alpha`; legacy `TRAIN`
+fields remain accepted. VideoMAEv2 selective unfreezing reaches the nested
+encoder blocks in OpenGVLab's published model layout.
+Native classification trainers use `TRAIN.selection.patience` (zero disables
+validation early stopping) and `TRAIN.selection.min_delta` (default zero, absolute
+metric units). They save the strict best validation checkpoint independently of
+the stopping threshold and write `training_summary.json` alongside the checkpoint
+directories. The guide includes a paired training script with an epoch cap and
+validation-based stopping; test evaluation follows checkpoint selection.
+The Dallas guide also provides video/graph action-spotting scripts using
+`LocalizationModel`. E2E spotting honors `TRAIN.selection.patience` and `min_delta`
+(both default zero); in mAP mode only scheduled measurements consume patience.
+Set `TRAIN.execution.validation_seed` for fixed OpenCV validation windows. E2E
+datasets also accept `TRAIN.execution.training_seed` for a repeatable training
+pool indexed independently of shuffle order, allowing exact-clip pose-cache reuse.
+Omitting the training seed preserves random requests. Dallas spotting scripts
+default to a fixed pool and `read_write` caching, with explicit random/off options.
+E2E inference accepts `DATA.common.splits.test.results: null` to return predictions
+without writing prediction files; `save_predictions(...)` remains explicit.

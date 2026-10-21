@@ -73,15 +73,19 @@ def tracking_collate_fn(batch):
     # PyG handles node offsets for edge_index automatically
     batched_graphs = Batch.from_data_list(all_graphs)
     
-    return {
+    result = {
         'x': batched_graphs.x,
         'edge_index': batched_graphs.edge_index,
         'batch': batched_graphs.batch,
         'batch_size': batch_size,
         'seq_len': seq_len,
-        'labels': torch.tensor([item['label'] for item in batch], dtype=torch.long),
         'id': [item['id'] for item in batch],
     }
+    if getattr(batched_graphs, 'node_mask', None) is not None:
+        result['node_mask'] = batched_graphs.node_mask
+    if all(item.get('label') is not None for item in batch):
+        result['labels'] = torch.tensor([item['label'] for item in batch], dtype=torch.long)
+    return result
 
 
 def _flatten_graphs_to_batch(list_of_graph_lists):
@@ -107,6 +111,8 @@ def _flatten_graphs_to_batch(list_of_graph_lists):
         ) from exc
 
     seq_len = len(list_of_graph_lists[0])
+    if any(len(graphs) != seq_len for graphs in list_of_graph_lists):
+        raise ValueError("Graph clips in a batch must have equal length")
     all_graphs = [g for graphs in list_of_graph_lists for g in graphs]
     batched = Batch.from_data_list(all_graphs)
     batched.seq_len = seq_len
@@ -124,13 +130,17 @@ def tracking_spotting_collate_fn(batch):
     labels = torch.as_tensor(
         np.stack([item["label"] for item in batch]), dtype=torch.long
     )
-    return {
+    result = {
         "frame": frame,
         "label": labels,
         "contains_event": torch.tensor(
             [item["contains_event"] for item in batch], dtype=torch.long
         ),
     }
+    if "time_mask" in batch[0]:
+        result["time_mask"] = torch.as_tensor(np.stack([b["time_mask"] for b in batch]))
+        frame.time_mask = result["time_mask"]
+    return result
 
 
 def tracking_spotting_eval_collate_fn(batch):
@@ -144,6 +154,8 @@ def tracking_spotting_eval_collate_fn(batch):
     assert len(batch) == 1, "tracking spotting eval requires dataloader batch_size=1"
     item = batch[0]
     frame = _flatten_graphs_to_batch([item["graphs"]])
+    if "time_mask" in item:
+        frame.time_mask = torch.as_tensor(item["time_mask"][None])
     return {
         "video": [item["video"]],
         "start": torch.tensor([item["start"]]),
