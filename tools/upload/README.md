@@ -46,6 +46,10 @@ unchanged while publishing and rerun to complete it.
 See the [tennis conversion and training guide](../../docs/tools/tennis-classification.md)
 for building the source clips.
 
+Dataset publication tools for FineDiving, tennis cleanup, FineGym rebuilding and
+FigureSkating are documented in the
+[spotting dataset preparation guide](../../docs/tools/spotting-dataset-cleanup.md).
+
 This complements the dataset upload tools in `tools/download/` and supports
 both:
 
