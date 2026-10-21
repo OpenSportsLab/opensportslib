@@ -106,6 +106,60 @@ def test_video_frontend_spotting_wrapper_and_masked_training(tmp_path,monkeypatc
     assert not torch.equal(graph_before,graph_weight.detach())
 
 
+def test_fixed_spotting_windows_reuse_cached_graph_inputs_without_pose_backend(tmp_path, monkeypatch):
+    import torch
+    from tests.helpers.video_pose import pose_config, PoseBackend
+    from opensportslib.core.config.runtime_adapter import dict_to_namespace
+    from opensportslib.datasets.builder import build_dataset
+    from opensportslib.models.builder import build_model
+
+    monkeypatch.setattr("opensportslib.preprocessing.backend.RTMLibBackend", PoseBackend)
+    payload = pose_config("localization", tmp_path, count=40)
+    payload["DATA"]["inputs"]["video"]["sampling"]["epoch_num_frames"] = 16
+    payload["DATA"]["common"]["splits"]["train"]["dataloader"]["shuffle"] = False
+    payload["TRAIN"]["execution"]["training_seed"] = 42
+    cache = payload["MODEL"]["components"]["pose_tracking"]["params"]["cache"]
+    cache.update(mode="read_write", path=str(tmp_path / "pose-cache"))
+    config = dict_to_namespace(payload)
+    wrapper = build_dataset(config, split="train")
+    dataset = wrapper.building_dataset(wrapper.cfg, default_args=wrapper.default_args)
+    loader = wrapper.building_dataloader(dataset, wrapper.cfg.dataloader, gpu=0, dali=False)
+    live = build_model(config, "cpu")
+    live._model.eval()
+    expected = []
+    for batch in loader:
+        graphs = live.preprocessor(batch)
+        with torch.no_grad():
+            logits = live._model(graphs)
+        expected.append((graphs.x.clone(), graphs.node_mask.clone(), graphs.time_mask.clone(), logits))
+    assert live.preprocessor.backend.calls > 0
+    manifests = list((tmp_path / "pose-cache").glob("*/manifest.json"))
+    assert manifests
+
+    def forbidden_backend(*args, **kwargs):
+        raise AssertionError("Cached fixed training windows must not construct a pose backend")
+
+    monkeypatch.setattr("opensportslib.preprocessing.backend.RTMLibBackend", forbidden_backend)
+    # A fresh model can reuse the same records without depending on the previous
+    # model's loaded backend, weights or in-memory association state.
+    cache["mode"] = "read"
+    cached = build_model(dict_to_namespace(payload), "cpu")
+    cached._model.load_state_dict(live._model.state_dict())
+    cached._model.eval()
+    for batch, (features, valid, time_mask, expected_logits) in zip(loader, expected):
+        graphs = cached.preprocessor(batch)
+        torch.testing.assert_close(graphs.x, features, atol=0, rtol=0)
+        assert torch.equal(graphs.node_mask, valid) and torch.equal(graphs.time_mask, time_mask)
+        logits = cached._model(graphs)
+        torch.testing.assert_close(logits, expected_logits, atol=1e-5, rtol=1e-4)
+    assert not cached.preprocessor._backends
+    # Cached preprocessing leaves the action encoder and spotting head trainable.
+    torch.nn.functional.cross_entropy(logits.reshape(-1, 3), batch["label"].flatten()).backward()
+    assert cached._model.backbone.encoder.node_encoder.weight.grad is not None
+    assert cached._model.head._pred_fine._fc_out._fc_out.weight.grad is not None
+    assert set((tmp_path / "pose-cache").glob("*/manifest.json")) == set(manifests)
+
+
 @pytest.mark.parametrize("route", ["video", "skeleton"])
 def test_native_spotting_trains_selects_and_predicts_with_validation_stopping(tmp_path, monkeypatch, route):
     import json

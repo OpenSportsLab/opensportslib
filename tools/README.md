@@ -14,6 +14,9 @@ validation-based early stopping and reuse the pilot caches.
 For paired video/graph action spotting from the original broadcast manifests,
 run `bash tools/train/train_tennis_dallas_spotting_until_convergence.sh`.
 Set `CONFIG_ONLY=1` to validate the data and inspect generated configurations.
+Spotting defaults to repeated fixed windows with `read_write` skeleton caching.
+Set `TRAINING_SAMPLING=random` to draw fresh windows, and
+`SKELETON_CACHE_MODE=off` to disable the cache.
 
 ```
 tools/

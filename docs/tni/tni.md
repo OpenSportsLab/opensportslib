@@ -104,3 +104,7 @@ For action spotting, use `tools/train/train_tennis_dallas_spotting_until_converg
 It uses the original broadcast annotations, RegNetY-GSM/GRU versus pose/GIN/GRU,
 fixed OpenCV validation windows (`TRAIN.execution.validation_seed`), and E2E
 validation stopping (`TRAIN.selection.patience`/`min_delta`).
+The spotting launcher repeats fixed training windows and reuses skeleton caches
+by default. Set `TRAINING_SAMPLING=random` for fresh windows; Python exposes
+`--training-sampling`, `--sampling-seed` and `--cache-mode`. The dataset-level
+fixed-pool setting is `TRAIN.execution.training_seed`.

@@ -46,7 +46,8 @@ def validate_data(root):
 
 def training_config(root, model, output, *, epochs=100, patience=10, min_delta=1e-4,
                     batch_size=None, num_workers=0, device="cuda", epoch_num_frames=64000,
-                    clip_len=64, cache_mode="off", cache_dir=None, video_backbone="rny008_gsm"):
+                    clip_len=64, cache_mode="read_write", cache_dir=None, video_backbone="rny008_gsm",
+                    training_sampling="fixed", sampling_seed=42):
     from opensportslib.apis import Config
 
     if epochs < 1 or patience < 0 or not math.isfinite(min_delta) or min_delta < 0:
@@ -59,6 +60,8 @@ def training_config(root, model, output, *, epochs=100, patience=10, min_delta=1
         raise ValueError("Unsupported device or cache policy")
     if video_backbone not in {"rny008_gsm", "rny002_gsm", "convnextt"}:
         raise ValueError("Choose a supported per-frame spotting video backbone")
+    if training_sampling not in {"fixed", "random"}:
+        raise ValueError("training_sampling must be fixed or random")
     root, output = Path(root).resolve(), Path(output).resolve()
     validate_data(root)
     template = Path(__file__).resolve().parents[2] / "examples/tennis/localization_skeleton.yaml"
@@ -110,7 +113,8 @@ def training_config(root, model, output, *, epochs=100, patience=10, min_delta=1
     train["optimizer"] = {"type": "AdamWithScaler", "lr": lr}
     train["scheduler"].update(num_epochs=epochs, warm_up_epochs=min(5, epochs-1), acc_grad_iter=1)
     train["execution"].update(criterion_valid="loss", base_num_valid_epochs=1, multi_gpu=False,
-                              acc_grad_iter=1, validation_seed=42)
+                              acc_grad_iter=1, validation_seed=42,
+                              training_seed=sampling_seed if training_sampling == "fixed" else None)
     train["sampling"].update(use_weighted_sampler=False, use_weighted_loss=False)
     train["selection"].update(monitor="valid_loss", mode="min", patience=patience, min_delta=min_delta)
     return Config(payload)
@@ -193,6 +197,8 @@ def run(root, model, output, *, config_only=False, **settings):
               "train_seconds_including_final_validation": train_seconds, "test_seconds": time.perf_counter()-test_started,
               "seed": 42, "device": str(api.model.device), "torch": torch.__version__,
               "selection": "minimum loss on fixed validation windows; test match used only after selection",
+              "training_sampling": settings.get("training_sampling", "fixed"),
+              "sampling_seed": config.get_config()["TRAIN"]["execution"].get("training_seed"),
               "sampling": config.get_config()["DATA"]["inputs"]["video"]["sampling"],
               "manifest_sha256": {split: digest(Path(root) / f"{split}.json") for split in MATCHES}}
     write_json(output / "results.json", result)
@@ -213,8 +219,12 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--epoch-num-frames", type=int, default=64000)
     parser.add_argument("--clip-len", type=int, default=64)
-    parser.add_argument("--cache-mode", choices=("off", "read", "read_write"), default="off")
-    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--training-sampling", choices=("fixed", "random"), default="fixed",
+                        help="Repeat a seeded training-window pool for cache reuse (default), or draw new windows")
+    parser.add_argument("--sampling-seed", type=int, default=42, help="Seed for the fixed training-window pool")
+    parser.add_argument("--cache-mode", choices=("off", "read", "read_write"), default="read_write",
+                        help="Skeleton results: reuse/save exact clips by default; read requires complete caches")
+    parser.add_argument("--cache-dir", type=Path, help="Persistent skeleton cache shared across output directories")
     parser.add_argument("--video-backbone", choices=("rny008_gsm", "rny002_gsm", "convnextt"), default="rny008_gsm")
     parser.add_argument("--config-only", action="store_true", help="Validate local data and write YAML without constructing a model")
     args = vars(parser.parse_args())

@@ -161,6 +161,8 @@ Native classification trainers honor `TRAIN.selection.patience` and `min_delta`
 for early stopping and keep the best validation checkpoint.
 The same guide provides paired Dallas video/graph action-spotting training with
 fixed validation windows and E2E early stopping.
+Its spotting launcher defaults to fixed training windows and reusable skeleton
+caches; random-window sampling remains selectable.
 
 
 ---

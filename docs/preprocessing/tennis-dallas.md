@@ -207,9 +207,14 @@ The script starts fresh runs sequentially on GPU:
   so it cannot directly replace this frame-aligned spotting encoder.
 
 Both sample 64-frame windows at 25 samples/s, with 32-frame overlap for full-match
-evaluation. An epoch samples 64,000 training frames (1,000 windows) and 16,000
-validation frames (250 windows). Validation uses seed 42 and the same windows
-each epoch, independent of training's random sampling. The default batches are
+evaluation. An epoch visits 64,000 training frames (1,000 windows) and 16,000
+validation frames (250 windows). By default, training repeats a fixed pool of
+windows selected with seed 42, shuffling their order each epoch. This makes
+exact-clip skeleton caches reusable instead of extracting a new random pool
+every epoch. Both models use the same pool; RGB augmentation can still vary.
+Validation uses its own fixed requests on the separate validation match.
+`--training-sampling random` (or `TRAINING_SAMPLING=random` in the paired launcher)
+keeps drawing new training windows. The default batches are
 four graph windows or two RGB windows for training; validation uses one window
 per batch for both routes. Both use the existing OpenCV dataset
 interfaces and E2E trainer; no DALI installation is needed for this script.
@@ -266,19 +271,56 @@ python tools/train/train_tennis_dallas_spotting.py video \
   --epochs 100 --patience 10 --min-delta 0.0001 --output outputs/dallas-spotting/video
 ```
 
-Skeleton caching defaults to `off`: random broadcast windows are distinct from
-the 16-frame classification clips, and many will never repeat. Explicitly set
-`SKELETON_CACHE_MODE=read_write` to cache exact spotting requests; monitor disk
-usage as new random windows accumulate. `SKELETON_CACHE_DIR` chooses the location.
-Continuous streaming inference remains separate from these independent-clip
-caches. GPU pose dependencies are required; the classification caches cannot
-be substituted to make the initial spotting run CPU-only.
+Skeleton caching defaults to `read_write`. The first pass extracts missing
+windows and publishes their immutable skeleton records. Later epochs and fresh
+model runs reuse matching records. Decoding the requested frames and training
+the graph/head still run on cache hits; pose inference is skipped.
+
+The default cache is `data/tennis-dallas-localization/pose-cache-clips`, outside
+the timestamped output directories. `SKELETON_CACHE_DIR` (or `--cache-dir`) chooses
+another persistent location. Cache identity checks the exact frames, geometry,
+frontend settings and weight hashes, preserving independent tracking resets per
+window. Changing action-model weights does not invalidate the skeletons.
+
+Both training-window strategies remain explicit parameters:
+
+```bash
+# Default: repeat fixed windows and reuse skeletons after the first pass.
+TRAINING_SAMPLING=fixed SKELETON_CACHE_MODE=read_write \
+  bash tools/train/train_tennis_dallas_spotting_until_convergence.sh
+
+# More temporal sampling variety; only exact repeated windows get cache hits.
+TRAINING_SAMPLING=random SKELETON_CACHE_MODE=read_write \
+  bash tools/train/train_tennis_dallas_spotting_until_convergence.sh
+```
+
+For the Python entry point, use `--training-sampling fixed|random`,
+`--sampling-seed 42`, and `--cache-mode off|read|read_write`. The paired launcher
+exposes the pool seed as `SAMPLING_SEED`. `read` rejects missing exact requests;
+`off` disables cache access. With random sampling and `read_write`, disk usage can
+grow as new windows accumulate. Fixed pools reduce temporal sampling variety;
+increase `EPOCH_NUM_FRAMES` or change `SAMPLING_SEED` when broader coverage is
+needed. To get a smaller initial extraction pass, for example:
+
+```bash
+EPOCH_NUM_FRAMES=16000 TRAINING_SAMPLING=fixed \
+  bash tools/train/train_tennis_dallas_spotting_until_convergence.sh
+```
+
+This selects 250 training windows, revisited every epoch. Full-match validation
+and continuous test inference still run after training; continuous inference has
+its own tracking state and does not substitute independent-clip caches. GPU pose
+dependencies remain required. The 16-frame classification caches cannot replace
+these spotting caches.
 
 E2E trainers accept `TRAIN.selection.patience` (default zero/disabled) and
 `min_delta` (default zero). For mAP selection, patience counts only full-video
 measurements scheduled by `valid_map_every`. OpenCV validation windows can be
 fixed with `TRAIN.execution.validation_seed`; omitting it preserves random
-sampling. The Dallas scripts enable this setting for both routes.
+sampling. `TRAIN.execution.training_seed` similarly fixes the training pool by
+sample index, independently of shuffling or worker assignment. The Dallas scripts
+set it in fixed mode and leave it unset in random mode; other configurations keep
+their existing sampling behavior.
 
 ## Verification
 
@@ -291,6 +333,8 @@ improvements, disabled patience, and checkpoint correctness at LR reductions/sto
 Spotting tests cover fixed validation requests, sparse mAP checks, zero-mAP best
 checkpoints, stopping-epoch saves, fast NMS equivalence, and real CPU video/graph
 training, checkpoint reload and inference with an external pose-backend fixture.
+Cache reuse tests repeat the fixed training pool using a fresh model with a
+forbidden pose backend, compare graph inputs/logits, and verify action gradients.
 GPU model probes and the real-data pilot are separate from the offline suite.
 
 ## Measured five-epoch pilot (21 October 2026)

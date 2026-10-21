@@ -467,5 +467,9 @@ The Dallas guide also provides video/graph action-spotting scripts using
 `LocalizationModel`. E2E spotting honors `TRAIN.selection.patience` and `min_delta`
 (both default zero); in mAP mode only scheduled measurements consume patience.
 Set `TRAIN.execution.validation_seed` for fixed OpenCV validation windows. E2E
-inference accepts `DATA.common.splits.test.results: null` to return predictions
+datasets also accept `TRAIN.execution.training_seed` for a repeatable training
+pool indexed independently of shuffle order, allowing exact-clip pose-cache reuse.
+Omitting the training seed preserves random requests. Dallas spotting scripts
+default to a fixed pool and `read_write` caching, with explicit random/off options.
+E2E inference accepts `DATA.common.splits.test.results: null` to return predictions
 without writing prediction files; `save_predictions(...)` remains explicit.

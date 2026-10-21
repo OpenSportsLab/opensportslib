@@ -114,6 +114,7 @@ def test_dallas_spotters_keep_original_events_and_fixed_validation_requests(dall
     root = tmp_path / "localization"
     build(dallas_dataset, tmp_path / "classification", root)
     requested = []
+    training_requests = []
     for model in ("skeleton", "video"):
         payload = training_config(root, model, tmp_path / model, epochs=100, patience=12,
                                   min_delta=.002, epoch_num_frames=16, clip_len=4).get_config()
@@ -121,6 +122,7 @@ def test_dallas_spotters_keep_original_events_and_fixed_validation_requests(dall
         assert payload["TRAIN"]["selection"]["patience"] == 12
         assert payload["TRAIN"]["selection"]["min_delta"] == .002
         assert payload["TRAIN"]["execution"]["criterion_valid"] == "loss"
+        assert payload["TRAIN"]["execution"]["training_seed"] == 42
         assert payload["TRAIN"]["scheduler"]["warm_up_epochs"] < payload["TRAIN"]["epochs"]
         for split in payload["DATA"]["common"]["splits"].values():
             assert split["results"] is None and split["overlap_len"] == 2
@@ -129,7 +131,12 @@ def test_dallas_spotters_keep_original_events_and_fixed_validation_requests(dall
             payload["DATA"]["inputs"]["video"]["transform"]["resize"] = {"height": 48, "width": 64}
             assert "pose_tracking" not in payload["MODEL"]["components"]
         else:
-            assert payload["MODEL"]["components"]["pose_tracking"]["params"]["cache"]["mode"] == "off"
+            cache = payload["MODEL"]["components"]["pose_tracking"]["params"]["cache"]
+            assert cache == {"mode": "read_write", "path": str(root / "pose-cache-clips")}
+            another = training_config(root, model, tmp_path / "another-run").get_config()
+            assert another["MODEL"]["components"]["pose_tracking"]["params"]["cache"] == cache
+            disabled = training_config(root, model, tmp_path / "disabled", cache_mode="off").get_config()
+            assert disabled["MODEL"]["components"]["pose_tracking"]["params"]["cache"]["mode"] == "off"
         wrapper = build_dataset(dict_to_namespace(payload), split="valid")
         dataset = wrapper.building_dataset(wrapper.cfg, default_args=wrapper.default_args)
         def observe_request(original=dataset._sample_uniform):
@@ -144,13 +151,38 @@ def test_dallas_spotters_keep_original_events_and_fixed_validation_requests(dall
         second = dataset[0]
         torch.testing.assert_close(torch.as_tensor(first["frame"]), torch.as_tensor(second["frame"]))
         np.testing.assert_array_equal(first["label"], second["label"])
+        wrapper = build_dataset(dict_to_namespace(payload), split="train")
+        pool = wrapper.building_dataset(wrapper.cfg, default_args=wrapper.default_args)
+        def observe_training(original=pool._sample_uniform):
+            record, start = original()
+            training_requests.append((record["video"], start))
+            return record, start
+        pool._sample_uniform = observe_training
+        for index in (0, 1, 0):
+            state = random.getstate()
+            pool[index]
+            assert random.getstate() == state
     assert len(requested) == 4 and all(request == requested[0] for request in requested)
+    assert training_requests[:3] == training_requests[3:]
+    assert training_requests[0] == training_requests[2]
+    random_payload = training_config(root, "skeleton", tmp_path / "random",
+                                     training_sampling="random").get_config()
+    assert random_payload["TRAIN"]["execution"]["training_seed"] is None
+    wrapper = build_dataset(dict_to_namespace(random_payload), split="train")
+    random_pool = wrapper.building_dataset(wrapper.cfg, default_args=wrapper.default_args)
+    state = random.getstate()
+    random_pool[0]
+    assert random.getstate() != state
+    seeded = training_config(root, "skeleton", tmp_path / "seeded", sampling_seed=19).get_config()
+    assert seeded["TRAIN"]["execution"]["training_seed"] == 19
     # Configuration-only mode validates local full videos without building a
     # GPU model or using the classification frame/pose caches.
     path = run(root, "skeleton", tmp_path / "config-only", config_only=True, epochs=1)
     assert path.is_file() and not (path.parent / "results.json").exists()
     with pytest.raises(ValueError, match="at least four clips"):
         training_config(root, "video", tmp_path / "bad", epoch_num_frames=64)
+    with pytest.raises(ValueError, match="fixed or random"):
+        training_config(root, "video", tmp_path / "bad", training_sampling="unsupported")
     document = json.loads((root / "valid.json").read_text())
     document["data"][0]["id"] = "Shelton_vs_Diallo_2_10_26"
     tennis.write_json(root / "valid.json", document)
