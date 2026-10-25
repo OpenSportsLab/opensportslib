@@ -256,3 +256,50 @@ def test_identity_uses_team_and_active_interval_with_native_access(tmp_path):
         assert reader.row_at(80)['homePlayers'][0]['playerId'] == '0009'
         assert reader.row_at(800)['homePlayers'][0]['playerId'] == '0099'
         assert reader.row_at(80)['homePlayers'][0]['teamId'] == '001'
+
+
+def test_per_period_clock_intervals_preserve_native_fps_and_contact_validity(tmp_path):
+    path = tmp_path / 'match.dat'
+    descriptor = write_tracab(path, sidecar=True)
+    original_bytes = path.read_bytes()
+    descriptor['metadata']['periods'][0]['video_ms_per_source_frame'] = 60
+    descriptor['metadata']['periods'][1]['video_ms_per_source_frame'] = 20
+    before = copy.deepcopy(descriptor)
+    with TracabTrackingReader(path, descriptor) as reader:
+        assert reader.fps == 25
+        for time, frame in [(80, 100), (139, 100), (140, 101), (260, 103), (319, 103),
+                            (800, 200), (819, 200), (820, 201), (860, 203), (879, 203)]:
+            assert reader.row_at(time)['sourceFrame'] == frame
+        for time in (320, 799, 880, 1199):
+            assert reader.row_at(time)['sourceFrame'] is None
+        assert len(list(reader.iter_uniform_rows())) == 30
+        assert reader.row_at(200)['timestamp_utc'] == '2020-01-01 00:00:00.200000'
+    assert descriptor == before and path.read_bytes() == original_bytes
+    assert json.loads(path.with_suffix('.metadata.json').read_text())['FrameRate'] == 25
+
+
+@pytest.mark.parametrize('interval', [0, -1, .5, float('nan'), float('inf')])
+def test_invalid_period_clock_interval_rejected(tmp_path, interval):
+    path = tmp_path / 'match.dat'
+    descriptor = write_tracab(path)
+    descriptor['metadata']['periods'][0]['video_ms_per_source_frame'] = interval
+    with pytest.raises(ValueError, match='video_ms_per_source_frame'):
+        TracabTrackingReader(path, descriptor)
+
+
+def test_period_overlap_uses_the_preceding_calibrated_interval(tmp_path):
+    path = tmp_path / 'match.dat'
+    descriptor = write_tracab(path)
+    descriptor['metadata']['periods'][0]['video_ms_per_source_frame'] = 250
+    with pytest.raises(ValueError, match='overlap'):
+        TracabTrackingReader(path, descriptor)
+
+
+def test_clock_interval_edit_invalidates_native_tracking_cache(tmp_path):
+    path = tmp_path / 'match.dat'
+    descriptor = write_tracab(path)
+    original = load_or_build_game_cache(path, descriptor=descriptor)[0].copy()
+    descriptor['metadata']['periods'][0]['video_ms_per_source_frame'] = 60
+    updated = load_or_build_game_cache(path, descriptor=descriptor)[0]
+    assert original[6, 0, 0] == MISSING_VALUE
+    assert updated[6, 0, 0] != MISSING_VALUE

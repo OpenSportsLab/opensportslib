@@ -429,7 +429,9 @@ raise a clear error if used for `qwen_vl_native_lora`.
 
 `tracking_tracab` is supported by classification and localization tracking loaders
 for local OSL JSON, Hugging Face JSON and indexed WebDataset sources. Set the
-input modality to `tracking_tracab`; reference the original metadata JSON with
+input modality to `tracking_tracab`. Per-period `video_ms_per_source_frame`
+preserves calibrated clock drift without changing native source FPS or bytes;
+reference the original metadata JSON with
 `metadata_path` and retain UTC period calibration and team codes in each input. `params.annotation_head` selects a head such as
 `action` or `headers`. See [the DAT contract and loading guide](../../docs/tracking_tracab.md) for the
 schema, configuration, caching and backward-compatible Parquet behavior.
