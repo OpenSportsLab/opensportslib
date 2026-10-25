@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 from .native import NativeDocument, TracabDatReader, parse_dat_record, read_document, metadata_conflicts
 
-PARSER_VERSION = 3
+PARSER_VERSION = 4
 
 
 def parse_utc(value):
@@ -157,7 +157,7 @@ class TracabTrackingReader:
                 "ball_z": "source / 100 (classic height centimeters to meters)",
                 "pitch_dimensions": "source / 100 (centimeters to meters)",
                 "speed": "unchanged; no unit assumption", "axes": "unchanged",
-                "timing": "explicit per-period UTC anchors; no stretching",
+                "timing": "explicit per-period UTC anchors and optional calibrated frame intervals",
             }
             self._configure()
             self._index(progress_callback)
@@ -201,14 +201,17 @@ class TracabTrackingReader:
             start = _integer(period["start_frame"], "start_frame")
             end = _integer(period["end_frame"], "end_frame")
             offset = (parse_utc(period["start_utc"]) - self.origin_utc).total_seconds() * 1000
-            last = offset + (end - start) * self.interval_ms
+            interval = _number(period.get("video_ms_per_source_frame", self.interval_ms), "video_ms_per_source_frame")
+            if interval < 1:
+                raise ValueError("video_ms_per_source_frame must be at least 1 ms")
+            last = offset + (end - start) * interval
             if start < 0 or end < start or offset < 0 or last >= self.duration_ms:
                 raise ValueError("Period frames/timestamps outside declared bounds; correct calibration")
             if self.periods:
-                prev_start, prev_end, prev_offset = self.periods[-1]
-                if start <= prev_end or offset < prev_offset + (prev_end - prev_start + 1) * self.interval_ms:
+                prev_start, prev_end, prev_offset, prev_interval = self.periods[-1]
+                if start <= prev_end or offset < prev_offset + (prev_end - prev_start + 1) * prev_interval:
                     raise ValueError("Periods overlap or are non-monotonic; correct calibration")
-            self.periods.append((start, end, offset))
+            self.periods.append((start, end, offset, interval))
         if not self.periods:
             raise ValueError("metadata.periods must contain calibrated playing periods")
 
@@ -276,7 +279,7 @@ class TracabTrackingReader:
         self.time_axis_ms = []
         self.source_frame_count = 0
         self.playing_frame_count = 0
-        boundaries = {v for start, end, _ in self.periods for v in (start, end)}
+        boundaries = {v for start, end, _, _ in self.periods for v in (start, end)}
         previous_frame = -1
         active_end = None
 
@@ -306,7 +309,7 @@ class TracabTrackingReader:
             self.source_frame_count += 1
             period = next((p for p in self.periods if p[0] <= frame <= p[1]), None)
             if period is not None:
-                time = round(period[2] + (frame - period[0]) * self.interval_ms)
+                time = round(period[2] + (frame - period[0]) * period[3])
                 if time >= self.duration_ms:
                     raise ValueError(f"line {line_number}: mapped timestamp outside duration")
                 if active_end is not None and time > active_end:
@@ -317,7 +320,7 @@ class TracabTrackingReader:
                     self.entries.clear()
                     self.time_axis_ms.clear()
                 append(time, (offset, line_number, frame))
-                active_end = min(self.duration_ms, round(period[2] + (frame - period[0] + 1) * self.interval_ms))
+                active_end = min(self.duration_ms, round(period[2] + (frame - period[0] + 1) * period[3]))
                 self.playing_frame_count += 1
                 boundaries.discard(frame)
             if progress and line_number % 2000 == 0:
@@ -350,7 +353,12 @@ class TracabTrackingReader:
         index = bisect.bisect_right(self.time_axis_ms, position_ms) - 1
         if index >= 0 and position_ms < self.duration_ms:
             row = self[index]
-            if row["sourceFrame"] is None or position_ms < row["videoTimeMs"] + self.interval_ms:
+            if row["sourceFrame"] is None:
+                return row
+            frame = row["sourceFrame"]
+            period = next(p for p in self.periods if p[0] <= frame <= p[1])
+            frame_end = round(period[2] + (frame - period[0] + 1) * period[3])
+            if position_ms < frame_end:
                 return row
         return {"videoTimeMs": position_ms, "sourceFrame": None, "homePlayers": [], "awayPlayers": [], "balls": []}
 

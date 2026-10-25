@@ -54,9 +54,20 @@ FPS, actual pitch dimensions, rosters, active intervals and inclusive period
 bounds come from this JSON. They are not repeated under input `metadata`.
 `period: N` refers to `PhaseNStartFrame`/`PhaseNEndFrame`. Only populated phases
 may be calibrated. Source frame UTC is `start_utc + (frame - PhaseNStartFrame) /
-FrameRate`; playback position subtracts `UTC_time_start`. No UTC is inferred
-from frame numbering or timezone-free XML timestamps. Naive OSL timestamp
-strings mean UTC. Video alignment remains a constant offset within each period.
+FrameRate`; playback position subtracts `UTC_time_start`. A calibrated period may
+instead set `video_ms_per_source_frame` to preserve measured clock drift:
+
+```json
+{"period": 2, "start_utc": "2020-01-01 12:00:04.000000", "video_ms_per_source_frame": 40.00265}
+```
+
+The period start UTC anchors its source start frame; the optional interval is
+video milliseconds per source frame. It defaults to `1000 / FrameRate`, must
+be finite and at least 1 ms, and changes only playback timestamps. Native FPS,
+frame IDs, coordinates and source bytes remain unchanged. Period boundaries,
+gaps and frame validity use that period's calibrated interval; graph sampling
+still uses the source FPS. No UTC is inferred from frame numbering or
+timezone-free XML timestamps. Naive OSL timestamp strings mean UTC.
 
 The native API preserves input coordinates, field tokens, frame IDs, original
 bytes, all targets and unknown fields. VAT and the tracking graph loaders
