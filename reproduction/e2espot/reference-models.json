@@ -1,0 +1,71 @@
+{
+  "repo": "https://github.com/jhong93/e2e-spot-models",
+  "commit": "10d07a4fb01f2eb76785e15552e5648bf0793509",
+  "configs": [
+    {
+      "model": "finediving_rny002gsm_gru_rgb",
+      "upstream_path": "finediving_rny002gsm_gru_rgb/config.json",
+      "sha256": "ede7411ebf9edb6ce171d278d08d6518f7edf314e3aef83a0f91c92c1572c17c"
+    },
+    {
+      "model": "finediving_rny008gsm_gru_rgb",
+      "upstream_path": "finediving_rny008gsm_gru_rgb/config.json",
+      "sha256": "36bd7ea072cf0a937c8bbd9113fef0f3f2b885230921b719eb74e7d2ecc38fe5"
+    },
+    {
+      "model": "finegym_rny002gsm_gru_rgb",
+      "upstream_path": "finegym_rny002gsm_gru_rgb/config.json",
+      "sha256": "af622ebdc1e128308fa469d1ced88282d50aa0d6e836d7fde90f33703a4990e9"
+    },
+    {
+      "model": "finegym_rny008gsm_gru_rgb",
+      "upstream_path": "finegym_rny008gsm_gru_rgb/config.json",
+      "sha256": "5ef99915633bf0dc1c50305dfb33a875f408e1e20932ee092172ae2f657e7a88"
+    },
+    {
+      "model": "fs_comp_rny002gsm_gru_rgb",
+      "upstream_path": "fs_comp_rny002gsm_gru_rgb/config.json",
+      "sha256": "20b8374bd42fbc68793de9c2cca7430ed5d8459349958aedca31a8ec1cee4da2"
+    },
+    {
+      "model": "fs_comp_rny008gsm_gru_rgb",
+      "upstream_path": "fs_comp_rny008gsm_gru_rgb/config.json",
+      "sha256": "58aacfe715d450028cbd0d94dc69ad6bcdab022293ce1b133bf71e7ad7558d07"
+    },
+    {
+      "model": "fs_perf_rny002gsm_gru_rgb",
+      "upstream_path": "fs_perf_rny002gsm_gru_rgb/config.json",
+      "sha256": "2d36feadb0fbcda1b5a0b37776bf96a6159b981f55029b50c3bea34ece60bc21"
+    },
+    {
+      "model": "fs_perf_rny008gsm_gru_rgb",
+      "upstream_path": "fs_perf_rny008gsm_gru_rgb/config.json",
+      "sha256": "d498b74203ea8848613219a938cb213d720dcd62b8c30d1902a89bf0754932f0"
+    },
+    {
+      "model": "soccer_challenge_rny008gsm_gru_rgb",
+      "upstream_path": "soccer_challenge_rny008gsm_gru_rgb/config.json",
+      "sha256": "5c3f2f6813eefe5202d7f512d12136fc5356d39b514a03f63e200cc1051f349e"
+    },
+    {
+      "model": "soccer_rny002gsm_gru_rgb",
+      "upstream_path": "soccer_rny002gsm_gru_rgb/config.json",
+      "sha256": "fbc11023b2fee287a42013453375709b6568830d1856961f3edeea69d35f3b47"
+    },
+    {
+      "model": "soccer_rny008gsm_gru_rgb",
+      "upstream_path": "soccer_rny008gsm_gru_rgb/config.json",
+      "sha256": "03bb2d0dafd6f8b08060ac92442650605da505302125eca9de370cb3943ff826"
+    },
+    {
+      "model": "tennis_rny002gsm_gru_rgb",
+      "upstream_path": "tennis_rny002gsm_gru_rgb/config.json",
+      "sha256": "a858940f44ec5263b1af320f0f6454f113b818e229f77a31916f0bbdc6027e1e"
+    },
+    {
+      "model": "tennis_rny008gsm_gru_rgb",
+      "upstream_path": "tennis_rny008gsm_gru_rgb/config.json",
+      "sha256": "b8861590cf148616797f519df8866a28ee91c6f2a523fda308a65211c61517ad"
+    }
+  ]
+}

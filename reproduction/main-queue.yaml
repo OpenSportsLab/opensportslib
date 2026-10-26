@@ -1,0 +1,13 @@
+version: 1
+predecessor:
+  name: tdeed-main
+  matrix: reproduction/tdeed/matrix.json
+  groups: [released-main, paper-main]
+  output: outputs/tdeed/campaign
+campaign:
+  name: e2espot-main
+  matrix: reproduction/e2espot/matrix.json
+  phases: [main, main-extension]
+  output: outputs/e2espot/campaign
+  verification: outputs/e2espot/verification.json
+poll_seconds: 60

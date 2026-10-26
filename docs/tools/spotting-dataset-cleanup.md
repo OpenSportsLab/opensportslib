@@ -9,7 +9,7 @@ media retains the original temporal padding or spatial resolution.
 | Dataset | Repository | Revision/protocol |
 |---|---|---|
 | SoccerNet BAS | `OpenSportsLab/OSL-SNBAS` | `720p-2024` for the high-resolution 2024 benchmark |
-| SoccerNet AS | `SilvioGiancola/OSL-SoccerNet` | `224p-json` or `720p-json`, according to the experiment |
+| SoccerNet AS | `SoccerNet/SoccerNet_raw_HQ` | Official `videos-224p` or `videos-720p` media, according to the experiment; retain the existing OSL annotation manifests and pinned benchmark splits |
 | Tennis | `OpenSportsLab/OSL-loc-tennis-public` | `swing-data`, six classes |
 | FineDiving | `OpenSportsLab/OSL-loc-FineDiving` | `main` |
 | FineGym | `OpenSportsLab/OSL-loc-gymnastics` | `main`; inspect the build report for completeness |

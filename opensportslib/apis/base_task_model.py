@@ -60,6 +60,56 @@ def _manifest_media_references(payload: dict[str, Any]):
 class BaseTaskModel(ConfigurationMixin, ABC):
     """Thin shared contract for task-level OpenSportsLib wrappers."""
 
+    @classmethod
+    def from_pretrained(
+        cls,
+        repo_id: str,
+        *,
+        revision: str,
+        weights_filename: str = "model.pth",
+        device: str | None = None,
+        cache_dir: str | Path | None = None,
+        token: str | bool | None = None,
+        local_files_only: bool = False,
+    ):
+        """Load config.yaml and checkpoint weights from one Hub model revision.
+
+        Both files are resolved in a single immutable cached snapshot. A tag,
+        branch or commit SHA is required explicitly. This checkpoint-file API
+        leaves existing constructors and load_weights behavior unchanged.
+        """
+        from huggingface_hub import snapshot_download
+
+        if not isinstance(revision, str) or not revision.strip():
+            raise ValueError("revision must be a nonempty Hub tag, branch or commit SHA")
+        filename = Path(weights_filename)
+        if (
+            not weights_filename or filename.is_absolute()
+            or ".." in filename.parts or weights_filename == "config.yaml"
+        ):
+            raise ValueError("weights_filename must be a relative checkpoint file path")
+        snapshot = Path(snapshot_download(
+            repo_id=repo_id, repo_type="model", revision=revision,
+            allow_patterns=["config.yaml", filename.as_posix()],
+            cache_dir=cache_dir, token=token, local_files_only=local_files_only,
+        ))
+        config_path, checkpoint = snapshot / "config.yaml", snapshot / filename
+        for path in [config_path, checkpoint]:
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"{repo_id}@{revision} has no {path.relative_to(snapshot)}; "
+                    "select a model revision containing config.yaml and its checkpoint"
+                )
+        config = Config.from_file(config_path)
+        if device is not None:
+            config.update(runtime={"device": device})
+        model = cls(config=config)
+        model.load_weights(weights=str(checkpoint))
+        model.hf_repo_id = repo_id
+        model.hf_revision = revision
+        model.hf_snapshot_path = str(snapshot)
+        return model
+
     def __init__(
         self,
         config=None,

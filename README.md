@@ -1,9 +1,5 @@
 # OpenSportsLib
 
-T-DEED localization training, evaluation and local experiment recipes are available.
-See the [T-DEED reproduction guide](docs/tni/tdeed.md) for validation, resumable
-runs and current reproduction gaps.
-
 <img src="docs/assets/osl.jpg" height="400">
 
 OpenSportsLib is a modular Python library for sports video understanding.
@@ -118,6 +114,35 @@ Use it as the main entry point to find:
 
 See the [Model Zoo](docs/model-zoo.md) for available pretrained models,
 reported scores, datasets, and loading snippets.
+
+## Paper reproductions
+
+OpenSportsLib organizes [paper reproductions](docs/reproductions/index.md) by
+task and algorithm. The first entry is
+[T-DEED for action localization](docs/reproductions/action-localization/tdeed.md),
+with [measured results and model releases](docs/reproductions/action-localization/tdeed-results.md).
+Other algorithms and tasks will extend the same catalog. Each entry states its
+validated scope and remaining differences from the paper.
+The [E2E-Spot reproduction plan](docs/reproductions/action-localization/e2espot.md)
+queues 24 ECCV 2022 main runs and four SoccerNet BAS extension runs after
+T-DEED main results, with future
+releases grouped under `OpenSportsLab/OSL-loc-e2e`.
+
+Load a specific published checkpoint with the revision-aware API:
+
+```python
+from opensportslib.apis import LocalizationModel
+
+model = LocalizationModel.from_pretrained(
+    "OpenSportsLab/OSL-loc-TDEED",
+    revision="v1-finediving-small-seed1",
+    device="cpu",
+)
+predictions = model.infer(video_path="diving_clip.mp4", use_wandb=False)
+```
+
+This requires the T-DEED-enabled library version. Each model revision provides
+`config.yaml` and `model.pth`; the repository's `main` revision is the catalog.
 
 ---
 

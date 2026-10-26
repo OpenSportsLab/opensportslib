@@ -1,0 +1,38 @@
+{
+  "started_utc": "2026-10-26T09:07:42.429763+00:00",
+  "command": [
+    "/home/giancos/miniconda3/envs/osl/bin/python",
+    "-u",
+    "tools/reproduction/tdeed.py",
+    "campaign",
+    "--resume",
+    "--verify-hashes",
+    "--stage",
+    "main",
+    "--skip-blocked",
+    "--priority",
+    "SoccerNet_small",
+    "--priority",
+    "SoccerNet_big",
+    "--priority",
+    "SoccerNetBall_challenge1",
+    "--priority",
+    "SoccerNetBall_challenge2",
+    "--output",
+    "outputs/tdeed/campaign"
+  ],
+  "cwd": "/home/giancos/git/opensportslib",
+  "recorder_pid": 1363350,
+  "status": "running",
+  "environment": {
+    "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+    "OPENCV_FFMPEG_THREADS": "1",
+    "OMP_NUM_THREADS": "4",
+    "MPLCONFIGDIR": "/tmp/tdeed-mpl",
+    "CUDA_VISIBLE_DEVICES": null,
+    "PYTHONHASHSEED": null
+  },
+  "git_head": "8f20012255de5397d2d99c85283f3999067be15f",
+  "git_status": " M .gitignore\n M README.md\n M docs/index.md\n M docs/model-zoo.md\n D docs/tni/tdeed.md\n M docs/tni/tni.md\n M mkdocs.yml\n M opensportslib/apis/README.md\n M opensportslib/apis/base_task_model.py\n M tests/unit/tools/test_tdeed_reproduction.py\n M tools/reproduction/prepare_tdeed_soccer.py\n M tools/reproduction/tdeed.py\n?? docs/reproductions/\n?? opensportslib/configs/localization/e2espot/\n?? reproduction/e2espot/\n?? reproduction/main-queue.yaml\n?? reproduction/training-runs/\n?? tests/unit/api/test_from_pretrained.py\n?? tests/unit/tools/test_paper_queue.py\n?? tools/reproduction/export_tdeed.py\n?? tools/reproduction/paper_queue.py\n?? tools/reproduction/record_training.py\n",
+  "child_pid": 1363354
+}

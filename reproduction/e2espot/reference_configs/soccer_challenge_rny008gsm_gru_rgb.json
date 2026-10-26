@@ -1,0 +1,19 @@
+{
+  "batch_size": 8,
+  "clip_len": 100,
+  "crop_dim": null,
+  "dataset": "soccernetv2_challenge",
+  "dilate_len": 0,
+  "epoch_num_frames": 500000,
+  "feature_arch": "rny008_gsm",
+  "fg_upsample": null,
+  "gpu_parallel": true,
+  "learning_rate": 0.001,
+  "mixup": true,
+  "modality": "rgb",
+  "num_classes": 17,
+  "num_epochs": 150,
+  "start_val_epoch": 149,
+  "temporal_arch": "gru",
+  "warm_up_epochs": 3
+}

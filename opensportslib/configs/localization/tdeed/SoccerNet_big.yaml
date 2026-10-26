@@ -62,8 +62,8 @@ DATA:
       representation: raw
       source:
         format: video
-        repo_id: SilvioGiancola/OSL-SoccerNet
-        revision: 24fa021b2e74fe8ee76112a72ed942c61c268038
+        repo_id: SoccerNet/SoccerNet_raw_HQ
+        revision: 56a8be6be6788ed65cce25f68780d55ff4544aa2
       sampling:
         clip_len: 100
         stride: 12

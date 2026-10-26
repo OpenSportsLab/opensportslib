@@ -1,0 +1,252 @@
+{"experiment": "SoccerNet_small", "seed": 1, "output": "outputs/tdeed/campaign/SoccerNet_small/seed-1", "status": "running"}
+2026-10-26 09:07:43,558 | INFO | Save directory: /home/giancos/git/opensportslib/outputs/tdeed/campaign/SoccerNet_small/seed-1/rny002_gsf/1fdddade
+Using device: cuda:0
+GPU: NVIDIA GB10
+2026-10-26 09:07:46,309 | INFO | Loaded  from checkpoint '/home/giancos/.cache/huggingface/hub/models--timm--regnety_002.pycls_in1k/snapshots/3c4d5882de76610654d238ecd8f265519505aa51/model.safetensors'
+=> Processing stage with 4 blocks residual
+=> Using GSM/GSF, fold dim: 16 / 56
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Processing stage with 7 blocks residual
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 1, "batches": 625, "running_loss": 15.594783782958984, "elapsed_epoch_seconds": 13.623604255262762}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 25, "batches": 625, "running_loss": 13.37129852294922, "elapsed_epoch_seconds": 61.71077301027253}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 50, "batches": 625, "running_loss": 11.874714508056641, "elapsed_epoch_seconds": 112.50495679024607}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 75, "batches": 625, "running_loss": 10.81131950378418, "elapsed_epoch_seconds": 162.29710630327463}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 100, "batches": 625, "running_loss": 10.02391845703125, "elapsed_epoch_seconds": 218.2512960191816}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 125, "batches": 625, "running_loss": 9.391778331756592, "elapsed_epoch_seconds": 269.0806241533719}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 150, "batches": 625, "running_loss": 8.838584461212157, "elapsed_epoch_seconds": 318.8797499584034}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 175, "batches": 625, "running_loss": 8.359079110281808, "elapsed_epoch_seconds": 371.4586788243614}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 200, "batches": 625, "running_loss": 7.9381501936912535, "elapsed_epoch_seconds": 424.8815551344305}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 225, "batches": 625, "running_loss": 7.550020836724175, "elapsed_epoch_seconds": 474.7912972201593}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 250, "batches": 625, "running_loss": 7.222651765823365, "elapsed_epoch_seconds": 525.8460486372933}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 275, "batches": 625, "running_loss": 6.917323027524081, "elapsed_epoch_seconds": 580.8503720373847}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 300, "batches": 625, "running_loss": 6.65317044655482, "elapsed_epoch_seconds": 630.771583000198}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 325, "batches": 625, "running_loss": 6.412379548733051, "elapsed_epoch_seconds": 681.5837350133806}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 350, "batches": 625, "running_loss": 6.1866603326797485, "elapsed_epoch_seconds": 739.2727345302701}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 375, "batches": 625, "running_loss": 6.002787950515747, "elapsed_epoch_seconds": 787.384245657362}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 400, "batches": 625, "running_loss": 5.836304811835289, "elapsed_epoch_seconds": 844.3399189221673}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 425, "batches": 625, "running_loss": 5.678172592275283, "elapsed_epoch_seconds": 898.7029586122371}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 450, "batches": 625, "running_loss": 5.543055016729567, "elapsed_epoch_seconds": 951.1911696763709}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 475, "batches": 625, "running_loss": 5.410644636154175, "elapsed_epoch_seconds": 1003.9630834283307}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 500, "batches": 625, "running_loss": 5.295581548690796, "elapsed_epoch_seconds": 1050.500710869208}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 525, "batches": 625, "running_loss": 5.1897581847508745, "elapsed_epoch_seconds": 1103.4876632210799}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 550, "batches": 625, "running_loss": 5.092338332479651, "elapsed_epoch_seconds": 1153.6230863104574}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 575, "batches": 625, "running_loss": 4.9985048598828525, "elapsed_epoch_seconds": 1202.243069651071}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 600, "batches": 625, "running_loss": 4.911874099771182, "elapsed_epoch_seconds": 1252.011247747112}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 625, "batches": 625, "running_loss": 4.828980426979065, "elapsed_epoch_seconds": 1300.6683498201892}
+{"epoch": 0, "epochs": 100, "phase": "valid_loss", "batch": 1, "batches": 157, "running_loss": 2.047454833984375, "elapsed_epoch_seconds": 1305.1380561883561}
+{"experiment": "SoccerNet_small", "seed": 1, "status": "failed", "error": "Caught ValueError in DataLoader worker process 0.\nOriginal Traceback (most recent call last):\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py\", line 374, in _worker_loop\n    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]\n           ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py\", line 54, in fetch\n    data = [self.dataset[idx] for idx in possibly_batched_index]\n            ~~~~~~~~~~~~^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 263, in __getitem__\n    first = self._one(random.randrange(len(self.windows)) if sampling else index)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 252, in _one\n    \"frame\": self.reader.read(video, start, self.clip_len, self.stride),\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 162, in read\n    raise ValueError(f\"{video.path}: missing source frame {i}\")\nValueError: data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_224p.mkv: missing source frame 67485\n", "error_type": "ValueError"}
+{"experiment": "SoccerNet_small", "seed": 2, "output": "outputs/tdeed/campaign/SoccerNet_small/seed-2", "status": "running"}
+2026-10-26 09:30:23,942 | INFO | Save directory: /home/giancos/git/opensportslib/outputs/tdeed/campaign/SoccerNet_small/seed-2/rny002_gsf/1fdddade
+Using device: cuda:0
+GPU: NVIDIA GB10
+2026-10-26 09:30:23,996 | INFO | Loaded  from checkpoint '/home/giancos/.cache/huggingface/hub/models--timm--regnety_002.pycls_in1k/snapshots/3c4d5882de76610654d238ecd8f265519505aa51/model.safetensors'
+=> Processing stage with 4 blocks residual
+=> Using GSM/GSF, fold dim: 16 / 56
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Processing stage with 7 blocks residual
+=> Using GSM/GSF, fold dim: 40 / 152
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+=> Using GSM/GSF, fold dim: 92 / 368
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 1, "batches": 625, "running_loss": 13.447134017944336, "elapsed_epoch_seconds": 9.11187279690057}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 25, "batches": 625, "running_loss": 12.380607986450196, "elapsed_epoch_seconds": 59.96965068206191}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 50, "batches": 625, "running_loss": 11.200764617919923, "elapsed_epoch_seconds": 111.60334244091064}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 75, "batches": 625, "running_loss": 10.303641560872396, "elapsed_epoch_seconds": 161.0728827090934}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 100, "batches": 625, "running_loss": 9.561522789001465, "elapsed_epoch_seconds": 217.70113056804985}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 125, "batches": 625, "running_loss": 8.994643390655517, "elapsed_epoch_seconds": 270.93864799896255}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 150, "batches": 625, "running_loss": 8.518352867762248, "elapsed_epoch_seconds": 322.30775243695825}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 175, "batches": 625, "running_loss": 8.08308419908796, "elapsed_epoch_seconds": 376.1922042281367}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 200, "batches": 625, "running_loss": 7.7046206760406495, "elapsed_epoch_seconds": 428.99238215899095}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 225, "batches": 625, "running_loss": 7.3355621443854435, "elapsed_epoch_seconds": 480.06451431289315}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 250, "batches": 625, "running_loss": 7.020604619026184, "elapsed_epoch_seconds": 531.7280503651127}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 275, "batches": 625, "running_loss": 6.7398463752053, "elapsed_epoch_seconds": 586.305760120973}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 300, "batches": 625, "running_loss": 6.489446933269501, "elapsed_epoch_seconds": 637.4386786790565}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 325, "batches": 625, "running_loss": 6.256152552091159, "elapsed_epoch_seconds": 689.7526353690773}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 350, "batches": 625, "running_loss": 6.04552510874612, "elapsed_epoch_seconds": 746.2511898530647}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 375, "batches": 625, "running_loss": 5.87281325340271, "elapsed_epoch_seconds": 797.1253003077582}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 400, "batches": 625, "running_loss": 5.715652338266373, "elapsed_epoch_seconds": 853.5685468227603}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 425, "batches": 625, "running_loss": 5.575997813729679, "elapsed_epoch_seconds": 909.717122965958}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 450, "batches": 625, "running_loss": 5.443431901401944, "elapsed_epoch_seconds": 963.0456811459735}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 475, "batches": 625, "running_loss": 5.320612011959678, "elapsed_epoch_seconds": 1016.8486768770963}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 500, "batches": 625, "running_loss": 5.209958288192749, "elapsed_epoch_seconds": 1065.1737580560148}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 525, "batches": 625, "running_loss": 5.10879480725243, "elapsed_epoch_seconds": 1117.6658788030036}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 550, "batches": 625, "running_loss": 5.013973943536932, "elapsed_epoch_seconds": 1168.3174835499376}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 575, "batches": 625, "running_loss": 4.927562383983446, "elapsed_epoch_seconds": 1218.198774354998}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 600, "batches": 625, "running_loss": 4.838939177195231, "elapsed_epoch_seconds": 1269.6498109130189}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 625, "batches": 625, "running_loss": 4.7595380069732665, "elapsed_epoch_seconds": 1318.0559686068445}
+{"epoch": 0, "epochs": 100, "phase": "valid_loss", "batch": 1, "batches": 157, "running_loss": 1.9997121095657349, "elapsed_epoch_seconds": 1322.5315590370446}
+{"experiment": "SoccerNet_small", "seed": 2, "status": "failed", "error": "Caught ValueError in DataLoader worker process 0.\nOriginal Traceback (most recent call last):\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py\", line 374, in _worker_loop\n    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]\n           ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py\", line 54, in fetch\n    data = [self.dataset[idx] for idx in possibly_batched_index]\n            ~~~~~~~~~~~~^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 263, in __getitem__\n    first = self._one(random.randrange(len(self.windows)) if sampling else index)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 252, in _one\n    \"frame\": self.reader.read(video, start, self.clip_len, self.stride),\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 162, in read\n    raise ValueError(f\"{video.path}: missing source frame {i}\")\nValueError: data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_224p.mkv: missing source frame 67485\n", "error_type": "ValueError"}
+{"experiment": "SoccerNet_big", "seed": 1, "output": "outputs/tdeed/campaign/SoccerNet_big/seed-1", "status": "running"}
+2026-10-26 09:53:35,391 | INFO | Save directory: /home/giancos/git/opensportslib/outputs/tdeed/campaign/SoccerNet_big/seed-1/rny008_gsf/1fdddade
+Using device: cuda:0
+GPU: NVIDIA GB10
+2026-10-26 09:53:35,455 | INFO | Loaded  from checkpoint '/home/giancos/.cache/huggingface/hub/models--timm--regnety_008.pycls_in1k/snapshots/ad27a8e42099466890afc4dbcc24cce1340776b9/model.safetensors'
+=> Processing stage with 8 blocks residual
+=> Using GSM/GSF, fold dim: 32 / 128
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Processing stage with 2 blocks residual
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 192 / 768
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 1, "batches": 625, "running_loss": 19.779720306396484, "elapsed_epoch_seconds": 20.966675895731896}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 25, "batches": 625, "running_loss": 16.958103256225584, "elapsed_epoch_seconds": 108.40455702785403}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 50, "batches": 625, "running_loss": 14.890297374725343, "elapsed_epoch_seconds": 198.97708180174232}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 75, "batches": 625, "running_loss": 13.649026107788085, "elapsed_epoch_seconds": 289.62507399497554}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 100, "batches": 625, "running_loss": 12.615014371871949, "elapsed_epoch_seconds": 380.3973764581606}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 125, "batches": 625, "running_loss": 11.727352283477783, "elapsed_epoch_seconds": 472.1389479637146}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 150, "batches": 625, "running_loss": 10.913398815790812, "elapsed_epoch_seconds": 563.1430938928388}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 175, "batches": 625, "running_loss": 10.163415031433106, "elapsed_epoch_seconds": 653.3680080818012}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 200, "batches": 625, "running_loss": 9.525642054080963, "elapsed_epoch_seconds": 743.7121351920068}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 225, "batches": 625, "running_loss": 8.945861366060045, "elapsed_epoch_seconds": 833.7482292177156}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 250, "batches": 625, "running_loss": 8.463700326919556, "elapsed_epoch_seconds": 924.3916368088685}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 275, "batches": 625, "running_loss": 8.03329303741455, "elapsed_epoch_seconds": 1015.4992102910765}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 300, "batches": 625, "running_loss": 7.674421864350637, "elapsed_epoch_seconds": 1107.9659678498283}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 325, "batches": 625, "running_loss": 7.349977173438439, "elapsed_epoch_seconds": 1199.0916382377036}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 350, "batches": 625, "running_loss": 7.053797378540039, "elapsed_epoch_seconds": 1289.24190462986}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 375, "batches": 625, "running_loss": 6.801942169189453, "elapsed_epoch_seconds": 1380.6882716510445}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 400, "batches": 625, "running_loss": 6.579621219038963, "elapsed_epoch_seconds": 1472.8681443580426}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 425, "batches": 625, "running_loss": 6.371548688551959, "elapsed_epoch_seconds": 1563.3471198561601}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 450, "batches": 625, "running_loss": 6.191470316780938, "elapsed_epoch_seconds": 1653.0187066090293}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 475, "batches": 625, "running_loss": 6.020726649635717, "elapsed_epoch_seconds": 1744.1482133027166}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 500, "batches": 625, "running_loss": 5.8697444157600405, "elapsed_epoch_seconds": 1836.5900913267396}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 525, "batches": 625, "running_loss": 5.7324950358981175, "elapsed_epoch_seconds": 1927.8021136578172}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 550, "batches": 625, "running_loss": 5.6049908971786495, "elapsed_epoch_seconds": 2018.383496047929}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 575, "batches": 625, "running_loss": 5.485218641446984, "elapsed_epoch_seconds": 2109.3108650711365}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 600, "batches": 625, "running_loss": 5.374323584636053, "elapsed_epoch_seconds": 2201.640754135791}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 625, "batches": 625, "running_loss": 5.2693112804412845, "elapsed_epoch_seconds": 2292.07536214171}
+{"epoch": 0, "epochs": 100, "phase": "valid_loss", "batch": 1, "batches": 157, "running_loss": 1.8910290002822876, "elapsed_epoch_seconds": 2297.123733065091}
+{"experiment": "SoccerNet_big", "seed": 1, "status": "failed", "error": "Caught ValueError in DataLoader worker process 0.\nOriginal Traceback (most recent call last):\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py\", line 374, in _worker_loop\n    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]\n           ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py\", line 54, in fetch\n    data = [self.dataset[idx] for idx in possibly_batched_index]\n            ~~~~~~~~~~~~^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 263, in __getitem__\n    first = self._one(random.randrange(len(self.windows)) if sampling else index)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 252, in _one\n    \"frame\": self.reader.read(video, start, self.clip_len, self.stride),\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 162, in read\n    raise ValueError(f\"{video.path}: missing source frame {i}\")\nValueError: data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_224p.mkv: missing source frame 67485\n", "error_type": "ValueError"}
+{"experiment": "SoccerNet_big", "seed": 2, "output": "outputs/tdeed/campaign/SoccerNet_big/seed-2", "status": "running"}
+2026-10-26 10:33:04,388 | INFO | Save directory: /home/giancos/git/opensportslib/outputs/tdeed/campaign/SoccerNet_big/seed-2/rny008_gsf/1fdddade
+Using device: cuda:0
+GPU: NVIDIA GB10
+2026-10-26 10:33:04,464 | INFO | Loaded  from checkpoint '/home/giancos/.cache/huggingface/hub/models--timm--regnety_008.pycls_in1k/snapshots/ad27a8e42099466890afc4dbcc24cce1340776b9/model.safetensors'
+=> Processing stage with 8 blocks residual
+=> Using GSM/GSF, fold dim: 32 / 128
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Processing stage with 2 blocks residual
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 192 / 768
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 1, "batches": 625, "running_loss": 19.194467544555664, "elapsed_epoch_seconds": 11.110470342915505}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 25, "batches": 625, "running_loss": 16.93023548126221, "elapsed_epoch_seconds": 99.62073826417327}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 50, "batches": 625, "running_loss": 15.090704689025879, "elapsed_epoch_seconds": 190.43843036610633}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 75, "batches": 625, "running_loss": 13.813426577250162, "elapsed_epoch_seconds": 281.9633202580735}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 100, "batches": 625, "running_loss": 12.71655553817749, "elapsed_epoch_seconds": 374.35555945010856}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 125, "batches": 625, "running_loss": 11.868848541259766, "elapsed_epoch_seconds": 464.02767534414306}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 150, "batches": 625, "running_loss": 11.062976868947347, "elapsed_epoch_seconds": 556.2591042839922}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 175, "batches": 625, "running_loss": 10.309569516863142, "elapsed_epoch_seconds": 646.8393874661997}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 200, "batches": 625, "running_loss": 9.64509177684784, "elapsed_epoch_seconds": 738.6369479759596}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 225, "batches": 625, "running_loss": 9.040609038670858, "elapsed_epoch_seconds": 833.5609577619471}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 250, "batches": 625, "running_loss": 8.527665888786316, "elapsed_epoch_seconds": 929.6501946980134}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 275, "batches": 625, "running_loss": 8.086497077941894, "elapsed_epoch_seconds": 1020.6767689459957}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 300, "batches": 625, "running_loss": 7.7055077322324115, "elapsed_epoch_seconds": 1112.6671265331097}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 325, "batches": 625, "running_loss": 7.364078661111685, "elapsed_epoch_seconds": 1203.5416115550324}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 350, "batches": 625, "running_loss": 7.06334484236581, "elapsed_epoch_seconds": 1296.9664976880886}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 375, "batches": 625, "running_loss": 6.811761953353882, "elapsed_epoch_seconds": 1391.802109493874}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 400, "batches": 625, "running_loss": 6.586919181346893, "elapsed_epoch_seconds": 1490.561916131992}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 425, "batches": 625, "running_loss": 6.386135287004358, "elapsed_epoch_seconds": 1592.595984640997}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 450, "batches": 625, "running_loss": 6.197237374517653, "elapsed_epoch_seconds": 1685.3961648647673}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 475, "batches": 625, "running_loss": 6.0257237522225635, "elapsed_epoch_seconds": 1775.6678212941624}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 500, "batches": 625, "running_loss": 5.874829808473587, "elapsed_epoch_seconds": 1867.0460996949114}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 525, "batches": 625, "running_loss": 5.736521855081831, "elapsed_epoch_seconds": 1957.6826821211725}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 550, "batches": 625, "running_loss": 5.608967740535736, "elapsed_epoch_seconds": 2047.9189209127799}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 575, "batches": 625, "running_loss": 5.490593195998151, "elapsed_epoch_seconds": 2139.9475664990023}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 600, "batches": 625, "running_loss": 5.375078685879707, "elapsed_epoch_seconds": 2230.9300319161266}
+{"epoch": 0, "epochs": 100, "phase": "train", "batch": 625, "batches": 625, "running_loss": 5.271199241065979, "elapsed_epoch_seconds": 2322.194775456097}
+{"epoch": 0, "epochs": 100, "phase": "valid_loss", "batch": 1, "batches": 157, "running_loss": 1.8104751110076904, "elapsed_epoch_seconds": 2327.2445422001183}
+{"experiment": "SoccerNet_big", "seed": 2, "status": "failed", "error": "Caught ValueError in DataLoader worker process 0.\nOriginal Traceback (most recent call last):\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py\", line 374, in _worker_loop\n    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]\n           ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/miniconda3/envs/osl/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py\", line 54, in fetch\n    data = [self.dataset[idx] for idx in possibly_batched_index]\n            ~~~~~~~~~~~~^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 263, in __getitem__\n    first = self._one(random.randrange(len(self.windows)) if sampling else index)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 252, in _one\n    \"frame\": self.reader.read(video, start, self.clip_len, self.stride),\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/giancos/git/opensportslib/opensportslib/datasets/tdeed.py\", line 162, in read\n    raise ValueError(f\"{video.path}: missing source frame {i}\")\nValueError: data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_224p.mkv: missing source frame 67485\n", "error_type": "ValueError"}
+{"experiment": "SoccerNetBall_challenge1", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge1", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "FineDiving_small", "seed": 1, "output": "outputs/tdeed/campaign/FineDiving_small/seed-1", "status": "running"}
+{"experiment": "FineDiving_small", "seed": 1, "status": "completed", "output": "outputs/tdeed/campaign/FineDiving_small/seed-1"}
+{"experiment": "SoccerNetBall_challenge1", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge1", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "FineDiving_small", "seed": 2, "output": "outputs/tdeed/campaign/FineDiving_small/seed-2", "status": "running"}
+{"experiment": "FineDiving_small", "seed": 2, "status": "completed", "output": "outputs/tdeed/campaign/FineDiving_small/seed-2"}
+{"experiment": "SoccerNetBall_challenge1", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge1", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "FineDiving_big", "seed": 1, "output": "outputs/tdeed/campaign/FineDiving_big/seed-1", "status": "running"}
+{"experiment": "FineDiving_big", "seed": 1, "status": "completed", "output": "outputs/tdeed/campaign/FineDiving_big/seed-1"}
+{"experiment": "SoccerNetBall_challenge1", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge1", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "FineDiving_big", "seed": 2, "output": "outputs/tdeed/campaign/FineDiving_big/seed-2", "status": "running"}
+{"experiment": "FineDiving_big", "seed": 2, "status": "completed", "output": "outputs/tdeed/campaign/FineDiving_big/seed-2"}
+{"experiment": "SoccerNetBall_challenge1", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge1", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 1, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "SoccerNetBall_challenge2", "seed": 2, "status": "blocked_data", "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2", "errors": ["train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4", "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4", "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4", "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)", "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json", "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"]}
+{"experiment": "FigureSkatingComp_big", "seed": 1, "output": "outputs/tdeed/campaign/FigureSkatingComp_big/seed-1", "status": "running"}
+2026-10-26 11:16:38,860 | INFO | Save directory: /home/giancos/git/opensportslib/outputs/tdeed/campaign/FigureSkatingComp_big/seed-1/rny008_gsf/1fdddade
+Using device: cuda:0
+GPU: NVIDIA GB10
+2026-10-26 11:16:39,012 | INFO | Loaded  from checkpoint '/home/giancos/.cache/huggingface/hub/models--timm--regnety_008.pycls_in1k/snapshots/ad27a8e42099466890afc4dbcc24cce1340776b9/model.safetensors'
+=> Processing stage with 8 blocks residual
+=> Using GSM/GSF, fold dim: 32 / 128
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Processing stage with 2 blocks residual
+=> Using GSM/GSF, fold dim: 80 / 320
+=> Using GSM/GSF, fold dim: 192 / 768
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 1, "batches": 625, "running_loss": 0.027885861694812775, "elapsed_epoch_seconds": 12.13770978199318}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 25, "batches": 625, "running_loss": 0.048548987219110135, "elapsed_epoch_seconds": 100.07957222079858}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 50, "batches": 625, "running_loss": 0.046316073061898354, "elapsed_epoch_seconds": 193.10725035099313}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 75, "batches": 625, "running_loss": 0.04394761116243899, "elapsed_epoch_seconds": 285.24760740296915}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 100, "batches": 625, "running_loss": 0.043844892940833234, "elapsed_epoch_seconds": 376.1631463607773}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 125, "batches": 625, "running_loss": 0.044742190109100195, "elapsed_epoch_seconds": 473.83296810416505}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 150, "batches": 625, "running_loss": 0.04493102655086356, "elapsed_epoch_seconds": 569.6367209521122}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 175, "batches": 625, "running_loss": 0.04467084400189508, "elapsed_epoch_seconds": 656.5304744630121}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 200, "batches": 625, "running_loss": 0.04478844040917465, "elapsed_epoch_seconds": 747.075998541899}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 225, "batches": 625, "running_loss": 0.044568128577795706, "elapsed_epoch_seconds": 842.184425604064}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 250, "batches": 625, "running_loss": 0.04377312846458517, "elapsed_epoch_seconds": 935.9910679250024}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 275, "batches": 625, "running_loss": 0.04398176564475183, "elapsed_epoch_seconds": 1031.08987418795}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 300, "batches": 625, "running_loss": 0.044073997537101, "elapsed_epoch_seconds": 1128.5954902791418}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 325, "batches": 625, "running_loss": 0.044118185715140916, "elapsed_epoch_seconds": 1225.4859662270173}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 350, "batches": 625, "running_loss": 0.04463144177554308, "elapsed_epoch_seconds": 1320.2252988899127}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 375, "batches": 625, "running_loss": 0.04476615211289997, "elapsed_epoch_seconds": 1409.2684582117945}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 400, "batches": 625, "running_loss": 0.04531557444410282, "elapsed_epoch_seconds": 1501.9534157831222}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 425, "batches": 625, "running_loss": 0.04532183542560019, "elapsed_epoch_seconds": 1595.2872304380871}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 450, "batches": 625, "running_loss": 0.04553586304743981, "elapsed_epoch_seconds": 1693.2825025147758}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 475, "batches": 625, "running_loss": 0.04487707059646614, "elapsed_epoch_seconds": 1784.6636356939562}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 500, "batches": 625, "running_loss": 0.045549984980025326, "elapsed_epoch_seconds": 1873.620911987964}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 525, "batches": 625, "running_loss": 0.0454313571597006, "elapsed_epoch_seconds": 1964.5410005869344}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 550, "batches": 625, "running_loss": 0.04470745961996727, "elapsed_epoch_seconds": 2061.2540764259174}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 575, "batches": 625, "running_loss": 0.04462050540160145, "elapsed_epoch_seconds": 2147.9039889061823}
+{"epoch": 27, "epochs": 50, "phase": "train", "batch": 600, "batches": 625, "running_loss": 0.04445402170638166, "elapsed_epoch_seconds": 2233.5254488307983}

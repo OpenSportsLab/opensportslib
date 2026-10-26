@@ -1,0 +1,18 @@
+{
+  "main": {
+    "training_recipes": 12,
+    "training_runs": 24
+  },
+  "ablations": {
+    "training_recipes": 74,
+    "training_runs": 148
+  },
+  "main_extension": {
+    "training_recipes": 2,
+    "training_runs": 4
+  },
+  "scheduled": {
+    "training_recipes": 14,
+    "training_runs": 28
+  }
+}

@@ -21,7 +21,7 @@ Retrieval and captioning are roadmap areas. They do not currently have runnable 
 ## Guides by audience
 
 - New users: [installation](getting-started/installation.md), [project structure](getting-started/project_structure.md), and [first workflow](getting-started/first-workflow.md).
-- Researchers: [configuration](config/configuration-guide.md), [data format](data/osl-json-format.md), [model zoo](model-zoo.md), and [workflows](tni/tni.md).
+- Researchers: [paper reproductions by task](reproductions/index.md), [configuration](config/configuration-guide.md), [data format](data/osl-json-format.md), [model zoo](model-zoo.md), and [workflows](tni/tni.md).
 - Developers: [architecture](developer/architecture.md), [supported extensions](developer/extensions.md), and the [configuration developer guide](config/developer-guide.md).
 - Contributors: [contributing](contributing.md).
 - Remote serving: [inference server](server/inference-server.md).

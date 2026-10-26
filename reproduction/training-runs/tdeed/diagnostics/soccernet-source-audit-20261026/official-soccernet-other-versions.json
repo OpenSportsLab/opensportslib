@@ -1,0 +1,74 @@
+{
+  "repo_id": "SoccerNet/SoccerNet_raw_HQ",
+  "game": "italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/",
+  "video_ini": "[1_HQ.mkv]\nstart_time_second = 463\n\n[2_HQ.mkv]\nstart_time_second = 126\n\n",
+  "files": [
+    {
+      "branch": "videos-720p",
+      "revision": "280e9828acb8f99250eefdeb4c0eae9a1f784739",
+      "path": "italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_720p.mkv",
+      "sha256": "54db02d01e04ee73f72fe5fc58aeb3c6d45281d93a6c6ae8516c4a8114ae8e4b",
+      "sha256_verified": true,
+      "reported_frames": 67500,
+      "fps": 25.0,
+      "checks": [
+        {
+          "frame": 67484,
+          "readable": true
+        },
+        {
+          "frame": 67485,
+          "readable": true
+        },
+        {
+          "frame": 67499,
+          "readable": true
+        },
+        {
+          "frame": 67499,
+          "readable": true
+        }
+      ]
+    },
+    {
+      "branch": "videos-HQ",
+      "revision": "462c8ed7da5784d606c6173efe93aa90cc15fea1",
+      "path": "italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_HQ.mkv",
+      "sha256": "7275323aafa221a871f4cc5c4fbc289af3a6b2a366ff1de43246390a77029158",
+      "sha256_verified": true,
+      "reported_frames": 82017,
+      "fps": 25.0,
+      "checks": [
+        {
+          "frame": 67484,
+          "readable": true
+        },
+        {
+          "frame": 67485,
+          "readable": true
+        },
+        {
+          "frame": 67499,
+          "readable": true
+        },
+        {
+          "frame": 82016,
+          "readable": true
+        }
+      ],
+      "benchmark_start_seconds": 463,
+      "aligned_checks": [
+        {
+          "benchmark_frame": 67485,
+          "hq_source_frame": 79060,
+          "readable": true
+        },
+        {
+          "benchmark_frame": 67499,
+          "hq_source_frame": 79074,
+          "readable": true
+        }
+      ]
+    }
+  ]
+}

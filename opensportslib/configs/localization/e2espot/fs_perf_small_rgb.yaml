@@ -1,0 +1,197 @@
+SYSTEM:
+  paths:
+    save_dir: outputs/e2espot/campaign
+    work_dir: outputs/e2espot/campaign
+    log_dir: outputs/e2espot/logs
+  device: cuda
+  gpu:
+    count: 1
+    id: 0
+  reproducibility:
+    use_seed: true
+    seed: 42
+DATA:
+  common:
+    runtime:
+      loader_backend: opencv
+    dataset_name: fs_perf
+    data_root: data/spotting-cleanup/FigureSkating/release
+    classes:
+    - jump_landing
+    - jump_takeoff
+    - spin_landing
+    - spin_takeoff
+    splits:
+      train:
+        type: VideoGameWithOpencv
+        annotation_path: data/spotting-cleanup/FigureSkating/release/fs_perf_train.json
+        source_path: data/spotting-cleanup/FigureSkating/release
+        output_map:
+        - data
+        - label
+        overlap_len: 0
+        metric: tight
+        nms_window: 1
+        results: predictions
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+      valid:
+        type: VideoGameWithOpencv
+        annotation_path: data/spotting-cleanup/FigureSkating/release/fs_perf_valid.json
+        source_path: data/spotting-cleanup/FigureSkating/release
+        output_map:
+        - data
+        - label
+        overlap_len: 0
+        metric: tight
+        nms_window: 1
+        results: predictions
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+      valid_data_frames:
+        type: VideoGameWithOpencvVideo
+        annotation_path: data/spotting-cleanup/FigureSkating/release/fs_perf_valid.json
+        source_path: data/spotting-cleanup/FigureSkating/release
+        output_map:
+        - data
+        - label
+        overlap_len: 0
+        metric: tight
+        nms_window: 1
+        results: predictions
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+      test:
+        type: VideoGameWithOpencvVideo
+        annotation_path: data/spotting-cleanup/FigureSkating/release/fs_perf_test.json
+        source_path: data/spotting-cleanup/FigureSkating/release
+        output_map:
+        - data
+        - label
+        overlap_len: 50
+        metric: tight
+        nms_window: 1
+        results: predictions
+        dataloader:
+          batch_size: 8
+          shuffle: false
+          num_workers: 4
+          pin_memory: true
+  inputs:
+    video:
+      modality: video
+      representation: raw
+      source:
+        format: video
+      sampling:
+        clip_len: 100
+        epoch_num_frames: 500000
+        input_fps: 25
+        extract_fps: 25
+      transform:
+        resize:
+          height: 224
+          width: 398
+        normalization:
+          mean:
+          - 0.485
+          - 0.456
+          - 0.406
+          std:
+          - 0.229
+          - 0.224
+          - 0.225
+      augmentations: {}
+      params:
+        crop_dim: 224
+        mixup: true
+        dilate_len: 1
+MODEL:
+  runtime:
+    dtype: fp32
+    device: auto
+    compile: false
+    freeze: false
+  load:
+    checkpoint_path: null
+    pretrained: false
+    strict: true
+    map_location: null
+    format: auto
+  metadata:
+    family: E2E
+    runner:
+      type: runner_e2e
+    paper: ECCV 2022 E2E-Spot
+    experiment: fs_perf_small_rgb
+    recipe_scope: released-author-config
+  components:
+    video_encoder:
+      kind: encoder
+      source:
+        provider: opensportslib
+        registry: backbone
+        name: rny002_gsm
+      params:
+        type: rny002_gsm
+      overrides: {}
+    task_head:
+      kind: head
+      source:
+        provider: opensportslib
+        registry: head
+        name: gru
+      params:
+        type: gru
+      overrides: {}
+  topology:
+  - from: video_encoder
+    to: task_head
+  policies: {}
+IO:
+  inputs:
+    video: video_encoder
+    label: task_head
+  outputs:
+    logits: task_head
+TASK: localization
+VERSION: 2
+TRAIN:
+  trainer:
+    type: trainer_e2e
+  epochs: 50
+  criterion:
+    type: CrossEntropyLoss
+  optimizer:
+    type: AdamWithScaler
+    lr: 0.001
+  scheduler:
+    type: ChainedSchedulerE2E
+    acc_grad_iter: 1
+    num_epochs: 50
+    warm_up_epochs: 3
+  execution:
+    enabled: true
+    multi_gpu: false
+    acc_grad_iter: 1
+    base_num_valid_epochs: 20
+    start_valid_epoch: 30
+    valid_map_every: 1
+    criterion_valid: map
+  sampling:
+    use_weighted_sampler: false
+    use_weighted_loss: false
+  selection:
+    monitor: valid_map
+    mode: max
+  checkpoint:
+    save_best: true

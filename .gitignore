@@ -19,6 +19,7 @@ runs/
 outputs/
 wandb/
 *.log
+!reproduction/training-runs/**/*.log
 
 # IDE
 .vscode/

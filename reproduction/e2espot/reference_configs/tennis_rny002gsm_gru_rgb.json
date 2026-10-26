@@ -1,0 +1,19 @@
+{
+  "batch_size": 8,
+  "clip_len": 100,
+  "crop_dim": 224,
+  "dataset": "tennis",
+  "dilate_len": 0,
+  "epoch_num_frames": 500000,
+  "feature_arch": "rny002_gsm",
+  "fg_upsample": null,
+  "gpu_parallel": false,
+  "learning_rate": 0.001,
+  "mixup": true,
+  "modality": "rgb",
+  "num_classes": 6,
+  "num_epochs": 50,
+  "start_val_epoch": 30,
+  "temporal_arch": "gru",
+  "warm_up_epochs": 3
+}

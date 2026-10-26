@@ -1,0 +1,53 @@
+{
+  "date_utc": "2026-10-26",
+  "repo_id": "SoccerNet/SoccerNet_raw_HQ",
+  "inventory_comparison_files": 1000,
+  "same_blob_hash_as_cached_download": 935,
+  "changed_files_fully_decoded": 65,
+  "changed_files_below_benchmark_frames": 63,
+  "decoded_shortfall_range": [
+    1,
+    996
+  ],
+  "short_files_by_split": {
+    "train": 35,
+    "valid": 14,
+    "test": 14
+  },
+  "decode_errors": 0,
+  "scope": "All 1000 selected source assets compared by Hub blob hashes; all 65 changed 224p files downloaded, SHA-256 verified, and sequentially decoded. The other 935 were not fully decoded in this audit.",
+  "preferred_source_policy": "SoccerNet/SoccerNet_raw_HQ; existing manifests retain actual historical provenance.",
+  "huggingface_changes": "None; read-only access and local downloads.",
+  "failing_half_versions": [
+    {
+      "branch": "videos-720p",
+      "revision": "280e9828acb8f99250eefdeb4c0eae9a1f784739",
+      "reported_frames": 67500,
+      "decoded_frames": 67485,
+      "header_overestimates_frames": 15,
+      "benchmark_minimum_frames_including_lead_in": 67500,
+      "benchmark_coverage_shortfall": 15,
+      "decode_error": null
+    },
+    {
+      "branch": "videos-HQ",
+      "revision": "462c8ed7da5784d606c6173efe93aa90cc15fea1",
+      "reported_frames": 82017,
+      "decoded_frames": 82002,
+      "header_overestimates_frames": 15,
+      "benchmark_minimum_frames_including_lead_in": 79075,
+      "benchmark_coverage_shortfall": 0,
+      "decode_error": null
+    }
+  ],
+  "decoder": {
+    "pyav": "18.1.0",
+    "codec_threads_per_file": 1
+  },
+  "recheck_tool_sha256": "901e669d2e586f7491532742057f7760d0bccd39e25ee812b2774202d201c93b",
+  "verification": {
+    "relevant_tests_passed": 6,
+    "full_suite": "Interrupted after stalling in existing tracking tests; no full-suite pass claimed.",
+    "filtered_runner": "Tests pass; repository-wide coverage gate fails for the filtered selection."
+  }
+}

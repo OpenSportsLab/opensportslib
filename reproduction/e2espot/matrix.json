@@ -1,0 +1,1788 @@
+{
+  "status": "scheduled",
+  "task": "localization",
+  "algorithm": "E2E-Spot",
+  "paper_year": 2022,
+  "repo_id": "OpenSportsLab/OSL-loc-e2e",
+  "reference_code": {
+    "repo": "https://github.com/jhong93/spot",
+    "commit": "edec4201471beed631bed374bd0b95fcdc8a2f4f"
+  },
+  "reference_models": {
+    "repo": "https://github.com/jhong93/e2e-spot-models",
+    "commit": "10d07a4fb01f2eb76785e15552e5648bf0793509"
+  },
+  "seed_policy": "Independent OpenSportsLib seeds 1 and 2; author seed identities not established. Two seeds are a reproduction design choice.",
+  "experiments": [
+    {
+      "id": "soccernet_small_rgb",
+      "dataset": "soccernet",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "4",
+      "source_config": "reproduction/e2espot/reference_configs/soccer_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/soccernet_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "soccernet_big_rgb",
+      "dataset": "soccernet",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "4",
+      "source_config": "reproduction/e2espot/reference_configs/soccer_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/soccernet_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "soccernetball_small_rgb",
+      "dataset": "soccernetball",
+      "phase": "main-extension",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": null,
+      "source_config": null,
+      "canonical_config": "opensportslib/configs/localization/e2espot/soccernetball_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "SoccerNet BAS extension; not an ECCV 2022 result",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "soccernetball_big_rgb",
+      "dataset": "soccernetball",
+      "phase": "main-extension",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": null,
+      "source_config": null,
+      "canonical_config": "opensportslib/configs/localization/e2espot/soccernetball_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "SoccerNet BAS extension; not an ECCV 2022 result",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "tennis_small_rgb",
+      "dataset": "tennis",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/tennis_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "tennis_big_rgb",
+      "dataset": "tennis",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/tennis_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_small_rgb",
+      "dataset": "fs_comp",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/fs_comp_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_big_rgb",
+      "dataset": "fs_comp",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/fs_comp_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_small_rgb",
+      "dataset": "fs_perf",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/fs_perf_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_big_rgb",
+      "dataset": "fs_perf",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/fs_perf_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "finediving_small_rgb",
+      "dataset": "finediving",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/finediving_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "finediving_big_rgb",
+      "dataset": "finediving",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/finediving_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "finegym_small_rgb",
+      "dataset": "finegym",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/finegym_small_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "finegym_big_rgb",
+      "dataset": "finegym",
+      "phase": "main",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "2e",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny008gsm_gru_rgb.json",
+      "canonical_config": "opensportslib/configs/localization/e2espot/finegym_big_rgb.yaml",
+      "status": "queued",
+      "recipe_scope": "released-author-config",
+      "changes": {},
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_8",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 8
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_16",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 16
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_25",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 25
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_50",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 50
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_250",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 250
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_length_500",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 500
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_no_gru",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_tsm",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002_tsm"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_no_gsm",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_no_gsm_no_gru",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002",
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_resolution_112",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3c",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "resize_height": 112,
+        "crop_dim": 112
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_head_mstcn",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "mstcn"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_head_asformer",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "asformer"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_head_deeper_gru",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "deeper_gru"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "tennis_head_multiscale_gru",
+      "dataset": "tennis",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/tennis_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "gru_star"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_8",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 8
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_16",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 16
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_25",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 25
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_50",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 50
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_250",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 250
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_length_500",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 500
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_no_gru",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_tsm",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002_tsm"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_no_gsm",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_no_gsm_no_gru",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002",
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_resolution_112",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3c",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "resize_height": 112,
+        "crop_dim": 112
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_head_mstcn",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "mstcn"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_head_asformer",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "asformer"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_head_deeper_gru",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "deeper_gru"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_comp_head_multiscale_gru",
+      "dataset": "fs_comp",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_comp_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "gru_star"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_8",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 8
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_16",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 16
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_25",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 25
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_50",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 50
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_250",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 250
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_length_500",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 500
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_no_gru",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_tsm",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002_tsm"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_no_gsm",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_no_gsm_no_gru",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002",
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_resolution_112",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3c",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "resize_height": 112,
+        "crop_dim": 112
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_head_mstcn",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "mstcn"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_head_asformer",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "asformer"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_head_deeper_gru",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "deeper_gru"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "fs_perf_head_multiscale_gru",
+      "dataset": "fs_perf",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/fs_perf_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "gru_star"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_length_8",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 8
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_length_16",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 16
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_length_25",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 25
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_length_50",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 50
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_length_250",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 250
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_no_gru",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_tsm",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002_tsm"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_no_gsm",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_no_gsm_no_gru",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002",
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_resolution_112",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3c",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "resize_height": 112,
+        "crop_dim": 112
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_head_mstcn",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "mstcn"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_head_asformer",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "asformer"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_head_deeper_gru",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "deeper_gru"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finediving_head_multiscale_gru",
+      "dataset": "finediving",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finediving_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "gru_star"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_8",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 8
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_16",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 16
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_25",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 25
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_50",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 50
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_250",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 250
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_length_500",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3a",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "clip_len": 500
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_no_gru",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_tsm",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002_tsm"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_no_gsm",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_no_gsm_no_gru",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3b",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "feature_arch": "rny002",
+        "temporal_arch": ""
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_resolution_112",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3c",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "resize_height": 112,
+        "crop_dim": 112
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_head_mstcn",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "mstcn"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_head_asformer",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "asformer"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_head_deeper_gru",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "deeper_gru"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "finegym_head_multiscale_gru",
+      "dataset": "finegym",
+      "phase": "ablations",
+      "kind": "train",
+      "seeds": [
+        1,
+        2
+      ],
+      "paper_table": "3d",
+      "source_config": "reproduction/e2espot/reference_configs/finegym_rny002gsm_gru_rgb.json",
+      "canonical_config": null,
+      "status": "planned",
+      "recipe_scope": "paper-ablation-recipe-audit-required",
+      "changes": {
+        "temporal_arch": "gru_star"
+      },
+      "depends_on": []
+    }
+  ],
+  "additional_protocols": [
+    {
+      "id": "soccer_challenge_standard",
+      "depends_on": [
+        "soccernet_small_rgb",
+        "soccernet_big_rgb"
+      ],
+      "status": "requires_private_challenge_evaluation",
+      "target": "Table4 standard challenge columns; do not train on test"
+    },
+    {
+      "id": "soccer_challenge_train_all",
+      "source_config": "reproduction/e2espot/reference_configs/soccer_challenge_rny008gsm_gru_rgb.json",
+      "seeds": [
+        1,
+        2
+      ],
+      "kind": "train",
+      "status": "requires_private_challenge_evaluation",
+      "training_membership": "train+val+test, challenge evaluation only; never report standard test mAP from this model"
+    },
+    {
+      "id": "precise_postprocessing",
+      "datasets": [
+        "tennis",
+        "fs_comp",
+        "fs_perf",
+        "finediving",
+        "finegym"
+      ],
+      "models": [
+        "small_rgb"
+      ],
+      "kind": "evaluate_existing",
+      "nms_windows": [
+        null,
+        1,
+        2,
+        4
+      ],
+      "tolerances_frames": [
+        0,
+        1,
+        2
+      ],
+      "source": "Supplement C4/C5 default RGB rows only",
+      "status": "planned"
+    },
+    {
+      "id": "per_class_pr",
+      "datasets": [
+        "tennis",
+        "fs_comp",
+        "fs_perf",
+        "finediving",
+        "finegym"
+      ],
+      "model": "small_rgb",
+      "kind": "evaluate_existing",
+      "source": "Supplement C5/Figure C1",
+      "status": "planned"
+    },
+    {
+      "id": "efficiency",
+      "kind": "profile_existing",
+      "source": "Table1",
+      "status": "requires_hardware_matched_reporting"
+    }
+  ],
+  "baseline_comparisons": {
+    "source": "Table2a-d; Supplement B/C1-C3",
+    "feature_families": [
+      "MViT-B RGB",
+      "TSP RGB fine-tuning",
+      "K+1-VC RGB fine-tuning"
+    ],
+    "heads": [
+      "TCN",
+      "MS-TCN",
+      "GRU",
+      "ASFormer",
+      "GCN",
+      "NetVLAD++",
+      "StridedTransformer"
+    ],
+    "loss_variants": [
+      "default",
+      "CALF for applicable heads",
+      "label dilation for applicable heads"
+    ],
+    "extra_baseline": "VC-Spot end-to-end classification baseline",
+    "status": "deferred; enumerate only source-reported combinations after feature/recipe inventory, not the full Cartesian product"
+  },
+  "publication": {
+    "scope": "one algorithm repository across all datasets/variants/seeds",
+    "model_revision_files": [
+      "config.yaml",
+      "model.pth"
+    ],
+    "main": "README with model index, measured performance, revision-aware API examples and original BSD-3 notices",
+    "evidence": "local campaign/docs",
+    "status": "planned; no E2E-Spot reproduction runs or new Hub releases performed by this plan"
+  },
+  "scope": {
+    "modalities": [
+      "rgb"
+    ]
+  },
+  "schedule": {
+    "after": "tdeed_main",
+    "completion_gate": "Every configured T-DEED main seed has a completed results.json; blocked or failed runs do not satisfy the gate",
+    "main_runs": 24,
+    "bas_extension_runs": 4,
+    "total_runs": 28,
+    "ablations": "not scheduled"
+  }
+}

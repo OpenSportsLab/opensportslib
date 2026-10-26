@@ -1,0 +1,238 @@
+{
+  "paper": "https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136950033.pdf",
+  "supplement": "https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136950033-supp.pdf",
+  "scale": "percent",
+  "Table2e": {
+    "tennis": {
+      "default": [
+        96.1,
+        97.7
+      ]
+    },
+    "fs_comp": {
+      "default": [
+        81.0,
+        93.5
+      ]
+    },
+    "fs_perf": {
+      "default": [
+        85.1,
+        95.7
+      ]
+    },
+    "finediving": {
+      "default": [
+        68.4,
+        85.3
+      ]
+    },
+    "finegym": {
+      "default": [
+        47.9,
+        65.2
+      ]
+    },
+    "FG-Start": {
+      "default": [
+        61.0,
+        78.4
+      ]
+    }
+  },
+  "Table2e_default_postprocessing": {
+    "tennis": {
+      "1": "none",
+      "2": "nms_1"
+    },
+    "fs_comp": {
+      "1": "nms_1",
+      "2": "nms_1"
+    },
+    "fs_perf": {
+      "1": "nms_1",
+      "2": "nms_1"
+    },
+    "finediving": {
+      "1": "none",
+      "2": "nms_1"
+    },
+    "finegym": {
+      "1": "nms_1",
+      "2": "nms_1"
+    }
+  },
+  "Table3_delta1": {
+    "length_8": {
+      "tennis": 95.8,
+      "fs_comp": 73.7,
+      "fs_perf": 74.7,
+      "finediving": 67.3,
+      "finegym": 32.3
+    },
+    "length_16": {
+      "tennis": 96.2,
+      "fs_comp": 74.4,
+      "fs_perf": 80.1,
+      "finediving": 64.8,
+      "finegym": 40.8
+    },
+    "length_25": {
+      "tennis": 96.2,
+      "fs_comp": 74.5,
+      "fs_perf": 80.6,
+      "finediving": 67.2,
+      "finegym": 43.9
+    },
+    "length_50": {
+      "tennis": 96.4,
+      "fs_comp": 76.9,
+      "fs_perf": 82.3,
+      "finediving": 65.0,
+      "finegym": 46.6
+    },
+    "length_250": {
+      "tennis": 96.4,
+      "fs_comp": 81.3,
+      "fs_perf": 85.6,
+      "finediving": 68.9,
+      "finegym": 48.5
+    },
+    "length_500": {
+      "tennis": 95.9,
+      "fs_comp": 78.9,
+      "fs_perf": 87.5,
+      "finediving": null,
+      "finegym": 48.1
+    },
+    "no_gru": {
+      "tennis": 95.7,
+      "fs_comp": 74.3,
+      "fs_perf": 77.9,
+      "finediving": 64.1,
+      "finegym": 32.9
+    },
+    "tsm": {
+      "tennis": 96.1,
+      "fs_comp": 78.6,
+      "fs_perf": 83.3,
+      "finediving": 65.3,
+      "finegym": 48.1
+    },
+    "no_gsm": {
+      "tennis": 94.1,
+      "fs_comp": 75.5,
+      "fs_perf": 85.6,
+      "finediving": 68.9,
+      "finegym": 44.2
+    },
+    "no_gsm_no_gru": {
+      "tennis": 60.1,
+      "fs_comp": 26.9,
+      "fs_perf": 41.1,
+      "finediving": 47.0,
+      "finegym": 22.1
+    },
+    "resolution_112": {
+      "tennis": 88.5,
+      "fs_comp": 75.4,
+      "fs_perf": 80.9,
+      "finediving": 64.9,
+      "finegym": 45.3
+    },
+    "head_mstcn": {
+      "tennis": 95.7,
+      "fs_comp": 77.6,
+      "fs_perf": 84.7,
+      "finediving": 67.0,
+      "finegym": 44.1
+    },
+    "head_asformer": {
+      "tennis": 95.7,
+      "fs_comp": 68.4,
+      "fs_perf": 75.4,
+      "finediving": 70.4,
+      "finegym": 36.8
+    },
+    "head_deeper_gru": {
+      "tennis": 96.5,
+      "fs_comp": 80.2,
+      "fs_perf": 83.5,
+      "finediving": 67.2,
+      "finegym": 46.4
+    },
+    "head_multiscale_gru": {
+      "tennis": 96.2,
+      "fs_comp": 78.1,
+      "fs_perf": 86.0,
+      "finediving": 67.4,
+      "finegym": 47.9
+    },
+    "big_rgb": {
+      "tennis": 96.8,
+      "fs_comp": 84.0,
+      "fs_perf": 83.6,
+      "finediving": 64.6,
+      "finegym": 50.1
+    }
+  },
+  "Table3_default_delta1": {
+    "tennis": 96.1,
+    "fs_comp": 81.0,
+    "fs_perf": 85.1,
+    "finediving": 68.4,
+    "finegym": 47.4
+  },
+  "Table4": {
+    "200MF": {
+      "test": {
+        "tight": 61.19,
+        "loose": 73.25
+      },
+      "challenge": {
+        "tight": 63.28,
+        "shown": 70.41,
+        "unshown": 45.98
+      }
+    },
+    "800MF": {
+      "test": {
+        "tight": 61.82,
+        "loose": 74.05
+      },
+      "challenge": {
+        "tight": 66.01,
+        "shown": 72.76,
+        "unshown": 51.65
+      }
+    },
+    "800MF_train_all": {
+      "challenge": {
+        "tight": 66.73,
+        "shown": 74.84,
+        "unshown": 53.21
+      }
+    }
+  },
+  "TableC5_delta0": {
+    "default": {
+      "tennis": 71.6,
+      "fs_comp": 36.7,
+      "fs_perf": 40.5,
+      "finediving": 30.1,
+      "finegym": 22.4,
+      "FG-Start": 27.5
+    }
+  },
+  "discrepancies": [
+    "FineGym default delta1 is 47.9 in Table 2e/C2 but 47.4 in Table 3. Keep targets table-specific.",
+    "Paper prose reports 3345 Tennis clips and 547K FineDiving frames; pinned released annotations contain 3445 clips and 312256 FineDiving frames. Annotation audit verifies equality to the prepared T-DEED reference, not equality to those prose counts."
+  ],
+  "acceptance": "Report all seed scores, means/std and signed gaps with fixed protocols; training completion and author-checkpoint conversion do not establish reproduction.",
+  "scope": "RGB",
+  "SoccerNet_BAS": {
+    "status": "extension",
+    "paper_target": null,
+    "reason": "This task was not reported in the original ECCV 2022 paper"
+  }
+}

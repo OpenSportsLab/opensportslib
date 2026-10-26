@@ -41,6 +41,16 @@ nav:
       - Localization & Spotting: spotting/tracking-action-spotting.md
       - VQA: tools/vqa.md
       - HDF5 Header Spotting: headers/README.md
+  - Paper Reproductions:
+      - Overview: reproductions/index.md
+      - Action Localization:
+          - Overview: reproductions/action-localization/index.md
+          - T-DEED:
+              - Reproduction Guide: reproductions/action-localization/tdeed.md
+              - Results and Models: reproductions/action-localization/tdeed-results.md
+          - E2E-Spot:
+              - Reproduction Plan: reproductions/action-localization/e2espot.md
+              - Results and Models: reproductions/action-localization/e2espot-results.md
   - Data:
       - OSL JSON Format: data/osl-json-format.md
       - TRACAB DAT: tracking_tracab.md

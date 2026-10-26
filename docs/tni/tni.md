@@ -1,10 +1,23 @@
 # Training, Inference, and Evaluation
 
-For the T-DEED localization family, see [development and reproduction](tdeed.md):
+For the T-DEED localization family, see [development and reproduction](../reproductions/action-localization/tdeed.md):
 canonical YAML recipes, frame-indexed data, deterministic checkpoints, evaluation
 protocols and the local experiment campaign.
 
 This page covers the common lifecycle for the three implemented task wrappers. It uses real Python APIs; the `tools/training/` scripts provide equivalent command-line entry points.
+
+For published checkpoint/config bundles, task wrappers also expose
+`from_pretrained(repo_id, revision=..., device=...)`. The explicit revision keeps
+`config.yaml` and `model.pth` together in one Hub snapshot. For example:
+
+```python
+from opensportslib.apis import LocalizationModel
+
+model = LocalizationModel.from_pretrained(
+    "OpenSportsLab/OSL-loc-TDEED", revision="v1-finediving-small-seed1",
+    device="cpu",
+)
+```
 
 ## Before running
 

@@ -1,0 +1,423 @@
+{
+  "scope": "container/OpenCV frame-count metadata, not full decode",
+  "checked": 1000,
+  "short": [
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-12-14 - 22-45 Middlesbrough 0 - 3 Liverpool/2_224p.mkv",
+      "expected": 69850,
+      "reported_frames": 69833,
+      "missing_tail_frames": 17,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2014-2015/2014-11-04 - 22-45 Arsenal 3 - 3 Anderlecht/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67177,
+      "missing_tail_frames": 323,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2014-2015/2014-11-04 - 22-45 Arsenal 3 - 3 Anderlecht/2_224p.mkv",
+      "expected": 72750,
+      "reported_frames": 72718,
+      "missing_tail_frames": 32,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2015-2016/2015-09-15 - 21-45 Paris SG 2 - 0 Malmo FF/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67469,
+      "missing_tail_frames": 31,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2015-2016/2015-11-03 - 22-45 PSV 2 - 0 Wolfsburg/1_224p.mkv",
+      "expected": 71150,
+      "reported_frames": 70900,
+      "missing_tail_frames": 250,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/germany_bundesliga/2014-2015/2015-05-09 - 16-30 Dortmund 2 - 0 Hertha Berlin/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67472,
+      "missing_tail_frames": 28,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/germany_bundesliga/2014-2015/2015-05-09 - 16-30 Dortmund 2 - 0 Hertha Berlin/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67440,
+      "missing_tail_frames": 60,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2014-2015/2015-02-15 - 14-30 AC Milan 1 - 1 Empoli/2_224p.mkv",
+      "expected": 69100,
+      "reported_frames": 69086,
+      "missing_tail_frames": 14,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2014-2015/2015-04-11 - 21-45 Verona 0 - 3 Inter/2_224p.mkv",
+      "expected": 71100,
+      "reported_frames": 71036,
+      "missing_tail_frames": 64,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2014-2015/2015-05-03 - 21-45 Napoli 3 - 0 AC Milan/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67481,
+      "missing_tail_frames": 19,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-09-22 - 21-45 Udinese 2 - 3 AC Milan/1_224p.mkv",
+      "expected": 69950,
+      "reported_frames": 69836,
+      "missing_tail_frames": 114,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-09-22 - 21-45 Udinese 2 - 3 AC Milan/2_224p.mkv",
+      "expected": 71800,
+      "reported_frames": 71751,
+      "missing_tail_frames": 49,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-11-01 - 22-45 Lazio 1 - 3 AC Milan/2_224p.mkv",
+      "expected": 71775,
+      "reported_frames": 71535,
+      "missing_tail_frames": 240,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-11-22 - 22-45 Inter 4 - 0 Frosinone/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67379,
+      "missing_tail_frames": 121,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2016-10-26 - 21-45 Sassuolo 1 - 3 AS Roma/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67465,
+      "missing_tail_frames": 35,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-03-04 - 17-00 AS Roma 1 - 2 Napoli/1_224p.mkv",
+      "expected": 67900,
+      "reported_frames": 67822,
+      "missing_tail_frames": 78,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-03-04 - 17-00 AS Roma 1 - 2 Napoli/2_224p.mkv",
+      "expected": 73925,
+      "reported_frames": 73907,
+      "missing_tail_frames": 18,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-09 - 16-00 Bologna 0 - 3 AS Roma/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67167,
+      "missing_tail_frames": 333,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2015-2016/2015-09-12 - 17-00 Espanyol 0 - 6 Real Madrid/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67465,
+      "missing_tail_frames": 35,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2015-2016/2015-11-29 - 18-00 Eibar 0 - 2 Real Madrid/2_224p.mkv",
+      "expected": 73225,
+      "reported_frames": 73224,
+      "missing_tail_frames": 1,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2016-10-29 - 17-15 Alaves 1 - 4 Real Madrid/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67468,
+      "missing_tail_frames": 32,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2016-11-19 - 18-15 Barcelona 0 - 0 Malaga/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67467,
+      "missing_tail_frames": 33,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2016-11-19 - 18-15 Barcelona 0 - 0 Malaga/2_224p.mkv",
+      "expected": 78750,
+      "reported_frames": 78717,
+      "missing_tail_frames": 33,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2016-12-10 - 22-45 Real Madrid 3 - 2 Dep. La Coruna/2_224p.mkv",
+      "expected": 71825,
+      "reported_frames": 71808,
+      "missing_tail_frames": 17,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-01-08 - 22-45 Villarreal 1 - 1 Barcelona/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67449,
+      "missing_tail_frames": 51,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-01-08 - 22-45 Villarreal 1 - 1 Barcelona/2_224p.mkv",
+      "expected": 74525,
+      "reported_frames": 74476,
+      "missing_tail_frames": 49,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-02-26 - 18-15 Atl. Madrid 1 - 2 Barcelona/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67449,
+      "missing_tail_frames": 51,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-03-18 - 18-15 Ath Bilbao 1 - 2 Real Madrid/2_224p.mkv",
+      "expected": 73050,
+      "reported_frames": 72795,
+      "missing_tail_frames": 255,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-04-26 - 22-30 Dep. La Coruna 2 - 6 Real Madrid/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67439,
+      "missing_tail_frames": 61,
+      "fps": 25.0
+    },
+    {
+      "split": "train",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2016-2017/2017-05-21 - 21-00 Barcelona 4 - 2 Eibar/2_224p.mkv",
+      "expected": 70850,
+      "reported_frames": 70614,
+      "missing_tail_frames": 236,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2015-2016/2016-02-13 - 20-30 Chelsea 5 - 1 Newcastle Utd/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67467,
+      "missing_tail_frames": 33,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2015-2016/2016-02-13 - 20-30 Chelsea 5 - 1 Newcastle Utd/2_224p.mkv",
+      "expected": 67725,
+      "reported_frames": 67555,
+      "missing_tail_frames": 170,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2015-2016/2015-09-16 - 21-45 Dyn. Kiev 2 - 2 FC Porto/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67400,
+      "missing_tail_frames": 100,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2015-2016/2015-09-16 - 21-45 Dyn. Kiev 2 - 2 FC Porto/2_224p.mkv",
+      "expected": 70700,
+      "reported_frames": 70639,
+      "missing_tail_frames": 61,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/france_ligue-1/2015-2016/2015-09-19 - 18-30 Reims 1 - 1 Paris SG/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67372,
+      "missing_tail_frames": 128,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/france_ligue-1/2016-2017/2017-05-14 - 22-00 St Etienne 0 - 5 Paris SG/2_224p.mkv",
+      "expected": 68775,
+      "reported_frames": 68689,
+      "missing_tail_frames": 86,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2014-2015/2015-05-10 - 21-45 Lazio 1 - 2 Inter/2_224p.mkv",
+      "expected": 71750,
+      "reported_frames": 71718,
+      "missing_tail_frames": 32,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2016-10-29 - 21-45 Juventus 2 - 1 Napoli/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67397,
+      "missing_tail_frames": 103,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-15 - 21-45 Napoli 3 - 0 Udinese/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67485,
+      "missing_tail_frames": 15,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2015-2016/2015-09-12 - 21-30 Atl. Madrid 1 - 2 Barcelona/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 66504,
+      "missing_tail_frames": 996,
+      "fps": 25.0
+    },
+    {
+      "split": "valid",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2015-2016/2015-09-12 - 21-30 Atl. Madrid 1 - 2 Barcelona/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67001,
+      "missing_tail_frames": 499,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2015-2016/2015-08-16 - 18-00 Manchester City 3 - 0 Chelsea/2_224p.mkv",
+      "expected": 70250,
+      "reported_frames": 70176,
+      "missing_tail_frames": 74,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2015-2016/2015-11-07 - 20-30 Stoke City 1 - 0 Chelsea/2_224p.mkv",
+      "expected": 68925,
+      "reported_frames": 68892,
+      "missing_tail_frames": 33,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2017-05-06 - 17-00 Leicester 3 - 0 Watford/2_224p.mkv",
+      "expected": 72250,
+      "reported_frames": 72188,
+      "missing_tail_frames": 62,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/europe_uefa-champions-league/2016-2017/2016-11-01 - 20-45 Besiktas 1 - 1 Napoli/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67487,
+      "missing_tail_frames": 13,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2014-2015/2015-04-29 - 21-45 Juventus 3 - 2 Fiorentina/2_224p.mkv",
+      "expected": 68675,
+      "reported_frames": 68664,
+      "missing_tail_frames": 11,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-08-29 - 21-45 AC Milan 2 - 1 Empoli/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67484,
+      "missing_tail_frames": 16,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2015-2016/2015-09-27 - 21-45 Inter 1 - 4 Fiorentina/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67486,
+      "missing_tail_frames": 14,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-02-25 - 20-00 Napoli 0 - 2 Atalanta/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67479,
+      "missing_tail_frames": 21,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-30 - 21-45 Inter 0 - 1 Napoli/1_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67431,
+      "missing_tail_frames": 69,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/italy_serie-a/2016-2017/2017-04-30 - 21-45 Inter 0 - 1 Napoli/2_224p.mkv",
+      "expected": 67500,
+      "reported_frames": 67442,
+      "missing_tail_frames": 58,
+      "fps": 25.0
+    },
+    {
+      "split": "test",
+      "path": "data/spotting-cleanup/SoccerNet/source/spain_laliga/2015-2016/2015-12-30 - 18-00 Real Madrid 3 - 1 Real Sociedad/1_224p.mkv",
+      "expected": 68725,
+      "reported_frames": 68724,
+      "missing_tail_frames": 1,
+      "fps": 25.0
+    }
+  ],
+  "fps_mismatches": []
+}

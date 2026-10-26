@@ -1,0 +1,798 @@
+diff --git a/.gitignore b/.gitignore
+index 2533739..89b3347 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,6 +19,7 @@ runs/
+ outputs/
+ wandb/
+ *.log
++!reproduction/training-runs/**/*.log
+ 
+ # IDE
+ .vscode/
+@@ -49,4 +50,4 @@ release/
+ .test-reports/
+ 
+ 
+-data/
+\ No newline at end of file
++data/
+diff --git a/README.md b/README.md
+index add2389..3e11489 100644
+--- a/README.md
++++ b/README.md
+@@ -1,9 +1,5 @@
+ # OpenSportsLib
+ 
+-T-DEED localization training, evaluation and local experiment recipes are available.
+-See the [T-DEED reproduction guide](docs/tni/tdeed.md) for validation, resumable
+-runs and current reproduction gaps.
+-
+ <img src="docs/assets/osl.jpg" height="400">
+ 
+ OpenSportsLib is a modular Python library for sports video understanding.
+@@ -119,6 +115,35 @@ Use it as the main entry point to find:
+ See the [Model Zoo](docs/model-zoo.md) for available pretrained models,
+ reported scores, datasets, and loading snippets.
+ 
++## Paper reproductions
++
++OpenSportsLib organizes [paper reproductions](docs/reproductions/index.md) by
++task and algorithm. The first entry is
++[T-DEED for action localization](docs/reproductions/action-localization/tdeed.md),
++with [measured results and model releases](docs/reproductions/action-localization/tdeed-results.md).
++Other algorithms and tasks will extend the same catalog. Each entry states its
++validated scope and remaining differences from the paper.
++The [E2E-Spot reproduction plan](docs/reproductions/action-localization/e2espot.md)
++queues 24 ECCV 2022 main runs and four SoccerNet BAS extension runs after
++T-DEED main results, with future
++releases grouped under `OpenSportsLab/OSL-loc-e2e`.
++
++Load a specific published checkpoint with the revision-aware API:
++
++```python
++from opensportslib.apis import LocalizationModel
++
++model = LocalizationModel.from_pretrained(
++    "OpenSportsLab/OSL-loc-TDEED",
++    revision="v1-finediving-small-seed1",
++    device="cpu",
++)
++predictions = model.infer(video_path="diving_clip.mp4", use_wandb=False)
++```
++
++This requires the T-DEED-enabled library version. Each model revision provides
++`config.yaml` and `model.pth`; the repository's `main` revision is the catalog.
++
+ ---
+ 
+ ## Dataset format
+diff --git a/docs/index.md b/docs/index.md
+index f681dc0..9084ea5 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -21,7 +21,7 @@ Retrieval and captioning are roadmap areas. They do not currently have runnable
+ ## Guides by audience
+ 
+ - New users: [installation](getting-started/installation.md), [project structure](getting-started/project_structure.md), and [first workflow](getting-started/first-workflow.md).
+-- Researchers: [configuration](config/configuration-guide.md), [data format](data/osl-json-format.md), [model zoo](model-zoo.md), and [workflows](tni/tni.md).
++- Researchers: [paper reproductions by task](reproductions/index.md), [configuration](config/configuration-guide.md), [data format](data/osl-json-format.md), [model zoo](model-zoo.md), and [workflows](tni/tni.md).
+ - Developers: [architecture](developer/architecture.md), [supported extensions](developer/extensions.md), and the [configuration developer guide](config/developer-guide.md).
+ - Contributors: [contributing](contributing.md).
+ - Remote serving: [inference server](server/inference-server.md).
+diff --git a/docs/model-zoo.md b/docs/model-zoo.md
+index 388c95a..2ad1748 100644
+--- a/docs/model-zoo.md
++++ b/docs/model-zoo.md
+@@ -1,5 +1,10 @@
+ # Model Zoo
+ 
++For paper implementations, experiment coverage and benchmark comparisons, see
++the [paper reproduction catalog](reproductions/index.md), organized by task and
++algorithm. This page indexes model downloads across those papers and other
++library components.
++
+ This page lists OpenSportsLib checkpoints, config-only algorithms, and supporting
+ model components published on Hugging Face. Task checkpoints can be loaded with
+ `load_weights(...)`; config-only algorithms and supporting components use the
+@@ -11,10 +16,25 @@ computed or verified at documentation-build time. Missing training provenance
+ and scores are marked **Not reported**. Follow each linked repository for its
+ artifact details; a listing here does not certify end-to-end inference.
+ 
++## Scheduled paper reproductions
++
++| Paper | Task | Planned model repository | Experiment scope | Status |
++| --- | --- | --- | --- | --- |
++| [E2E-Spot, ECCV 2022](reproductions/action-localization/e2espot.md) | Action localization / spotting | `OpenSportsLab/OSL-loc-e2e` | 200MF/800MF RGB on Tennis, FS-Comp, FS-Perf, FineDiving, FineGym, SoccerNet and SoccerNet BAS; 28 runs queued | [Paper targets and release plan](reproductions/action-localization/e2espot-results.md); no new models or measured reproduction scores yet |
++
++Validated checkpoints will move into the available-model listing with their
++measured scores and revision links. Existing E2E implementations or checkpoints
++are not automatically evidence of this original-paper reproduction campaign.
++
+ ## Available Models
+ 
++T-DEED experiments are tracked on the [results and model release page](reproductions/action-localization/tdeed-results.md).
++Four verified FineDiving checkpoints are available as named revisions of
++`OpenSportsLab/OSL-loc-TDEED`; other datasets remain pending.
++
+ | Model | Task | Dataset trained on | Backbone / architecture | Classes / label set | Scores | Hugging Face link | Loading |
+ | --- | --- | --- | --- | --- | --- | --- | --- |
++| `OSL-loc-TDEED` | Action Spotting / Localization | FineDiving (other datasets pending) | T-DEED, RegNetY 200MF / 800MF + GSF + SGP | Entry, Som(s).Pike, Som(s).Tuck, Twist(s) | Two-seed Soft-NMS mAP, ±1/±2 frames: small 71.54/89.38; big 72.89/89.29 | [OpenSportsLab/OSL-loc-TDEED](https://huggingface.co/OpenSportsLab/OSL-loc-TDEED) | [Choose a release revision](reproductions/action-localization/tdeed-results.md#publication-state); download its matching config and weights |
+ | `OSL-cls-action-mvitv2` | Action / Event Classification | SoccerNet - MVFouls classification subset | MViT v2 | Not reported on model card | Accuracy: 0.57<br>Balanced Accuracy: 0.40<br>Top-2: 0.78 | [OpenSportsLab/OSL-cls-action-mvitv2](https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2) | `myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")` |
+ | `OSL-loc-snbas-2023-e2e` | Action Spotting / Localization | SoccerNet - Ball Action Spotting 2023 | E2E, DALI backend | PASS, DRIVE | tight mAP: 71.48<br>loose mAP: 85.62 | [OpenSportsLab/OSL-loc-snbas-2023-e2e](https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2023-e2e) | `myModel.load_weights(weights="OpenSportsLab/OSL-loc-snbas-2023-e2e")` |
+ | `OSL-loc-snbas-2025-e2e` | Action Spotting / Localization | SoccerNet - Ball Action Spotting 2025 | E2E, DALI backend | PASS, DRIVE, HEADER, HIGH PASS, OUT, CROSS, THROW IN, SHOT, BALL PLAYER BLOCK, PLAYER SUCCESSFUL TACKLE, FREE KICK, GOAL | tight mAP: 47.98<br>loose mAP: 58.35 | [OpenSportsLab/OSL-loc-snbas-2025-e2e](https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e) | `myModel.load_weights(weights="OpenSportsLab/OSL-loc-snbas-2025-e2e")` |
+diff --git a/docs/tni/tdeed.md b/docs/tni/tdeed.md
+deleted file mode 100644
+index 7d5a9a1..0000000
+--- a/docs/tni/tdeed.md
++++ /dev/null
+@@ -1,166 +0,0 @@
+-# T-DEED development and reproduction
+-
+-T-DEED is a localization family in the existing `LocalizationModel` wrapper.
+-The port uses [the authors' extended release](https://github.com/arturxe2/T-DEED)
+-at `d953b4de8a2ad941c565e1683c5b07255cbe644e`. The reference primitives retain
+-their GPLv3/E2E-Spot notices and licenses. Existing task APIs remain compatible.
+-
+-```python
+-from opensportslib.apis import LocalizationModel
+-
+-model = LocalizationModel(
+-    config="opensportslib/configs/localization/tdeed/FineDiving_small.yaml"
+-)
+-checkpoint = model.train(use_wandb=False)
+-predictions = model.infer(weights=checkpoint, use_wandb=False)
+-model.save_predictions("outputs/predictions.json", predictions)
+-metrics = model.evaluate(weights=checkpoint, use_wandb=False)
+-```
+-
+-Use the campaign CLI for benchmark preflight checks. Direct API calls support
+-custom datasets and development fixtures; they do not certify paper reproduction.
+-
+-## Implementation
+-
+-- `models/base/tdeed.py`: RegNetY-200MF/800MF, GSF/GSM, learned temporal positions,
+-  SGP encoder-decoder, classification/displacement heads, weighted CE, background-
+-  inclusive displacement MSE and within-dataset mixup. Original checkpoint keys
+-  are retained. ImageNet checkpoint revisions are immutable.
+-- `datasets/tdeed.py`: native frame targets, released sliding-window sampling,
+-  black padding, foreground-only AS sampling and shared FigureSkating broadcasts.
+-  Joint BAS/AS samples datasets with probability one half and doubles epoch size.
+-- `core/trainer/tdeed_trainer.py`: deterministic training, validation selection,
+-  overlapping inference, test flips and epoch-boundary checkpoint resume.
+-- `metrics/tdeed.py`: PES event AP, greedy NMS, quadratic Soft-NMS and official
+-  SoccerNet scoring. FG-Start includes the 14 `_start` classes plus `VT_1`, `VT_2`.
+-
+-Input is RGB in the 0–255 range, shaped `(B, clip_len, 3, H, W)`. The network owns
+-crop, augmentation and ImageNet normalization. Do not normalize in the loader.
+-Temporal length is fixed by position embeddings and shift modules. Missing frames
+-raise errors. Displacement relocation takes classwise maximum votes without
+-re-normalization; overlap support counts match the reference's nonzero votes.
+-
+-`infer()` returns OSL JSON without saving predictions. Its event frame and
+-millisecond axes are sampled and performance-relative; source start/stride are
+-recorded in metadata. `evaluate(predictions=...)` scores a fixed prediction set.
+-`evaluate()` reports raw, NMS and Soft-NMS independently, without choosing a
+-postprocessor from test labels. PES tolerances are frame distances; SoccerNet's
+-official tolerances are full matching-window widths.
+-
+-## Experiment recipes and differences
+-
+-Canonical YAML recipes live in `opensportslib/configs/localization/tdeed/`.
+-`reproduction/tdeed/` contains original configurations, reference-file hashes,
+-published targets and the experiment matrix. Independent seeds `1`, `2` are
+-explicit choices; the authors' exact seed pair is unavailable.
+-
+-Released settings and paper settings sometimes differ. Small FigureSkating
+-release configs use SGP ratio four; `_paper` configs use the paper's two.
+-FineGym and AS release configs use six warmup epochs. The released chained
+-scheduler advances warmup and cosine together; this behavior is retained.
+-AS stride 12 at 25 fps gives 2.0833 fps. Released AS clip-validation selection
+-uses a separate 6.25-fps scoring clock (`released_snas_clips`); full-game test
+-scoring uses the actual sampling clock.
+-
+-Controlled ablations cover GRU/Transformer/SGP temporal modules, skip variants,
+-SGP-Mixer summation, displacement/dilation, shift scope, clip length and
+-postprocessing. The exact search-selected ablation recipes are not released,
+-so these configs are marked `controlled-ablation`, not exact best-search replicas.
+-The adapted TriDet search and private BAS challenge evaluations remain explicit
+-matrix entries requiring unavailable recipes/labels. Challenge scores also need
+-the exact all-split training/ensemble protocol. No leaderboard submission occurs.
+-
+-## Data preflight
+-
+-See [dataset preparation](../tools/spotting-dataset-cleanup.md) for repositories,
+-permissions and source provenance. Configure local paths before launching.
+-
+-```bash
+-python tools/reproduction/tdeed.py preflight \
+-  --config opensportslib/configs/localization/tdeed/FineDiving_small.yaml \
+-  --verify-hashes --output outputs/tdeed/preflight-finediving
+-```
+-
+-Preflight checks pinned reference-file hashes, class order, split membership,
+-native events where available, declared frame counts and media presence.
+-`--verify-hashes` additionally verifies available media checksums.
+-
+-- FineDiving resizes original JPEG-derived video frames to 224×224.
+-- FigureSkating resizes original broadcasts to 398×224, then crops to 224×224.
+-  Two source broadcasts have documented replacement encodings.
+-- FineGym requires all 5,374 padded clips. `--recover-originals` on the rebuild
+-  tool can recover original high-rate videos when archive versions fail timing
+-  checks; the same strict frame-geometry validation still applies.
+-- Tennis's current 144p media fails strict paper-resolution preflight.
+-- BAS's annotation-version discrepancy remains a strict reproduction blocker.
+-- AS/BAS require local frame-geometry adapters and their media. AS annotations
+-  outside the reference's 45-minute window remain ground truth for scoring;
+-  training windows retain the reference bounds.
+-
+-Normalize existing OSL soccer manifests with `prepare_tdeed_soccer.py`:
+-
+-```bash
+-python tools/reproduction/prepare_tdeed_soccer.py \
+-  --dataset soccernet --source-root /data/soccernet/224p-json \
+-  --fallback-source-root /data/soccernet/720p-json \
+-  --reference-root /data/reference/T-DEED/data/soccernet \
+-  --output data/spotting-cleanup/SoccerNet \
+-  --media-root data/spotting-cleanup/SoccerNet/source
+-```
+-
+-Eighteen irregular-FPS 224p sources use corresponding 25-fps 720p files.
+-`--download-media` acquires missing AS media subject to free-space reservations.
+-Joint BAS/AS uses a separate `SoccerNet448` adapter over high-resolution AS
+-videos, resized to 796×448; independent AS's low-resolution data cannot replace
+-it. Acquire BAS shards with the existing OSL split downloader, then normalize
+-the extracted manifests. Pixel identity to the authors' earlier resized JPEG
+-collections is not claimed for these explicit video preprocessing choices.
+-
+-## Run, resume and compare
+-
+-```bash
+-python tools/reproduction/tdeed.py campaign --resume \
+-  --experiment FineDiving_small --experiment FineDiving_big \
+-  --output outputs/tdeed/campaign
+-
+-python tools/reproduction/tdeed.py report --output outputs/tdeed/campaign
+-```
+-
+-Omit experiment restrictions to visit the full matrix. `--group` selects
+-`released-main`, `paper-main`, `bas-ablation` or `controlled-ablation`.
+-Blocked data and failed runs remain in the ledger. Resume after prerequisites
+-are fixed. Postprocessing variants reuse their parent checkpoints.
+-
+-Each run retains settings/environment, progress, history, `last.pt`, validation-
+-selected `best.pt`, explicit predictions and final metrics. Checkpoints preserve
+-optimizer, scaler, scheduler and Python/NumPy/CPU/CUDA RNG states. Resume requires
+-unchanged recipes, implementation hashes and dataset-manifest hashes. Seed
+-directories prevent overwriting independent runs.
+-
+-The ledger reports per-seed scores, means, standard deviations, published targets
+-and signed percentage-point gaps. Completing training never sets
+-`paper_reproduced` to true. Missing coverage, settings, data/environment differences
+-and rerun evidence must be resolved before a reproduction claim or PR approval.
+-
+-## Verification
+-
+-```bash
+-python tools/reproduction/check_tdeed_parity.py \
+-  --reference-root /data/reference/T-DEED --output outputs/tdeed/parity.json
+-python tools/reproduction/smoke_tdeed.py \
+-  --config opensportslib/configs/localization/tdeed/FineDiving_small.yaml \
+-  --output outputs/tdeed/gpu-repeat
+-bash scripts/run_tests.sh
+-```
+-
+-Parity checks an independent pinned checkout's weights, forward values,
+-relocation, loss, gradients, PES AP and suppression. Real-data smoke runs check
+-repeated weights/histories bit for bit. Integration tests compare resumed and
+-continuous training and verify inference does not write prediction files.
+-
+-Strict CUDA determinism stays enabled. Temporal resampling keeps native forward
+-operations and uses fixed-order backward reductions where PyTorch's atomic
+-backward is unsupported. These gradients are checked analytically; half-precision
+-accumulation can differ from the nondeterministic reference. The GB10 environment
+-uses newer PyTorch/timm than `requirements.reference.txt`; versions and this
+-implementation choice are recorded rather than presented as the original stack.
+diff --git a/docs/tni/tni.md b/docs/tni/tni.md
+index c273027..2d2ce85 100644
+--- a/docs/tni/tni.md
++++ b/docs/tni/tni.md
+@@ -1,11 +1,24 @@
+ # Training, Inference, and Evaluation
+ 
+-For the T-DEED localization family, see [development and reproduction](tdeed.md):
++For the T-DEED localization family, see [development and reproduction](../reproductions/action-localization/tdeed.md):
+ canonical YAML recipes, frame-indexed data, deterministic checkpoints, evaluation
+ protocols and the local experiment campaign.
+ 
+ This page covers the common lifecycle for the three implemented task wrappers. It uses real Python APIs; the `tools/training/` scripts provide equivalent command-line entry points.
+ 
++For published checkpoint/config bundles, task wrappers also expose
++`from_pretrained(repo_id, revision=..., device=...)`. The explicit revision keeps
++`config.yaml` and `model.pth` together in one Hub snapshot. For example:
++
++```python
++from opensportslib.apis import LocalizationModel
++
++model = LocalizationModel.from_pretrained(
++    "OpenSportsLab/OSL-loc-TDEED", revision="v1-finediving-small-seed1",
++    device="cpu",
++)
++```
++
+ ## Before running
+ 
+ - Install the dependency profile required by your config. DALI requires an NVIDIA GPU; graph/tracking paths may require `--pyg`; X-VARS and Qwen VQA require separate dependency profiles.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index 1ce1911..6f90316 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -41,6 +41,16 @@ nav:
+       - Localization & Spotting: spotting/tracking-action-spotting.md
+       - VQA: tools/vqa.md
+       - HDF5 Header Spotting: headers/README.md
++  - Paper Reproductions:
++      - Overview: reproductions/index.md
++      - Action Localization:
++          - Overview: reproductions/action-localization/index.md
++          - T-DEED:
++              - Reproduction Guide: reproductions/action-localization/tdeed.md
++              - Results and Models: reproductions/action-localization/tdeed-results.md
++          - E2E-Spot:
++              - Reproduction Plan: reproductions/action-localization/e2espot.md
++              - Results and Models: reproductions/action-localization/e2espot-results.md
+   - Data:
+       - OSL JSON Format: data/osl-json-format.md
+       - TRACAB DAT: tracking_tracab.md
+diff --git a/opensportslib/apis/README.md b/opensportslib/apis/README.md
+index b37c883..5455487 100644
+--- a/opensportslib/apis/README.md
++++ b/opensportslib/apis/README.md
+@@ -2,12 +2,31 @@
+ 
+ `LocalizationModel` supports `MODEL.metadata.family: TDEED` through the existing
+ `train`, `infer`, `evaluate` and explicit `save_predictions` methods. See the
+-[T-DEED guide](../../docs/tni/tdeed.md) for raw RGB inputs, displacement targets,
++[T-DEED guide](../../docs/reproductions/action-localization/tdeed.md) for raw RGB inputs, displacement targets,
+ checkpoint compatibility and experiment recipes. Its evaluation reports raw,
+ NMS and Soft-NMS metrics separately; supplied predictions are scored directly.
++The reproduction CLI supports `--stage main --skip-blocked` and ordered
++`--priority` experiments to complete main results before ablation studies.
+ 
+ ## Configuration From Hugging Face
+ 
++For a checkpoint repository, download and load matching config/weights together:
++
++```python
++model = LocalizationModel.from_pretrained(
++    "OpenSportsLab/OSL-loc-TDEED",
++    revision="v1-finediving-small-seed1",
++    device="cpu",
++)
++```
++
++This shared task classmethod requires an explicit Hub tag, branch or commit SHA.
++It loads `config.yaml` and `model.pth` from one cached snapshot. Use
++`weights_filename="model.pt"` for a different checkpoint filename. `cache_dir`,
++`token` and `local_files_only` are forwarded to the Hub download. A missing file
++raises an error without falling back to another revision. Existing constructors
++and `load_weights` signatures are unchanged.
++
+ The public `Config` class composes bundled configuration layers and keeps
+ interpolation links until user changes have been applied:
+ 
+diff --git a/opensportslib/apis/base_task_model.py b/opensportslib/apis/base_task_model.py
+index ffed54b..402d626 100644
+--- a/opensportslib/apis/base_task_model.py
++++ b/opensportslib/apis/base_task_model.py
+@@ -60,6 +60,56 @@ def _manifest_media_references(payload: dict[str, Any]):
+ class BaseTaskModel(ConfigurationMixin, ABC):
+     """Thin shared contract for task-level OpenSportsLib wrappers."""
+ 
++    @classmethod
++    def from_pretrained(
++        cls,
++        repo_id: str,
++        *,
++        revision: str,
++        weights_filename: str = "model.pth",
++        device: str | None = None,
++        cache_dir: str | Path | None = None,
++        token: str | bool | None = None,
++        local_files_only: bool = False,
++    ):
++        """Load config.yaml and checkpoint weights from one Hub model revision.
++
++        Both files are resolved in a single immutable cached snapshot. A tag,
++        branch or commit SHA is required explicitly. This checkpoint-file API
++        leaves existing constructors and load_weights behavior unchanged.
++        """
++        from huggingface_hub import snapshot_download
++
++        if not isinstance(revision, str) or not revision.strip():
++            raise ValueError("revision must be a nonempty Hub tag, branch or commit SHA")
++        filename = Path(weights_filename)
++        if (
++            not weights_filename or filename.is_absolute()
++            or ".." in filename.parts or weights_filename == "config.yaml"
++        ):
++            raise ValueError("weights_filename must be a relative checkpoint file path")
++        snapshot = Path(snapshot_download(
++            repo_id=repo_id, repo_type="model", revision=revision,
++            allow_patterns=["config.yaml", filename.as_posix()],
++            cache_dir=cache_dir, token=token, local_files_only=local_files_only,
++        ))
++        config_path, checkpoint = snapshot / "config.yaml", snapshot / filename
++        for path in [config_path, checkpoint]:
++            if not path.is_file():
++                raise FileNotFoundError(
++                    f"{repo_id}@{revision} has no {path.relative_to(snapshot)}; "
++                    "select a model revision containing config.yaml and its checkpoint"
++                )
++        config = Config.from_file(config_path)
++        if device is not None:
++            config.update(runtime={"device": device})
++        model = cls(config=config)
++        model.load_weights(weights=str(checkpoint))
++        model.hf_repo_id = repo_id
++        model.hf_revision = revision
++        model.hf_snapshot_path = str(snapshot)
++        return model
++
+     def __init__(
+         self,
+         config=None,
+diff --git a/tests/unit/tools/test_tdeed_reproduction.py b/tests/unit/tools/test_tdeed_reproduction.py
+index 303aee3..5b2cc7b 100644
+--- a/tests/unit/tools/test_tdeed_reproduction.py
++++ b/tests/unit/tools/test_tdeed_reproduction.py
+@@ -2,6 +2,83 @@ import importlib.util
+ import json
+ from pathlib import Path
+ 
++import pytest
++
++
++def campaign_module():
++    script = Path(__file__).parents[3] / "tools/reproduction/tdeed.py"
++    spec = importlib.util.spec_from_file_location("tdeed_campaign", script)
++    campaign = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(campaign)
++    return campaign
++
++
++def test_main_campaign_rechecks_soccer_before_next_ready_run():
++    campaign = campaign_module()
++    entries = [
++        {"id": "skating", "group": "released-main", "seeds": [1, 2]},
++        {"id": "soccer", "group": "released-main", "seeds": [1, 2]},
++        {"id": "bas_only", "group": "bas-ablation", "seeds": [1, 2]},
++        {"id": "ablation", "group": "controlled-ablation", "seeds": [1, 2]},
++    ]
++    selected = campaign.select_stage(entries, "main", ["soccer"])
++    assert [r["id"] for r in selected] == ["soccer", "skating"]
++    ready = False
++
++    def readiness(entry, seed):
++        return {"ready": entry["id"] != "soccer" or ready, "errors": ["missing media"]}
++
++    jobs = campaign.scheduled_runs(selected, readiness)
++    blocked = [next(jobs), next(jobs)]
++    assert all(e["id"] == "soccer" and check is not None for e, seed, check in blocked)
++    entry, seed, check = next(jobs)
++    assert (entry["id"], seed, check) == ("skating", 1, None)
++    # Downloads finish while the skating run trains. Both soccer seeds must
++    # precede the second skating seed without restarting the campaign.
++    ready = True
++    assert [(e["id"], seed, check) for e, seed, check in jobs] == [
++        ("soccer", 1, None),
++        ("soccer", 2, None),
++        ("skating", 2, None),
++    ]
++
++
++def test_campaign_exits_when_only_blocked_jobs_remain():
++    campaign = campaign_module()
++    entries = [{"id": "soccer", "group": "released-main", "seeds": [1, 2]}]
++    jobs = list(campaign.scheduled_runs(entries, lambda e, s: {"ready": False}))
++    assert len(jobs) == 2
++    assert all(check == {"ready": False} for e, s, check in jobs)
++
++
++def test_existing_soccer_manifests_keep_pinned_asset_paths(tmp_path):
++    script = Path(__file__).parents[3] / "tools/reproduction/prepare_tdeed_soccer.py"
++    spec = importlib.util.spec_from_file_location("prepare_soccer", script)
++    preparation = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(preparation)
++    revisions = [
++        "24fa021b2e74fe8ee76112a72ed942c61c268038",
++        "8c98e425a8810602a806b4f17d42407354ebbd06",
++    ]
++    for split in ["train", "valid", "test"]:
++        rows = [
++            {
++                "inputs": [{"path": f"{root}/{split}/half.mkv"}],
++                "metadata": {"media_revision": rev},
++            }
++            for root, rev in zip(["source", "source-720p"], revisions)
++        ]
++        (tmp_path / (split + ".json")).write_text(json.dumps({"data": rows}))
++    assets = preparation.existing_assets(tmp_path)
++    assert len(assets) == 6
++    assert sum(a["revision"] == revisions[1] for a in assets) == 3
++    assert {a["root"] for a in assets} == {
++        str(tmp_path / "source"), str(tmp_path / "source-720p")
++    }
++    rows[0]["inputs"][0]["path"] = "source/../../outside.mkv"
++    (tmp_path / "train.json").write_text(json.dumps({"data": rows}))
++    with pytest.raises(ValueError, match="Unexpected normalized media path"):
++        preparation.existing_assets(tmp_path)
+ 
+ def test_soccer_adapter_uses_full_rate_fallback_and_retains_late_ground_truth(tmp_path):
+     from opensportslib.datasets.tdeed import load_videos
+diff --git a/tools/reproduction/prepare_tdeed_soccer.py b/tools/reproduction/prepare_tdeed_soccer.py
+index 011163a..42aaa75 100644
+--- a/tools/reproduction/prepare_tdeed_soccer.py
++++ b/tools/reproduction/prepare_tdeed_soccer.py
+@@ -141,11 +141,38 @@ def normalize(
+     return list({(r["path"], r["revision"]): r for r in assets}.values())
+ 
+ 
++def existing_assets(output):
++    """Resolve only pinned AS video paths inside the prepared dataset tree."""
++    revisions = {
++        "24fa021b2e74fe8ee76112a72ed942c61c268038",
++        "8c98e425a8810602a806b4f17d42407354ebbd06",
++    }
++    assets = {}
++    for split in ["train", "valid", "test"]:
++        for row in json.loads((output / (split + ".json")).read_text())["data"]:
++            path = Path(row["inputs"][0]["path"])
++            revision = row["metadata"]["media_revision"]
++            if (
++                path.is_absolute() or ".." in path.parts or not path.parts
++                or path.parts[0] not in {"source", "source-720p"}
++            ):
++                raise ValueError(f"Unexpected normalized media path: {path}")
++            if revision not in revisions:
++                raise ValueError(f"Unpinned SoccerNet media revision: {revision}")
++            key = (str(path), revision)
++            assets[key] = {
++                "path": str(Path(*path.parts[1:])),
++                "root": str(output / path.parts[0]),
++                "revision": revision,
++            }
++    return list(assets.values())
++
++
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+     p.add_argument("--dataset", choices=["soccernet", "soccernetball"], required=True)
+-    p.add_argument("--source-root", type=Path, required=True)
+-    p.add_argument("--reference-root", type=Path, required=True)
++    p.add_argument("--source-root", type=Path)
++    p.add_argument("--reference-root", type=Path)
+     p.add_argument("--output", type=Path, required=True)
+     p.add_argument("--media-root", type=Path, required=True)
+     p.add_argument(
+@@ -160,15 +187,24 @@ def main():
+         default=500,
+         help="Space reserved for other prepared datasets",
+     )
+-    a = p.parse_args()
+-    assets = normalize(
+-        a.source_root,
+-        a.reference_root,
+-        a.output,
+-        a.media_root,
+-        a.dataset,
+-        a.fallback_source_root,
++    p.add_argument(
++        "--existing-manifests", action="store_true",
++        help="Download media from already normalized output manifests without rewriting them",
+     )
++    a = p.parse_args()
++    if a.existing_manifests:
++        assets = existing_assets(a.output)
++    else:
++        if a.source_root is None or a.reference_root is None:
++            p.error("--source-root and --reference-root are required for normalization")
++        assets = normalize(
++            a.source_root,
++            a.reference_root,
++            a.output,
++            a.media_root,
++            a.dataset,
++            a.fallback_source_root,
++        )
+     if a.download_media:
+         from huggingface_hub import HfApi, snapshot_download
+ 
+@@ -200,6 +236,10 @@ def main():
+             raise RuntimeError(
+                 f"Need {required/1e9:.1f}GB plus {a.reserve_gb}GB reserved before downloading"
+             )
++        print(json.dumps({
++            "status": "downloading", "assets": len(assets),
++            "missing_bytes": required, "reserved_gb": a.reserve_gb,
++        }), flush=True)
+         for root, revision in {(r["root"], r["revision"]) for r in assets}:
+             snapshot_download(
+                 repo_id=repo,
+diff --git a/tools/reproduction/tdeed.py b/tools/reproduction/tdeed.py
+index 0580db3..e93f02f 100644
+--- a/tools/reproduction/tdeed.py
++++ b/tools/reproduction/tdeed.py
+@@ -308,6 +308,37 @@ def aggregate(ledger, entries):
+     return output
+ 
+ 
++def select_stage(entries, stage="all", priorities=()):
++    """Keep publication stages explicit; priorities retain seed pairing/order."""
++    groups = {
++        "main": {"released-main", "paper-main"},
++        "ablations": {"bas-ablation", "controlled-ablation"},
++    }
++    selected = [r for r in entries if stage == "all" or r["group"] in groups[stage]]
++    unknown = set(priorities) - {r["id"] for r in selected}
++    if unknown:
++        raise ValueError(f"Priority experiments outside selected stage: {sorted(unknown)}")
++    order = {name: i for i, name in enumerate(priorities)}
++    return sorted(selected, key=lambda r: order.get(r["id"], len(order)))
++
++
++def scheduled_runs(entries, readiness=None):
++    """Recheck blocked jobs between runs, keeping the GPU on ready work."""
++    pending = [(entry, seed) for entry in entries for seed in entry["seeds"]]
++    while pending:
++        for index, (entry, seed) in enumerate(pending):
++            check = readiness(entry, seed) if readiness else {"ready": True}
++            if not check["ready"]:
++                yield entry, seed, check
++                continue
++            pending.pop(index)
++            yield entry, seed, None
++            break
++        else:
++            # Do not wait forever when all remaining datasets are blocked.
++            return
++
++
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+     p.add_argument("action", choices=["plan", "preflight", "run", "campaign", "report"])
+@@ -330,6 +361,15 @@ def main():
+         help="Restrict campaign to named matrix entries",
+     )
+     p.add_argument("--group", action="append", help="Restrict campaign to named groups")
++    p.add_argument("--stage", choices=["all", "main", "ablations"], default="all")
++    p.add_argument(
++        "--priority", action="append", default=[],
++        help="Run these experiments first, in argument order",
++    )
++    p.add_argument(
++        "--skip-blocked", action="store_true",
++        help="Retry blocked datasets between runs; stop when only blocked jobs remain",
++    )
+     a = p.parse_args()
+     from opensportslib.core.trainer.tdeed_trainer import atomic_json
+ 
+@@ -368,6 +408,10 @@ def main():
+         if unknown:
+             p.error(f"Unknown experiments: {sorted(unknown)}")
+         entries = [r for r in entries if r["id"] in a.experiment]
++    try:
++        entries = select_stage(entries, a.stage, a.priority)
++    except ValueError as error:
++        p.error(str(error))
+     if a.action == "plan":
+         cache, plans = {}, []
+         for entry in entries:
+@@ -416,45 +460,69 @@ def main():
+         "additional_paper_experiments": matrix["additional_paper_experiments"],
+         "paper_reproduced": False,
+     }
+-    for entry in entries:
+-        for seed in entry["seeds"]:
+-            out = a.output / entry["id"] / f"seed-{seed}"
+-            item = {"experiment": entry["id"], "seed": seed}
+-            if a.action == "campaign":
+-                ledger["active_run"] = {**item, "output": str(out), "status": "running"}
+-                atomic_json(a.output / "ledger.json", ledger)
+-                print(json.dumps(ledger["active_run"]), flush=True)
+-                try:
+-                    item.update(
+-                        evaluate_derived(entry, seed, out, a.output)
+-                        if entry.get("evaluate_from")
+-                        else run_one(
+-                            ROOT / entry["config"],
+-                            seed,
+-                            out,
+-                            a.reference_root,
+-                            resume=a.resume,
+-                            verify_hashes=a.verify_hashes,
+-                        )
+-                    )
+-                except Exception as error:
+-                    item.update(
+-                        status="failed",
+-                        error=str(error),
+-                        error_type=type(error).__name__,
+-                    )
+-            else:
+-                result = out / "results.json"
+-                item.update(status="completed" if result.exists() else "not_completed")
+-                if result.exists():
+-                    item["results"] = json.loads(result.read_text())
+-            ledger["runs"].append(item)
+-            ledger.pop("active_run", None)
+-            atomic_json(a.output / "ledger.json", ledger)
+-            print(
+-                json.dumps({k: v for k, v in item.items() if k != "results"}),
+-                flush=True,
++    ledger["stage"] = a.stage
++    ledger["priorities"] = a.priority
++    records = {}
++
++    def readiness(entry, seed):
++        if entry.get("evaluate_from"):
++            source = a.output / entry["evaluate_from"] / f"seed-{seed}" / "best.pt"
++            return {"ready": source.is_file(), "errors": [f"Missing checkpoint: {source}"]}
++        try:
++            return preflight(
++                configured(ROOT / entry["config"], seed, a.output).get_config(),
++                a.reference_root,
+             )
++        except Exception:
++            # Let run_one record malformed-data failures through the normal
++            # per-run exception handler instead of aborting the whole campaign.
++            return {"ready": True}
++
++    jobs = scheduled_runs(
++        entries, readiness if a.action == "campaign" and a.skip_blocked else None
++    )
++    for entry, seed, blocked in jobs:
++        out = a.output / entry["id"] / f"seed-{seed}"
++        item = {"experiment": entry["id"], "seed": seed}
++        if blocked is not None:
++            item.update(status="blocked_data", output=str(out), errors=blocked["errors"])
++        elif a.action == "campaign":
++            ledger["active_run"] = {**item, "output": str(out), "status": "running"}
++            atomic_json(a.output / "ledger.json", ledger)
++            print(json.dumps(ledger["active_run"]), flush=True)
++            try:
++                item.update(
++                    evaluate_derived(entry, seed, out, a.output)
++                    if entry.get("evaluate_from")
++                    else run_one(
++                        ROOT / entry["config"],
++                        seed,
++                        out,
++                        a.reference_root,
++                        resume=a.resume,
++                        verify_hashes=a.verify_hashes,
++                    )
++                )
++            except Exception as error:
++                item.update(
++                    status="failed",
++                    error=str(error),
++                    error_type=type(error).__name__,
++                )
++        else:
++            result = out / "results.json"
++            item.update(status="completed" if result.exists() else "not_completed")
++            if result.exists():
++                item["results"] = json.loads(result.read_text())
++        records[(entry["id"], seed)] = item
++        ledger["runs"] = list(records.values())
++        ledger.pop("active_run", None)
++        ledger["aggregates"] = aggregate(ledger, entries)
++        atomic_json(a.output / "ledger.json", ledger)
++        print(
++            json.dumps({k: v for k, v in item.items() if k != "results"}),
++            flush=True,
++        )
+     # Full paper coverage and measured result comparisons remain explicit.
+     ledger["all_selected_runs_completed"] = all(
+         r["status"] == "completed" for r in ledger["runs"]

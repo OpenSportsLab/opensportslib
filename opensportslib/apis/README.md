@@ -2,11 +2,30 @@
 
 `LocalizationModel` supports `MODEL.metadata.family: TDEED` through the existing
 `train`, `infer`, `evaluate` and explicit `save_predictions` methods. See the
-[T-DEED guide](../../docs/tni/tdeed.md) for raw RGB inputs, displacement targets,
+[T-DEED guide](../../docs/reproductions/action-localization/tdeed.md) for raw RGB inputs, displacement targets,
 checkpoint compatibility and experiment recipes. Its evaluation reports raw,
 NMS and Soft-NMS metrics separately; supplied predictions are scored directly.
+The reproduction CLI supports `--stage main --skip-blocked` and ordered
+`--priority` experiments to complete main results before ablation studies.
 
 ## Configuration From Hugging Face
+
+For a checkpoint repository, download and load matching config/weights together:
+
+```python
+model = LocalizationModel.from_pretrained(
+    "OpenSportsLab/OSL-loc-TDEED",
+    revision="v1-finediving-small-seed1",
+    device="cpu",
+)
+```
+
+This shared task classmethod requires an explicit Hub tag, branch or commit SHA.
+It loads `config.yaml` and `model.pth` from one cached snapshot. Use
+`weights_filename="model.pt"` for a different checkpoint filename. `cache_dir`,
+`token` and `local_files_only` are forwarded to the Hub download. A missing file
+raises an error without falling back to another revision. Existing constructors
+and `load_weights` signatures are unchanged.
 
 The public `Config` class composes bundled configuration layers and keeps
 interpolation links until user changes have been applied:

@@ -1,5 +1,10 @@
 # Model Zoo
 
+For paper implementations, experiment coverage and benchmark comparisons, see
+the [paper reproduction catalog](reproductions/index.md), organized by task and
+algorithm. This page indexes model downloads across those papers and other
+library components.
+
 This page lists OpenSportsLib checkpoints, config-only algorithms, and supporting
 model components published on Hugging Face. Task checkpoints can be loaded with
 `load_weights(...)`; config-only algorithms and supporting components use the
@@ -11,10 +16,25 @@ computed or verified at documentation-build time. Missing training provenance
 and scores are marked **Not reported**. Follow each linked repository for its
 artifact details; a listing here does not certify end-to-end inference.
 
+## Scheduled paper reproductions
+
+| Paper | Task | Planned model repository | Experiment scope | Status |
+| --- | --- | --- | --- | --- |
+| [E2E-Spot, ECCV 2022](reproductions/action-localization/e2espot.md) | Action localization / spotting | `OpenSportsLab/OSL-loc-e2e` | 200MF/800MF RGB on Tennis, FS-Comp, FS-Perf, FineDiving, FineGym, SoccerNet and SoccerNet BAS; 28 runs queued | [Paper targets and release plan](reproductions/action-localization/e2espot-results.md); no new models or measured reproduction scores yet |
+
+Validated checkpoints will move into the available-model listing with their
+measured scores and revision links. Existing E2E implementations or checkpoints
+are not automatically evidence of this original-paper reproduction campaign.
+
 ## Available Models
+
+T-DEED experiments are tracked on the [results and model release page](reproductions/action-localization/tdeed-results.md).
+Four verified FineDiving checkpoints are available as named revisions of
+`OpenSportsLab/OSL-loc-TDEED`; other datasets remain pending.
 
 | Model | Task | Dataset trained on | Backbone / architecture | Classes / label set | Scores | Hugging Face link | Loading |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| `OSL-loc-TDEED` | Action Spotting / Localization | FineDiving (other datasets pending) | T-DEED, RegNetY 200MF / 800MF + GSF + SGP | Entry, Som(s).Pike, Som(s).Tuck, Twist(s) | Two-seed Soft-NMS mAP, ±1/±2 frames: small 71.54/89.38; big 72.89/89.29 | [OpenSportsLab/OSL-loc-TDEED](https://huggingface.co/OpenSportsLab/OSL-loc-TDEED) | [Choose a release revision](reproductions/action-localization/tdeed-results.md#publication-state); download its matching config and weights |
 | `OSL-cls-action-mvitv2` | Action / Event Classification | SoccerNet - MVFouls classification subset | MViT v2 | Not reported on model card | Accuracy: 0.57<br>Balanced Accuracy: 0.40<br>Top-2: 0.78 | [OpenSportsLab/OSL-cls-action-mvitv2](https://huggingface.co/OpenSportsLab/OSL-cls-action-mvitv2) | `myModel.load_weights(weights="OpenSportsLab/OSL-cls-action-mvitv2")` |
 | `OSL-loc-snbas-2023-e2e` | Action Spotting / Localization | SoccerNet - Ball Action Spotting 2023 | E2E, DALI backend | PASS, DRIVE | tight mAP: 71.48<br>loose mAP: 85.62 | [OpenSportsLab/OSL-loc-snbas-2023-e2e](https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2023-e2e) | `myModel.load_weights(weights="OpenSportsLab/OSL-loc-snbas-2023-e2e")` |
 | `OSL-loc-snbas-2025-e2e` | Action Spotting / Localization | SoccerNet - Ball Action Spotting 2025 | E2E, DALI backend | PASS, DRIVE, HEADER, HIGH PASS, OUT, CROSS, THROW IN, SHOT, BALL PLAYER BLOCK, PLAYER SUCCESSFUL TACKLE, FREE KICK, GOAL | tight mAP: 47.98<br>loose mAP: 58.35 | [OpenSportsLab/OSL-loc-snbas-2025-e2e](https://huggingface.co/OpenSportsLab/OSL-loc-snbas-2025-e2e) | `myModel.load_weights(weights="OpenSportsLab/OSL-loc-snbas-2025-e2e")` |

@@ -1,5 +1,17 @@
 # T-DEED development and reproduction
 
+**Task:** action localization / spotting. **Paper / algorithm:** T-DEED.
+This is one entry in the [action localization reproduction catalog](index.md),
+which will grow to include other algorithms. The [paper reproduction overview](../index.md)
+groups papers across all tasks. Current validation covers the released
+FineDiving runs; full paper reproduction remains in progress.
+
+See [results and model releases](tdeed-results.md) for measured benchmark
+comparisons and the publication layout for configs, trained weights and provenance.
+All T-DEED datasets, architectures, seeds and recipe/data versions share the
+`OpenSportsLab/OSL-loc-TDEED` model repository, with separate named release
+revisions and an index on `main`.
+
 T-DEED is a localization family in the existing `LocalizationModel` wrapper.
 The port uses [the authors' extended release](https://github.com/arturxe2/T-DEED)
 at `d953b4de8a2ad941c565e1683c5b07255cbe644e`. The reference primitives retain
@@ -72,7 +84,7 @@ the exact all-split training/ensemble protocol. No leaderboard submission occurs
 
 ## Data preflight
 
-See [dataset preparation](../tools/spotting-dataset-cleanup.md) for repositories,
+See [dataset preparation](../../tools/spotting-dataset-cleanup.md) for repositories,
 permissions and source provenance. Configure local paths before launching.
 
 ```bash
@@ -105,11 +117,29 @@ python tools/reproduction/prepare_tdeed_soccer.py \
   --fallback-source-root /data/soccernet/720p-json \
   --reference-root /data/reference/T-DEED/data/soccernet \
   --output data/spotting-cleanup/SoccerNet \
-  --media-root data/spotting-cleanup/SoccerNet/source
+  --media-root data/spotting-cleanup/SoccerNet/official/videos-224p
 ```
 
 Eighteen irregular-FPS 224p sources use corresponding 25-fps 720p files.
+New preparations prefer `SoccerNet/SoccerNet_raw_HQ`, pinned to
+`56a8be6be6788ed65cce25f68780d55ff4544aa2` (`videos-224p`) and
+`280e9828acb8f99250eefdeb4c0eae9a1f784739` (`videos-720p`).
+Per-video `media_repo_id` and `media_revision` identify the actual source;
+old manifests retain their historical provenance rather than being relabelled.
+Official media still requires sequential decode validation: container frame
+counts and successful seeks near the end do not establish the number of decoded
+frames or alignment of native frame indices.
+The 2026-10-26 comparison found 63 short files among 65 changed official 224p
+assets after full sequential decoding; the failing half's official 720p copy
+also decoded short. Evidence and the repeatable audit command are in
+`reproduction/training-runs/tdeed/diagnostics/soccernet-source-audit-20261026/`.
+Existing normalized manifests are retained with their original media identity;
+changing the preferred repository does not certify those experiments as ready.
 `--download-media` acquires missing AS media subject to free-space reservations.
+For existing normalized manifests, use `--existing-manifests` with `--output`,
+`--media-root`, `--dataset soccernet` and `--download-media`; this downloads the
+pinned media without rewriting annotations. `--reserve-gb` controls the free
+space retained after acquisition (default 500 GB).
 Joint BAS/AS uses a separate `SoccerNet448` adapter over high-resolution AS
 videos, resized to 796×448; independent AS's low-resolution data cannot replace
 it. Acquire BAS shards with the existing OSL split downloader, then normalize
@@ -117,6 +147,31 @@ the extracted manifests. Pixel identity to the authors' earlier resized JPEG
 collections is not claimed for these explicit video preprocessing choices.
 
 ## Run, resume and compare
+
+The publication campaign runs main results first, with SoccerNet taking
+priority as soon as its data passes preflight:
+
+```bash
+python tools/reproduction/tdeed.py campaign --resume --verify-hashes \
+  --stage main --skip-blocked \
+  --priority SoccerNet_small --priority SoccerNet_big \
+  --priority SoccerNetBall_challenge1 --priority SoccerNetBall_challenge2 \
+  --output outputs/tdeed/campaign
+```
+
+`--stage main` includes `released-main` and `paper-main`. It excludes BAS-only
+and controlled ablations. `--skip-blocked` rechecks pending blocked datasets
+between runs, so completed downloads can promote SoccerNet ahead of other
+pending work. It does not interrupt an active training run. If only blocked
+jobs remain, the campaign exits and retains their errors in the ledger; resume
+the same command after fixing prerequisites. Aggregates update after each run.
+
+After publishing the main results, run ablations explicitly with
+`--stage ablations --resume --skip-blocked` against the same output directory
+to reuse the main checkpoints. The default `--stage all` retains the full-matrix
+behavior. No CLI command publishes results or code automatically.
+
+Individual experiments can also be selected:
 
 ```bash
 python tools/reproduction/tdeed.py campaign --resume \
@@ -136,6 +191,14 @@ selected `best.pt`, explicit predictions and final metrics. Checkpoints preserve
 optimizer, scaler, scheduler and Python/NumPy/CPU/CUDA RNG states. Resume requires
 unchanged recipes, implementation hashes and dataset-manifest hashes. Seed
 directories prevent overwriting independent runs.
+
+Training console logs and small run artifacts are also retained in the
+Git-visible `reproduction/training-runs/tdeed/` archive. Launch campaigns through
+`tools/reproduction/record_training.py` to capture the command, source revision,
+working-tree patch, determinism environment, histories and final metrics. See
+`reproduction/training-runs/README.md` for the command and regression comparison
+procedure. The recorder mirrors JSON
+artifacts every 30 seconds; checkpoints and predictions remain in `outputs/`.
 
 The ledger reports per-seed scores, means, standard deviations, published targets
 and signed percentage-point gaps. Completing training never sets

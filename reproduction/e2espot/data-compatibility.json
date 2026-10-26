@@ -1,0 +1,167 @@
+{
+  "scope": "Released annotation identity only; not a media or preprocessing validation",
+  "e2e_reference_commit": "edec4201471beed631bed374bd0b95fcdc8a2f4f",
+  "tdeed_reference_commit": "d953b4de8a2ad941c565e1683c5b07255cbe644e",
+  "datasets": {
+    "tennis": {
+      "class_order_equal": true,
+      "splits": {
+        "train": {
+          "videos": 1368,
+          "reference_frames": 483071,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "8e52400d72876de665821eb533ed68e29d438c7e3070a0db2bbe8929858d6495",
+          "tdeed_reference_sha256": "50d369ce1bc284c3e30e6e2996fccaa950aa09ebb31362c76a9b9dbfb61a77ee"
+        },
+        "val": {
+          "videos": 455,
+          "reference_frames": 161568,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "635dcf4372fd9d92e5053197c6f23d95d67cf559fd2e2de679af183301aeac83",
+          "tdeed_reference_sha256": "c4e00721a02bd1e0c94869c48929037e1bb5b5d7ce19b67aa93f5b6b644abb84"
+        },
+        "test": {
+          "videos": 1622,
+          "reference_frames": 660679,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "2c542cfb74b4a92f03e4f748a226046384639f5454ac86cb055e0eb552b2fe66",
+          "tdeed_reference_sha256": "b0e67b242f85b87f922a5cdd6bf28e07cf0158bd3ef9badb3950dfd81c18609a"
+        }
+      }
+    },
+    "fs_comp": {
+      "class_order_equal": true,
+      "splits": {
+        "train": {
+          "videos": 178,
+          "reference_frames": 759400,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "480e8e78d40e036995b928c4870d2da1aa874e68430ab28473482dc25a179466",
+          "tdeed_reference_sha256": "480e8e78d40e036995b928c4870d2da1aa874e68430ab28473482dc25a179466"
+        },
+        "val": {
+          "videos": 59,
+          "reference_frames": 251925,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "bf054a010f83350777b600f69f7c37901e1e0a87a4fdfbb816be62549e3945c8",
+          "tdeed_reference_sha256": "bf054a010f83350777b600f69f7c37901e1e0a87a4fdfbb816be62549e3945c8"
+        },
+        "test": {
+          "videos": 134,
+          "reference_frames": 571500,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "b4cf23c231d049513284c31e5515aa5756f5b26453cdadf16d53e0b82a610124",
+          "tdeed_reference_sha256": "b4cf23c231d049513284c31e5515aa5756f5b26453cdadf16d53e0b82a610124"
+        }
+      }
+    },
+    "fs_perf": {
+      "class_order_equal": true,
+      "splits": {
+        "train": {
+          "videos": 183,
+          "reference_frames": 780950,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "762653c42f7b5335ec3259c54e5eabc020682418e83e25f9b825c9a3e8f9d8a5",
+          "tdeed_reference_sha256": "762653c42f7b5335ec3259c54e5eabc020682418e83e25f9b825c9a3e8f9d8a5"
+        },
+        "val": {
+          "videos": 94,
+          "reference_frames": 401450,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "e4f06162c52894945a35e1da01c16afcf2bafa293425bb76cb40d56e9351ba57",
+          "tdeed_reference_sha256": "e4f06162c52894945a35e1da01c16afcf2bafa293425bb76cb40d56e9351ba57"
+        },
+        "test": {
+          "videos": 94,
+          "reference_frames": 400425,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "2a3ae0caf0e5dec4d94bae3b392a2dd068e3c2b9c68871a9566c4f96cb6638a1",
+          "tdeed_reference_sha256": "2a3ae0caf0e5dec4d94bae3b392a2dd068e3c2b9c68871a9566c4f96cb6638a1"
+        }
+      }
+    },
+    "finediving": {
+      "class_order_equal": true,
+      "splits": {
+        "train": {
+          "videos": 1801,
+          "reference_frames": 187591,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "0ab09c5217b00aa01a15d54fe461242ee13916ae8f807850319f7e8ffea96ffb",
+          "tdeed_reference_sha256": "0ab09c5217b00aa01a15d54fe461242ee13916ae8f807850319f7e8ffea96ffb"
+        },
+        "val": {
+          "videos": 450,
+          "reference_frames": 46820,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "1e7b5616d109dfa59dc13e42d987fc521f362bf183f93d7cadb451e23b64e197",
+          "tdeed_reference_sha256": "1e7b5616d109dfa59dc13e42d987fc521f362bf183f93d7cadb451e23b64e197"
+        },
+        "test": {
+          "videos": 749,
+          "reference_frames": 77845,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "c8e58145154391f313df4a040268dd248606b9a9e1d27fa4ce86877684013e14",
+          "tdeed_reference_sha256": "c8e58145154391f313df4a040268dd248606b9a9e1d27fa4ce86877684013e14"
+        }
+      }
+    },
+    "finegym": {
+      "class_order_equal": true,
+      "splits": {
+        "train": {
+          "videos": 3327,
+          "reference_frames": 4686067,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "7ae08b9b726207c37de1434a1f29e67e32fa9412e599605d039f0a6a69c11bca",
+          "tdeed_reference_sha256": "d1e53e77d3d37cae101a97e17a7ef661c4fcb2fa1c933c3a54dc69f4f5d61a3d"
+        },
+        "val": {
+          "videos": 944,
+          "reference_frames": 1311221,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "9c7c5c75e204d447f070fc280a9778c4ea5add5a75aa9946ddd3a6d96b323669",
+          "tdeed_reference_sha256": "e88fd9d4bf3ee209477cf7e8b294d380762a84cb9a694588aabdca37fda8bc4a"
+        },
+        "test": {
+          "videos": 1103,
+          "reference_frames": 1610013,
+          "membership_equal": true,
+          "frame_counts_equal": true,
+          "events_equal": true,
+          "original_reference_sha256": "90f5cf78ff4072ac0e9a76f2a0dbb7fec943f6b875d36a54077db944df535bdf",
+          "tdeed_reference_sha256": "d760514e2f9eb3727a28f5fb1804ca10558fb4d62bf1fa534194ad1db68d98f2"
+        }
+      }
+    }
+  }
+}

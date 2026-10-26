@@ -1,0 +1,1287 @@
+{
+  "reference_commit": "d953b4de8a2ad941c565e1683c5b07255cbe644e",
+  "runs": [
+    {
+      "experiment": "SoccerNet_small",
+      "seed": 1,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNet_small/seed-1",
+      "errors": [
+        "train: 530 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 19-30 Arsenal 3 - 0 Chelsea/1_224p.mkv",
+        "valid: 174 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-10-01 - 14-30 Swansea 1 - 2 Liverpool/1_224p.mkv",
+        "test: 171 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 14-30 Manchester United 4 - 1 Leicester/2_224p.mkv"
+      ]
+    },
+    {
+      "experiment": "SoccerNet_small",
+      "seed": 2,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNet_small/seed-2",
+      "errors": [
+        "train: 530 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 19-30 Arsenal 3 - 0 Chelsea/1_224p.mkv",
+        "valid: 174 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-10-01 - 14-30 Swansea 1 - 2 Liverpool/1_224p.mkv",
+        "test: 171 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 14-30 Manchester United 4 - 1 Leicester/2_224p.mkv"
+      ]
+    },
+    {
+      "experiment": "SoccerNet_big",
+      "seed": 1,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNet_big/seed-1",
+      "errors": [
+        "train: 530 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 19-30 Arsenal 3 - 0 Chelsea/1_224p.mkv",
+        "valid: 174 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-10-01 - 14-30 Swansea 1 - 2 Liverpool/1_224p.mkv",
+        "test: 171 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 14-30 Manchester United 4 - 1 Leicester/2_224p.mkv"
+      ]
+    },
+    {
+      "experiment": "SoccerNet_big",
+      "seed": 2,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNet_big/seed-2",
+      "errors": [
+        "train: 530 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 19-30 Arsenal 3 - 0 Chelsea/1_224p.mkv",
+        "valid: 174 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-10-01 - 14-30 Swansea 1 - 2 Liverpool/1_224p.mkv",
+        "test: 171 missing videos; first: data/spotting-cleanup/SoccerNet/source/england_epl/2016-2017/2016-09-24 - 14-30 Manchester United 4 - 1 Leicester/2_224p.mkv"
+      ]
+    },
+    {
+      "experiment": "SoccerNetBall_challenge1",
+      "seed": 1,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-1",
+      "errors": [
+        "train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4",
+        "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4",
+        "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4",
+        "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)",
+        "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json",
+        "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"
+      ]
+    },
+    {
+      "experiment": "SoccerNetBall_challenge1",
+      "seed": 2,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNetBall_challenge1/seed-2",
+      "errors": [
+        "train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4",
+        "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4",
+        "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4",
+        "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)",
+        "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json",
+        "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"
+      ]
+    },
+    {
+      "experiment": "SoccerNetBall_challenge2",
+      "seed": 1,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-1",
+      "errors": [
+        "train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4",
+        "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4",
+        "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4",
+        "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)",
+        "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json",
+        "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"
+      ]
+    },
+    {
+      "experiment": "SoccerNetBall_challenge2",
+      "seed": 2,
+      "status": "blocked_data",
+      "output": "outputs/tdeed/campaign/SoccerNetBall_challenge2/seed-2",
+      "errors": [
+        "train: 4 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Blackburn Rovers - Nottingham Forest/720p.mp4",
+        "valid: 1 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/720p.mp4",
+        "test: 2 missing videos; first: data/spotting-cleanup/SNBAS/source/england_efl/2019-2020/2019-10-01 - Reading - Fulham/720p.mp4",
+        "SNBAS 2024 annotation version differs from paper counts (FREE KICK 21 vs 11, GOAL 13 vs 12)",
+        "auxiliary train: missing manifest data/spotting-cleanup/SoccerNet448/train.json",
+        "auxiliary valid: missing manifest data/spotting-cleanup/SoccerNet448/valid.json"
+      ]
+    },
+    {
+      "experiment": "FineDiving_small",
+      "seed": 1,
+      "status": "completed",
+      "output": "outputs/tdeed/campaign/FineDiving_small/seed-1",
+      "results": {
+        "seed": 1,
+        "metrics": {
+          "none": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.5781094861553526,
+                "AP": {
+                  "Entry": 0.6055081767649099,
+                  "Som(s).Pike": 0.609535783705569,
+                  "Som(s).Tuck": 0.6086007048512019,
+                  "Twist(s)": 0.4887932792997296
+                }
+              },
+              "2": {
+                "mAP": 0.7080188843782117,
+                "AP": {
+                  "Entry": 0.7445993266379111,
+                  "Som(s).Pike": 0.7256228323864446,
+                  "Som(s).Tuck": 0.7389823197704095,
+                  "Twist(s)": 0.6228710587180816
+                }
+              },
+              "4": {
+                "mAP": 0.7616364772644048,
+                "AP": {
+                  "Entry": 0.7999903204402784,
+                  "Som(s).Pike": 0.7597937156464681,
+                  "Som(s).Tuck": 0.7772327296449585,
+                  "Twist(s)": 0.7095291433259142
+                }
+              }
+            },
+            "mean_mAP": 0.682588282599323,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.6918203973099928,
+                "AP": {
+                  "Entry": 0.716130046165035,
+                  "Som(s).Pike": 0.739123021719725,
+                  "Som(s).Tuck": 0.7276276810215717,
+                  "Twist(s)": 0.5844008403336396
+                }
+              },
+              "2": {
+                "mAP": 0.882435605887546,
+                "AP": {
+                  "Entry": 0.8979164131265992,
+                  "Som(s).Pike": 0.9167190049652036,
+                  "Som(s).Tuck": 0.9144814061498855,
+                  "Twist(s)": 0.8006255993084954
+                }
+              },
+              "4": {
+                "mAP": 0.9523132279492807,
+                "AP": {
+                  "Entry": 0.9676221466395857,
+                  "Som(s).Pike": 0.9643862618583644,
+                  "Som(s).Tuck": 0.9755777774383212,
+                  "Twist(s)": 0.9016667258608522
+                }
+              }
+            },
+            "mean_mAP": 0.8421897437156064,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "soft_nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.6980944668464224,
+                "AP": {
+                  "Entry": 0.7211125226065749,
+                  "Som(s).Pike": 0.7445195146432526,
+                  "Som(s).Tuck": 0.740130879929448,
+                  "Twist(s)": 0.5866149502064137
+                }
+              },
+              "2": {
+                "mAP": 0.8949354893611697,
+                "AP": {
+                  "Entry": 0.9093844736161004,
+                  "Som(s).Pike": 0.9221169456764192,
+                  "Som(s).Tuck": 0.9311749644531572,
+                  "Twist(s)": 0.817065573699002
+                }
+              },
+              "4": {
+                "mAP": 0.9664583104403224,
+                "AP": {
+                  "Entry": 0.9807179127056758,
+                  "Som(s).Pike": 0.9690677368362071,
+                  "Som(s).Tuck": 0.9925478072567581,
+                  "Twist(s)": 0.9234997849626486
+                }
+              }
+            },
+            "mean_mAP": 0.8531627555493048,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          }
+        },
+        "checkpoint_sha256": "1a55ee031067c9752e9f8d82cf03675e864bcda5c165a352e7345718c191431a",
+        "manifest_sha256": {
+          "data/spotting-cleanup/FineDiving/prepared/train.json": "ddaceeb649ba19be911c2692ca2237a5a7124e5b3ae3404df1cf8416f2618b29",
+          "data/spotting-cleanup/FineDiving/prepared/valid.json": "0e8c90ab35ce4b95caa0481e5d12cd612b8d8b33bf0b3a90e6885db78e6dc4bc",
+          "data/spotting-cleanup/FineDiving/prepared/test.json": "e1d0d30399951830ed222891c8fd5cb3667cb43ba65b06c43885a6e94d59bb31"
+        },
+        "paper_reproduced": false,
+        "note": "Run complete; aggregate independent seeds and compare targets before any reproduction claim."
+      }
+    },
+    {
+      "experiment": "FineDiving_small",
+      "seed": 2,
+      "status": "completed",
+      "output": "outputs/tdeed/campaign/FineDiving_small/seed-2",
+      "results": {
+        "seed": 2,
+        "metrics": {
+          "none": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.5860476732346728,
+                "AP": {
+                  "Entry": 0.5972985696677923,
+                  "Som(s).Pike": 0.5979699776563766,
+                  "Som(s).Tuck": 0.6179051529438568,
+                  "Twist(s)": 0.5310169926706655
+                }
+              },
+              "2": {
+                "mAP": 0.6941672809204416,
+                "AP": {
+                  "Entry": 0.7420641128567806,
+                  "Som(s).Pike": 0.7147635792036915,
+                  "Som(s).Tuck": 0.6964752917316392,
+                  "Twist(s)": 0.6233661398896546
+                }
+              },
+              "4": {
+                "mAP": 0.7435636711922059,
+                "AP": {
+                  "Entry": 0.7869880830270276,
+                  "Som(s).Pike": 0.7519651637235594,
+                  "Som(s).Tuck": 0.7518023226541126,
+                  "Twist(s)": 0.6834991153641242
+                }
+              }
+            },
+            "mean_mAP": 0.6745928751157734,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.721842043237973,
+                "AP": {
+                  "Entry": 0.7094038129493312,
+                  "Som(s).Pike": 0.7380738254672025,
+                  "Som(s).Tuck": 0.7638333253766639,
+                  "Twist(s)": 0.6760572091586946
+                }
+              },
+              "2": {
+                "mAP": 0.8817409059897128,
+                "AP": {
+                  "Entry": 0.8927842207682091,
+                  "Som(s).Pike": 0.9140653694814566,
+                  "Som(s).Tuck": 0.906969429298321,
+                  "Twist(s)": 0.8131446044108643
+                }
+              },
+              "4": {
+                "mAP": 0.9519149645604116,
+                "AP": {
+                  "Entry": 0.9597936781728394,
+                  "Som(s).Pike": 0.9664132008186015,
+                  "Som(s).Tuck": 0.9798221215113374,
+                  "Twist(s)": 0.9016308577388678
+                }
+              }
+            },
+            "mean_mAP": 0.8518326379293657,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "soft_nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.7327737100109413,
+                "AP": {
+                  "Entry": 0.718772411646531,
+                  "Som(s).Pike": 0.7500332596122093,
+                  "Som(s).Tuck": 0.7713848012413307,
+                  "Twist(s)": 0.690904367543694
+                }
+              },
+              "2": {
+                "mAP": 0.8927213446131139,
+                "AP": {
+                  "Entry": 0.9098276631556237,
+                  "Som(s).Pike": 0.9206765082501683,
+                  "Som(s).Tuck": 0.9182449950582466,
+                  "Twist(s)": 0.8221362119884171
+                }
+              },
+              "4": {
+                "mAP": 0.9669603565379441,
+                "AP": {
+                  "Entry": 0.9804622466699255,
+                  "Som(s).Pike": 0.9742566832724332,
+                  "Som(s).Tuck": 0.9935608164582598,
+                  "Twist(s)": 0.9195616797511578
+                }
+              }
+            },
+            "mean_mAP": 0.8641518037206665,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          }
+        },
+        "checkpoint_sha256": "f04028389b582d22668659b27fba6bd2bc8640f4e551e501800c3ba6d6802ced",
+        "manifest_sha256": {
+          "data/spotting-cleanup/FineDiving/prepared/train.json": "ddaceeb649ba19be911c2692ca2237a5a7124e5b3ae3404df1cf8416f2618b29",
+          "data/spotting-cleanup/FineDiving/prepared/valid.json": "0e8c90ab35ce4b95caa0481e5d12cd612b8d8b33bf0b3a90e6885db78e6dc4bc",
+          "data/spotting-cleanup/FineDiving/prepared/test.json": "e1d0d30399951830ed222891c8fd5cb3667cb43ba65b06c43885a6e94d59bb31"
+        },
+        "paper_reproduced": false,
+        "note": "Run complete; aggregate independent seeds and compare targets before any reproduction claim."
+      }
+    },
+    {
+      "experiment": "FineDiving_big",
+      "seed": 1,
+      "status": "completed",
+      "output": "outputs/tdeed/campaign/FineDiving_big/seed-1",
+      "results": {
+        "seed": 1,
+        "metrics": {
+          "none": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.6062274582286268,
+                "AP": {
+                  "Entry": 0.6257688822665933,
+                  "Som(s).Pike": 0.603643592129475,
+                  "Som(s).Tuck": 0.6818269500180543,
+                  "Twist(s)": 0.5136704085003845
+                }
+              },
+              "2": {
+                "mAP": 0.733196518073351,
+                "AP": {
+                  "Entry": 0.763065200960114,
+                  "Som(s).Pike": 0.7393603325855486,
+                  "Som(s).Tuck": 0.7839899645112411,
+                  "Twist(s)": 0.6463705742365001
+                }
+              },
+              "4": {
+                "mAP": 0.7831956436732466,
+                "AP": {
+                  "Entry": 0.8220863642484723,
+                  "Som(s).Pike": 0.7724123274794464,
+                  "Som(s).Tuck": 0.8255369353498364,
+                  "Twist(s)": 0.7127469476152312
+                }
+              }
+            },
+            "mean_mAP": 0.7075398733250747,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.7166536594755062,
+                "AP": {
+                  "Entry": 0.716806275883608,
+                  "Som(s).Pike": 0.7277214924142947,
+                  "Som(s).Tuck": 0.8031067615773285,
+                  "Twist(s)": 0.6189801080267933
+                }
+              },
+              "2": {
+                "mAP": 0.8895334380558664,
+                "AP": {
+                  "Entry": 0.89492618882061,
+                  "Som(s).Pike": 0.9202547006559543,
+                  "Som(s).Tuck": 0.9289857588938264,
+                  "Twist(s)": 0.8139671038530749
+                }
+              },
+              "4": {
+                "mAP": 0.9572476096470488,
+                "AP": {
+                  "Entry": 0.9709072858964605,
+                  "Som(s).Pike": 0.9673170994115231,
+                  "Som(s).Tuck": 0.9867389848776557,
+                  "Twist(s)": 0.904027068402556
+                }
+              }
+            },
+            "mean_mAP": 0.8544782357261406,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "soft_nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.7243258462840885,
+                "AP": {
+                  "Entry": 0.720055067983437,
+                  "Som(s).Pike": 0.7363817300722588,
+                  "Som(s).Tuck": 0.8084679086631362,
+                  "Twist(s)": 0.6323986784175221
+                }
+              },
+              "2": {
+                "mAP": 0.899697482270416,
+                "AP": {
+                  "Entry": 0.9059206447266231,
+                  "Som(s).Pike": 0.9253200764427681,
+                  "Som(s).Tuck": 0.9392720313488404,
+                  "Twist(s)": 0.8282771765634322
+                }
+              },
+              "4": {
+                "mAP": 0.9659919907960508,
+                "AP": {
+                  "Entry": 0.9820043212573472,
+                  "Som(s).Pike": 0.970447383759057,
+                  "Som(s).Tuck": 0.9931549912334869,
+                  "Twist(s)": 0.9183612669343119
+                }
+              }
+            },
+            "mean_mAP": 0.8633384397835183,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          }
+        },
+        "checkpoint_sha256": "9b596cd17437e036dab67709461b8aca1a28393884342da906dded6431d3375f",
+        "manifest_sha256": {
+          "data/spotting-cleanup/FineDiving/prepared/train.json": "ddaceeb649ba19be911c2692ca2237a5a7124e5b3ae3404df1cf8416f2618b29",
+          "data/spotting-cleanup/FineDiving/prepared/valid.json": "0e8c90ab35ce4b95caa0481e5d12cd612b8d8b33bf0b3a90e6885db78e6dc4bc",
+          "data/spotting-cleanup/FineDiving/prepared/test.json": "e1d0d30399951830ed222891c8fd5cb3667cb43ba65b06c43885a6e94d59bb31"
+        },
+        "paper_reproduced": false,
+        "note": "Run complete; aggregate independent seeds and compare targets before any reproduction claim."
+      }
+    },
+    {
+      "experiment": "FineDiving_big",
+      "seed": 2,
+      "status": "completed",
+      "output": "outputs/tdeed/campaign/FineDiving_big/seed-2",
+      "results": {
+        "seed": 2,
+        "metrics": {
+          "none": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.6218248396030801,
+                "AP": {
+                  "Entry": 0.645480465740778,
+                  "Som(s).Pike": 0.6407784079020371,
+                  "Som(s).Tuck": 0.6639370411077096,
+                  "Twist(s)": 0.537103443661796
+                }
+              },
+              "2": {
+                "mAP": 0.7243823412615563,
+                "AP": {
+                  "Entry": 0.7689993280913385,
+                  "Som(s).Pike": 0.7362001092261741,
+                  "Som(s).Tuck": 0.7433869669624529,
+                  "Twist(s)": 0.6489429607662598
+                }
+              },
+              "4": {
+                "mAP": 0.7914434958592728,
+                "AP": {
+                  "Entry": 0.8243419109147283,
+                  "Som(s).Pike": 0.783159749172991,
+                  "Som(s).Tuck": 0.8101977288232051,
+                  "Twist(s)": 0.7480745945261668
+                }
+              }
+            },
+            "mean_mAP": 0.7125502255746364,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.7274962970185027,
+                "AP": {
+                  "Entry": 0.7379803607517862,
+                  "Som(s).Pike": 0.7584432677726012,
+                  "Som(s).Tuck": 0.7806147222942176,
+                  "Twist(s)": 0.6329468372554058
+                }
+              },
+              "2": {
+                "mAP": 0.8728894412412935,
+                "AP": {
+                  "Entry": 0.8955011264263376,
+                  "Som(s).Pike": 0.9057708075906239,
+                  "Som(s).Tuck": 0.892013837191506,
+                  "Twist(s)": 0.7982719937567067
+                }
+              },
+              "4": {
+                "mAP": 0.9493137032188373,
+                "AP": {
+                  "Entry": 0.9643551044441464,
+                  "Som(s).Pike": 0.9571055057088088,
+                  "Som(s).Tuck": 0.9763081773912521,
+                  "Twist(s)": 0.899486025331142
+                }
+              }
+            },
+            "mean_mAP": 0.8498998138262112,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          },
+          "soft_nms": {
+            "tolerances": {
+              "1": {
+                "mAP": 0.733517491104592,
+                "AP": {
+                  "Entry": 0.7422907900321107,
+                  "Som(s).Pike": 0.7682333320021486,
+                  "Som(s).Tuck": 0.7870239162276907,
+                  "Twist(s)": 0.6365219261564179
+                }
+              },
+              "2": {
+                "mAP": 0.8860481871818796,
+                "AP": {
+                  "Entry": 0.9038564515731907,
+                  "Som(s).Pike": 0.9178489909736245,
+                  "Som(s).Tuck": 0.905372827745214,
+                  "Twist(s)": 0.8171144784354892
+                }
+              },
+              "4": {
+                "mAP": 0.9641835195239066,
+                "AP": {
+                  "Entry": 0.977709340114351,
+                  "Som(s).Pike": 0.9713847324456061,
+                  "Som(s).Tuck": 0.9872069759119233,
+                  "Twist(s)": 0.9204330296237463
+                }
+              }
+            },
+            "mean_mAP": 0.8612497326034593,
+            "units": "frames",
+            "scale": "0..1",
+            "metric": "PES interpolated event AP"
+          }
+        },
+        "checkpoint_sha256": "fbd569e99ac76e43de60f32f14612271978799bb8903c8689915ce6f8fcd0dd4",
+        "manifest_sha256": {
+          "data/spotting-cleanup/FineDiving/prepared/train.json": "ddaceeb649ba19be911c2692ca2237a5a7124e5b3ae3404df1cf8416f2618b29",
+          "data/spotting-cleanup/FineDiving/prepared/valid.json": "0e8c90ab35ce4b95caa0481e5d12cd612b8d8b33bf0b3a90e6885db78e6dc4bc",
+          "data/spotting-cleanup/FineDiving/prepared/test.json": "e1d0d30399951830ed222891c8fd5cb3667cb43ba65b06c43885a6e94d59bb31"
+        },
+        "paper_reproduced": false,
+        "note": "Run complete; aggregate independent seeds and compare targets before any reproduction claim."
+      }
+    }
+  ],
+  "additional_paper_experiments": [
+    {
+      "id": "fs_comp_plain_transformer",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_transformer.yaml"
+    },
+    {
+      "id": "fs_comp_plain_gru",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_gru.yaml"
+    },
+    {
+      "id": "fs_comp_plain_sgp",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_plain_sgp.yaml"
+    },
+    {
+      "id": "fs_comp_skip_none",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_none.yaml"
+    },
+    {
+      "id": "fs_comp_skip_sum",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_sum.yaml"
+    },
+    {
+      "id": "fs_comp_skip_concat",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_skip_concat.yaml"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_sum",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_sum.yaml"
+    },
+    {
+      "id": "fs_comp_sgp_mixer_concat",
+      "paper_table": "5",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_sgp_mixer_concat.yaml"
+    },
+    {
+      "id": "finediving_plain_transformer",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_transformer.yaml"
+    },
+    {
+      "id": "finediving_plain_gru",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_gru.yaml"
+    },
+    {
+      "id": "finediving_plain_sgp",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_plain_sgp.yaml"
+    },
+    {
+      "id": "finediving_skip_none",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_none.yaml"
+    },
+    {
+      "id": "finediving_skip_sum",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_sum.yaml"
+    },
+    {
+      "id": "finediving_skip_concat",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_skip_concat.yaml"
+    },
+    {
+      "id": "finediving_sgp_mixer_sum",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_sum.yaml"
+    },
+    {
+      "id": "finediving_sgp_mixer_concat",
+      "paper_table": "5",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_sgp_mixer_concat.yaml"
+    },
+    {
+      "id": "fs_comp_dilation_0",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_0.yaml"
+    },
+    {
+      "id": "fs_comp_dilation_1",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_dilation_1.yaml"
+    },
+    {
+      "id": "fs_comp_displacement_1",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_1.yaml"
+    },
+    {
+      "id": "fs_comp_displacement_2",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_displacement_2.yaml"
+    },
+    {
+      "id": "fs_comp_tridet_pyramid",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "unreleased_search_recipe",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications."
+    },
+    {
+      "id": "fs_comp_gsm_all",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_all.yaml"
+    },
+    {
+      "id": "fs_comp_gsm_half",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsm_half.yaml"
+    },
+    {
+      "id": "fs_comp_gsf_all",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_all.yaml"
+    },
+    {
+      "id": "fs_comp_gsf_half",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_gsf_half.yaml"
+    },
+    {
+      "id": "fs_comp_length_25",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_25.yaml"
+    },
+    {
+      "id": "fs_comp_length_50",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_50.yaml"
+    },
+    {
+      "id": "fs_comp_length_100",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_100.yaml"
+    },
+    {
+      "id": "fs_comp_length_200",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_length_200.yaml"
+    },
+    {
+      "id": "fs_comp_nms",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_nms.yaml"
+    },
+    {
+      "id": "fs_comp_soft_nms",
+      "paper_table": "6",
+      "dataset": "fs_comp",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/fs_comp_soft_nms.yaml"
+    },
+    {
+      "id": "finediving_dilation_0",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_0.yaml"
+    },
+    {
+      "id": "finediving_dilation_1",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_dilation_1.yaml"
+    },
+    {
+      "id": "finediving_displacement_1",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_1.yaml"
+    },
+    {
+      "id": "finediving_displacement_2",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_displacement_2.yaml"
+    },
+    {
+      "id": "finediving_tridet_pyramid",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "unreleased_search_recipe",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications."
+    },
+    {
+      "id": "finediving_gsm_all",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_all.yaml"
+    },
+    {
+      "id": "finediving_gsm_half",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsm_half.yaml"
+    },
+    {
+      "id": "finediving_gsf_all",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_all.yaml"
+    },
+    {
+      "id": "finediving_gsf_half",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_gsf_half.yaml"
+    },
+    {
+      "id": "finediving_length_25",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_25.yaml"
+    },
+    {
+      "id": "finediving_length_50",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_50.yaml"
+    },
+    {
+      "id": "finediving_length_100",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_100.yaml"
+    },
+    {
+      "id": "finediving_length_200",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_length_200.yaml"
+    },
+    {
+      "id": "finediving_nms",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_nms.yaml"
+    },
+    {
+      "id": "finediving_soft_nms",
+      "paper_table": "6",
+      "dataset": "finediving",
+      "seeds": [
+        1,
+        2
+      ],
+      "status": "controlled_variant_available",
+      "reason": "The paper selects best configurations from hyperparameter searches; per-ablation search recipes and selected seeds are not in the pinned release. Controlled variants must not be claimed as exact replications.",
+      "config": "opensportslib/configs/localization/tdeed/finediving_soft_nms.yaml"
+    },
+    {
+      "id": "SNBAS_challenge_a_ensemble",
+      "paper_table": "4",
+      "status": "private_evaluation",
+      "reason": "Requires challenge train+valid+test training protocol, exact ensemble, and private challenge labels/server; no leaderboard submission is authorized."
+    },
+    {
+      "id": "SNBAS_challenge_b_c",
+      "paper_table": "4",
+      "status": "private_evaluation",
+      "reason": "Released candidates and held-out test evaluation do not reproduce private challenge scores."
+    }
+  ],
+  "paper_reproduced": false,
+  "stage": "main",
+  "priorities": [
+    "SoccerNet_small",
+    "SoccerNet_big",
+    "SoccerNetBall_challenge1",
+    "SoccerNetBall_challenge2"
+  ],
+  "aggregates": [
+    {
+      "experiment": "FineDiving_small",
+      "seeds": [
+        1,
+        2
+      ],
+      "required_seeds_complete": true,
+      "paper_recipe_exact": false,
+      "comparison": {
+        "none/delta_1": {
+          "mean_percent": 58.20785796950127,
+          "std_percent": 0.39690935396600935,
+          "target_percent": 71.48,
+          "gap_percentage_points": -13.272142030498735,
+          "matches_reported_rounding": false
+        },
+        "none/delta_2": {
+          "mean_percent": 70.10930826493266,
+          "std_percent": 0.6925801728885119,
+          "target_percent": 87.62,
+          "gap_percentage_points": -17.51069173506734,
+          "matches_reported_rounding": false
+        },
+        "nms/delta_1": {
+          "mean_percent": 70.6831220273983,
+          "std_percent": 1.5010822963990123,
+          "target_percent": 71.48,
+          "gap_percentage_points": -0.7968779726017061,
+          "matches_reported_rounding": false
+        },
+        "nms/delta_2": {
+          "mean_percent": 88.20882559386294,
+          "std_percent": 0.03473499489166443,
+          "target_percent": 87.62,
+          "gap_percentage_points": 0.5888255938629356,
+          "matches_reported_rounding": false
+        },
+        "soft_nms/delta_1": {
+          "mean_percent": 71.54340884286819,
+          "std_percent": 1.7339621582259426,
+          "target_percent": 71.48,
+          "gap_percentage_points": 0.06340884286818493,
+          "matches_reported_rounding": false
+        },
+        "soft_nms/delta_2": {
+          "mean_percent": 89.38284169871419,
+          "std_percent": 0.1107072374027922,
+          "target_percent": 87.62,
+          "gap_percentage_points": 1.7628416987141833,
+          "matches_reported_rounding": false
+        }
+      }
+    },
+    {
+      "experiment": "FineDiving_big",
+      "seeds": [
+        1,
+        2
+      ],
+      "required_seeds_complete": true,
+      "paper_recipe_exact": false,
+      "comparison": {
+        "none/delta_1": {
+          "mean_percent": 61.402614891585344,
+          "std_percent": 0.7798690687226681,
+          "target_percent": 73.23,
+          "gap_percentage_points": -11.82738510841466,
+          "matches_reported_rounding": false
+        },
+        "none/delta_2": {
+          "mean_percent": 72.87894296674537,
+          "std_percent": 0.44070884058972837,
+          "target_percent": 88.88,
+          "gap_percentage_points": -16.001057033254625,
+          "matches_reported_rounding": false
+        },
+        "nms/delta_1": {
+          "mean_percent": 72.20749782470044,
+          "std_percent": 0.5421318771498278,
+          "target_percent": 73.23,
+          "gap_percentage_points": -1.0225021752995644,
+          "matches_reported_rounding": false
+        },
+        "nms/delta_2": {
+          "mean_percent": 88.12114396485799,
+          "std_percent": 0.8321998407286415,
+          "target_percent": 88.88,
+          "gap_percentage_points": -0.7588560351420028,
+          "matches_reported_rounding": false
+        },
+        "soft_nms/delta_1": {
+          "mean_percent": 72.89216686943402,
+          "std_percent": 0.4595822410251742,
+          "target_percent": 73.23,
+          "gap_percentage_points": -0.33783313056598274,
+          "matches_reported_rounding": false
+        },
+        "soft_nms/delta_2": {
+          "mean_percent": 89.28728347261477,
+          "std_percent": 0.6824647544268245,
+          "target_percent": 88.88,
+          "gap_percentage_points": 0.40728347261477893,
+          "matches_reported_rounding": false
+        }
+      }
+    }
+  ],
+  "active_run": {
+    "experiment": "FigureSkatingComp_big",
+    "seed": 1,
+    "output": "outputs/tdeed/campaign/FigureSkatingComp_big/seed-1",
+    "status": "running"
+  }
+}

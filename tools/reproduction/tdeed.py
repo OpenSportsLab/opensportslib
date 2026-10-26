@@ -308,6 +308,37 @@ def aggregate(ledger, entries):
     return output
 
 
+def select_stage(entries, stage="all", priorities=()):
+    """Keep publication stages explicit; priorities retain seed pairing/order."""
+    groups = {
+        "main": {"released-main", "paper-main"},
+        "ablations": {"bas-ablation", "controlled-ablation"},
+    }
+    selected = [r for r in entries if stage == "all" or r["group"] in groups[stage]]
+    unknown = set(priorities) - {r["id"] for r in selected}
+    if unknown:
+        raise ValueError(f"Priority experiments outside selected stage: {sorted(unknown)}")
+    order = {name: i for i, name in enumerate(priorities)}
+    return sorted(selected, key=lambda r: order.get(r["id"], len(order)))
+
+
+def scheduled_runs(entries, readiness=None):
+    """Recheck blocked jobs between runs, keeping the GPU on ready work."""
+    pending = [(entry, seed) for entry in entries for seed in entry["seeds"]]
+    while pending:
+        for index, (entry, seed) in enumerate(pending):
+            check = readiness(entry, seed) if readiness else {"ready": True}
+            if not check["ready"]:
+                yield entry, seed, check
+                continue
+            pending.pop(index)
+            yield entry, seed, None
+            break
+        else:
+            # Do not wait forever when all remaining datasets are blocked.
+            return
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=["plan", "preflight", "run", "campaign", "report"])
@@ -330,6 +361,15 @@ def main():
         help="Restrict campaign to named matrix entries",
     )
     p.add_argument("--group", action="append", help="Restrict campaign to named groups")
+    p.add_argument("--stage", choices=["all", "main", "ablations"], default="all")
+    p.add_argument(
+        "--priority", action="append", default=[],
+        help="Run these experiments first, in argument order",
+    )
+    p.add_argument(
+        "--skip-blocked", action="store_true",
+        help="Retry blocked datasets between runs; stop when only blocked jobs remain",
+    )
     a = p.parse_args()
     from opensportslib.core.trainer.tdeed_trainer import atomic_json
 
@@ -368,6 +408,10 @@ def main():
         if unknown:
             p.error(f"Unknown experiments: {sorted(unknown)}")
         entries = [r for r in entries if r["id"] in a.experiment]
+    try:
+        entries = select_stage(entries, a.stage, a.priority)
+    except ValueError as error:
+        p.error(str(error))
     if a.action == "plan":
         cache, plans = {}, []
         for entry in entries:
@@ -416,45 +460,69 @@ def main():
         "additional_paper_experiments": matrix["additional_paper_experiments"],
         "paper_reproduced": False,
     }
-    for entry in entries:
-        for seed in entry["seeds"]:
-            out = a.output / entry["id"] / f"seed-{seed}"
-            item = {"experiment": entry["id"], "seed": seed}
-            if a.action == "campaign":
-                ledger["active_run"] = {**item, "output": str(out), "status": "running"}
-                atomic_json(a.output / "ledger.json", ledger)
-                print(json.dumps(ledger["active_run"]), flush=True)
-                try:
-                    item.update(
-                        evaluate_derived(entry, seed, out, a.output)
-                        if entry.get("evaluate_from")
-                        else run_one(
-                            ROOT / entry["config"],
-                            seed,
-                            out,
-                            a.reference_root,
-                            resume=a.resume,
-                            verify_hashes=a.verify_hashes,
-                        )
-                    )
-                except Exception as error:
-                    item.update(
-                        status="failed",
-                        error=str(error),
-                        error_type=type(error).__name__,
-                    )
-            else:
-                result = out / "results.json"
-                item.update(status="completed" if result.exists() else "not_completed")
-                if result.exists():
-                    item["results"] = json.loads(result.read_text())
-            ledger["runs"].append(item)
-            ledger.pop("active_run", None)
-            atomic_json(a.output / "ledger.json", ledger)
-            print(
-                json.dumps({k: v for k, v in item.items() if k != "results"}),
-                flush=True,
+    ledger["stage"] = a.stage
+    ledger["priorities"] = a.priority
+    records = {}
+
+    def readiness(entry, seed):
+        if entry.get("evaluate_from"):
+            source = a.output / entry["evaluate_from"] / f"seed-{seed}" / "best.pt"
+            return {"ready": source.is_file(), "errors": [f"Missing checkpoint: {source}"]}
+        try:
+            return preflight(
+                configured(ROOT / entry["config"], seed, a.output).get_config(),
+                a.reference_root,
             )
+        except Exception:
+            # Let run_one record malformed-data failures through the normal
+            # per-run exception handler instead of aborting the whole campaign.
+            return {"ready": True}
+
+    jobs = scheduled_runs(
+        entries, readiness if a.action == "campaign" and a.skip_blocked else None
+    )
+    for entry, seed, blocked in jobs:
+        out = a.output / entry["id"] / f"seed-{seed}"
+        item = {"experiment": entry["id"], "seed": seed}
+        if blocked is not None:
+            item.update(status="blocked_data", output=str(out), errors=blocked["errors"])
+        elif a.action == "campaign":
+            ledger["active_run"] = {**item, "output": str(out), "status": "running"}
+            atomic_json(a.output / "ledger.json", ledger)
+            print(json.dumps(ledger["active_run"]), flush=True)
+            try:
+                item.update(
+                    evaluate_derived(entry, seed, out, a.output)
+                    if entry.get("evaluate_from")
+                    else run_one(
+                        ROOT / entry["config"],
+                        seed,
+                        out,
+                        a.reference_root,
+                        resume=a.resume,
+                        verify_hashes=a.verify_hashes,
+                    )
+                )
+            except Exception as error:
+                item.update(
+                    status="failed",
+                    error=str(error),
+                    error_type=type(error).__name__,
+                )
+        else:
+            result = out / "results.json"
+            item.update(status="completed" if result.exists() else "not_completed")
+            if result.exists():
+                item["results"] = json.loads(result.read_text())
+        records[(entry["id"], seed)] = item
+        ledger["runs"] = list(records.values())
+        ledger.pop("active_run", None)
+        ledger["aggregates"] = aggregate(ledger, entries)
+        atomic_json(a.output / "ledger.json", ledger)
+        print(
+            json.dumps({k: v for k, v in item.items() if k != "results"}),
+            flush=True,
+        )
     # Full paper coverage and measured result comparisons remain explicit.
     ledger["all_selected_runs_completed"] = all(
         r["status"] == "completed" for r in ledger["runs"]
